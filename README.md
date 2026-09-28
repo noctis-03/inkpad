@@ -98,7 +98,7 @@ public/      manifest, sw.js, icons, _routes.json
 ## 개발
 ```bash
 npm run build                    # vite build(클라이언트+SW 프리캐시) + vite build -c vite.server.config.ts(Worker)
-pm2 start ecosystem.config.cjs   # wrangler pages dev dist :3000
+pm2 start ecosystem.config.cjs   # wrangler dev :3000 (정적 에셋 + Worker 함께)
 npm run typecheck
 ```
 
@@ -123,6 +123,6 @@ npm run typecheck
 - **GitHub**: https://github.com/noctis-03/inkpad
 
 ## 배포
-- 플랫폼: Cloudflare Pages — Drive 동기화는 앱과 같은 도메인의 `_worker.js`에서 처리 (제3자 쿠키 차단 회피)
+- 플랫폼: Cloudflare Workers (정적 에셋 + Worker, `npx wrangler deploy`) — Drive 동기화는 앱과 같은 도메인의 `_worker.js`에서 처리 (제3자 쿠키 차단 회피)
 - 상태: 샌드박스 미리보기만 (프로덕션 미배포)
 - 마지막 업데이트: 2026-09-28
