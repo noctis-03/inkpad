@@ -1,0 +1,233 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useUI } from '../../app/store'
+import { askPdfPassword } from '../../app/dialogs'
+import { Engine } from '../../engine/engine'
+import { PdfCache } from '../../engine/pdf/pdfCache'
+import { recallPassword, rememberPassword } from '../../io/passwords'
+import type { DocumentMeta, ID, Page } from '../../shared/model'
+import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
+import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
+import { SchemaTooNewError } from '../../storage/migrate'
+import { REMOTE_EVENT } from '../../sync/sync'
+import { EditorToolbar } from './EditorToolbar'
+import { PageSidebar } from './PageSidebar'
+import { SelectionBar } from './SelectionBar'
+import { PagePanel } from './PagePanel'
+import { ExportPanel } from './ExportPanel'
+import { SettingsPanel } from '../SettingsPanel'
+import { Hud } from '../Hud'
+import { QuickSwitch } from '../QuickSwitch'
+import { DebugPanel } from './DebugPanel'
+
+export function Editor({ docId }: { docId: ID }) {
+  const hostRef = useRef<HTMLElement>(null)
+  const engineRef = useRef<Engine | null>(null)
+  const [engine, setEngine] = useState<Engine | null>(null)
+  const [doc, setDoc] = useState<DocumentMeta | null>(null)
+  const [pages, setPages] = useState<Page[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [readOnly, setReadOnly] = useState(false)
+  const [thumbTick, setThumbTick] = useState(0)
+  const navigate = useUI((s) => s.navigate)
+  const toast = useUI((s) => s.toast)
+  const settings = useUI((s) => s.settings)
+  const style = useUI((s) => s.style)
+  const tool = useUI((s) => s.tool)
+  const panel = useUI((s) => s.panel)
+  const sidebar = useUI((s) => s.sidebar)
+
+  // 엔진 생성 / 해제
+  useEffect(() => {
+    let disposed = false
+    let eng: Engine | null = null
+    const pdf = new PdfCache()
+    pdf.passwordProvider = async (assetId, incorrect) => {
+      const known = !incorrect ? recallPassword(assetId) : undefined
+      if (known) return known
+      const pw = await askPdfPassword(incorrect)
+      if (pw) rememberPassword(assetId, pw)
+      return pw
+    }
+    ;(async () => {
+      try {
+        const [loaded, lock] = await Promise.all([loadDocument(docId), acquireDocLock(docId)])
+        if (disposed) return
+        if (!lock) {
+          setReadOnly(true)
+          toast('이 문서는 다른 탭에서 열려 있어 읽기 전용으로 엽니다.', 'info')
+        }
+        setDoc(loaded.doc)
+        setPages(loaded.pages)
+        const st = useUI.getState()
+        eng = new Engine(hostRef.current!, {
+          settings: st.settings,
+          style: st.style,
+          doc: loaded,
+          pdf,
+          readOnly: !lock,
+          persist: (b) => saveBatch(b),
+          callbacks: {
+            onStats: (s) => useUI.setState({ stats: s }),
+            onView: (v) => useUI.setState({ view: v }),
+            onSelection: (s) => useUI.setState({ selection: s }),
+            onSaveState: (s, err) => {
+              useUI.setState({ saveState: s })
+              if (s === 'error') {
+                const quota = (err as DOMException)?.name === 'QuotaExceededError'
+                useUI
+                  .getState()
+                  .toast(quota ? '기기 저장 공간이 부족합니다. 설정 > 저장소에서 공간을 확인하세요.' : '저장하지 못했습니다. 잠시 후 다시 시도합니다.', 'error')
+              }
+            },
+            onPressureCapability: (c) => {
+              useUI.getState().setSettings({ pressureCapability: c })
+              if (c === 'no' && useUI.getState().settings.pressureMode === 'auto') {
+                const fb = useUI.getState().settings.fallbackMode === 'velocity' ? '속도 기반' : '일정한 굵기'
+                useUI.getState().toast(`이 펜은 필압을 보내지 않습니다. ${fb}으로 그립니다. (설정 > 펜 · 필압에서 변경)`, 'info')
+              }
+            },
+            onPagesChanged: (p) => setPages(p),
+            onPageContentChanged: () => setThumbTick((t) => t + 1)
+          }
+        })
+        eng.setTool(st.tool)
+        engineRef.current = eng
+        setEngine(eng)
+        ;(window as unknown as { inkpad: Engine }).inkpad = eng
+      } catch (e) {
+        if (disposed) return
+        setError(e instanceof SchemaTooNewError ? e.message : e instanceof Error ? e.message : '문서를 열 수 없습니다.')
+      }
+    })()
+    return () => {
+      disposed = true
+      const e = eng
+      engineRef.current = null
+      setEngine(null)
+      useUI.setState({ selection: null, stats: null })
+      releaseDocLock(docId)
+      if (e) {
+        const view = e.getViewState()
+        const hadChanges = e.canUndo
+        void (async () => {
+          await e.destroy()
+          await saveLastView(docId, view)
+          if (hadChanges) {
+            const blob = await e.renderDocThumb().catch(() => null)
+            if (blob) await putThumbnail(docId, blob)
+          }
+          await pdf.destroy()
+        })()
+      } else void pdf.destroy()
+    }
+  }, [docId, toast])
+
+  useEffect(() => engineRef.current?.setSettings(settings), [settings])
+  useEffect(() => engineRef.current?.setStyle(style), [style])
+  useEffect(() => engineRef.current?.setTool(tool), [tool])
+
+  // 키보드 단축키 (Magic Keyboard 등)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      const eng = engineRef.current
+      if (!eng) return
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) eng.redo()
+        else eng.undo()
+      } else if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        eng.redo()
+      } else if ((e.key === 'Backspace' || e.key === 'Delete') && useUI.getState().selection) {
+        e.preventDefault()
+        eng.deleteSelection()
+      } else if (e.key === 'Escape') eng.clearSelection()
+      else if (!mod) {
+        const map: Record<string, 'pen' | 'highlighter' | 'eraser' | 'lasso'> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso' }
+        const tl = map[e.key.toLowerCase()]
+        if (tl) useUI.getState().setTool(tl)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // 다른 기기에서 이 문서가 변경되면 바로 덮어쓰지 않고 안내한다 (SDF 가이드 8장 3)
+  useEffect(() => {
+    const onRemote = (ev: Event) => {
+      const ids = (ev as CustomEvent<Set<string>>).detail
+      if (!ids?.has(docId)) return
+      toast('다른 기기에서 이 문서가 변경되었습니다.', 'info', {
+        label: '다시 불러오기',
+        run: () => {
+          navigate({ name: 'library' })
+          setTimeout(() => navigate({ name: 'editor', docId }), 0)
+        }
+      })
+    }
+    window.addEventListener(REMOTE_EVENT, onRemote)
+    return () => window.removeEventListener(REMOTE_EVENT, onRemote)
+  }, [docId, navigate, toast])
+
+  const rename = useCallback(
+    async (title: string) => {
+      if (!doc || !title.trim() || title === doc.title) return
+      await updateDocument(doc.id, { title: title.trim() })
+      setDoc({ ...doc, title: title.trim() })
+    },
+    [doc]
+  )
+
+  if (error) {
+    return (
+      <div className="editor-error">
+        <p>{error}</p>
+        <button className="primary-btn" onClick={() => navigate({ name: 'library' })}>
+          문서 목록으로
+        </button>
+      </div>
+    )
+  }
+
+  const paged = doc?.mode === 'paged'
+
+  return (
+    <div className="editor">
+      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => navigate({ name: 'library' })} />
+      <div className="editor-body">
+        {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
+        <div className="editor-area">
+          <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
+          {!engine && <div className="loading">문서 여는 중…</div>}
+          <Hud />
+          {!readOnly && <QuickSwitch />}
+          {engine && <SelectionBar engine={engine} />}
+          {engine && <PageIndicator engine={engine} paged={paged} />}
+          {panel === 'settings' && <SettingsPanel />}
+          {panel === 'page' && engine && <PagePanel engine={engine} doc={doc!} />}
+          {panel === 'export' && engine && doc && <ExportPanel engine={engine} doc={doc} />}
+          {panel === 'debug' && engine && <DebugPanel engine={engine} />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
+  const view = useUI((s) => s.view)
+  return (
+    <div className="page-indicator">
+      {paged && (
+        <span>
+          {view.currentPage + 1} / {view.pageCount}
+        </span>
+      )}
+      <button onClick={() => engine.resetView()} aria-label={paged ? '폭 맞춤' : '원점, 100%'}>
+        {Math.round(view.zoom * 100)}%
+      </button>
+    </div>
+  )
+}
