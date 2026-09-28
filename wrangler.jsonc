@@ -7,7 +7,6 @@
     "nodejs_compat"
   ]
   "vars": {
-    "ALLOWED_EMAIL": "gaonkim12345@gmail.com",
     "GOOGLE_CLIENT_ID": "975400615913-hh65mgge5ot31jl428c1ermdm4slhg4i.apps.googleusercontent.com"
   },
   // "kv_namespaces": [
