@@ -57,7 +57,7 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 - 홈 화면 추가 안내, `navigator.storage.persist()` 요청
 
 **클라우드 동기화 (Phase 2 — Google Drive, SDF 가이드)**
-- 오프라인 우선: 모든 읽기/쓰기는 IndexedDB, 온라인일 때 백그라운드로 Drive와 동기화(화면 복귀·1분 주기·저장 후 3초)
+- 오프라인 우선: 모든 읽기/쓰기는 IndexedDB. **Drive 동기화는 설정 > 동기화의 "지금 동기화"를 눌렀을 때만** 실행(자동 백그라운드 동기화 없음 — 평소에는 기기에만 저장)
 - 토큰 자동 갱신: Refresh Token을 Worker가 `SESSION_SECRET`(AES-GCM)으로 암호해 HttpOnly 쿠키에 보관하고, 앱은 `/api/auth/token`으로 Access Token을 받는다 → 기기마다 한 번만 로그인
 - 권한은 `drive.file`: 이 앱이 만든 파일에만 접근(민감 scope 아님 → Google 심사 불필요)
 - 문서 1개 = Drive JSON 파일 1개(`Inkpad/docs/{id}.json`), 폴더 트리는 `folders.json`, PDF·이미지 원본은 sha256 내용 주소 파일(`Inkpad/assets/`)

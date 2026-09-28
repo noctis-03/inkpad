@@ -12,10 +12,10 @@ import { SCHEMA_VERSION } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
-import { enqueue, setSyncHook } from '../storage/repo'
+import { enqueue } from '../storage/repo'
 import * as drive from './drive'
 import { assetFileName, packDocument, packFolders, type DocFileV1, type FoldersFileV1 } from './pack'
-import { AuthRequiredError, SyncNotConfiguredError } from './token'
+import { AuthRequiredError, getAccessToken, SyncNotConfiguredError } from './token'
 
 const ROOT_NAME = 'Inkpad'
 const SYNC_LOCK = 'inkpad-sync'
@@ -427,20 +427,13 @@ export async function syncNow(): Promise<void> {
   })
 }
 
-let timer: ReturnType<typeof setTimeout> | undefined
-export function scheduleSync(delay = 3000) {
-  clearTimeout(timer)
-  timer = setTimeout(() => void syncNow(), delay) // 연속 입력 중에는 마지막 저장 후 3초 뒤 1회 실행
-}
-
+// 동기화는 사용자가 "지금 동기화" 버튼을 눌렀을 때만 실행된다 (자동 백그라운드 동기화 없음).
+// 여기서는 온라인/오프라인 상태 표시와, 올바른 버튼을 보여주기 위한 세션 확인(네트워크 확인만, Drive 호출 없음)만 한다.
 export function startSync() {
-  setSyncHook(() => scheduleSync())
-  window.addEventListener('online', () => void syncNow())
+  window.addEventListener('online', () => setStatus('idle'))
   window.addEventListener('offline', () => setStatus('offline'))
-  // 화면에 돌아오면 받아오고, 숨기기 전에 올린다
-  document.addEventListener('visibilitychange', () => void syncNow())
-  setInterval(() => {
-    if (status !== 'disabled') void syncNow()
-  }, 60_000)
-  void syncNow()
+  getAccessToken().catch((e) => {
+    if (e instanceof AuthRequiredError) setStatus('auth-required')
+    else if (e instanceof SyncNotConfiguredError) setStatus('disabled')
+  })
 }

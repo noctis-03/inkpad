@@ -28,13 +28,6 @@ export async function enqueue(entity: OutboxEntity, entityId: string, op: 'upser
   } else {
     await db.outbox.add({ entity, entityId, op, createdAt: Date.now(), attempts: 0 })
   }
-  syncHook?.() // Phase 2: 변경이 생기면 동기화 예약 (sync.ts가 주입)
-}
-
-/** 동기화 엔진이 저장 시점 훅을 주입한다 (순환 import 방지) */
-let syncHook: (() => void) | undefined
-export const setSyncHook = (fn: () => void) => {
-  syncHook = fn
 }
 
 export async function outboxCount() {

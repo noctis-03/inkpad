@@ -10,8 +10,8 @@ createRoot(document.getElementById('root')!).render(<App />)
 navigator.storage?.persist?.().catch(() => {})
 
 // Google Drive 동기화 (Phase 2, SDF 가이드): 로컬은 항상 즉시 저장되고,
-// 온라인일 때 백그라운드로 Drive와 동기화한다. 로그인 전에는 auth-required로 대기.
-startSync()
+// Drive와의 동기화는 사용자가 설정 > 동기화의 "지금 동기화"를 눌렀을 때만 실행된다.
+startSync() // 온라인/오프라인 상태 표시 + 세션 확인만 담당
 
 // 오프라인 실행 (NFR-06)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
