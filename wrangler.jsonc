@@ -5,7 +5,7 @@
   "pages_build_output_dir": "./dist",
   "compatibility_flags": [
     "nodejs_compat"
-  ]
+  ],
   "vars": {
     "GOOGLE_CLIENT_ID": "975400615913-hh65mgge5ot31jl428c1ermdm4slhg4i.apps.googleusercontent.com"
   },
