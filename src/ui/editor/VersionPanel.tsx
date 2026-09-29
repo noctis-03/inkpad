@@ -55,7 +55,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
   const restore = async (r: DocRevision) => {
     if (
       !(await confirmDialog('이 버전으로 되돌리기', {
-        message: `${formatDate(Date.parse(r.modifiedTime))} 시점으로 되돌립니다. 지금 내용은 버전 기록에 남습니다. 다른 기기에 반영하려면 되돌린 뒤 동기화를 눌러 주세요.`,
+        message: `${formatDate(Date.parse(r.modifiedTime))} 시점으로 되돌립니다. 지금 내용은 버전 기록에 남습니다. (Drive 규칙상 옛 버전을 읽으려면 고정해야 해서, 되돌린 버전이 고정됨으로 표시됩니다) 되돌린 뒤 올리기를 누르면 다른 기기에도 반영됩니다.`,
         ok: '되돌리기'
       }))
     )

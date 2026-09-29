@@ -12,6 +12,7 @@ import { db } from '../storage/db'
 import { enqueue } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
+import { REMOTE_EVENT } from './sync'
 import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
 import type { DocFileV1 } from './pack'
 
@@ -102,6 +103,8 @@ export async function restoreDocRevision(docId: ID, revisionId: string): Promise
   await db.transaction('rw', db.outbox, async () => {
     await enqueue('document', docId)
   })
+  // 열려 있는 편집 화면에 "다시 불러오기" 안내를 띄운다 (되돌린 내용으로 갱신)
+  window.dispatchEvent(new CustomEvent(REMOTE_EVENT, { detail: new Set<string>([docId]) }))
 }
 
 /**
