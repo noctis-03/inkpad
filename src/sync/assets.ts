@@ -1,4 +1,4 @@
-// 에셋 원본(PDF·이미지) 지연 로딩 (동기화 방식 A안 ②)
+// 에셋 원본(PDF·이미지) 지연 로딩 — GitHub 허브 버전.
 //
 // 규칙:
 //   - 메타데이터(문서·페이지·필기·에셋 정보)는 "받기"에서 전부 내려받는다 (가볍다).
@@ -7,8 +7,8 @@
 //   - 같은 에셋을 여러 곳에서 동시에 요청해도 다운로드는 한 번만 나간다.
 import type { ID } from '../shared/model'
 import { db, type AssetRow } from '../storage/db'
-import * as drive from './drive'
-import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
+import * as gh from './github'
+import { getSync, putSync, type FileRecord } from './folders'
 import { assetFileName } from './pack'
 
 /** 이 기기에 원본이 없고, 지금 받아올 수도 없을 때 */
@@ -37,26 +37,6 @@ export function onAssetProgress(fn: (e: AssetProgress) => void) {
 }
 
 const emit = (e: AssetProgress) => listeners.forEach((f) => f(e))
-
-// ───────────────── 폴더 위치 ─────────────────
-
-let cachedAssetsFolder: string | null = null
-
-async function assetsFolder(): Promise<string> {
-  if (cachedAssetsFolder) return cachedAssetsFolder
-  const saved = await getSync<string>('assetsFolderId')
-  if (saved) {
-    cachedAssetsFolder = saved
-    return saved
-  }
-  cachedAssetsFolder = (await ensureFolders()).assets
-  return cachedAssetsFolder
-}
-
-/** 폴더를 새로 찾아야 할 때(캐시 무효화) */
-export function invalidateAssetsFolderCache() {
-  cachedAssetsFolder = null
-}
 
 // ───────────────── 조회 ─────────────────
 
@@ -140,63 +120,64 @@ async function downloadAsset(row: AssetRow): Promise<Blob> {
   const key = KEY(row.sha256)
   let rec: FileRecord | null | undefined = await getSync<FileRecord>(key)
 
-  if (!rec?.fileId) {
+  if (!rec?.blobSha) {
     rec = await locateRemote(row)
     if (!rec) {
-      throw new AssetUnavailableError('이 원본은 아직 클라우드에 없습니다. 원본이 있는 기기에서 "올리기"를 먼저 실행해 주세요.')
+      throw new AssetUnavailableError('이 원본은 아직 허브(GitHub)에 없습니다. 원본이 있는 기기에서 "올리기"를 먼저 실행해 주세요.')
     }
     await putSync(key, rec)
   }
 
   try {
-    return await drive.downloadBlobWithProgress(rec.fileId, (p) => emit({ assetId: row.id, ...p, done: false }))
+    return await gh.downloadRaw(rec.blobSha, (p) => emit({ assetId: row.id, ...p, done: false }))
   } catch (e) {
-    // 원격 파일이 사라졌다면(404) 위치 기록을 버리고 한 번만 다시 찾는다
-    if (!/404/.test(String(e))) throw new AssetUnavailableError('원본을 받지 못했습니다. 네트워크 상태를 확인해 주세요.')
+    // 위치 기록이 잘못됐다면 버리고 한 번만 다시 찾는다
+    if (!/404|409|422/.test(String(e))) throw new AssetUnavailableError('원본을 받지 못했습니다. 네트워크 상태를 확인해 주세요.')
     await db.syncState.delete(key)
-    invalidateAssetsFolderCache()
     const again = await locateRemote(row)
-    if (!again) throw new AssetUnavailableError('클라우드에서 이 원본을 찾지 못했습니다.')
+    if (!again) throw new AssetUnavailableError('허브에서 이 원본을 찾지 못했습니다.')
     await putSync(key, again)
-    return drive.downloadBlobWithProgress(again.fileId, (p) => emit({ assetId: row.id, ...p, done: false }))
+    return gh.downloadRaw(again.blobSha, (p) => emit({ assetId: row.id, ...p, done: false }))
   }
+}
+
+let treeCache: { headSha: string; entries: Map<string, gh.TreeEntry> } | null = null
+export function cacheTree(headSha: string, entries: gh.TreeEntry[]) {
+  treeCache = { headSha, entries: new Map(entries.map((e) => [e.path, e])) }
+}
+export function cachedTree(): Map<string, gh.TreeEntry> | null {
+  return treeCache?.entries ?? null
 }
 
 async function locateRemote(row: AssetRow): Promise<FileRecord | null> {
-  const folder = await assetsFolder()
-  const found = await drive.findByName(assetFileName(row.sha256, row.mime), folder)
-  return found ? { fileId: found.id, version: found.version } : null
+  const path = gh.assetsPrefix() + assetFileName(row.sha256, row.mime).slice('assets/'.length)
+  const entries = cachedTree() ?? new Map<string, gh.TreeEntry>()
+  const hit = entries.get(path)
+  return hit ? { path, blobSha: hit.sha } : null
 }
 
-// ───────────────── pull 시 인덱싱 (바이트 없음) ─────────────────
+// ───────────────── 받기 시 인덱싱 (바이트 없음) ─────────────────
 
 /**
- * "받기"에서 호출. 원본 바이트는 받지 않고, 원격에 어떤 원본이 있는지 위치 기록만 채운다.
+ * "받기"에서 호출. 원본 바이트는 받지 않고, 허브에 어떤 원본이 있는지 위치 기록만 채운다.
  * 이렇게 해두면 나중에 문서를 열 때 파일 하나만 바로 내려받을 수 있다.
+ * entries: 마지막 "받기"/"올리기"에서 얻은 허브 트리.
  */
-export async function indexAssets(assetsFolderId: string): Promise<number> {
+export async function indexAssets(entries: Map<string, gh.TreeEntry>): Promise<number> {
   const missing = (await db.assets.toArray()).filter((a) => !a.blob)
   if (!missing.length) return 0
 
-  const unknown: AssetRow[] = []
-  for (const a of missing) {
-    if (!(await getSync<FileRecord>(KEY(a.sha256)))) unknown.push(a)
-  }
-  if (!unknown.length) return 0
-
-  const files = await drive.listFiles(assetsFolderId)
-  const bySha = new Map<string, drive.RemoteFile>()
-  for (const f of files) {
-    const sha = f.appProperties?.sha256 ?? f.name.slice('assets/'.length).replace(/\..*$/, '')
-    if (sha && !bySha.has(sha)) bySha.set(sha, f)
-  }
-
   let n = 0
-  for (const a of unknown) {
-    const f = bySha.get(a.sha256)
-    if (!f) continue
-    await putSync(KEY(a.sha256), { fileId: f.id, version: f.version })
-    n++
+  for (const a of missing) {
+    if (await getSync<FileRecord>(KEY(a.sha256))) continue
+    for (const [path, e] of entries) {
+      if (!path.startsWith(gh.assetsPrefix())) continue
+      const sha = path.slice(gh.assetsPrefix().length).replace(/\..*$/, '')
+      if (sha !== a.sha256) continue
+      await putSync(KEY(a.sha256), { path, blobSha: e.sha })
+      n++
+      break
+    }
   }
   return n
 }

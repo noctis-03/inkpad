@@ -56,18 +56,17 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 - 빌드 시 프리캐시 목록 자동 생성(Service Worker), 첫 설치 후 오프라인 실행, 새 버전 알림
 - 홈 화면 추가 안내, `navigator.storage.persist()` 요청
 
-**클라우드 동기화 (Phase 2 — Google Drive, SDF 가이드)**
-- 오프라인 우선: 모든 읽기/쓰기는 IndexedDB. **Drive 동기화는 설정 > 동기화의 "지금 동기화"를 눌렀을 때만** 실행(자동 백그라운드 동기화 없음 — 평소에는 기기에만 저장)
-- 토큰 자동 갱신: Refresh Token을 Worker가 `SESSION_SECRET`(AES-GCM)으로 암호해 HttpOnly 쿠키에 보관하고, 앱은 `/api/auth/token`으로 Access Token을 받는다 → 기기마다 한 번만 로그인
-- 권한은 `drive.file`: 이 앱이 만든 파일에만 접근(민감 scope 아님 → Google 심사 불필요)
-- 문서 1개 = Drive JSON 파일 1개(`Inkpad/docs/{id}.json`), 폴더 트리는 `folders.json`, PDF·이미지 원본은 sha256 내용 주소 파일(`Inkpad/assets/`)
-- outbox 기반 push → pull 순서, 업로드 중 재수정 시 outbox 유지, 삭제는 tombstone → Drive 휴지통, Drive 폴더가 사라지면 전체 재업로드
-- **충돌은 버전 기록으로 해소**: 두 기기에서 같은 문서를 수정하면 문서를 복제하지 않는다. 이 기기의 편집을 먼저 올려 **고정 리비전(keepForever)** 으로 보관하고, 원격(다른 기기) 버전을 다시 그 문서의 헤드로 되돌린다. 고정 실패 시(리비전 200개 한도 등)에만 예전 방식의 "(충돌 사본)" 문서로 대체한다
-- **버전 기록 UI**: 편집 화면 툴바의 버전 버튼에서 이 문서의 리비전 목록(시각·크기·고정 여부)을 보고, 되돌리기·고정/해제·삭제를 할 수 있다. Drive가 blob 파일에 제공하는 리비전 API를 그대로 쓰므로 별도 버전 파일을 만들지 않는다. 고정하지 않은 리비전은 새 버전이 올라온 뒤 약 30일 후 Drive가 자동 삭제한다
-- **문서 JSON gzip 업로드**: 문서·폴더 JSON은 gzip으로 올려 드라이브 용량과 전송량을 줄인다(`appProperties.enc='gzip'`). 표식이 없는 기존 평문 파일도 그대로 읽으므로 점진 전환이 된다(양방향 공존). 필기 좌표 배열(획당 120점, 숫자 4개/점) 기준 실측 2.8배 압축(평문 3.07MB → gzip 1.09MB)
-- **원본 지연 로딩**: "받기"는 문서·페이지·필기·에셋 정보(JSON)만 내려받는다. PDF·이미지 원본 바이트는 그 원본을 쓰는 문서를 **처음 열 때** 받아오고, 받은 뒤에는 이 기기에 남아 다시 받지 않는다. 기기 저장소가 비워진 폰에서도 목록이 즉시 뜨고, 설정 > 동기화에서 "이 기기에 없는 원본" 개수를 확인하거나 "원본 모두 받기"로 미리 받을 수 있다
+**동기화 (GitHub 풀/푸시)**
+- 오프라인 우선: 모든 읽기/쓰기는 IndexedDB. **동기화는 설정 > 동기화의 "받기"/"올리기" 버튼을 눌렀을 때만** 실행(자동 동기화 없음 — 평소에는 기기에만 저장)
+- 허브 = GitHub 저장소(Git Data API). 브라우저가 PAT로 직접 호출하므로 서버·OAuth 설정이 필요 없다. 토큰은 이 기기에만 저장
+- git과 같은 구조: 각 기기가 온전한 **로컬 저장소**(IndexedDB 전체 사본)이고, GitHub 저장소가 **허브**. 커밋 = "문서·폴더·원본 변경을 한 트리로 올려 브랜치를 이동"
+- **올리기 = 커밋 + 푸시**: 버튼을 누르면 먼저 **커밋 미리보기**(추가/수정/삭제된 문서 목록, 원본 수)를 보여주고 확인한 뒤 한 커밋으로 올린다 — `git status` → `git commit` → `git push`
+- **받기 = 페치 + 머지**: 허브 트리와 로컬 기록(blob SHA)을 비교해 달라진 파일만 내려받는다. 기기 데이터가 지워졌어도 받기 한 번이면 복구된다(클론)
+- **머지로 충돌 해소**: 올리기 시점에 허브가 다른 기기의 커밋으로 진행돼 있으면 먼저 받아서 머지한다. 같은 문서를 두 기기에서 고쳤으면 이 기기의 편집을 먼저 커밋해 이력에 남기고, 허브 버전을 현재 상태로 적용 — 문서가 복제되지 않고 둘 다 버전 기록에서 되돌릴 수 있다
+- **버전 기록 = 커밋 이력**: 편집 화면 툴바의 버전 버튼에서 그 문서 파일의 커밋 목록(시각·기기·메시지)을 보고 되돌릴 수 있다. git이므로 버전은 영구 보존된다
+- **원본 지연 로딩**: "받기"는 문서·페이지·필기·에셋 정보(JSON)만 내려받는다. PDF·이미지 원본 바이트는 그 원본을 쓰는 문서를 **처음 열 때** 받아오고, 받은 뒤에는 이 기기에 남아 다시 받지 않는다. 설정 > 동기화에서 "원본 모두 받기"로 미리 받을 수도 있다
+- 허브 레이아웃: `inkpad/docs/{id}.json`(gzip), `inkpad/folders.json`(gzip), `inkpad/assets/{sha256}.{ext}`(내용 주소)
 - 다중 탭 동시 실행 방지(`navigator.locks`), 원격 변경 시 목록 자동 새로고침, 편집 화면에서는 "다시 불러오기" 안내
-- 설정 > 동기화에서 상태 표시·로그인·즉시 동기화
 
 ### 기능 진입점
 | 경로 | 설명 |
@@ -89,11 +88,11 @@ src/
              pdf/(pdf.js 로더, 비트맵 LRU 캐시)
   storage/   db(Dexie 스키마), repo(문서·페이지·청크·에셋·outbox), compress(gzip), migrate, tabLock
    io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download
-   sync/      token(access token 갱신), drive(Drive API 래퍼), pack(문서↔파일), folders(Drive 위치·폴더 확보),
-              assets(원본 지연 로딩·인덱싱), sync(엔진)
+   sync/      github(GitHub API 래퍼), pack(문서↔파일), folders(위치 기록), assets(원본 지연 로딩·인덱싱),
+              sync(엔진: 받기/올리기/머지), revisions(커밋 이력 버전 기록), token(연결 설정)
    ui/        library/(목록·새 문서·설정), editor/(툴바·사이드바·선택·페이지·내보내기), SettingsPanel, SyncSection, Hud
    app/       App, store(zustand: UI 상태만), dialogs
-   api/       Hono Worker (/api/*: health + Drive OAuth login/callback/token/logout)
+   api/       Hono Worker (/api/*: health)
 public/      manifest, sw.js, icons, _routes.json
 ```
 
@@ -107,27 +106,15 @@ pm2 start ecosystem.config.cjs   # wrangler dev :3000 (정적 에셋 + Worker �
 npm run typecheck
 ```
 
-### 동기화 설정 (Google Drive, SDF 가이드 1장)
-1. Google Cloud Console에서 **Google Drive API** 사용 설정, OAuth 동의 화면(외부) — scope `openid email .../auth/drive.file`
-2. **게시 상태를 "프로덕션"으로 변경** (테스트 상태는 refresh token이 7일 뒤 만료됨. 민감 scope가 없어 심사 없이 게시 가능)
-3. OAuth 클라이언트(웹 애플리케이션) 생성 — 승인된 리디렉션 URI에 등록:
-   - `https://<앱>.pages.dev/api/auth/callback`
-   - `http://localhost:8788/api/auth/callback` (로컬)
-4. Cloudflare Pages → Settings → Variables and Secrets에 등록 (로컬은 `.dev.vars`, `.dev.vars.example` 참고 — 커밋 금지):
-
-| 이름 | 값 |
-|---|---|
-| `GOOGLE_CLIENT_ID` | OAuth 클라이언트 ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth 클라이언트 보안 비밀 |
-| `SESSION_SECRET` | `openssl rand -base64 32` |
-| `ALLOWED_EMAIL` | 내 Gmail (선택 — 다른 계정 차단) |
-
-> 주의: iOS 홈 화면(PWA)은 Safari와 쿠키 저장소가 분리되어 PWA 안에서 한 번 따로 로그인해야 한다. `SESSION_SECRET`을 바꾸면 모든 기기에서 재로그인이 필요하다.
-
+### 동기화 설정 (GitHub)
+1. GitHub에서 데이터 허브용 저장소를 하나 만든다 (예: `inkpad-data`, 비어 있어도 됨)
+2. Settings → Developer settings → Fine-grained personal access tokens에서 토큰을 만들고, 그 저장소에 **Contents: Read and write** 권한을 준다
+3. 앱 설정 > 동기화 · GitHub에 저장소(owner/repo)·브랜치·토큰·기기 이름을 넣고 **연결하기**
+4. 첫 기기는 **올리기**로 로컬 전체를 허브에 커밋하고, 다른 기기는 **받기** 한 번이면 끝난다
 ## 저장소
 - **GitHub**: https://github.com/noctis-03/inkpad
 
 ## 배포
-- 플랫폼: Cloudflare Workers (정적 에셋 + Worker, `npx wrangler deploy`) — Drive 동기화는 앱과 같은 도메인의 `_worker.js`에서 처리 (제3자 쿠키 차단 회피)
+- 플랫폼: Cloudflare Workers (정적 에셋 + Worker, `npx wrangler deploy`) — 동기화는 브라우저가 GitHub API를 직접 호출하므로 서버 설정이 필요 없다
 - 상태: 샌드박스 미리보기만 (프로덕션 미배포)
 - 마지막 업데이트: 2026-09-29

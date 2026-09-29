@@ -584,6 +584,70 @@ textarea {
   background: #fffffff2;
   border-bottom: 1px solid var(--line);
 }
+/* 새로 만들기 버튼은 항상 상단 바 오른쪽 끝에 붙는다 */
+.library-header #new-doc-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.text-input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  min-width: 180px;
+}
+.push-list {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 8px 0;
+}
+.push-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+.push-row + .push-row {
+  border-top: 1px solid var(--line);
+}
+.push-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.push-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.push-badge.add {
+  color: #16a34a;
+  background: #16a34a1a;
+}
+.push-badge.modify {
+  color: #2563eb;
+  background: #2563eb1a;
+}
+.push-badge.delete {
+  color: #dc2626;
+  background: #dc26261a;
+}
+.rev-message {
+  margin: 2px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .library-title {
   margin: 0 8px 0 0;
   font-size: 20px;

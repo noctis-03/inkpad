@@ -1,46 +1,53 @@
-// Access token 캐시 및 자동 갱신 (SDF 가이드 4장)
-// 만료 60초 전이면 /api/auth/token으로 새 토큰을 받는다.
-// 동시에 여러 요청이 와도 갱신 요청은 한 번만 나간다.
+// GitHub 연결 설정 — 토큰·저장소·브랜치·기기 이름을 IndexedDB(syncState)에 보관한다.
+// 예전 Google OAuth 세션 서버(/api/auth/*)는 더 쓰지 않는다: 브라우저가 GitHub API를
+// 직접 호출하므로 서버 설정이 필요 없다.
+import { db } from '../storage/db'
+
+/** 토큰이 무효·만료·권한 없음 → 설정 화면에서 다시 연결해야 한다 */
 export class AuthRequiredError extends Error {}
+/** 연결 설정 자체가 없음 */
 export class SyncNotConfiguredError extends Error {}
 
-let cached: { token: string; exp: number } | null = null
-let inflight: Promise<string> | null = null
-
-/** 유효한 access token을 반환. 만료 60초 전이면 자동으로 새로 받음 */
-export function getAccessToken(force = false): Promise<string> {
-  if (!force && cached && cached.exp - 60_000 > Date.now()) return Promise.resolve(cached.token)
-  if (inflight) return inflight
-
-  inflight = (async () => {
-    try {
-      const res = await fetch('/api/auth/token', { credentials: 'same-origin', cache: 'no-store' })
-      if (res.status === 401) {
-        cached = null
-        throw new AuthRequiredError('로그인 필요')
-      }
-      if (res.status === 503) throw new SyncNotConfiguredError('서버에 OAuth 설정이 없습니다')
-      if (!res.ok) throw new Error(`token 요청 실패: ${res.status}`)
-      const { access_token, expires_in } = (await res.json()) as { access_token: string; expires_in: number }
-      cached = { token: access_token, exp: Date.now() + expires_in * 1000 }
-      return access_token
-    } finally {
-      inflight = null
-    }
-  })()
-  return inflight
+export interface GhConfig {
+  /** "owner/repo" */
+  repo: string
+  branch: string
+  token: string
 }
 
-/** 페이지 이동 방식이라 iOS/PWA에서도 안정적 */
-export function login() {
-  location.href = '/api/auth/login'
+export async function getConfig(): Promise<GhConfig | undefined> {
+  const row = await db.syncState.get('ghConfig')
+  return row?.value as GhConfig | undefined
 }
 
-export async function logout() {
-  try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
-  } catch {
-    /* 오프라인 등 */
-  }
-  cached = null
+export async function saveConfig(cfg: GhConfig): Promise<void> {
+  await db.syncState.put({ key: 'ghConfig', value: cfg })
+}
+
+export async function clearConfig(): Promise<void> {
+  await db.syncState.delete('ghConfig')
+}
+
+/** 이 기기를 구분하는 이름 — 커밋 메시지에 들어간다 (git의 user.name 역할) */
+export async function getDeviceName(): Promise<string> {
+  const row = await db.syncState.get('deviceName')
+  if (row?.value) return row.value as string
+  const auto = guessDeviceName()
+  await db.syncState.put({ key: 'deviceName', value: auto })
+  return auto
+}
+
+export async function setDeviceName(name: string): Promise<void> {
+  await db.syncState.put({ key: 'deviceName', value: name.trim() || guessDeviceName() })
+}
+
+function guessDeviceName(): string {
+  const ua = navigator.userAgent
+  const suffix = Math.random().toString(36).slice(2, 6)
+  if (/iPad/.test(ua)) return `iPad-${suffix}`
+  if (/iPhone/.test(ua)) return `iPhone-${suffix}`
+  if (/Macintosh|Mac OS/.test(ua)) return `Mac-${suffix}`
+  if (/Android/.test(ua)) return `Android-${suffix}`
+  if (/Win/.test(ua)) return `PC-${suffix}`
+  return `기기-${suffix}`
 }
