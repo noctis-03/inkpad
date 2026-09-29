@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { login, logout } from '../sync/token'
 import { onSyncStatus, syncNow, type SyncStatus } from '../sync/sync'
+import { downloadAllMissing, onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
 import { formatDate } from '../shared/util'
 import { Icon } from './Icon'
@@ -23,10 +24,21 @@ const STATUS_COLOR: Record<SyncStatus, string> = {
   disabled: '#9ca3af'
 }
 
+function fmtBytes(n: number) {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)}KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)}MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)}GB`
+}
+
 export function SyncSection() {
   const [status, setStatus] = useState<SyncStatus>('idle')
   const [last, setLast] = useState<number | null>(null)
   const [pending, setPending] = useState(0)
+  const [missing, setMissing] = useState(0)
+  const [missingBytes, setMissingBytes] = useState(0)
+  const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
+  const [pullingAssets, setPullingAssets] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => {
     const un = onSyncStatus(setStatus)
@@ -35,13 +47,29 @@ export function SyncSection() {
     }
   }, [])
 
+  // 원본 지연 로딩 진행률
+  useEffect(() => {
+    const off = onAssetProgress((e) => setFetching(e.done ? null : { loaded: e.loaded, total: e.total }))
+    return () => {
+      off()
+      setFetching(null)
+    }
+  }, [])
+
   useEffect(() => {
     let alive = true
     const load = async () => {
-      const [v, n] = await Promise.all([db.syncState.get('lastSyncAt'), db.outbox.count()])
+      const [v, n, absent] = await Promise.all([
+        db.syncState.get('lastSyncAt'),
+        db.outbox.count(),
+        db.assets.toArray()
+      ])
       if (!alive) return
       setLast((v?.value as number) ?? null)
       setPending(n)
+      const miss = absent.filter((a) => !a.blob)
+      setMissing(miss.length)
+      setMissingBytes(miss.reduce((s, a) => s + a.size, 0))
     }
     void load()
     const t = setInterval(load, 4000)
@@ -49,9 +77,21 @@ export function SyncSection() {
       alive = false
       clearInterval(t)
     }
-  }, [status])
+  }, [status, fetching, pullingAssets])
 
   const signedOut = status === 'auth-required' || status === 'disabled'
+
+  const pullAllAssets = async () => {
+    const total = missing
+    setPullingAssets({ done: 0, total })
+    try {
+      const { ok, failed } = await downloadAllMissing((done, t) => setPullingAssets({ done, total: t }))
+      if (failed) console.warn('[sync] 원본 일부를 받지 못했습니다:', failed)
+      void ok
+    } finally {
+      setPullingAssets(null)
+    }
+  }
 
   return (
     <section className="panel-section" id="sync-settings">
@@ -88,16 +128,50 @@ export function SyncSection() {
               </span>
             </span>
           </div>
+
+          <div className="setting-row">
+            <span className="setting-label">
+              이 기기에 없는 원본
+              <small>PDF · 이미지 원본은 문서를 열 때 받아옵니다</small>
+            </span>
+            <span className="setting-control">
+              {missing === 0 ? (
+                <span style={{ whiteSpace: 'nowrap' }}>모두 받음</span>
+              ) : (
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  {missing}개 · {fmtBytes(missingBytes)}
+                </span>
+              )}
+            </span>
+          </div>
+
+          {fetching && (
+            <p className="hint">
+              원본 받는 중… {fmtBytes(fetching.loaded)}
+              {fetching.total ? ` / ${fmtBytes(fetching.total)}` : ''}
+            </p>
+          )}
+          {pullingAssets && (
+            <p className="hint">
+              원본 모두 받는 중… {pullingAssets.done} / {pullingAssets.total}
+            </p>
+          )}
+
           <div className="btn-row">
             <button className="text-btn" onClick={() => void syncNow()} disabled={status === 'syncing'}>
-              지금 동기화
+              {status === 'syncing' ? '동기화 중…' : '동기화'}
+            </button>
+            <button className="text-btn" onClick={() => void pullAllAssets()} disabled={!missing || !!pullingAssets}>
+              원본 모두 받기
             </button>
             <button className="text-btn" onClick={() => void logout().then(() => void syncNow())}>
               로그아웃
             </button>
           </div>
+
           <p className="hint">
-            동기화는 위 <b>지금 동기화</b>를 눌렀을 때만 실행됩니다. 평소의 수정·삭제는 이 기기에만 저장되고, 버튼을 누르면 대기 중인 변경이 모두 업로드되며 다른 기기의 변경도 받아옵니다. 두 기기에서 같은 문서를 수정하면 충돌 사본으로 양쪽 내용을 모두 남깁니다.
+            <b>동기화</b>는 위 버튼을 눌렀을 때만 실행됩니다. 이 기기에만 있던 변경을 모두 올리고, 다른 기기의 변경을 받아옵니다. 원본 바이트(PDF·이미지)는 여기서 받지 않고,
+            그 원본을 쓰는 문서를 처음 열 때 그때 받아옵니다 — 폰에서는 목록이 즉시 뜨고 열어 본 문서만 용량을 차지합니다. 두 기기에서 같은 문서를 수정하면 충돌 사본으로 양쪽 내용을 모두 남깁니다.
           </p>
         </>
       )}

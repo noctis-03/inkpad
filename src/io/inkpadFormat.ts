@@ -6,6 +6,7 @@ import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
 import { assertNotTooNew } from '../storage/migrate'
 import { listFolders, loadDocument, putAsset, saveBatch, type ChunkData } from '../storage/repo'
+import { tryEnsureAssetLocal } from '../sync/assets'
 
 const FORMAT = 'inkpad'
 const FORMAT_VERSION = 1
@@ -48,10 +49,13 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
   const assets: Manifest['assets'] = []
   for (const aid of assetIds) {
     const a = await db.assets.get(aid)
-    if (!a?.blob) continue
+    if (!a) continue
+    // 지연 로딩: 이 기기에 원본이 없으면 받아서 백업에 포함한다
+    const src = a.blob ?? (await tryEnsureAssetLocal(a.id))
+    if (!src) continue
     const file = `assets/${aid}`
     // PDF는 이미 압축되어 있으므로 zip 압축을 끈다
-    files[file] = [new Uint8Array(await a.blob.arrayBuffer()), { level: 0 }]
+    files[file] = [new Uint8Array(await src.arrayBuffer()), { level: 0 }]
     const { blob: _b, ...meta } = a
     void _b
     assets.push({ ...meta, file })

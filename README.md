@@ -62,6 +62,7 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 - 권한은 `drive.file`: 이 앱이 만든 파일에만 접근(민감 scope 아님 → Google 심사 불필요)
 - 문서 1개 = Drive JSON 파일 1개(`Inkpad/docs/{id}.json`), 폴더 트리는 `folders.json`, PDF·이미지 원본은 sha256 내용 주소 파일(`Inkpad/assets/`)
 - outbox 기반 push → pull 순서, 업로드 중 재수정 시 outbox 유지, 충돌 시 "(충돌 사본)"으로 양쪽 보존, 삭제는 tombstone → Drive 휴지통, Drive 폴더가 사라지면 전체 재업로드
+- **원본 지연 로딩**: "받기"는 문서·페이지·필기·에셋 정보(JSON)만 내려받는다. PDF·이미지 원본 바이트는 그 원본을 쓰는 문서를 **처음 열 때** 받아오고, 받은 뒤에는 이 기기에 남아 다시 받지 않는다. 기기 저장소가 비워진 폰에서도 목록이 즉시 뜨고, 설정 > 동기화에서 "이 기기에 없는 원본" 개수를 확인하거나 "원본 모두 받기"로 미리 받을 수 있다
 - 다중 탭 동시 실행 방지(`navigator.locks`), 원격 변경 시 목록 자동 새로고침, 편집 화면에서는 "다시 불러오기" 안내
 - 설정 > 동기화에서 상태 표시·로그인·즉시 동기화
 
@@ -85,7 +86,8 @@ src/
              pdf/(pdf.js 로더, 비트맵 LRU 캐시)
   storage/   db(Dexie 스키마), repo(문서·페이지·청크·에셋·outbox), compress(gzip), migrate, tabLock
    io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download
-   sync/      token(access token 갱신), drive(Drive API 래퍼), pack(문서↔파일), sync(엔진)
+   sync/      token(access token 갱신), drive(Drive API 래퍼), pack(문서↔파일), folders(Drive 위치·폴더 확보),
+              assets(원본 지연 로딩·인덱싱), sync(엔진)
    ui/        library/(목록·새 문서·설정), editor/(툴바·사이드바·선택·페이지·내보내기), SettingsPanel, SyncSection, Hud
    app/       App, store(zustand: UI 상태만), dialogs
    api/       Hono Worker (/api/*: health + Drive OAuth login/callback/token/logout)
@@ -125,4 +127,4 @@ npm run typecheck
 ## 배포
 - 플랫폼: Cloudflare Workers (정적 에셋 + Worker, `npx wrangler deploy`) — Drive 동기화는 앱과 같은 도메인의 `_worker.js`에서 처리 (제3자 쿠키 차단 회피)
 - 상태: 샌드박스 미리보기만 (프로덕션 미배포)
-- 마지막 업데이트: 2026-09-28
+- 마지막 업데이트: 2026-09-29

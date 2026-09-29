@@ -7,6 +7,8 @@
 //  4. 삭제는 outbox delete(tombstone) → Drive 휴지통 → 로컬 휴지통(30일 보관)
 //  5. Drive 폴더가 통째로 사라졌으면 로컬을 지우지 않고 전부 재업로드
 //  6. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
+//  7. 원본 바이트(PDF·이미지)는 pull에서 내려받지 않는다.
+//     그 원본을 쓰는 문서를 처음 열 때 지연 로딩한다 (sync/assets.ts)
 import type { ID } from '../shared/model'
 import { SCHEMA_VERSION } from '../shared/model'
 import { ulid } from '../shared/ulid'
@@ -14,10 +16,11 @@ import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { enqueue } from '../storage/repo'
 import * as drive from './drive'
+import { indexAssets } from './assets'
+import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, packFolders, type DocFileV1, type FoldersFileV1 } from './pack'
 import { AuthRequiredError, getAccessToken, SyncNotConfiguredError } from './token'
 
-const ROOT_NAME = 'Inkpad'
 const SYNC_LOCK = 'inkpad-sync'
 
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'auth-required' | 'error' | 'disabled'
@@ -48,71 +51,8 @@ function emitRemoteChanged(ids: Set<string>) {
   channel?.postMessage([...ids])
 }
 
-// ───────────────── syncState 헬퍼 ─────────────────
-
-interface FileRecord {
-  fileId: string
-  version: string
-}
-
-async function getSync<T = FileRecord | string>(key: string): Promise<T | undefined> {
-  const row = await db.syncState.get(key)
-  return row?.value as T | undefined
-}
-const putSync = (key: string, value: unknown) => db.syncState.put({ key, value })
-
-// ───────────────── 폴더 / 첫 동기화 ─────────────────
-
-/** 첫 동기화 또는 Drive 폴더가 통째로 사라진 경우: 로컬을 지우지 않고 전부 재업로드 큐에 올린다 (규칙 5) */
-async function enqueueEverything() {
-  await db.transaction('rw', [db.folders, db.documents, db.assets, db.outbox], async () => {
-    for (const f of await db.folders.toArray()) await enqueue('folder', f.id)
-    for (const d of await db.documents.toArray()) await enqueue('document', d.id)
-    for (const a of await db.assets.toArray()) if (a.blob) await enqueue('asset', a.id)
-  })
-}
-
-/** Drive 위치 기록(doc:/asset:/foldersFile)을 비우고 전체 재업로드를 예약한다 */
-async function resetRemoteRecords() {
-  await db.transaction('rw', db.syncState, async () => {
-    const keys = (await db.syncState.toArray()).map((k) => k.key)
-    await db.syncState.bulkDelete(keys.filter((k) => k.startsWith('doc:') || k.startsWith('asset:') || k === 'foldersFile'))
-  })
-  await enqueueEverything()
-}
-
-async function ensureFolders(): Promise<{ root: string; docs: string; assets: string }> {
-  const cached = await getSync<string>('rootFolderId')
-  let root: string | undefined
-  if (cached) {
-    const m = await drive.getMeta(cached)
-    if (m && !m.trashed) root = cached
-  }
-  if (!root) {
-    root = (await drive.findFolder(ROOT_NAME)) ?? (await drive.createFolder(ROOT_NAME))
-    if (cached && cached !== root) await resetRemoteRecords()
-    await putSync('rootFolderId', root)
-  }
-  const rootChanged = cached !== root
-  const docs = await ensureSubFolder(root, 'docs', 'docsFolderId', rootChanged)
-  const assets = await ensureSubFolder(root, 'assets', 'assetsFolderId', rootChanged)
-  return { root, docs, assets }
-}
-
-async function ensureSubFolder(rootId: string, name: string, key: string, forceFind: boolean): Promise<string> {
-  if (!forceFind) {
-    const saved = await getSync<string>(key)
-    if (saved) {
-      const m = await drive.getMeta(saved)
-      if (m && !m.trashed) return saved
-    }
-  }
-  const id = (await drive.findFolder(name, rootId)) ?? (await drive.createFolder(name, rootId))
-  const saved = await getSync<string>(key)
-  if (saved && saved !== id) await resetRemoteRecords() // 하위 폴더가 새로 만들어졌다
-  await putSync(key, id)
-  return id
-}
+// syncState 헬퍼와 폴더 확보 로직은 sync/folders.ts로 분리했다
+// (원본 지연 로딩 모듈 sync/assets.ts와 공유하기 위해)
 
 // ───────────────── push ─────────────────
 
@@ -350,7 +290,8 @@ async function pull(f: { root: string; docs: string; assets: string }) {
     changed.add(l.id)
   }
 
-  await pullAssets(f.assets)
+  // 원본 바이트는 받지 않는다. 위치 기록만 채워 두고, 문서를 열 때 지연 로딩한다 (규칙 7)
+  await indexAssets(f.assets)
 
   if (changed.size) emitRemoteChanged(changed)
 }
@@ -377,26 +318,8 @@ async function mergeFolders(fileId: string, changed: Set<string>) {
   }
 }
 
-/** 아직 원본이 없는 에셋(PDF·이미지)을 받아온다 */
-async function pullAssets(assetsFolderId: string) {
-  const missing = (await db.assets.toArray()).filter((a) => !a.blob)
-  if (!missing.length) return
-  const files = await drive.listFiles(assetsFolderId)
-  const bySha = new Map<string, drive.RemoteFile>()
-  for (const f of files) {
-    const sha = f.appProperties?.sha256 ?? f.name.slice('assets/'.length).replace(/\..*$/, '')
-    if (sha) bySha.set(sha, f)
-  }
-  for (const a of missing) {
-    const f = bySha.get(a.sha256)
-    if (!f) continue // 아직 업로드되지 않음 → 다음 동기화에서
-    try {
-      await db.assets.update(a.id, { blob: await drive.downloadBlob(f.id) })
-    } catch (e) {
-      console.warn('[sync] 에셋 다운로드 실패:', a.sha256, e)
-    }
-  }
-}
+// 원본 다운로드(pullAssets)는 sync/assets.ts의 indexAssets + 지연 로딩으로 대체되었다.
+// pull은 원격 목록만 보고 위치 기록을 채우므로 바이트를 받지 않는다.
 
 // ───────────────── 실행 (규칙 6) ─────────────────
 

@@ -3,6 +3,7 @@ import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
 import type { Page, Stroke } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
+import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
 import type { ExportJob, ExportPage, ExportPath, WorkerOut } from './exportTypes'
 import { recallPassword } from './passwords'
@@ -91,8 +92,11 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
   for (const p of selected) {
     if (p.pdf && !sources[p.pdf.assetId]) {
       const a = await getAsset(p.pdf.assetId)
-      if (!a?.blob) throw new Error('PDF 원본이 이 기기에 없어 내보낼 수 없습니다.')
-      sources[p.pdf.assetId] = await a.blob.arrayBuffer()
+      if (!a) throw new Error('PDF 원본 정보를 찾을 수 없습니다.')
+      // 지연 로딩: 이 기기에 원본이 없으면 지금 받아온다
+      const src = a.blob ?? (await tryEnsureAssetLocal(a.id))
+      if (!src) throw new Error('PDF 원본이 이 기기에 없어 내보낼 수 없습니다. 설정 > 동기화에서 원본을 받은 뒤 다시 시도하세요.')
+      sources[p.pdf.assetId] = await src.arrayBuffer()
     }
   }
 
@@ -113,12 +117,14 @@ async function rasterize(job: ExportJob, pages: Page[], assetIds: string[], opts
   const need = new Set(assetIds)
   for (const id of need) {
     const a = await getAsset(id)
-    if (!a?.blob) continue
+    if (!a) continue
+    const src = a.blob ?? (await tryEnsureAssetLocal(a.id))
+    if (!src) continue
     let pw = recallPassword(id)
     let pdf
     for (;;) {
       try {
-        pdf = await openPdf(await a.blob.arrayBuffer(), pw)
+        pdf = await openPdf(await src.arrayBuffer(), pw)
         break
       } catch {
         const next = opts.askPassword ? await opts.askPassword(!!pw) : null

@@ -27,13 +27,28 @@ export class PdfCache {
   private failed = new Set<string>()
   onReady: () => void = () => {}
   passwordProvider: ((assetId: ID, incorrect: boolean) => Promise<string | null>) | null = null
+  /** 원본이 이 기기에 없을 때 받아오는 훅 (지연 로딩 A안 ②). 실패하면 예외를 던진다 */
+  assetProvider: ((assetId: ID) => Promise<Blob>) | null = null
+  /** 원본 확보 실패 시 사용자에게 알릴 메시지 전달 */
+  onAssetError: ((assetId: ID, message: string) => void) | null = null
 
   doc(assetId: ID): Promise<PDFDocumentProxy> {
     let p = this.docs.get(assetId)
     if (!p) {
       p = (async () => {
-        const row = await getAsset(assetId)
-        if (!row?.blob) throw new Error('PDF 원본이 이 기기에 없습니다.')
+        let row = await getAsset(assetId)
+        if (!row) throw new Error('이 PDF의 원본 정보가 없습니다.')
+        if (!row.blob && this.assetProvider) {
+          // 지연 로딩: 이 기기에 원본이 없으면 지금 받아온다 (동기화 "받기"는 메타데이터만 받음)
+          try {
+            row = { ...row, blob: await this.assetProvider(assetId) }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'PDF 원본을 받지 못했습니다.'
+            this.onAssetError?.(assetId, msg)
+            throw new Error(msg)
+          }
+        }
+        if (!row.blob) throw new Error('PDF 원본이 이 기기에 없습니다.')
         const buf = await row.blob.arrayBuffer()
         let password: string | undefined
         for (;;) {

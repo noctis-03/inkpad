@@ -8,6 +8,7 @@ import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
 import { SchemaTooNewError } from '../../storage/migrate'
+import { ensureAssetLocal, onAssetProgress } from '../../sync/assets'
 import { REMOTE_EVENT } from '../../sync/sync'
 import { EditorToolbar } from './EditorToolbar'
 import { PageSidebar } from './PageSidebar'
@@ -28,6 +29,7 @@ export function Editor({ docId }: { docId: ID }) {
   const [error, setError] = useState<string | null>(null)
   const [readOnly, setReadOnly] = useState(false)
   const [thumbTick, setThumbTick] = useState(0)
+  const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
   const settings = useUI((s) => s.settings)
@@ -48,6 +50,9 @@ export function Editor({ docId }: { docId: ID }) {
       if (pw) rememberPassword(assetId, pw)
       return pw
     }
+    // 원본(PDF·이미지)은 이 기기에 없으면 그때 받아온다 (지연 로딩)
+    pdf.assetProvider = (assetId) => ensureAssetLocal(assetId)
+    pdf.onAssetError = (_assetId, message) => useUI.getState().toast(message, 'error')
     ;(async () => {
       try {
         const [loaded, lock] = await Promise.all([loadDocument(docId), acquireDocLock(docId)])
@@ -126,6 +131,15 @@ export function Editor({ docId }: { docId: ID }) {
   useEffect(() => engineRef.current?.setStyle(style), [style])
   useEffect(() => engineRef.current?.setTool(tool), [tool])
 
+  // 원본 지연 로딩 진행률
+  useEffect(() => {
+    const off = onAssetProgress((e) => setFetching(e.done ? null : { loaded: e.loaded, total: e.total }))
+    return () => {
+      off()
+      setFetching(null)
+    }
+  }, [])
+
   // 키보드 단축키 (Magic Keyboard 등)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -202,6 +216,12 @@ export function Editor({ docId }: { docId: ID }) {
         <div className="editor-area">
           <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
           {!engine && <div className="loading">문서 여는 중…</div>}
+          {fetching && (
+            <div className="loading">
+              원본 받는 중… {fmtBytes(fetching.loaded)}
+              {fetching.total ? ` / ${fmtBytes(fetching.total)}` : ''}
+            </div>
+          )}
           <Hud />
           {!readOnly && <QuickSwitch />}
           {engine && <SelectionBar engine={engine} />}
@@ -214,6 +234,12 @@ export function Editor({ docId }: { docId: ID }) {
       </div>
     </div>
   )
+}
+
+function fmtBytes(n: number) {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)}KB`
+  return `${(n / 1024 / 1024).toFixed(1)}MB`
 }
 
 function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {

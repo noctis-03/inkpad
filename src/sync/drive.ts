@@ -103,6 +103,32 @@ export async function downloadBlob(fileId: string): Promise<Blob> {
   return res.blob()
 }
 
+/** 진행률을 알 수 있는 다운로드 (원본 지연 로딩용). Content-Length가 없으면 total은 null. */
+export async function downloadBlobWithProgress(
+  fileId: string,
+  onProgress?: (p: { loaded: number; total: number | null }) => void
+): Promise<Blob> {
+  const res = await driveFetch(`${API}/files/${fileId}?alt=media`)
+  if (!res.ok) throw new Error(`Drive ${res.status}: ${await res.text()}`)
+  if (!res.body) return res.blob()
+
+  const header = res.headers.get('Content-Length')
+  const total = header ? Number(header) || null : null
+  const type = res.headers.get('Content-Type') ?? 'application/octet-stream'
+  const reader = res.body.getReader()
+  const parts: Uint8Array[] = []
+  let loaded = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    parts.push(value)
+    loaded += value.byteLength
+    onProgress?.({ loaded, total })
+  }
+  return new Blob(parts as unknown as BlobPart[], { type })
+}
+
 interface UploadMeta {
   name: string
   mimeType: string
