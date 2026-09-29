@@ -1,6 +1,10 @@
 // Google Drive API 래퍼 (SDF 가이드 6장)
 // 401이면 토큰 강제 갱신 후 1회 재시도, 429/5xx는 지수 백오프로 재시도한다.
+import { gunzipJson } from '../storage/compress'
 import { getAccessToken } from './token'
+
+/** 업로드 본문을 gzip으로 올릴 때 appProperties에 붙이는 표식 */
+export const ENC_GZIP = 'gzip'
 
 const API = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
@@ -95,6 +99,17 @@ export async function listFiles(folderId: string): Promise<RemoteFile[]> {
 
 export async function download<T = unknown>(fileId: string): Promise<T> {
   return ok<T>(await driveFetch(`${API}/files/${fileId}?alt=media`))
+}
+
+/**
+ * JSON 파일 다운로드. appProperties.enc === 'gzip'이면 압축을 풀어서 파싱한다.
+ * gzip 도입 전에 올린 평문 파일도 그대로 읽히도록 enc가 없으면 기존 경로를 쓴다.
+ */
+export async function downloadJson<T>(fileId: string, enc?: string): Promise<T> {
+  const res = await driveFetch(`${API}/files/${fileId}?alt=media`)
+  if (!res.ok) throw new Error(`Drive ${res.status}: ${await res.text()}`)
+  if (enc === 'gzip') return gunzipJson<T>(await res.blob())
+  return res.json() as Promise<T>
 }
 
 export async function downloadBlob(fileId: string): Promise<Blob> {

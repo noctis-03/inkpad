@@ -9,6 +9,8 @@
 //  6. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
 //  7. 원본 바이트(PDF·이미지)는 pull에서 내려받지 않는다.
 //     그 원본을 쓰는 문서를 처음 열 때 지연 로딩한다 (sync/assets.ts)
+//  8. 문서/폴더 JSON은 gzip으로 올린다. appProperties.enc='gzip'이 표식이고,
+//     표식이 없는(도입 전) 평문 파일도 그대로 읽는다 (drive.downloadJson)
 import type { ID } from '../shared/model'
 import { SCHEMA_VERSION } from '../shared/model'
 import { ulid } from '../shared/ulid'
@@ -112,8 +114,12 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { root: string; docs: str
   const file = await packDocument(docId)
   for (const am of file.assets) await ensureAssetUploaded(am.id, f.assets) // 참조 원본을 먼저 올린다
   const result = await drive.upload(
-    JSON.stringify(file),
-    { name: `docs/${docId}.json`, mimeType: 'application/json', appProperties: { docId, updatedAt: String(file.doc.updatedAt) } },
+    await gzipJson(file),
+    {
+      name: `docs/${docId}.json`,
+      mimeType: 'application/json',
+      appProperties: { docId, updatedAt: String(file.doc.updatedAt), enc: drive.ENC_GZIP }
+    },
     f.docs,
     remote?.id
   )
@@ -143,8 +149,8 @@ async function pushFolders(rootId: string, seqs: number[]) {
   const before = await packFolders()
   const record = await getSync<FileRecord>('foldersFile')
   const result = await drive.upload(
-    JSON.stringify(before),
-    { name: 'folders.json', mimeType: 'application/json', appProperties: { type: 'folders' } },
+    await gzipJson(before),
+    { name: 'folders.json', mimeType: 'application/json', appProperties: { type: 'folders', enc: drive.ENC_GZIP } },
     rootId,
     record?.fileId
   )
@@ -177,7 +183,7 @@ async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
 
 async function resolveConflict(docId: ID, remote: drive.RemoteFile) {
   const local = await packDocument(docId)
-  const content = await drive.download<DocFileV1>(remote.id)
+  const content = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
   const stamp = new Date().toLocaleString()
 
   // 1) 로컬에서 수정한 내용은 새 문서(사본)로 보존 → 다음 push 때 업로드된다
@@ -252,7 +258,7 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   if (ff?.fileId) {
     const rf = await drive.getMeta(ff.fileId)
     if (rf && !rf.trashed && rf.version !== ff.version) {
-      await mergeFolders(rf.id, changed)
+      await mergeFolders(rf.id, rf.appProperties?.enc, changed)
       await putSync('foldersFile', { fileId: rf.id, version: rf.version })
     }
   }
@@ -271,7 +277,7 @@ async function pull(f: { root: string; docs: string; assets: string }) {
     if (pendingDocs.has(docId)) continue // 로컬 변경은 push에서 처리
     const rec = recs.get(docId)
     if (rec && rec.version === r.version) continue // 이미 최신
-    const file = await drive.download<DocFileV1>(r.id)
+    const file = await drive.downloadJson<DocFileV1>(r.id, r.appProperties?.enc)
     if (await applyDocFile(file)) {
       await putSync(`doc:${docId}`, { fileId: r.id, version: r.version })
       changed.add(docId)
@@ -296,8 +302,8 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   if (changed.size) emitRemoteChanged(changed)
 }
 
-async function mergeFolders(fileId: string, changed: Set<string>) {
-  const data = await drive.download<FoldersFileV1>(fileId)
+async function mergeFolders(fileId: string, enc: string | undefined, changed: Set<string>) {
+  const data = await drive.downloadJson<FoldersFileV1>(fileId, enc)
   if (data.kind !== 'inkpad-folders' || !Array.isArray(data.folders)) return
   const dirty = new Set((await db.outbox.toArray()).filter((r) => r.entity === 'folder').map((r) => r.entityId))
   for (const f of data.folders) {
