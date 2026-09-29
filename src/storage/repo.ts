@@ -41,24 +41,25 @@ export async function listFolders(): Promise<Folder[]> {
   return all.filter((f) => !f.deletedAt).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
-export async function createFolder(name: string, parentId: ID | null): Promise<Folder> {
+/** 폴더는 기기별 로컬 전용 — 동기화 큐에 넣지 않는다 */
+export async function createFolder(name: string, parentId: ID | null, categories: string[] = []): Promise<Folder> {
   const now = Date.now()
-  const f: Folder = { id: ulid(), schemaVersion: SCHEMA_VERSION, name, parentId, createdAt: now, updatedAt: now, version: 0 }
-  await db.transaction('rw', db.folders, db.outbox, async () => {
-    await db.folders.add(f)
-    await enqueue('folder', f.id)
-  })
+  const f: Folder = { id: ulid(), schemaVersion: SCHEMA_VERSION, name, parentId, createdAt: now, updatedAt: now, version: 0, categories }
+  await db.folders.add(f)
   return f
 }
 
 export async function updateFolder(id: ID, patch: Partial<Pick<Folder, 'name' | 'parentId'>>) {
-  await db.transaction('rw', db.folders, db.outbox, async () => {
-    await db.folders.update(id, { ...patch, updatedAt: Date.now() })
-    await enqueue('folder', id)
-  })
+  await db.folders.update(id, { ...patch, updatedAt: Date.now() })
 }
 
-/** 폴더 삭제: 하위 폴더도 삭제하고, 안에 있던 문서는 휴지통으로 보낸다 */
+/** 폴더가 담을 카테고리 목록을 바꾼다 (로컬 전용 설정) */
+export async function setFolderCategories(id: ID, categories: string[]) {
+  await backupFolderConfig('매핑 변경 전')
+  await db.folders.update(id, { categories: [...categories], updatedAt: Date.now() })
+}
+
+/** 폴더 삭제: 매핑만 없앤다 — 노트는 그대로 두고, 매핑된지 않은 카테고리는 미분류로 보인다 */
 export async function deleteFolder(id: ID) {
   const all = await db.folders.toArray()
   const ids = new Set<ID>([id])
@@ -67,19 +68,8 @@ export async function deleteFolder(id: ID) {
     grew = false
     for (const f of all) if (f.parentId && ids.has(f.parentId) && !ids.has(f.id)) (ids.add(f.id), (grew = true))
   }
-  const now = Date.now()
-  await db.transaction('rw', db.folders, db.documents, db.outbox, async () => {
-    for (const fid of ids) {
-      await db.folders.update(fid, { deletedAt: now, updatedAt: now })
-      await enqueue('folder', fid, 'delete')
-    }
-    const docs = await db.documents.where('folderId').anyOf([...ids]).toArray()
-    for (const d of docs) {
-      if (d.deletedAt) continue
-      await db.documents.update(d.id, { deletedAt: now, folderId: null, updatedAt: now })
-      await enqueue('document', d.id, 'delete')
-    }
-  })
+  await backupFolderConfig('폴더 삭제 전')
+  await db.folders.bulkDelete([...ids])
 }
 
 // ───────────────────────── documents ─────────────────────────
@@ -119,6 +109,7 @@ export async function createDocument(opts: {
   mode: 'infinite' | 'paged'
   folderId: ID | null
   pages: NewPageSpec[]
+  category?: string | null
 }): Promise<DocumentMeta> {
   const now = Date.now()
   const id = ulid()
@@ -130,6 +121,8 @@ export async function createDocument(opts: {
     title: opts.title,
     mode: opts.mode,
     folderId: opts.folderId,
+    // 폴더 안에서 만들면 그 폴더가 담는 첫 카테고리를 기본값으로
+    category: opts.category ?? (opts.folderId ? (await db.folders.get(opts.folderId))?.categories?.[0] ?? null : null),
     pageOrder: pages.map((p) => p.id),
     createdAt: now,
     updatedAt: now,
@@ -415,6 +408,33 @@ export async function storageStats() {
   ])
   const assetBytes = assets.reduce((s, a) => s + (a.blob ? a.size : 0), 0)
   return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, docs, pages, chunks, assets: assets.length, assetBytes, pending }
+}
+
+// ───────────────── 폴더 · 카테고리 설정 (기기별 로컬 전용) ─────────────────
+
+/** 폴더 설정(폴더 + 매핑 + 숨김) 백업 — backups에 최근 5개만 남긴다 */
+export async function backupFolderConfig(reason: string) {
+  const folders = await db.folders.toArray()
+  const hiddenCategories = await getHiddenCategories()
+  const now = Date.now()
+  await db.backups.put({
+    id: `folder-config:${now}`,
+    createdAt: now,
+    reason: `folder-config: ${reason}`,
+    data: new Blob([JSON.stringify({ folders, hiddenCategories, reason, createdAt: now })])
+  })
+  const rows = await db.backups.where('reason').startsWith('folder-config').sortBy('createdAt')
+  if (rows.length > 5) await db.backups.bulkDelete(rows.slice(0, rows.length - 5).map((r) => r.id))
+}
+
+/** 이 기기에서 숨긴 카테고리 목록 */
+export async function getHiddenCategories(): Promise<string[]> {
+  const row = await db.settings.get('hiddenCategories')
+  return ((row?.value as string[] | undefined) ?? []).filter(Boolean)
+}
+
+export async function setHiddenCategories(list: string[]) {
+  await db.settings.put({ key: 'hiddenCategories', value: list.filter(Boolean) })
 }
 
 export { PAGE_CHUNK_KEY }

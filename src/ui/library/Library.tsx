@@ -5,17 +5,19 @@ import { Icon } from '../Icon'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import type { DocumentMeta, Folder, ID } from '../../shared/model'
-import { TRASH_RETENTION_DAYS } from '../../shared/model'
+import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, normalizeCategory } from '../../shared/model'
 import { formatDate } from '../../shared/util'
 import {
   createFolder,
   deleteFolder,
   duplicateDocument,
+  getHiddenCategories,
   getThumbnails,
   listDocuments,
   listFolders,
   purgeDocument,
   restoreDocument,
+  setFolderCategories,
   trashDocument,
   updateDocument,
   updateFolder
@@ -25,7 +27,7 @@ import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
 
-type Section = { kind: 'all' } | { kind: 'folder'; id: ID } | { kind: 'trash' }
+type Section = { kind: 'all' } | { kind: 'folder'; id: ID } | { kind: 'uncategorized' } | { kind: 'trash' }
 
 export function Library() {
   const navigate = useUI((s) => s.navigate)
@@ -46,16 +48,18 @@ export function Library() {
   const [showSettings, setShowSettings] = useState(false)
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
-  const [moving, setMoving] = useState<DocumentMeta | null>(null)
+  const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
+  const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
 
   const refresh = useCallback(async () => {
-    const [d, t, f, th] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails()])
+    const [d, t, f, th, hid] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
+    setHiddenCats(new Set(hid))
     setThumbs((old) => {
       old.forEach((url) => URL.revokeObjectURL(url))
       const m = new Map<ID, string>()
@@ -82,9 +86,18 @@ export function Library() {
 
   const currentFolderId = section.kind === 'folder' ? section.id : null
 
+  const mappedCategories = useMemo(() => new Set(folders.flatMap((f) => f.categories ?? [])), [folders])
+
   const visible = useMemo(() => {
     let list = section.kind === 'trash' ? trash : docs
-    if (section.kind === 'folder') list = list.filter((d) => d.folderId === section.id)
+    if (section.kind !== 'trash') list = list.filter((d) => !d.category || !hiddenCats.has(d.category)) // 숨긴 카테고리는 이 기기에서 미사용
+    if (section.kind === 'folder') {
+      const f = folders.find((x) => x.id === section.id)
+      const cats = new Set(f?.categories ?? [])
+      list = list.filter((d) => d.category != null && cats.has(d.category))
+    } else if (section.kind === 'uncategorized') {
+      list = list.filter((d) => d.category == null || !mappedCategories.has(d.category))
+    }
     const q = query.trim().toLowerCase()
     if (q) list = list.filter((d) => d.title.toLowerCase().includes(q))
     const sorted = [...list]
@@ -92,7 +105,14 @@ export function Library() {
     else if (prefs.sort === 'created') sorted.sort((a, b) => b.createdAt - a.createdAt)
     else sorted.sort((a, b) => (section.kind === 'trash' ? (b.deletedAt ?? 0) - (a.deletedAt ?? 0) : b.updatedAt - a.updatedAt))
     return sorted
-  }, [docs, trash, section, query, prefs.sort])
+  }, [docs, trash, folders, mappedCategories, hiddenCats, section, query, prefs.sort])
+
+  const allCategories = useMemo(() => {
+    const s = new Set<string>()
+    for (const d of docs) if (d.category) s.add(d.category)
+    for (const f of folders) for (const c of f.categories ?? []) s.add(c)
+    return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [docs, folders])
 
   const subfolders = useMemo(
     () => (section.kind === 'trash' || query ? [] : folders.filter((f) => f.parentId === currentFolderId)),
@@ -204,8 +224,8 @@ export function Library() {
           setBusy(null)
         }
         break
-      case 'move':
-        setMoving(d)
+      case 'category':
+        setCategorizing(d)
         return
       case 'export':
         try {
@@ -259,9 +279,11 @@ export function Library() {
     } else if (action === 'new') {
       return onNewFolder(f.id)
     } else if (action === 'delete') {
-      const count = docs.filter((d) => d.folderId === f.id).length
+      const count = docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length
       const ok = await confirmDialog(`"${f.name}" 폴더 삭제`, {
-        message: count ? `안에 있는 문서 ${count}개와 하위 폴더의 문서는 휴지통으로 옮겨집니다.` : '하위 폴더도 함께 삭제됩니다.',
+        message: count
+          ? `이 폴더의 카테고리 매핑을 없앱니다. 노트 ${count}개는 삭제되지 않고 미분류로 표시됩니다.`
+          : '이 폴더의 카테고리 매핑을 없앱니다. 하위 폴더도 함께 삭제됩니다.',
         ok: '삭제',
         danger: true
       })
@@ -279,7 +301,14 @@ export function Library() {
     await refresh()
   }
 
-  const title = section.kind === 'trash' ? '휴지통' : section.kind === 'folder' ? breadcrumb.at(-1)?.name ?? '폴더' : '모든 노트'
+  const title =
+    section.kind === 'trash'
+      ? '휴지통'
+      : section.kind === 'uncategorized'
+        ? '미분류'
+        : section.kind === 'folder'
+          ? breadcrumb.at(-1)?.name ?? '폴더'
+          : '모든 노트'
 
   return (
     <div className="library" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -340,6 +369,15 @@ export function Library() {
               onSelect={(id) => setSection({ kind: 'folder', id })}
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
             />
+            <button
+              className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
+              onClick={() => setSection({ kind: 'uncategorized' })}
+            >
+              <Icon name="tag" size={18} /> 미분류{' '}
+              <span className="count">
+                {docs.filter((d) => (d.category == null || !mappedCategories.has(d.category)) && !(d.category && hiddenCats.has(d.category))).length}
+              </span>
+            </button>
             <button className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
               <Icon name="trash" size={18} /> 휴지통 <span className="count">{trash.length}</span>
             </button>
@@ -450,7 +488,7 @@ export function Library() {
             <>
               <MenuItem icon="edit" label="이름 바꾸기" onClick={() => docAction('rename', menu.doc)} />
               <MenuItem icon="copy" label="복제" onClick={() => docAction('duplicate', menu.doc)} />
-              <MenuItem icon="folder" label="폴더로 이동" onClick={() => docAction('move', menu.doc)} />
+              <MenuItem icon="tag" label="카테고리 지정" onClick={() => docAction('category', menu.doc)} />
               <MenuItem icon="share" label=".inkpad로 내보내기" onClick={() => docAction('export', menu.doc)} />
               <MenuItem icon="upload" label="클라우드에 올리기" onClick={() => docAction('cloudPush', menu.doc)} />
               <MenuItem icon="trash" label="휴지통으로" danger onClick={() => docAction('trash', menu.doc)} />
@@ -467,14 +505,14 @@ export function Library() {
         </Menu>
       )}
 
-      {moving && (
-        <FolderPicker
-          folders={folders}
-          current={moving.folderId}
-          onClose={() => setMoving(null)}
-          onPick={async (fid) => {
-            await updateDocument(moving.id, { folderId: fid })
-            setMoving(null)
+      {categorizing && (
+        <CategoryPicker
+          current={categorizing.category ?? null}
+          categories={allCategories}
+          onClose={() => setCategorizing(null)}
+          onPick={async (cat) => {
+            await updateDocument(categorizing.id, { category: cat })
+            setCategorizing(null)
             await refresh()
           }}
         />
@@ -521,7 +559,7 @@ function FolderTree(props: {
           <div className={'tree-item folder' + (props.activeId === f.id ? ' is-active' : '')} style={{ paddingLeft: 12 + props.depth * 16 }}>
             <button className="tree-main" onClick={() => props.onSelect(f.id)}>
               <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
-              <span className="count">{props.docs.filter((d) => d.folderId === f.id).length}</span>
+              <span className="count">{props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length}</span>
             </button>
             <button
               className="icon-mini"
@@ -563,27 +601,49 @@ export function MenuItem({ icon, label, onClick, danger }: { icon: string; label
   )
 }
 
-function FolderPicker({ folders, current, onPick, onClose }: { folders: Folder[]; current: ID | null; onPick: (id: ID | null) => void; onClose: () => void }) {
-  const render = (parentId: ID | null, depth: number): React.ReactNode =>
-    folders
-      .filter((f) => f.parentId === parentId)
-      .map((f) => (
-        <div key={f.id}>
-          <button className={'menu-item' + (current === f.id ? ' is-current' : '')} style={{ paddingLeft: 16 + depth * 18 }} onClick={() => onPick(f.id)}>
-            <Icon name="folder" size={18} /> {f.name}
-          </button>
-          {render(f.id, depth + 1)}
-        </div>
-      ))
+function CategoryPicker({
+  current,
+  categories,
+  onPick,
+  onClose
+}: {
+  current: string | null
+  categories: string[]
+  onPick: (category: string | null) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState('')
+  const submit = () => {
+    const c = normalizeCategory(name)
+    if (!c) return
+    onPick(c)
+  }
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <h2 className="modal-title">폴더로 이동</h2>
+        <h2 className="modal-title">카테고리 지정</h2>
         <div className="picker-list">
           <button className={'menu-item' + (current === null ? ' is-current' : '')} onClick={() => onPick(null)}>
-            <Icon name="notebook" size={18} /> 최상위 (폴더 없음)
+            <Icon name="notebook" size={18} /> 미분류
           </button>
-          {render(null, 0)}
+          {categories.map((c) => (
+            <button key={c} className={'menu-item' + (current === c ? ' is-current' : '')} onClick={() => onPick(c)}>
+              <Icon name="tag" size={18} /> {c}
+            </button>
+          ))}
+        </div>
+        <div className="field inline" style={{ padding: '4px 16px 12px' }}>
+          <input
+            value={name}
+            maxLength={MAX_CATEGORY_CHARS}
+            placeholder="새 카테고리 만들기"
+            aria-label="새 카테고리 이름"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && submit()}
+          />
+          <button className="text-btn small" disabled={!name.trim()} onClick={submit}>
+            추가
+          </button>
         </div>
         <div className="modal-actions">
           <button className="text-btn" onClick={onClose}>

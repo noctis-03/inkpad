@@ -25,7 +25,7 @@ export interface ThumbRow {
   updatedAt: number
 }
 
-export type OutboxEntity = 'folder' | 'document' | 'page' | 'chunk' | 'asset'
+export type OutboxEntity = 'document' | 'page' | 'chunk' | 'asset'
 
 export interface OutboxRow {
   seq?: number // 자동 증가

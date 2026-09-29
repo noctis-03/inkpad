@@ -114,15 +114,17 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
         ...f,
         id: folderMap.get(f.id)!,
         parentId: f.parentId ? folderMap.get(f.parentId) ?? targetFolderId : targetFolderId,
+        schemaVersion: SCHEMA_VERSION,
+        categories: f.categories ?? [],
         createdAt: f.createdAt ?? now,
         updatedAt: now,
         version: 0,
         deletedAt: undefined
       })
     }
-    await db.transaction('rw', db.folders, db.outbox, async () => {
+    // 폴더는 기기별 로컬 전용 — 동기화 큐에 넣지 않는다
+    await db.transaction('rw', db.folders, async () => {
       await db.folders.bulkPut(rows)
-      for (const r of rows) await db.outbox.add({ entity: 'folder', entityId: r.id, op: 'upsert', createdAt: now, attempts: 0 })
     })
   }
 
@@ -159,6 +161,8 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
       ...src,
       id: newId,
       folderId: src.folderId && folderMap.has(src.folderId) ? folderMap.get(src.folderId)! : targetFolderId,
+      category: src.category ?? null,
+      schemaVersion: SCHEMA_VERSION,
       pageOrder: src.pageOrder.map((id) => pageMap.get(id)).filter((x): x is ID => !!x),
       version: 0,
       deletedAt: undefined,

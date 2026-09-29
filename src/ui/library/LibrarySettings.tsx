@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useUI } from '../../app/store'
-import { confirmDialog } from '../../app/dialogs'
+import { confirmDialog, promptDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { SettingsSections } from '../SettingsPanel'
 import { formatBytes, isStandalone } from '../../shared/util'
-import { listDocuments, purgeExpiredTrash, storageStats } from '../../storage/repo'
+import { MAX_CATEGORY_CHARS, normalizeCategory, type DocumentMeta, type Folder, type ID } from '../../shared/model'
+import {
+  createFolder,
+  deleteFolder,
+  getHiddenCategories,
+  listDocuments,
+  listFolders,
+  purgeExpiredTrash,
+  setHiddenCategories,
+  setFolderCategories,
+  storageStats
+} from '../../storage/repo'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { pickFiles, saveFile } from '../../io/download'
 
@@ -15,7 +26,7 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
   const setBusy = useUI((s) => s.setBusy)
   const reset = useUI((s) => s.resetSettings)
   const [stats, setStats] = useState<Stats | null>(null)
-  const [tab, setTab] = useState<'pen' | 'data'>('pen')
+  const [tab, setTab] = useState<'pen' | 'data' | 'folders'>('pen')
 
   const load = () => void storageStats().then(setStats)
   useEffect(load, [])
@@ -82,6 +93,9 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
             <button className={tab === 'pen' ? 'is-active' : ''} onClick={() => setTab('pen')}>
               필기
             </button>
+            <button className={tab === 'folders' ? 'is-active' : ''} onClick={() => setTab('folders')}>
+              폴더 · 카테고리
+            </button>
             <button className={tab === 'data' ? 'is-active' : ''} onClick={() => setTab('data')}>
               저장소 · 백업
             </button>
@@ -91,7 +105,9 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
           </button>
         </header>
         <div className="sheet-scroll">
-          {tab === 'pen' ? (
+          {tab === 'folders' ? (
+            <FolderCategorySettings onChanged={onChanged} />
+          ) : tab === 'pen' ? (
             <>
               <SettingsSections />
               <div className="panel-footer">
@@ -176,5 +192,134 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
         </div>
       </div>
     </div>
+  )
+}
+
+/** 폴더 ↔ 카테고리 매핑과 숨김 카테고리 관리 (기기별 로컬 설정) */
+function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
+  const toast = useUI((s) => s.toast)
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [docs, setDocs] = useState<DocumentMeta[]>([])
+  const [hidden, setHiddenList] = useState<string[]>([])
+  const [newCat, setNewCat] = useState<Record<ID, string>>({})
+
+  const reload = async () => {
+    const [f, d, h] = await Promise.all([listFolders(), listDocuments(), getHiddenCategories()])
+    setFolders(f)
+    setDocs(d)
+    setHiddenList(h)
+  }
+  useEffect(() => {
+    void reload()
+  }, [])
+
+  const allCategories = (() => {
+    const s = new Set<string>()
+    for (const d of docs) if (d.category) s.add(d.category)
+    for (const f of folders) for (const c of f.categories ?? []) s.add(c)
+    return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
+  })()
+
+  const addFolder = async () => {
+    const name = await promptDialog('새 폴더', { value: '새 폴더', ok: '만들기' })
+    if (!name?.trim()) return
+    await createFolder(name.trim(), null)
+    await reload()
+    onChanged()
+  }
+
+  const addCategory = async (folderId: ID) => {
+    const c = normalizeCategory(newCat[folderId] ?? '')
+    if (!c) return
+    const f = folders.find((x) => x.id === folderId)
+    if (!f) return
+    await setFolderCategories(folderId, [...(f.categories ?? []), c])
+    setNewCat((m) => ({ ...m, [folderId]: '' }))
+    await reload()
+    onChanged()
+  }
+
+  const removeCategory = async (folderId: ID, cat: string) => {
+    const f = folders.find((x) => x.id === folderId)
+    if (!f) return
+    await setFolderCategories(folderId, (f.categories ?? []).filter((x) => x !== cat))
+    await reload()
+    onChanged()
+  }
+
+  const removeFolder = async (f: Folder) => {
+    const ok = await confirmDialog(`"${f.name}" 폴더 삭제`, {
+      message: '이 폴더의 카테고리 매핑을 없앱니다. 노트는 삭제되지 않고 미분류로 표시됩니다.',
+      ok: '삭제',
+      danger: true
+    })
+    if (!ok) return
+    await deleteFolder(f.id)
+    await reload()
+    onChanged()
+  }
+
+  const toggleHidden = async (cat: string) => {
+    const next = hidden.includes(cat) ? hidden.filter((x) => x !== cat) : [...hidden, cat]
+    await setHiddenCategories(next)
+    await reload()
+    onChanged()
+  }
+
+  return (
+    <>
+      <section className="panel-section">
+        <h3>폴더 ↔ 카테고리</h3>
+        <p className="hint">폴더는 이 기기의 정리 도구이고, 카테고리가 기기 사이에서 동기화됩니다. 폴더 하나가 카테고리 여러 개를 담을 수 있습니다.</p>
+        {folders.map((f) => (
+          <div key={f.id} className="setting-row" style={{ alignItems: 'flex-start' }}>
+            <span className="setting-label">
+              {f.name}
+              <span className="btn-row" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+                {(f.categories ?? []).map((c) => (
+                  <button key={c} className="folder-chip" onClick={() => void removeCategory(f.id, c)} title="매핑 제거">
+                    {c} ×
+                  </button>
+                ))}
+                {!(f.categories ?? []).length && <small className="hint">매핑 없음 — 이 폴더의 노트가 미분류로 보입니다</small>}
+              </span>
+            </span>
+            <span className="setting-control" style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={newCat[f.id] ?? ''}
+                maxLength={MAX_CATEGORY_CHARS}
+                placeholder="카테고리 추가"
+                aria-label={`${f.name}에 카테고리 추가`}
+                onChange={(e) => setNewCat((m) => ({ ...m, [f.id]: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && newCat[f.id]?.trim() && void addCategory(f.id)}
+              />
+              <button className="text-btn small" disabled={!newCat[f.id]?.trim()} onClick={() => void addCategory(f.id)}>
+                추가
+              </button>
+            </span>
+          </div>
+        ))}
+        <div className="btn-row">
+          <button className="text-btn" onClick={() => void addFolder()}>
+            새 폴더
+          </button>
+        </div>
+      </section>
+      <section className="panel-section">
+        <h3>숨긴 카테고리</h3>
+        <p className="hint">숨긴 카테고리의 노트는 이 기기 목록에서 감춰지고 받기에서도 제외됩니다. 클라우드 목록에는 계속 표시됩니다.</p>
+        {allCategories.length === 0 && <p className="hint">아직 카테고리가 없습니다.</p>}
+        {allCategories.map((c) => (
+          <div key={c} className="setting-row">
+            <span className="setting-label">{c}</span>
+            <span className="setting-control">
+              <button className="text-btn small" onClick={() => void toggleHidden(c)}>
+                {hidden.includes(c) ? '숨김 해제' : '숨기기'}
+              </button>
+            </span>
+          </div>
+        ))}
+      </section>
+    </>
   )
 }

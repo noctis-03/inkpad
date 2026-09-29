@@ -1,5 +1,5 @@
 // 설계 문서 7장 데이터 모델. 클라이언트 전체(엔진·저장소·내보내기)와 Phase 2 API가 공유한다.
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export type ID = string // ULID
 
@@ -11,7 +11,8 @@ export interface Folder {
   createdAt: number
   updatedAt: number
   deletedAt?: number
-  version: number // 서버 기준 버전 (0 = 아직 서버에 없음)
+  version: number // (구) 서버 기준 버전 — 폴더는 이제 기기별 로컬 전용
+  categories?: string[] // 이 폴더가 담는 카테고리 목록 (로컬 전용 설정)
 }
 
 export interface ViewState {
@@ -25,7 +26,8 @@ export interface DocumentMeta {
   schemaVersion: number
   title: string
   mode: 'infinite' | 'paged'
-  folderId: ID | null
+  folderId: ID | null // 로컬 전용 — 동기화하지 않는다 (폴더는 기기별 정리 도구)
+  category: string | null // 단일 카테고리, null = 미분류 (동기화함)
   pageOrder: ID[] // paged: 페이지 순서 / infinite: 페이지 1개
   createdAt: number
   updatedAt: number
@@ -118,6 +120,13 @@ export const MAX_HISTORY = 200
 export const SYNC_DEBOUNCE_MS = 3000
 export const TRASH_RETENTION_DAYS = 30
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024
+export const MAX_CATEGORY_CHARS = 40 // 카테고리 이름 길이 제한 (한글 40자 ≈ 120바이트 < Drive appProperties 124바이트)
+
+/** 카테고리 이름 정규화 — trim, 연속 공백 정리, 앞뒤 슬래시 제거. 빈 이름이면 null */
+export function normalizeCategory(raw: string): string | null {
+  const name = raw.replace(/\s+/g, ' ').trim().replace(/^\/+|\/+$/g, '')
+  return name || null
+}
 
 // ───────── 페이지 크기 (pt, 1pt = 1/72in) ─────────
 export const PAGE_SIZES = {

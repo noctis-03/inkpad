@@ -12,7 +12,8 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
   const doc: DocFileV1['doc'] = { ...theirs.doc, id: ours.doc.id, updatedAt: Math.max(ours.doc.updatedAt, theirs.doc.updatedAt) }
   if (base) {
     if (ours.doc.title !== base.doc.title) doc.title = ours.doc.title
-    if (ours.doc.folderId !== base.doc.folderId) doc.folderId = ours.doc.folderId
+    if (ours.doc.category !== base.doc.category) doc.category = ours.doc.category
+    else if (theirs.doc.category !== base.doc.category) doc.category = theirs.doc.category
     if (ours.doc.mode !== base.doc.mode) doc.mode = ours.doc.mode
     if (j(ours.doc.pageOrder) !== j(base.doc.pageOrder)) doc.pageOrder = ours.doc.pageOrder
     else if (j(theirs.doc.pageOrder) !== j(base.doc.pageOrder)) doc.pageOrder = theirs.doc.pageOrder
@@ -65,5 +66,6 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
   const assetIds = new Set<string>([...ours.assets.map((a) => a.id), ...theirs.assets.map((a) => a.id)])
   const assets = [...assetIds].map((id) => theirs.assets.find((a) => a.id === id) ?? ours.assets.find((a) => a.id === id)!)
 
+  doc.category = doc.category ?? null // category 없는 옛 파일과의 머지 대비
   return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, assets }, conflicts }
 }

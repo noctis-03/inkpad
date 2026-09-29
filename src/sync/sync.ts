@@ -12,23 +12,32 @@
 //  5. Drive 폴더가 통째로 사라졌으면 로컬을 지우지 않고 전부 재업로드
 //  6. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
 //  7. 원본 바이트(PDF·이미지)는 pull에서 내려받지 않는다 — 문서를 열 때 지연 로딩 (sync/assets.ts)
-//  8. 문서/폴더 JSON은 gzip으로 올린다(appProperties.enc 표식).
-//     appProperties에 제목·기기 이름을 함께 넣어, 클라우드 노트 목록을 메타만으로 그린다
+//  8. 문서 JSON은 gzip으로 올린다(appProperties.enc 표식). appProperties에 제목·기기·
+//     카테고리를 함께 넣어, 클라우드 노트 목록을 메타만으로 그린다
+//  9. 폴더·카테고리 매핑·숨김은 기기별 로컬 전용 — Drive로 주고받지 않는다.
+//     카테고리는 문서 파일의 category 필드로 동기화하고, 숨긴 카테고리의 노트는 받기에서 건너뛴다
 import type { ID } from '../shared/model'
 import { gzipJson, gunzipJson } from '../storage/compress'
 import { db } from '../storage/db'
-import { enqueue } from '../storage/repo'
+import { getHiddenCategories } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
-import { assetFileName, packDocument, packFolders, type DocFileV1, type FoldersFileV1 } from './pack'
+import { assetFileName, packDocument, type DocFileV1 } from './pack'
 import { mergeDocs } from './merge'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 
 const SYNC_LOCK = 'inkpad-sync'
-/** Drive 루트에 두는 폴더 트리 파일 — pushFolders가 올리고, 받는 쪽은 기록이 없어도 이름으로 찾는다 */
-const FOLDERS_NAME = 'folders.json'
+/** appProperties에 담을 수 있는 값의 상한 (Google Drive 제한: UTF-8 124바이트) */
+const APP_PROPERTY_MAX_BYTES = 124
+
+/** appProperties용 category 표식 — 상한을 넘는 이름은 생략한다(본문에는 항상 들어간다) */
+function categoryProp(category: string | null | undefined): Record<string, string> {
+  if (!category) return {}
+  if (new TextEncoder().encode(category).length > APP_PROPERTY_MAX_BYTES) return {}
+  return { category }
+}
 
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'auth-required' | 'error' | 'disabled'
 
@@ -94,7 +103,7 @@ async function pendingDocs(): Promise<Map<ID, PendingDoc>> {
   const rows = await db.outbox.toArray()
   const docs = new Map<ID, PendingDoc>()
   for (const r of rows) {
-    if (r.entity === 'folder' || r.entity === 'asset') continue
+    if (r.entity === 'asset') continue
     let docId: ID | undefined
     if (r.entity === 'document') docId = r.entityId
     else if (r.entity === 'page') docId = (await db.pages.get(r.entityId))?.documentId
@@ -136,12 +145,9 @@ export async function pushNow(): Promise<void> {
   })
 }
 
-async function push(f: { root: string; docs: string; assets: string }) {
+async function push(f: { docs: string; assets: string }) {
   const rows = await db.outbox.toArray()
-  const folderSeqs = rows.filter((r) => r.entity === 'folder').map((r) => r.seq!)
   const docs = await pendingDocs()
-
-  if (folderSeqs.length) await pushFolders(f.root, folderSeqs)
 
   let n = 0
   for (const [docId, info] of docs) {
@@ -180,7 +186,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: file.doc.title, device, enc: drive.ENC_GZIP }
+      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: file.doc.title, device, enc: drive.ENC_GZIP, ...categoryProp(file.doc.category) }
     },
     f.docs,
     remote?.id
@@ -211,33 +217,6 @@ async function pushTombstone(docId: ID, info: PendingDoc) {
   await putSync(`gone:${docId}`, Date.now())
   await db.syncState.delete(`base:${docId}`)
   await db.outbox.bulkDelete(info.seqs)
-}
-
-async function pushFolders(rootId: string, seqs: number[]) {
-  let record = await getSync<FileRecord>('foldersFile')
-  if (!record?.fileId) {
-    // 이 기기에서 폴더를 올린 적이 없어도 다른 기기가 올려 둔 folders.json이 있다 —
-    // 새 파일을 만들어 이중으로 두지 않도록 이어 받고, 그 내용도 먼저 반영한다.
-    const found = await drive.findByName(FOLDERS_NAME, rootId)
-    if (found && !found.trashed) {
-      await mergeFolders(found.id, found.appProperties?.enc)
-      record = { fileId: found.id, version: found.version }
-    }
-  }
-  const before = await packFolders()
-  const result = await drive.upload(
-    await gzipJson(before),
-    { name: FOLDERS_NAME, mimeType: 'application/json', appProperties: { type: 'folders', enc: drive.ENC_GZIP } },
-    rootId,
-    record?.fileId
-  )
-  await db.transaction('rw', [db.folders, db.outbox, db.syncState], async () => {
-    const after = await packFolders()
-    if (after.updatedAt === before.updatedAt) {
-      await db.outbox.bulkDelete(seqs)
-      await putSync('foldersFile', { fileId: result.id, version: result.version })
-    }
-  })
 }
 
 /** 에셋(PDF·이미지 원본)은 sha256 내용 주소로 올린다 — 같은 내용이면 어느 기기에서든 파일 1개 */
@@ -285,7 +264,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: merged.doc.title, device, enc: drive.ENC_GZIP }
+      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: merged.doc.title, device, enc: drive.ENC_GZIP, ...categoryProp(merged.doc.category) }
     },
     docsFolderId,
     remote.id
@@ -303,7 +282,6 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
 
 export interface PullResult {
   docs: number
-  folders: boolean
 }
 
 /** 받기. 허브에서 다른 기기가 올린 변경을 가져온다 */
@@ -320,7 +298,7 @@ export async function pullNow(): Promise<PullResult | null> {
       const r = await pull(f)
       await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
       setStatus('idle')
-      return { docs: r.docs, folders: r.folders }
+      return { docs: r.docs }
     } catch (e) {
       handleSyncError(e)
       return null
@@ -329,27 +307,12 @@ export async function pullNow(): Promise<PullResult | null> {
   }) as Promise<PullResult | null>
 }
 
-async function pull(f: { root: string; docs: string; assets: string }) {
-  const r = { docs: 0, folders: false }
+async function pull(f: { docs: string; assets: string }) {
+  const r = { docs: 0 }
   const outboxRows = await db.outbox.toArray()
   const pendingDocs_ = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
   const changed = new Set<string>()
-
-  // 폴더 트리 — 이 기기에서 올린 적이 없어도(기록이 없어도) 다른 기기가 올린 트리를 받아야 한다.
-  // 기록이 없거나 가리키던 파일이 없어진 경우 이름으로 다시 찾는다.
-  const ff = await getSync<FileRecord>('foldersFile')
-  let rf = ff?.fileId ? await drive.getMeta(ff.fileId) : null
-  if (!rf) rf = await drive.findByName(FOLDERS_NAME, f.root)
-  if (rf && !rf.trashed && rf.version !== ff?.version) {
-    const merged = await mergeFolders(rf.id, rf.appProperties?.enc)
-    if (merged !== null) {
-      await putSync('foldersFile', { fileId: rf.id, version: rf.version })
-      if (merged) {
-        r.folders = true
-        changed.add('__folders__')
-      }
-    }
-  }
+  const hidden = new Set(await getHiddenCategories())
 
   // 문서
   const remotes = await drive.listFiles(f.docs)
@@ -362,6 +325,8 @@ async function pull(f: { root: string; docs: string; assets: string }) {
     const docId = remote.appProperties?.docId
     if (!docId) continue
     if (await getSync(`gone:${docId}`)) continue // 이 기기에서 지운 노트 — 받기로 되살리지 않는다 (목록에서 개별 받기)
+    const remoteCat = remote.appProperties?.category
+    if (remoteCat && hidden.has(remoteCat)) continue // 숨긴 카테고리 — 이 기기는 받지 않는다 (클라우드 목록에는 표시)
     const local = await db.documents.get(docId)
     if (local?.deletedAt) continue // 휴지통에 있는 노트도 되살리지 않는다
     if (pendingDocs_.has(docId)) continue // 로컬 변경은 push의 머지에서 처리
@@ -385,31 +350,6 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   return r
 }
 
-/** folders.json을 받아 로컬에 반영한다. 파일을 읽을 수 없으면 null, 읽었으면 변경 여부를 돌려준다. */
-async function mergeFolders(fileId: string, enc: string | undefined): Promise<boolean | null> {
-  const data = await drive.downloadJson<FoldersFileV1>(fileId, enc)
-  if (data.kind !== 'inkpad-folders' || !Array.isArray(data.folders)) return null
-  const dirty = new Set((await db.outbox.toArray()).filter((r) => r.entity === 'folder').map((r) => r.entityId))
-  let any = false
-  for (const fo of data.folders) {
-    if (dirty.has(fo.id)) continue
-    const local = await db.folders.get(fo.id)
-    if (local && local.updatedAt >= fo.updatedAt) continue
-    await db.folders.put(fo)
-    any = true
-  }
-  for (const local of await db.folders.toArray()) {
-    if (dirty.has(local.id) || data.folders.some((x) => x.id === local.id)) continue
-    if (!local.deletedAt) {
-      const now = Date.now()
-      await db.folders.update(local.id, { deletedAt: now, updatedAt: now })
-      await enqueue('folder', local.id, 'delete')
-      any = true
-    }
-  }
-  return any
-}
-
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
 export type CloudNoteState = 'same' | 'remote-new' | 'pending' | 'deleted-local'
@@ -418,6 +358,7 @@ export interface CloudNoteInfo {
   docId: ID
   title: string
   device?: string
+  category?: string | null
   updatedAt: number
   fileId: string
   version: string
@@ -449,6 +390,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       docId,
       title: remote.appProperties?.title || local?.title || docId,
       device: remote.appProperties?.device,
+      category: remote.appProperties?.category ?? local?.category ?? null,
       updatedAt: Number(remote.appProperties?.updatedAt) || Date.parse(remote.modifiedTime),
       fileId: remote.id,
       version: remote.version,
@@ -498,7 +440,6 @@ export interface PushDoc {
 
 export interface PushPlan {
   docs: PushDoc[]
-  folders: boolean
   /** 새로 올릴 원본(PDF·이미지) 수와 총 바이트 */
   assets: { count: number; bytes: number }
 }
@@ -509,7 +450,6 @@ export async function planPush(): Promise<PushPlan> {
   const pending = await pendingDocs()
   const plan: PushPlan = {
     docs: [],
-    folders: rows.some((r) => r.entity === 'folder'),
     assets: { count: 0, bytes: 0 }
   }
   for (const [docId] of pending) {

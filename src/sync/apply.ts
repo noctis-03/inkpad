@@ -26,6 +26,10 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
     const prev = await db.documents.get(docId)
     await db.documents.put({
       ...file.doc,
+      // folderId는 로컬 전용 — 받은 파일에서 오지 않는다(옛 파일이 실어 보내도 무시)
+      folderId: prev?.folderId ?? null,
+      // category 없는 옛 파일이라면 이 기기의 값을 유지한다
+      ...((file.doc as { category?: string | null }).category === undefined ? { category: prev?.category ?? null } : {}),
       version: prev?.version ?? 0,
       ...(prev?.lastView ? { lastView: prev.lastView } : {}) // 마지막으로 보던 위치는 로컬 전용
     })

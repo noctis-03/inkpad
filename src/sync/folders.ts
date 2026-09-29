@@ -1,4 +1,4 @@
-// 동기화 공통 기반: Drive 위치 기록(syncState)과 폴더 트리 확보.
+// 동기화 공통 기반: Drive 위치 기록(syncState)과 Drive 폴더(root·docs·assets) 확보.
 // sync.ts(동기화 엔진)와 assets.ts(원본 지연 로딩)가 함께 쓴다.
 // 순환 import를 피하려고 여기로 분리했다.
 import type { ID } from '../shared/model'
@@ -21,24 +21,21 @@ export async function getSync<T = FileRecord | string>(key: string): Promise<T |
 
 export const putSync = (key: string, value: unknown) => db.syncState.put({ key, value })
 
-/** 첫 동기화 또는 Drive 폴더가 통째로 사라진 경우: 로컬을 지우지 않고 전부 재업로드 큐에 올린다 (규칙 5) */
+/** 첫 동기화 또는 Drive 폴더가 통째로 사라진 경우: 로컬을 지우지 않고 전부 재업로드 큐에 올린다 (규칙 5).
+ *  폴더는 기기별 로컬 전용이라 큐에 넣지 않는다. */
 export async function enqueueEverything() {
-  await db.transaction('rw', [db.folders, db.documents, db.assets, db.outbox], async () => {
-    for (const f of await db.folders.toArray()) await enqueue('folder', f.id)
+  await db.transaction('rw', [db.documents, db.assets, db.outbox], async () => {
     for (const d of await db.documents.toArray()) await enqueue('document', d.id)
     for (const a of await db.assets.toArray()) if (a.blob) await enqueue('asset', a.id)
   })
 }
 
-/** Drive 위치 기록(doc:/asset:/foldersFile)을 비우고 전체 재업로드를 예약한다 */
+/** Drive 위치 기록(doc:/asset:/base:)을 비우고 전체 재업로드를 예약한다 */
 export async function resetRemoteRecords() {
   await db.transaction('rw', db.syncState, async () => {
     const keys = (await db.syncState.toArray()).map((k) => k.key)
     await db.syncState.bulkDelete(
-      keys.filter(
-        (k) =>
-          k.startsWith('doc:') || k.startsWith('asset:') || k.startsWith('base:') || k === 'foldersFile'
-      )
+      keys.filter((k) => k.startsWith('doc:') || k.startsWith('asset:') || k.startsWith('base:'))
     )
   })
   await enqueueEverything()

@@ -102,7 +102,7 @@ export function SyncSection() {
   const doPull = async () => {
     const r = await pullNow()
     if (r) {
-      const bits = [r.docs ? `노트 ${r.docs}개` : '', r.folders ? '폴더' : ''].filter(Boolean)
+      const bits = [r.docs ? `노트 ${r.docs}개` : ''].filter(Boolean)
       toast(bits.length ? `받았습니다: ${bits.join(', ')}.` : '이미 최신 상태입니다.', bits.length ? 'success' : 'info')
       void loadCloud()
     }
@@ -111,7 +111,7 @@ export function SyncSection() {
   const doPush = async () => {
     try {
       const plan = await planPush()
-      if (!plan.docs.length && !plan.folders && !plan.assets.count) {
+      if (!plan.docs.length && !plan.assets.count) {
         toast('올릴 변경이 없습니다. 이미 최신 상태입니다.', 'info')
         return
       }
@@ -239,6 +239,7 @@ export function SyncSection() {
                 <span className="dot-del" aria-label="이 기기에서 지운 노트" title="이 기기에서 지운 노트입니다" />
               )}
               <span className="cloud-meta">
+                {c.category ? `${c.category} · ` : ''}
                 {c.device ? `${c.device} · ` : ''}
                 {formatDate(c.updatedAt)}
               </span>
@@ -264,7 +265,7 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
     { key: 'modify' as const, label: '수정한 노트', icon: 'edit', items: plan.docs.filter((d) => d.change === 'modify') },
     { key: 'delete' as const, label: '삭제한 노트', icon: 'trash', items: plan.docs.filter((d) => d.change === 'delete') }
   ].filter((g) => g.items.length > 0)
-  const total = plan.docs.length + (plan.folders ? 1 : 0) + plan.assets.count
+  const total = plan.docs.length + plan.assets.count
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="올리기 미리보기">
@@ -291,18 +292,6 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
               ))}
             </section>
           ))}
-          {plan.folders && (
-            <section className="push-group">
-              <h4 className="push-group-label">
-                <Icon name="folder" size={13} /> 폴더 <b>1</b>
-              </h4>
-              <div className="push-row">
-                <span className="push-stripe modify" />
-                <span className="push-name">폴더 트리</span>
-                <Icon name="folder" size={14} className="push-ico" />
-              </div>
-            </section>
-          )}
           {plan.assets.count > 0 && (
             <section className="push-group">
               <h4 className="push-group-label">
