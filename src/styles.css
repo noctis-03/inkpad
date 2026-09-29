@@ -1688,3 +1688,64 @@ textarea {
     max-width: 120px;
   }
 }
+
+/* ── 클라우드 노트 목록 (설정 > 동기화) ── */
+.cloud-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 4px 0 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.cloud-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 10px;
+}
+.cloud-row + .cloud-row {
+  border-top: 1px solid var(--line);
+}
+.cloud-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
+}
+.cloud-row .text-btn {
+  flex-shrink: 0;
+}
+.device-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.device-name input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  width: 130px;
+}
+.dot-new {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563eb;
+}
