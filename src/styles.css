@@ -1866,3 +1866,102 @@ textarea {
   flex-shrink: 0;
   color: var(--muted);
 }
+
+/* ── 폴더 · 카테고리 설정 (LibrarySettings) ── */
+.folder-map-list {
+  display: grid;
+  gap: 12px;
+}
+.folder-map-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.folder-map-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-map-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 2px;
+}
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+}
+.cat-chip-x {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.cat-chip-x:hover {
+  opacity: 1;
+}
+.cat-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cat-add-row input {
+  flex: 1;
+  width: 100%;
+}
+.hidden-cat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.hidden-cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hidden-cat-chip small {
+  color: var(--muted);
+}
+.hidden-cat-chip.is-hidden {
+  opacity: 0.55;
+  background: transparent;
+  border-style: dashed;
+}
+
+/* ── 카테고리 지정 모달: 새 카테고리 입력 행 (기본 .field.inline의 90px를 쓰지 않는다) ── */
+.cat-new-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 16px 12px;
+}
+.cat-new-row input {
+  flex: 1;
+  width: 100%;
+}

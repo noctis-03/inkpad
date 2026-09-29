@@ -412,19 +412,24 @@ export async function storageStats() {
 
 // ───────────────── 폴더 · 카테고리 설정 (기기별 로컬 전용) ─────────────────
 
-/** 폴더 설정(폴더 + 매핑 + 숨김) 백업 — backups에 최근 5개만 남긴다 */
+/** 폴더 설정(폴더 + 매핑 + 숨김) 백업 — backups에 최근 5개만 남긴다.
+ *  백업은 노력 없이 할 수 있는 일이어야 한다 — 실패해도 삭제·마이그레이션을 막지 않는다. */
 export async function backupFolderConfig(reason: string) {
-  const folders = await db.folders.toArray()
-  const hiddenCategories = await getHiddenCategories()
-  const now = Date.now()
-  await db.backups.put({
-    id: `folder-config:${now}`,
-    createdAt: now,
-    reason: `folder-config: ${reason}`,
-    data: new Blob([JSON.stringify({ folders, hiddenCategories, reason, createdAt: now })])
-  })
-  const rows = await db.backups.where('reason').startsWith('folder-config').sortBy('createdAt')
-  if (rows.length > 5) await db.backups.bulkDelete(rows.slice(0, rows.length - 5).map((r) => r.id))
+  try {
+    const folders = await db.folders.toArray()
+    const hiddenCategories = await getHiddenCategories()
+    const now = Date.now()
+    await db.backups.put({
+      id: `folder-config:${now}`,
+      createdAt: now,
+      reason: `folder-config: ${reason}`,
+      data: new Blob([JSON.stringify({ folders, hiddenCategories, reason, createdAt: now })])
+    })
+    const rows = await db.backups.where('reason').startsWith('folder-config').sortBy('createdAt')
+    if (rows.length > 5) await db.backups.bulkDelete(rows.slice(0, rows.length - 5).map((r) => r.id))
+  } catch (e) {
+    console.warn('[storage] 폴더 설정 백업 실패 — 무시하고 계속합니다:', e)
+  }
 }
 
 /** 이 기기에서 숨긴 카테고리 목록 */

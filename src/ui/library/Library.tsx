@@ -632,7 +632,7 @@ function CategoryPicker({
             </button>
           ))}
         </div>
-        <div className="field inline" style={{ padding: '4px 16px 12px' }}>
+        <div className="cat-new-row">
           <input
             value={name}
             maxLength={MAX_CATEGORY_CHARS}

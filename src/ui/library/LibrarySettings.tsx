@@ -197,7 +197,6 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
 
 /** 폴더 ↔ 카테고리 매핑과 숨김 카테고리 관리 (기기별 로컬 설정) */
 function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
-  const toast = useUI((s) => s.toast)
   const [folders, setFolders] = useState<Folder[]>([])
   const [docs, setDocs] = useState<DocumentMeta[]>([])
   const [hidden, setHiddenList] = useState<string[]>([])
@@ -269,56 +268,78 @@ function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
   return (
     <>
       <section className="panel-section">
-        <h3>폴더 ↔ 카테고리</h3>
-        <p className="hint">폴더는 이 기기의 정리 도구이고, 카테고리가 기기 사이에서 동기화됩니다. 폴더 하나가 카테고리 여러 개를 담을 수 있습니다.</p>
-        {folders.map((f) => (
-          <div key={f.id} className="setting-row" style={{ alignItems: 'flex-start' }}>
-            <span className="setting-label">
-              {f.name}
-              <span className="btn-row" style={{ marginTop: 6, flexWrap: 'wrap' }}>
-                {(f.categories ?? []).map((c) => (
-                  <button key={c} className="folder-chip" onClick={() => void removeCategory(f.id, c)} title="매핑 제거">
-                    {c} ×
-                  </button>
-                ))}
-                {!(f.categories ?? []).length && <small className="hint">매핑 없음 — 이 폴더의 노트가 미분류로 보입니다</small>}
-              </span>
-            </span>
-            <span className="setting-control" style={{ display: 'flex', gap: 6 }}>
-              <input
-                value={newCat[f.id] ?? ''}
-                maxLength={MAX_CATEGORY_CHARS}
-                placeholder="카테고리 추가"
-                aria-label={`${f.name}에 카테고리 추가`}
-                onChange={(e) => setNewCat((m) => ({ ...m, [f.id]: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && newCat[f.id]?.trim() && void addCategory(f.id)}
-              />
-              <button className="text-btn small" disabled={!newCat[f.id]?.trim()} onClick={() => void addCategory(f.id)}>
-                추가
-              </button>
-            </span>
-          </div>
-        ))}
+        <h3>폴더 · 카테고리 매핑</h3>
+        <p className="hint">폴더는 이 기기의 정리 도구이고, 카테고리가 기기 사이에서 동기화됩니다. 폴더 하나가 카테고리 여러 개를 담을 수 있어요.</p>
+        <div className="folder-map-list">
+          {folders.map((f) => (
+            <div key={f.id} className="folder-map-card">
+              <div className="folder-map-head">
+                <Icon name="folder" size={18} />
+                <strong>{f.name}</strong>
+                <button className="text-btn small danger" onClick={() => void removeFolder(f)}>
+                  삭제
+                </button>
+              </div>
+              {(f.categories ?? []).length > 0 ? (
+                <div className="cat-chip-row">
+                  {(f.categories ?? []).map((c) => (
+                    <span key={c} className="cat-chip">
+                      <Icon name="tag" size={13} /> {c}
+                      <button className="cat-chip-x" aria-label={`${c} 매핑 제거`} title="매핑 제거" onClick={() => void removeCategory(f.id, c)}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="hint">매핑 없음 — 이 폴더를 열면 미분류 노트가 보입니다.</p>
+              )}
+              <div className="cat-add-row">
+                <input
+                  value={newCat[f.id] ?? ''}
+                  maxLength={MAX_CATEGORY_CHARS}
+                  placeholder="카테고리 추가"
+                  aria-label={`${f.name}에 카테고리 추가`}
+                  onChange={(e) => setNewCat((m) => ({ ...m, [f.id]: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && newCat[f.id]?.trim() && void addCategory(f.id)}
+                />
+                <button className="text-btn small" disabled={!newCat[f.id]?.trim()} onClick={() => void addCategory(f.id)}>
+                  추가
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
         <div className="btn-row">
           <button className="text-btn" onClick={() => void addFolder()}>
-            새 폴더
+            <Icon name="folderPlus" size={16} /> 새 폴더
           </button>
         </div>
       </section>
       <section className="panel-section">
         <h3>숨긴 카테고리</h3>
-        <p className="hint">숨긴 카테고리의 노트는 이 기기 목록에서 감춰지고 받기에서도 제외됩니다. 클라우드 목록에는 계속 표시됩니다.</p>
-        {allCategories.length === 0 && <p className="hint">아직 카테고리가 없습니다.</p>}
-        {allCategories.map((c) => (
-          <div key={c} className="setting-row">
-            <span className="setting-label">{c}</span>
-            <span className="setting-control">
-              <button className="text-btn small" onClick={() => void toggleHidden(c)}>
-                {hidden.includes(c) ? '숨김 해제' : '숨기기'}
-              </button>
-            </span>
+        <p className="hint">숨긴 카테고리의 노트는 이 기기 목록에서 감춰지고 받기에서도 제외됩니다. 클라우드 목록에는 계속 표시됩니다. 눌러서 숨기거나 해제하세요.</p>
+        {allCategories.length === 0 ? (
+          <p className="hint">아직 카테고리가 없습니다.</p>
+        ) : (
+          <div className="hidden-cat-grid">
+            {allCategories.map((c) => {
+              const hid = hidden.includes(c)
+              return (
+                <button
+                  key={c}
+                  className={'hidden-cat-chip' + (hid ? ' is-hidden' : '')}
+                  title={hid ? '숨김 해제' : '이 기기에서 숨기기'}
+                  aria-pressed={hid}
+                  onClick={() => void toggleHidden(c)}
+                >
+                  <Icon name={hid ? 'close' : 'check'} size={13} /> {c}
+                  {hid && <small>숨김</small>}
+                </button>
+              )
+            })}
           </div>
-        ))}
+        )}
       </section>
     </>
   )

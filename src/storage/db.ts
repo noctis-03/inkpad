@@ -67,6 +67,8 @@ export class InkpadDB extends Dexie {
       settings: 'key',
       backups: 'id, createdAt'
     })
+    // v2: 폴더 설정 백업 보존 관리용 reason 인덱스 (나머지 테이블은 v1을 상속한다)
+    this.version(2).stores({ backups: 'id, createdAt, reason' })
   }
 }
 
