@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { login, logout } from '../sync/token'
-import { downloadCloudNote, listCloudNotes, onSyncStatus, pullNow, pushNow, syncNow, type CloudNoteInfo, type SyncStatus } from '../sync/sync'
+import { downloadCloudNote, deleteCloudNote, listCloudNotes, onSyncStatus, pullNow, pushNow, syncNow, type CloudNoteInfo, type SyncStatus } from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
 import { formatDate } from '../shared/util'
@@ -126,6 +126,26 @@ export function SyncSection() {
     }
   }
 
+  const deleteOne = async (info: CloudNoteInfo) => {
+    if (
+      !(await confirmDialog('클라우드에서 삭제', {
+        message: `"${info.title}"을(를) 클라우드에서 지웁니다. 각 기기에 저장된 사본은 그대로 남습니다.`,
+        ok: '삭제',
+        danger: true
+      }))
+    )
+      return
+    setLoading(true)
+    try {
+      await deleteCloudNote(info)
+      toast('클라우드에서 지웠습니다.')
+      await loadCloud()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '삭제 실패', 'error')
+      setLoading(false)
+    }
+  }
+
   if (status === 'auth-required' || status === 'disabled') {
     return (
       <section className="panel-section" id="sync-settings">
@@ -204,6 +224,9 @@ export function SyncSection() {
               </span>
               <button className="text-btn small" disabled={loading || status === 'syncing'} onClick={() => void downloadOne(c)}>
                 받기
+              </button>
+              <button className="icon-mini danger" aria-label="클라우드에서 삭제" disabled={loading || status === 'syncing'} onClick={() => void deleteOne(c)}>
+                <Icon name="trash" size={15} />
               </button>
             </div>
           ))}

@@ -439,8 +439,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
 /** 클라우드 노트 한 개를 이 기기로 내려받는다. 삭제 대기 중이던 노트면 대기를 지우고 되살린다 */
 export async function downloadCloudNote(
   info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>
-): Promise<'applied' | 'skipped' | 'notfound'> {
-  const file = await drive.downloadJson<DocFileV1>(info.fileId, info.enc)
+): Promise<'applied' | 'skipped' | 'notfound'> {  const file = await drive.downloadJson<DocFileV1>(info.fileId, info.enc)
   if (file?.kind !== 'inkpad-doc') return 'notfound'
   const pending = await pendingDocs()
   const p = pending.get(info.docId)
@@ -450,6 +449,17 @@ export async function downloadCloudNote(
   await saveBase(info.docId, file)
   emitRemoteChanged(new Set<string>([info.docId]))
   return 'applied'
+}
+
+/**
+ * 클라우드 노트 삭제 — Drive 파일을 휴지통으로 옮긴다(30일 보관, 복구 가능).
+ * 공용 보관소에서 치우는 것일 뿐이라 각 기기의 로컬 사본은 그대로다.
+ * 이후 이 기기에서 그 노트를 다시 고쳐 올리면 새 파일로 올라간다.
+ */
+export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId'>): Promise<void> {
+  await drive.trash(info.fileId)
+  await db.syncState.delete(`doc:${info.docId}`)
+  await db.syncState.delete(`base:${info.docId}`)
 }
 
 // ───────────────── 실행 (규칙 6) ─────────────────
