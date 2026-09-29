@@ -51,17 +51,6 @@ function handleSyncError(e: unknown) {
   }
 }
 
-// 진행률 문장 (UI의 한 줄 표시)
-const progressListeners = new Set<(t: string | null) => void>()
-export const onSyncProgress = (fn: (t: string | null) => void) => {
-  progressListeners.add(fn)
-  fn(null)
-  return () => {
-    progressListeners.delete(fn)
-  }
-}
-const setProgress = (t: string | null) => progressListeners.forEach((f) => f(t))
-
 // ───────────────── 원격 변경 알림 ─────────────────
 
 export const REMOTE_EVENT = 'inkpad-remote-changed'
@@ -117,79 +106,6 @@ async function pendingDocs(): Promise<Map<ID, PendingDoc>> {
   return docs
 }
 
-const trunc = (s: string) => (s.length > 40 ? s.slice(0, 40) : s)
-
-// ───────────────── 올리기 계획 (git status에 해당) ─────────────────
-
-export interface PushDoc {
-  docId: ID
-  title: string
-  change: 'add' | 'modify' | 'delete'
-}
-
-export interface PushPlan {
-  docs: PushDoc[]
-  folders: boolean
-  /** 새로 올릴 원본(PDF·이미지) 수와 총 바이트 */
-  assets: { count: number; bytes: number }
-  /** 다른 기기도 고친 문서 — 올리기가 머지로 해소한다 */
-  conflicts: { docId: ID; title: string }[]
-  connected: boolean
-}
-
-export async function planPush(): Promise<PushPlan> {
-  const rows = await db.outbox.toArray()
-  const pending = await pendingDocs()
-  const plan: PushPlan = {
-    docs: [],
-    folders: rows.some((r) => r.entity === 'folder'),
-    assets: { count: 0, bytes: 0 },
-    conflicts: [],
-    connected: true
-  }
-
-  for (const [docId] of pending) {
-    const doc = await db.documents.get(docId)
-    if (!doc) {
-      // 행이 이미 없다 = 휴지통 비우기(영구 삭제). 삭제로 기록한다
-      plan.docs.push({ docId, title: docId, change: 'delete' })
-      continue
-    }
-    if (doc.deletedAt) plan.docs.push({ docId, title: doc.title, change: 'delete' })
-    else plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add' })
-  }
-
-  for (const r of rows.filter((x) => x.entity === 'asset')) {
-    const a = await db.assets.get(r.entityId)
-    if (!a?.blob) continue
-    if (await getSync(`asset:${a.sha256}`)) continue
-    plan.assets.count++
-    plan.assets.bytes += a.size
-  }
-
-  // 허브 상태와 비교해 머지가 필요한 문서를 가린다 (오프라인이면 생략)
-  if (navigator.onLine) {
-    try {
-      for (const d of plan.docs) {
-        if (d.change !== 'modify') continue
-        const record = await getSync<FileRecord>(`doc:${d.docId}`)
-        if (!record?.fileId) continue
-        const remote = await drive.getMeta(record.fileId)
-        if (remote && !remote.trashed && remote.version !== record.version) {
-          plan.conflicts.push({ docId: d.docId, title: d.title })
-        }
-      }
-    } catch (e) {
-      console.warn('[sync] 허브 상태 확인 실패 — 미리보기만 표시합니다:', e)
-      plan.connected = false
-    }
-  } else {
-    plan.connected = false
-  }
-
-  return plan
-}
-
 // ───────────────── push ─────────────────
 
 /** 올리기. 이 기기의 변경을 노트 단위로 올리고, 이어서 다른 기기의 변경을 받아온다. */
@@ -212,7 +128,6 @@ export async function pushNow(): Promise<void> {
     } catch (e) {
       handleSyncError(e)
     } finally {
-      setProgress(null)
     }
   })
 }
@@ -227,7 +142,6 @@ async function push(f: { root: string; docs: string; assets: string }) {
   let n = 0
   for (const [docId, info] of docs) {
     n++
-    setProgress(`노트 반영 중 ${n}/${docs.size}…`)
     const doc = await db.documents.get(docId)
     if (!doc || doc.deletedAt) await pushTombstone(docId, info)
     else await pushDoc(docId, info, f)
@@ -262,7 +176,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: trunc(file.doc.title), device, enc: drive.ENC_GZIP }
+      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: file.doc.title, device, enc: drive.ENC_GZIP }
     },
     f.docs,
     remote?.id
@@ -293,7 +207,6 @@ async function pushTombstone(docId: ID, info: PendingDoc) {
 }
 
 async function pushFolders(rootId: string, seqs: number[]) {
-  setProgress('폴더 올리는 중…')
   const before = await packFolders()
   const record = await getSync<FileRecord>('foldersFile')
   const result = await drive.upload(
@@ -335,7 +248,6 @@ async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
  *  2. base(마지막 동기화 스냅샷)로 3-way 머지 → 이 기기에 적용하고 허브로 올린다
  */
 async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: string) {
-  setProgress('노트 머지 중…')
   const local = await packDocument(docId)
   const theirs = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
   if (theirs?.kind !== 'inkpad-doc') return
@@ -357,7 +269,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: trunc(merged.doc.title), device, enc: drive.ENC_GZIP }
+      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: merged.doc.title, device, enc: drive.ENC_GZIP }
     },
     docsFolderId,
     remote.id
@@ -397,7 +309,6 @@ export async function pullNow(): Promise<PullResult | null> {
       handleSyncError(e)
       return null
     } finally {
-      setProgress(null)
     }
   }) as Promise<PullResult | null>
 }
@@ -422,7 +333,6 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   }
 
   // 문서
-  setProgress('허브 목록 확인 중…')
   const remotes = await drive.listFiles(f.docs)
   const recs = new Map<string, FileRecord>()
   for (const kv of await db.syncState.toArray()) {
@@ -438,7 +348,6 @@ async function pull(f: { root: string; docs: string; assets: string }) {
     const rec = recs.get(docId)
     if (rec && rec.version === remote.version) continue // 이미 최신
     n++
-    setProgress(`노트 받는 중 ${n}…`)
     const file = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
     if (file?.kind !== 'inkpad-doc') continue
     if (await applyDocFile(file)) {
