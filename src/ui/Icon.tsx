@@ -28,7 +28,6 @@ const PATHS: Record<string, string> = {
   notebook: 'M2 6h4M2 10h4M2 14h4M2 18h4M4 2h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4ZM16 2v20',
   upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
-  file: 'M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2ZM14 2v6h6',
   share: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13',
   sidebar: 'M3 3h18v18H3zM9 3v18',
   page: 'M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM8 7h8M8 11h8M8 15h5',
