@@ -254,46 +254,70 @@ export function SyncSection() {
 
 /** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경 목록 */
 function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy: boolean; onConfirm: () => void; onClose: () => void }) {
-  const adds = plan.docs.filter((d) => d.change === 'add')
-  const mods = plan.docs.filter((d) => d.change === 'modify')
-  const dels = plan.docs.filter((d) => d.change === 'delete')
-  const label = { add: '추가', modify: '수정', delete: '삭제' } as const
-  const n = plan.docs.length + (plan.folders ? 1 : 0) + plan.assets.count
+  const groups = [
+    { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
+    { key: 'modify' as const, label: '수정한 노트', icon: 'edit', items: plan.docs.filter((d) => d.change === 'modify') },
+    { key: 'delete' as const, label: '삭제한 노트', icon: 'trash', items: plan.docs.filter((d) => d.change === 'delete') }
+  ].filter((g) => g.items.length > 0)
+  const total = plan.docs.length + (plan.folders ? 1 : 0) + plan.assets.count
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-label="올리기 미리보기">
-        <h2 className="modal-title">올리기 미리보기</h2>
-        <p className="hint">클라우드에 올라갈 변경 {n}건 — 올린 뒤 다른 기기의 변경도 받아옵니다.</p>
-        {(adds.length > 0 || mods.length > 0 || dels.length > 0) && (
-          <div className="push-list">
-            {[...adds, ...mods, ...dels].map((d) => (
-              <div key={d.docId} className="push-row">
-                <span className={'push-badge ' + d.change}>{label[d.change]}</span>
-                <span className="push-name">{d.title}</span>
+      <div className="modal push-modal" role="dialog" aria-label="올리기 미리보기">
+        <header className="push-head">
+          <span className="push-count">{total}</span>
+          <div>
+            <h2 className="modal-title">올리기 미리보기</h2>
+            <p className="push-sub">클라우드에 이렇게 올라갑니다 · 올린 뒤 다른 기기의 변경도 받아옵니다</p>
+          </div>
+        </header>
+
+        <div className="push-list">
+          {groups.map((g) => (
+            <section key={g.key} className="push-group">
+              <h4 className="push-group-label">
+                <Icon name={g.icon} size={13} /> {g.label} <b>{g.items.length}</b>
+              </h4>
+              {g.items.map((d) => (
+                <div key={d.docId} className="push-row">
+                  <span className={'push-stripe ' + g.key} />
+                  <span className="push-name">{d.title}</span>
+                  <Icon name={g.key === 'add' ? 'upload' : g.key === 'delete' ? 'trash' : 'edit'} size={14} className="push-ico" />
+                </div>
+              ))}
+            </section>
+          ))}
+          {plan.folders && (
+            <section className="push-group">
+              <h4 className="push-group-label">
+                <Icon name="folder" size={13} /> 폴더 <b>1</b>
+              </h4>
+              <div className="push-row">
+                <span className="push-stripe modify" />
+                <span className="push-name">폴더 트리</span>
+                <Icon name="folder" size={14} className="push-ico" />
               </div>
-            ))}
-          </div>
-        )}
-        {plan.folders && (
-          <div className="push-row">
-            <span className="push-badge modify">수정</span>
-            <span className="push-name">폴더 트리</span>
-          </div>
-        )}
-        {plan.assets.count > 0 && (
-          <div className="push-row">
-            <span className="push-badge add">추가</span>
-            <span className="push-name">
-              원본(PDF·이미지) {plan.assets.count}개 · {Math.round(plan.assets.bytes / 1024)}KB
-            </span>
-          </div>
-        )}
+            </section>
+          )}
+          {plan.assets.count > 0 && (
+            <section className="push-group">
+              <h4 className="push-group-label">
+                <Icon name="file" size={13} /> 원본 (PDF·이미지) <b>{plan.assets.count}</b>
+              </h4>
+              <div className="push-row">
+                <span className="push-stripe add" />
+                <span className="push-name">{Math.round(plan.assets.bytes / 1024)}KB</span>
+                <Icon name="upload" size={14} className="push-ico" />
+              </div>
+            </section>
+          )}
+        </div>
+
         <div className="modal-actions">
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
           <button className="primary-btn" onClick={onConfirm} disabled={busy}>
-            <Icon name="upload" size={18} /> {n ? `${n}건 올리기` : '올리기'}
+            <Icon name="upload" size={18} /> {total ? `${total}건 올리기` : '올리기'}
           </button>
         </div>
       </div>

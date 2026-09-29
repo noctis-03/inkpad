@@ -1762,3 +1762,107 @@ textarea {
 .icon-mini.danger {
   color: #dc2626;
 }
+
+/* ── 올리기 미리보기 모달 ── */
+.push-modal {
+  width: min(440px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.push-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.push-count {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent-soft, #eef2ff);
+  color: var(--accent, #4f46e5);
+  font-size: 18px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.push-modal .modal-title {
+  margin: 0;
+  font-size: 17px;
+}
+.push-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.push-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 0;
+  margin: 0;
+  padding: 2px 0;
+}
+.push-group {
+  margin-bottom: 10px;
+}
+.push-group-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.push-group-label b {
+  color: var(--ink);
+}
+.push-group-label svg {
+  color: var(--muted);
+}
+.push-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px 0 0;
+  border: 0;
+  border-radius: 10px;
+  background: #f7f6f3;
+  font-size: 14px;
+}
+.push-row + .push-row {
+  margin-top: 4px;
+}
+.push-stripe {
+  flex-shrink: 0;
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.push-stripe.add {
+  background: #16a34a;
+}
+.push-stripe.modify {
+  background: #2563eb;
+}
+.push-stripe.delete {
+  background: #dc2626;
+}
+.push-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.push-ico {
+  flex-shrink: 0;
+  color: var(--muted);
+}
