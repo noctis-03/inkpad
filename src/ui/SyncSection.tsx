@@ -16,6 +16,44 @@ const STATUS_LABEL: Record<SyncStatus, string> = {
   disabled: '서버 미설정'
 }
 
+/** 이 기기 이름 정하기 — 클라우드 목록에 표시된다 */
+function DeviceNameRow() {
+  const [name, setName] = useState('')
+  const [saved, setSaved] = useState('')
+  useEffect(() => {
+    void import('../sync/token').then(({ getDeviceName }) => void getDeviceName().then(setSaved))
+  }, [])
+  const save = async () => {
+    const { setDeviceName } = await import('../sync/token')
+    await setDeviceName(name)
+    setSaved(name.trim())
+    setName('')
+    toast(`기기 이름을 "${saved}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
+  }
+  return (
+    <div className="setting-row">
+      <span className="setting-label">
+        이 기기 이름
+        <small>클라우드 목록에 표시됩니다</small>
+      </span>
+      <span className="setting-control">
+        <span className="device-name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={saved || '기기 이름'}
+            aria-label="기기 이름"
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && void save()}
+          />
+          <button className="text-btn small" disabled={!name.trim()} onClick={() => void save()}>
+            저장
+          </button>
+        </span>
+      </span>
+    </div>
+  )
+}
+
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
 }
@@ -139,6 +177,8 @@ export function SyncSection() {
         </button>
       </div>
 
+      <DeviceNameRow />
+
       <div className="setting-row" style={{ marginTop: 10 }}>
         <span className="setting-label">
           클라우드 노트
@@ -156,14 +196,12 @@ export function SyncSection() {
         <div className="cloud-list">
           {cloud.map((c) => (
             <div key={c.docId} className="cloud-row">
-              <div className="cloud-main">
-                <span className="cloud-title">{c.title}</span>
-                <span className="cloud-meta">
-                  {c.device ? `${c.device} · ` : ''}
-                  {formatDate(c.updatedAt)}
-                </span>
-              </div>
+              <span className="cloud-title">{c.title}</span>
               {c.state !== 'same' && c.state !== 'pending' && <span className="dot-new" aria-label="새 노트" />}
+              <span className="cloud-meta">
+                {c.device ? `${c.device} · ` : ''}
+                {formatDate(c.updatedAt)}
+              </span>
               <button className="text-btn small" disabled={loading || status === 'syncing'} onClick={() => void downloadOne(c)}>
                 받기
               </button>

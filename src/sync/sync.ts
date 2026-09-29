@@ -198,10 +198,11 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
 }
 
 /** 로컬에서 삭제된 문서(휴지통 이동·비우기 포함): Drive 파일을 휴지통으로 */
+/**
+ * 로컬 삭제(휴지통 이동·비우기)는 이 기기의 일이다 — 클라우드 사본은 그대로 남겨
+ * 다른 기기와 클라우드 목록에서 계속 쓴다. 대기 행과 base 스냅샷만 정리한다.
+ */
 async function pushTombstone(docId: ID, info: PendingDoc) {
-  const record = await getSync<FileRecord>(`doc:${docId}`)
-  if (record?.fileId) await drive.trash(record.fileId)
-  await db.syncState.delete(`doc:${docId}`)
   await db.syncState.delete(`base:${docId}`)
   await db.outbox.bulkDelete(info.seqs)
 }
@@ -358,18 +359,6 @@ async function pull(f: { root: string; docs: string; assets: string }) {
     }
   }
 
-  // Drive에서 사라진 문서 → 로컬에서도 휴지통으로 (규칙 4)
-  const remoteIds = new Set(remotes.map((x) => x.id))
-  for (const l of await db.documents.toArray()) {
-    if (l.deletedAt || pendingDocs_.has(l.id)) continue
-    const rec = recs.get(l.id)
-    if (!rec?.fileId || remoteIds.has(rec.fileId)) continue
-    const now = Date.now()
-    await db.documents.update(l.id, { deletedAt: now, updatedAt: now })
-    await enqueue('document', l.id, 'delete')
-    changed.add(l.id)
-  }
-
   // 원본 바이트는 받지 않는다. 위치 기록만 채워 두고, 문서를 열 때 지연 로딩한다 (규칙 7)
   await indexAssets(f.assets)
 
@@ -431,6 +420,8 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
     const same = !!rec && rec.version === remote.version
+    // 이 기기에서 지웠거나 없는 노트는 'absent' — 목록에서 다시 받을 수 있다
+    const localGone = !local || !!local.deletedAt
     out.push({
       docId,
       title: remote.appProperties?.title || local?.title || docId,
@@ -439,7 +430,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       fileId: remote.id,
       version: remote.version,
       enc: remote.appProperties?.enc,
-      state: pending.has(docId) ? 'pending' : same ? 'same' : local ? 'remote-new' : 'absent'
+      state: localGone ? 'absent' : pending.has(docId) ? 'pending' : same ? 'same' : 'remote-new'
     })
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
