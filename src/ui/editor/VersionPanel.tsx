@@ -9,6 +9,7 @@ import {
   deleteDocRevision,
   listDocRevisions,
   pinDocRevision,
+  unpinDocRevision,
   restoreDocRevision,
   type DocRevision
 } from '../../sync/revisions'
@@ -79,8 +80,13 @@ export function VersionPanel({ docId }: { docId: ID }) {
   const togglePin = async (r: DocRevision) => {
     setBusyId(r.id)
     try {
-      await pinDocRevision(docId, r.id, !r.keepForever)
-      toast(r.keepForever ? '고정을 해제했습니다.' : '이 버전을 고정했습니다.', 'success')
+      if (r.keepForever) {
+        await unpinDocRevision(docId, r.id)
+        toast('고정을 해제했습니다.', 'success')
+      } else {
+        await pinDocRevision(docId, r.id)
+        toast('이 버전을 고정했습니다.', 'success')
+      }
       await load()
     } catch (e) {
       toast(e instanceof Error ? e.message : '바꾸지 못했습니다.', 'error')

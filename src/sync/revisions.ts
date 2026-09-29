@@ -12,7 +12,7 @@ import { db } from '../storage/db'
 import { enqueue } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
-import { getSync, type FileRecord } from './folders'
+import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
 import type { DocFileV1 } from './pack'
 
 export interface DocRevision {
@@ -45,9 +45,36 @@ export async function listDocRevisions(docId: ID): Promise<DocRevision[]> {
   }))
 }
 
-export async function pinDocRevision(docId: ID, revisionId: string, keep = true): Promise<void> {
+export async function pinDocRevision(docId: ID, revisionId: string): Promise<void> {
   const rec = await fileRecordOf(docId)
-  await drive.setKeepForever(rec.fileId, revisionId, keep)
+  await drive.setKeepForever(rec.fileId, revisionId, true)
+}
+
+/**
+ * 고정 해제 — Drive는 keepForever를 false로 되돌리는 것을 허용하지 않는다(400
+ * illegalKeepForeverModification). 그래서 그 버전 내용을 새 헤드 리비전으로 다시
+ * 올린 뒤(내용은 그대로 남는다) 고정 리비전을 삭제하는 방식으로 흉내 낸다.
+ */
+export async function unpinDocRevision(docId: ID, revisionId: string): Promise<void> {
+  const rec = await fileRecordOf(docId)
+  const file = await drive.downloadRevision<DocFileV1>(rec.fileId, revisionId)
+  if (file?.kind !== 'inkpad-doc') throw new Error('그 버전을 읽을 수 없습니다.')
+  // 파일의 표식(제목·기기 등)은 그대로 유지한다
+  const meta = await drive.getMeta(rec.fileId)
+  const appProperties = { ...(meta?.appProperties ?? {}), docId, enc: drive.ENC_GZIP }
+  const { docs } = await ensureFolders()
+  const result = await drive.upload(
+    await gzipJson(file),
+    { name: `docs/${docId}.json`, mimeType: 'application/json', appProperties },
+    docs,
+    rec.fileId
+  )
+  await putSync(`doc:${docId}`, { fileId: result.id, version: result.version })
+  try {
+    await drive.deleteRevision(rec.fileId, revisionId) // 이제 마지막 리비전이 아니므로 삭제 가능
+  } catch (e) {
+    console.warn('[sync] 고정 리비전 삭제 실패 — 해제는 됐지만 고정이 남아 있다:', e)
+  }
 }
 
 export async function deleteDocRevision(docId: ID, revisionId: string): Promise<void> {

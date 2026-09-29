@@ -247,6 +247,9 @@ export async function downloadRevision<T = unknown>(fileId: string, revisionId: 
     if (/keepForever/i.test(body)) throw new Error('이 버전은 아직 고정되지 않아 내려받을 수 없습니다.')
     throw new Error(`Drive ${res.status}: ${body}`)
   }
-  if (enc === 'gzip') return gunzipJson<T>(await res.blob())
-  return res.json() as Promise<T>
+  const blob = await res.blob()
+  const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer())
+  // gzip 마법 부호(1f 8b)면 압축을 푼다 — enc 표식 유무와 관계없이 옛 리비전도 읽힌다
+  if (enc === 'gzip' || (head[0] === 0x1f && head[1] === 0x8b)) return gunzipJson<T>(blob)
+  return JSON.parse(await blob.text()) as T
 }
