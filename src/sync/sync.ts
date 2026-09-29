@@ -106,7 +106,7 @@ export interface CommitMeta {
 
 type CommitCache = Record<string, CommitMeta>
 
-async function getCommitCache(): Promise<CommitCache> {
+export async function getCommitCache(): Promise<CommitCache> {
   return ((await getSync<CommitCache>('commitCache')) ?? {}) as CommitCache
 }
 async function putCommitCache(c: CommitCache) {
