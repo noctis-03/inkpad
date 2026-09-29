@@ -23,7 +23,7 @@ import {
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
-import { REMOTE_EVENT } from '../../sync/sync'
+import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
 
 type Section = { kind: 'all' } | { kind: 'folder'; id: ID } | { kind: 'trash' }
 
@@ -214,6 +214,17 @@ export function Library() {
           await saveFile(blob, `${d.title}.inkpad`)
         } catch (e) {
           toast(e instanceof Error ? e.message : '내보내기 실패', 'error')
+        } finally {
+          setBusy(null)
+        }
+        break
+      case 'cloudPush':
+        setBusy({ text: `"${d.title}" 올리는 중` })
+        try {
+          await pushOneNote(d.id)
+          toast(`"${d.title}"을(를) 클라우드에 올렸습니다.`, 'success')
+        } catch (e) {
+          toast(e instanceof Error ? e.message : '올리지 못했습니다.', 'error')
         } finally {
           setBusy(null)
         }
@@ -441,6 +452,7 @@ export function Library() {
               <MenuItem icon="copy" label="복제" onClick={() => docAction('duplicate', menu.doc)} />
               <MenuItem icon="folder" label="폴더로 이동" onClick={() => docAction('move', menu.doc)} />
               <MenuItem icon="share" label=".inkpad로 내보내기" onClick={() => docAction('export', menu.doc)} />
+              <MenuItem icon="upload" label="클라우드에 올리기" onClick={() => docAction('cloudPush', menu.doc)} />
               <MenuItem icon="trash" label="휴지통으로" danger onClick={() => docAction('trash', menu.doc)} />
             </>
           )}

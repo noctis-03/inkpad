@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { login, logout } from '../sync/token'
-import { downloadCloudNote, deleteCloudNote, listCloudNotes, onSyncStatus, pullNow, pushNow, syncNow, type CloudNoteInfo, type SyncStatus } from '../sync/sync'
+import { downloadCloudNote, deleteCloudNote, listCloudNotes, onSyncStatus, planPush, pullNow, pushNow, syncNow, type CloudNoteInfo, type PushPlan, type SyncStatus } from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
 import { formatDate } from '../shared/util'
@@ -64,6 +64,7 @@ export function SyncSection() {
   const [cloud, setCloud] = useState<CloudNoteInfo[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
+  const [preview, setPreview] = useState<PushPlan | null>(null)
 
   useEffect(() => {
     const un = onSyncStatus(setStatus)
@@ -107,7 +108,20 @@ export function SyncSection() {
   }
 
   const doPush = async () => {
-    if (!(await confirmDialog('올리기', { message: '이 기기의 변경을 클라우드에 올리고, 다른 기기의 변경도 받아옵니다.', ok: '올리기' }))) return
+    try {
+      const plan = await planPush()
+      if (!plan.docs.length && !plan.folders && !plan.assets.count) {
+        toast('올릴 변경이 없습니다. 이미 최신 상태입니다.', 'info')
+        return
+      }
+      setPreview(plan)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '상태를 확인하지 못했습니다.', 'error')
+    }
+  }
+
+  const confirmPush = async () => {
+    setPreview(null)
     await pushNow()
     void loadCloud()
   }
@@ -217,7 +231,8 @@ export function SyncSection() {
           {cloud.map((c) => (
             <div key={c.docId} className="cloud-row">
               <span className="cloud-title">{c.title}</span>
-              {c.state !== 'same' && c.state !== 'pending' && <span className="dot-new" aria-label="새 노트" />}
+              {c.state === 'remote-new' && <span className="dot-new" aria-label="새 노트" />}
+              {c.state === 'deleted-local' && <span className="dot-del" aria-label="이 기기에서 지운 노트" />}
               <span className="cloud-meta">
                 {c.device ? `${c.device} · ` : ''}
                 {formatDate(c.updatedAt)}
@@ -232,6 +247,56 @@ export function SyncSection() {
           ))}
         </div>
       )}
+      {preview && <PushPreview plan={preview} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
     </section>
+  )
+}
+
+/** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경 목록 */
+function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+  const adds = plan.docs.filter((d) => d.change === 'add')
+  const mods = plan.docs.filter((d) => d.change === 'modify')
+  const dels = plan.docs.filter((d) => d.change === 'delete')
+  const label = { add: '추가', modify: '수정', delete: '삭제' } as const
+  const n = plan.docs.length + (plan.folders ? 1 : 0) + plan.assets.count
+  return (
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-label="올리기 미리보기">
+        <h2 className="modal-title">올리기 미리보기</h2>
+        <p className="hint">클라우드에 올라갈 변경 {n}건 — 올린 뒤 다른 기기의 변경도 받아옵니다.</p>
+        {(adds.length > 0 || mods.length > 0 || dels.length > 0) && (
+          <div className="push-list">
+            {[...adds, ...mods, ...dels].map((d) => (
+              <div key={d.docId} className="push-row">
+                <span className={'push-badge ' + d.change}>{label[d.change]}</span>
+                <span className="push-name">{d.title}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {plan.folders && (
+          <div className="push-row">
+            <span className="push-badge modify">수정</span>
+            <span className="push-name">폴더 트리</span>
+          </div>
+        )}
+        {plan.assets.count > 0 && (
+          <div className="push-row">
+            <span className="push-badge add">추가</span>
+            <span className="push-name">
+              원본(PDF·이미지) {plan.assets.count}개 · {Math.round(plan.assets.bytes / 1024)}KB
+            </span>
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="text-btn" onClick={onClose}>
+            취소
+          </button>
+          <button className="primary-btn" onClick={onConfirm} disabled={busy}>
+            <Icon name="upload" size={18} /> {n ? `${n}건 올리기` : '올리기'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

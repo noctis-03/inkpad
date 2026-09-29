@@ -6,7 +6,9 @@
 //       겹치지 않은 편집은 양쪽 다 살고, 겹친 청크는 원격 우선.
 //       머지 전 이 기기 상태는 Drive 리비전으로 남겨 버전 기록에서 복구할 수 있다.
 //  3. 업로드 중에 또 수정됐으면 outbox를 남겨 다음 라운드에서 다시 올린다
-//  4. 삭제는 outbox delete(tombstone) → Drive 휴지통 → 로컬 휴지통(30일 보관)
+//  4. 삭제는 그 기기의 일 — 클라우드 사본은 남는다. 기기가 지운 노트는 gone 표식으로
+//     받기에서 제외되고(되살리지 않음), 클라우드 목록에는 빨간 점으로 표시되며
+//     목록의 노트별 "받기"로 명시적으로 되살릴 수 있다
 //  5. Drive 폴더가 통째로 사라졌으면 로컬을 지우지 않고 전부 재업로드
 //  6. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
 //  7. 원본 바이트(PDF·이미지)는 pull에서 내려받지 않는다 — 문서를 열 때 지연 로딩 (sync/assets.ts)
@@ -192,17 +194,19 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     if (!cur) return
     await putSync(`doc:${docId}`, { fileId: remote.id, version: remote.version })
     await putSync(`base:${docId}`, { blob: base })
+    await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
     if (cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(seqs)
     // 아니면 outbox가 남아 다음 라운드에서 다시 올려진다
   })
 }
 
-/** 로컬에서 삭제된 문서(휴지통 이동·비우기 포함): Drive 파일을 휴지통으로 */
 /**
  * 로컬 삭제(휴지통 이동·비우기)는 이 기기의 일이다 — 클라우드 사본은 그대로 남겨
- * 다른 기기와 클라우드 목록에서 계속 쓴다. 대기 행과 base 스냅샷만 정리한다.
+ * 다른 기기와 클라우드 목록에서 계속 쓴다. 대신 gone 표식을 남겨 이 기기의
+ * "받기"가 그 노트를 되살리지 않게 하고, 목록에는 빨간 점으로 보여준다.
  */
 async function pushTombstone(docId: ID, info: PendingDoc) {
+  await putSync(`gone:${docId}`, Date.now())
   await db.syncState.delete(`base:${docId}`)
   await db.outbox.bulkDelete(info.seqs)
 }
@@ -343,8 +347,9 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   for (const remote of remotes) {
     const docId = remote.appProperties?.docId
     if (!docId) continue
+    if (await getSync(`gone:${docId}`)) continue // 이 기기에서 지운 노트 — 받기로 되살리지 않는다 (목록에서 개별 받기)
     const local = await db.documents.get(docId)
-    if (local?.deletedAt) continue // 로컬 삭제는 push에서 처리된다
+    if (local?.deletedAt) continue // 휴지통에 있는 노트도 되살리지 않는다
     if (pendingDocs_.has(docId)) continue // 로컬 변경은 push의 머지에서 처리
     const rec = recs.get(docId)
     if (rec && rec.version === remote.version) continue // 이미 최신
@@ -392,7 +397,7 @@ async function mergeFolders(fileId: string, enc: string | undefined): Promise<bo
 
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
-export type CloudNoteState = 'same' | 'remote-new' | 'pending' | 'absent'
+export type CloudNoteState = 'same' | 'remote-new' | 'pending' | 'deleted-local'
 
 export interface CloudNoteInfo {
   docId: ID
@@ -407,7 +412,8 @@ export interface CloudNoteInfo {
 
 /**
  * Drive에 올라가 있는 노트 목록 — 메타만으로 만든다(본문 내려받지 않음).
- * 상태: same(최신) / remote-new(받을 업데이트·새 노트) / pending(이 기기 변경이 올리기 대기 중)
+ * 상태: same(최신) / remote-new(받을 업데이트·새 노트, 파란 점) /
+ *       pending(이 기기 변경이 올리기 대기) / deleted-local(이 기기에서 지운 노트, 빨간 점)
  */
 export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   const f = await ensureFolders()
@@ -420,8 +426,8 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
     const same = !!rec && rec.version === remote.version
-    // 이 기기에서 지웠거나 없는 노트는 'absent' — 목록에서 다시 받을 수 있다
     const localGone = !local || !!local.deletedAt
+    const gone = localGone || !!(await getSync(`gone:${docId}`))
     out.push({
       docId,
       title: remote.appProperties?.title || local?.title || docId,
@@ -430,7 +436,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       fileId: remote.id,
       version: remote.version,
       enc: remote.appProperties?.enc,
-      state: localGone ? 'absent' : pending.has(docId) ? 'pending' : same ? 'same' : 'remote-new'
+      state: gone ? 'deleted-local' : pending.has(docId) ? 'pending' : same ? 'same' : 'remote-new'
     })
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
@@ -439,7 +445,8 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
 /** 클라우드 노트 한 개를 이 기기로 내려받는다. 삭제 대기 중이던 노트면 대기를 지우고 되살린다 */
 export async function downloadCloudNote(
   info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>
-): Promise<'applied' | 'skipped' | 'notfound'> {  const file = await drive.downloadJson<DocFileV1>(info.fileId, info.enc)
+): Promise<'applied' | 'skipped' | 'notfound'> {
+  const file = await drive.downloadJson<DocFileV1>(info.fileId, info.enc)
   if (file?.kind !== 'inkpad-doc') return 'notfound'
   const pending = await pendingDocs()
   const p = pending.get(info.docId)
@@ -447,6 +454,7 @@ export async function downloadCloudNote(
   if (!(await applyDocFile(file))) return 'skipped'
   await putSync(`doc:${info.docId}`, { fileId: info.fileId, version: info.version })
   await saveBase(info.docId, file)
+  await db.syncState.delete(`gone:${info.docId}`) // 명시적으로 받았으니 되살린 것
   emitRemoteChanged(new Set<string>([info.docId]))
   return 'applied'
 }
@@ -460,6 +468,56 @@ export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileI
   await drive.trash(info.fileId)
   await db.syncState.delete(`doc:${info.docId}`)
   await db.syncState.delete(`base:${info.docId}`)
+  await db.syncState.delete(`gone:${info.docId}`)
+}
+
+// ───────────────── 올리기 계획 (미리보기) ─────────────────
+
+export interface PushDoc {
+  docId: ID
+  title: string
+  change: 'add' | 'modify' | 'delete'
+}
+
+export interface PushPlan {
+  docs: PushDoc[]
+  folders: boolean
+  /** 새로 올릴 원본(PDF·이미지) 수와 총 바이트 */
+  assets: { count: number; bytes: number }
+}
+
+/** 올리기 전 미리보기: 이번 올리기에 뭐가 들어가는지 계산한다 (Drive 호출 없음) */
+export async function planPush(): Promise<PushPlan> {
+  const rows = await db.outbox.toArray()
+  const pending = await pendingDocs()
+  const plan: PushPlan = {
+    docs: [],
+    folders: rows.some((r) => r.entity === 'folder'),
+    assets: { count: 0, bytes: 0 }
+  }
+  for (const [docId] of pending) {
+    const doc = await db.documents.get(docId)
+    if (!doc) plan.docs.push({ docId, title: docId, change: 'delete' })
+    else if (doc.deletedAt) plan.docs.push({ docId, title: doc.title, change: 'delete' })
+    else plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add' })
+  }
+  for (const r of rows.filter((x) => x.entity === 'asset')) {
+    const a = await db.assets.get(r.entityId)
+    if (!a?.blob) continue
+    if (await getSync(`asset:${a.sha256}`)) continue
+    plan.assets.count++
+    plan.assets.bytes += a.size
+  }
+  return plan
+}
+
+/** 이 노트 하나만 클라우드에 올린다 (노트 메뉴의 "클라우드에 올리기") */
+export async function pushOneNote(docId: ID): Promise<void> {
+  const doc = await db.documents.get(docId)
+  if (!doc || doc.deletedAt) throw new Error('이 기기에서 삭제된 노트입니다.')
+  const f = await ensureFolders()
+  const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
+  await pushDoc(docId, info, f)
 }
 
 // ───────────────── 실행 (규칙 6) ─────────────────
