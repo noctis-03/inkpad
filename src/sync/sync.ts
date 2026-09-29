@@ -12,15 +12,16 @@
 //  8. 문서/폴더 JSON은 gzip으로 올린다. appProperties.enc='gzip'이 표식이고,
 //     표식이 없는(도입 전) 평문 파일도 그대로 읽는다 (drive.downloadJson)
 import type { ID } from '../shared/model'
-import { SCHEMA_VERSION } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { enqueue } from '../storage/repo'
+import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, packFolders, type DocFileV1, type FoldersFileV1 } from './pack'
+import { preserveAsRevision } from './revisions'
 import { AuthRequiredError, getAccessToken, SyncNotConfiguredError } from './token'
 
 const SYNC_LOCK = 'inkpad-sync'
@@ -44,6 +45,8 @@ const setStatus = (s: SyncStatus) => {
 // ───────────────── 원격 변경 알림 (가이드 8장 3) ─────────────────
 
 export const REMOTE_EVENT = 'inkpad-remote-changed'
+/** 충돌이 리비전 보존으로 해소됐을 때 (UI가 "버전 기록 보기" 안내를 띄운다) */
+export const CONFLICT_EVENT = 'inkpad-conflict-resolved'
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-sync') : null
 channel?.addEventListener('message', (ev: MessageEvent<string[]>) => {
   window.dispatchEvent(new CustomEvent(REMOTE_EVENT, { detail: new Set<string>(ev.data) }))
@@ -106,7 +109,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { root: string; docs: str
 
   // 충돌: 다른 기기에서 먼저 수정했다 (규칙 2)
   if (remote && record?.version && remote.version !== record.version) {
-    await resolveConflict(docId, remote)
+    await resolveConflict(docId, remote, f.docs)
     await db.outbox.bulkDelete(info.seqs)
     return
   }
@@ -181,12 +184,42 @@ async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
 
 // ───────────────── 충돌 (규칙 2) ─────────────────
 
-async function resolveConflict(docId: ID, remote: drive.RemoteFile) {
+/**
+ * 충돌 해소 — 버전 기록 방식 (충돌 사본 대신 리비전 사용)
+ *  1. 이 기기의 편집을 먼저 헤드로 올려 "고정 리비전(keepForever)"으로 만든다
+ *  2. 원격(다른 기기) 버전을 다시 헤드로 되돌린다 → 문서가 복제되지 않는다
+ *  3. 리비전 고정에 실패하면(200개 한도 등) 예전 방식으로 대체해 데이터를 지킨다
+ */
+async function resolveConflict(docId: ID, remote: drive.RemoteFile, docsFolderId: string) {
   const local = await packDocument(docId)
   const content = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
-  const stamp = new Date().toLocaleString()
 
-  // 1) 로컬에서 수정한 내용은 새 문서(사본)로 보존 → 다음 push 때 업로드된다
+  const pinnedId = await preserveAsRevision(docId, local, remote, docsFolderId)
+  if (!pinnedId) {
+    await legacyConflictCopy(docId, local, content, remote)
+    return
+  }
+
+  // 원격 버전을 헤드로 되돌린다
+  const result = await drive.upload(
+    await gzipJson(content),
+    {
+      name: `docs/${docId}.json`,
+      mimeType: 'application/json',
+      appProperties: { docId, updatedAt: String(content.doc.updatedAt), enc: drive.ENC_GZIP }
+    },
+    docsFolderId,
+    remote.id
+  )
+  await applyDocFile(content)
+  await putSync(`doc:${docId}`, { fileId: result.id, version: result.version })
+  emitRemoteChanged(new Set<string>([docId]))
+  window.dispatchEvent(new CustomEvent(CONFLICT_EVENT, { detail: { docId, revisionId: pinnedId } }))
+}
+
+/** 리비전을 쓸 수 없을 때의 예전 방식: 이 기기 편집을 별도 문서로 복사해 남긴다 */
+async function legacyConflictCopy(docId: ID, local: DocFileV1, content: DocFileV1, remote: drive.RemoteFile) {
+  const stamp = new Date().toLocaleString()
   const newId = ulid()
   const pageMap = new Map<ID, ID>(local.pages.map((p) => [p.id, ulid()]))
   const copy: DocFileV1 = {
@@ -196,55 +229,14 @@ async function resolveConflict(docId: ID, remote: drive.RemoteFile) {
     chunks: local.chunks.map((c) => ({ ...c, pageId: pageMap.get(c.pageId)! }))
   }
   await applyDocFile(copy)
-
-  // 2) 원래 문서는 Drive 버전으로 교체
+  // 원래 문서는 Drive 버전으로 교체
   await applyDocFile(content)
   await putSync(`doc:${docId}`, { fileId: remote.id, version: remote.version })
-  emitRemoteChanged(new Set<string>([docId]))
+  emitRemoteChanged(new Set<string>([docId, newId]))
 }
 
 // ───────────────── Drive 파일 → 로컬 ─────────────────
-
-/** Drive 파일을 로컬에 적용. 그 사이에 로컬이 수정됐으면(dirty) 적용하지 않는다 */
-async function applyDocFile(file: DocFileV1): Promise<boolean> {
-  const docId = file.doc.id
-  const encoded: { c: DocFileV1['chunks'][number]; blob: Blob }[] = []
-  for (const c of file.chunks) if (c.elements.length) encoded.push({ c, blob: await gzipJson(c.elements) })
-  let applied = true
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.assets, db.outbox], async () => {
-    const pending = await db.outbox.where('[entity+entityId]').equals(['document', docId]).first()
-    if (pending) {
-      applied = false
-      return
-    }
-    const prev = await db.documents.get(docId)
-    await db.documents.put({
-      ...file.doc,
-      version: prev?.version ?? 0,
-      ...(prev?.lastView ? { lastView: prev.lastView } : {}) // 마지막으로 보던 위치는 로컬 전용
-    })
-    await db.pages.where('documentId').equals(docId).delete()
-    await db.pages.bulkAdd(file.pages)
-    await db.chunks.where('documentId').equals(docId).delete()
-    for (const { c, blob } of encoded) {
-      await db.chunks.put({
-        pageId: c.pageId,
-        key: c.key,
-        documentId: docId,
-        schemaVersion: SCHEMA_VERSION,
-        data: blob,
-        count: c.elements.length,
-        version: 0,
-        localRev: 1,
-        updatedAt: file.doc.updatedAt
-      })
-    }
-    for (const am of file.assets) {
-      if (!(await db.assets.get(am.id))) await db.assets.put({ ...am, version: 0 }) // 원본 blob은 pullAssets가 받는다
-    }
-  })
-  return applied
-}
+// applyDocFile은 sync/apply.ts로 옮겼다 (revisions.ts와 공유하기 위해)
 
 // ───────────────── pull ─────────────────
 

@@ -188,3 +188,65 @@ export async function trash(fileId: string): Promise<void> {
   })
   if (!res.ok && res.status !== 404) throw new Error(`trash 실패 ${res.status}`)
 }
+
+// ───────────────── 리비전(파일 버전 기록) ─────────────────
+// 우리 문서 파일은 Google Docs가 아니라 blob 파일이므로 Drive가 리비전을 자체 보관한다.
+// 규칙(공식 문서):
+//   - keepForever가 아닌 리비전은 새 버전이 올라온 뒤 30일 후 자동 삭제된다
+//   - 리비전 100개가 쌓이면 더 일찍 잘릴 수 있다
+//   - 이전 리비전을 내려받으려면 먼저 keepForever=true로 표시해야 한다
+//   - keepForever는 파일당 최대 200개, 용량은 드라이브 쿼터에서 차감된다
+//   - 헤드 리비전은 자동 purge 대상이 아니고, 파일의 마지막 리비전은 삭제할 수 없다
+
+const REV_FIELDS = 'id,modifiedTime,size,keepForever,originalFilename'
+
+export interface Revision {
+  id: string
+  modifiedTime: string
+  size?: string
+  keepForever?: boolean
+  originalFilename?: string
+}
+
+export async function listRevisions(fileId: string): Promise<Revision[]> {
+  const out: Revision[] = []
+  let pageToken = ''
+  do {
+    const url =
+      `${API}/files/${fileId}/revisions?pageSize=200&fields=nextPageToken,revisions(${REV_FIELDS})` +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+    const page = await ok<{ revisions: Revision[]; nextPageToken?: string }>(await driveFetch(url))
+    out.push(...(page.revisions ?? []))
+    pageToken = page.nextPageToken ?? ''
+  } while (pageToken)
+  // 오래된 것 → 최신 순으로 정렬 (헤드가 마지막)
+  return out.sort((a, b) => a.modifiedTime.localeCompare(b.modifiedTime))
+}
+
+/** 리비전을 영구 보존으로 표시 (이후에 내려받거나 되돌릴 수 있게 된다) */
+export async function setKeepForever(fileId: string, revisionId: string, keep: boolean): Promise<void> {
+  const res = await driveFetch(`${API}/files/${fileId}/revisions/${revisionId}?fields=${REV_FIELDS}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keepForever: keep })
+  })
+  if (!res.ok) throw new Error(`리비전 고정 실패 ${res.status}: ${await res.text()}`)
+}
+
+/** 리비전 영구 삭제. 파일의 마지막 리비전은 지울 수 없다 */
+export async function deleteRevision(fileId: string, revisionId: string): Promise<void> {
+  const res = await driveFetch(`${API}/files/${fileId}/revisions/${revisionId}`, { method: 'DELETE' })
+  if (!res.ok && res.status !== 404) throw new Error(`리비전 삭제 실패 ${res.status}: ${await res.text()}`)
+}
+
+/** 리비전 내용 다운로드. keepForever로 표시된 리비전만 받을 수 있다. */
+export async function downloadRevision<T = unknown>(fileId: string, revisionId: string, enc?: string): Promise<T> {
+  const res = await driveFetch(`${API}/files/${fileId}/revisions/${revisionId}?alt=media`)
+  if (!res.ok) {
+    const body = await res.text()
+    if (/keepForever/i.test(body)) throw new Error('이 버전은 아직 고정되지 않아 내려받을 수 없습니다.')
+    throw new Error(`Drive ${res.status}: ${body}`)
+  }
+  if (enc === 'gzip') return gunzipJson<T>(await res.blob())
+  return res.json() as Promise<T>
+}

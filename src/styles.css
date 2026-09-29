@@ -408,6 +408,71 @@ button {
   line-height: 1.5;
   color: var(--muted);
 }
+.rev-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rev-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.rev-row.is-head {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.rev-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rev-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.rev-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rev-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.rev-tag.head {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.rev-tag.pinned {
+  color: #b45309;
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+.rev-size {
+  font-size: 11px;
+  color: var(--muted);
+}
+.rev-actions {
+  display: flex;
+  gap: 6px;
+}
+.rev-actions .text-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
 .checklist,
 .log {
   margin: 0;

@@ -9,7 +9,8 @@ import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } f
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
 import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress } from '../../sync/assets'
-import { REMOTE_EVENT } from '../../sync/sync'
+import { CONFLICT_EVENT, REMOTE_EVENT } from '../../sync/sync'
+import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
@@ -186,6 +187,20 @@ export function Editor({ docId }: { docId: ID }) {
     return () => window.removeEventListener(REMOTE_EVENT, onRemote)
   }, [docId, navigate, toast])
 
+  // 다른 기기와 충돌했을 때: 이 기기의 편집은 버전 기록에 보존되고, 문서는 다른 기기 버전으로 맞춰진다
+  useEffect(() => {
+    const onConflict = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ docId: string }>).detail
+      if (detail?.docId !== docId) return
+      toast('다른 기기에서도 이 문서를 수정해 이 기기의 편집을 버전 기록에 보관했습니다. 문서는 다른 기기 버전으로 맞췄습니다.', 'info', {
+        label: '버전 기록',
+        run: () => useUI.getState().setPanel('history')
+      })
+    }
+    window.addEventListener(CONFLICT_EVENT, onConflict)
+    return () => window.removeEventListener(CONFLICT_EVENT, onConflict)
+  }, [docId, toast])
+
   const rename = useCallback(
     async (title: string) => {
       if (!doc || !title.trim() || title === doc.title) return
@@ -229,6 +244,7 @@ export function Editor({ docId }: { docId: ID }) {
           {panel === 'settings' && <SettingsPanel />}
           {panel === 'page' && engine && <PagePanel engine={engine} doc={doc!} />}
           {panel === 'export' && engine && doc && <ExportPanel engine={engine} doc={doc} />}
+          {panel === 'history' && <VersionPanel docId={docId} />}
           {panel === 'debug' && engine && <DebugPanel engine={engine} />}
         </div>
       </div>

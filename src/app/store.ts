@@ -87,7 +87,7 @@ interface UIState {
   view: ViewInfo
   selection: SelectionInfo | null
   saveState: SaveState
-  panel: 'none' | 'settings' | 'page' | 'export' | 'debug'
+  panel: 'none' | 'settings' | 'page' | 'export' | 'debug' | 'history'
   sidebar: boolean
   toasts: Toast[]
   busy: { text: string; progress?: number } | null

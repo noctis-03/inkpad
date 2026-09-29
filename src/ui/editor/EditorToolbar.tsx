@@ -226,6 +226,9 @@ export function EditorToolbar(props: {
             <Icon name="grid" />
           </button>
         )}
+        <button className={'tb-btn' + (panel === 'history' ? ' is-active' : '')} onClick={() => setPanel('history')} aria-label="버전 기록">
+          <Icon name="restore" />
+        </button>
         <button className={'tb-btn' + (panel === 'export' ? ' is-active' : '')} onClick={() => setPanel('export')} aria-label="내보내기">
           <Icon name="share" />
         </button>
