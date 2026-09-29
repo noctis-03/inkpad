@@ -27,6 +27,8 @@ import { mergeDocs } from './merge'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 
 const SYNC_LOCK = 'inkpad-sync'
+/** Drive 루트에 두는 폴더 트리 파일 — pushFolders가 올리고, 받는 쪽은 기록이 없어도 이름으로 찾는다 */
+const FOLDERS_NAME = 'folders.json'
 
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'auth-required' | 'error' | 'disabled'
 
@@ -212,11 +214,20 @@ async function pushTombstone(docId: ID, info: PendingDoc) {
 }
 
 async function pushFolders(rootId: string, seqs: number[]) {
+  let record = await getSync<FileRecord>('foldersFile')
+  if (!record?.fileId) {
+    // 이 기기에서 폴더를 올린 적이 없어도 다른 기기가 올려 둔 folders.json이 있다 —
+    // 새 파일을 만들어 이중으로 두지 않도록 이어 받고, 그 내용도 먼저 반영한다.
+    const found = await drive.findByName(FOLDERS_NAME, rootId)
+    if (found && !found.trashed) {
+      await mergeFolders(found.id, found.appProperties?.enc)
+      record = { fileId: found.id, version: found.version }
+    }
+  }
   const before = await packFolders()
-  const record = await getSync<FileRecord>('foldersFile')
   const result = await drive.upload(
     await gzipJson(before),
-    { name: 'folders.json', mimeType: 'application/json', appProperties: { type: 'folders', enc: drive.ENC_GZIP } },
+    { name: FOLDERS_NAME, mimeType: 'application/json', appProperties: { type: 'folders', enc: drive.ENC_GZIP } },
     rootId,
     record?.fileId
   )
@@ -324,13 +335,16 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   const pendingDocs_ = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
   const changed = new Set<string>()
 
-  // 폴더 트리
+  // 폴더 트리 — 이 기기에서 올린 적이 없어도(기록이 없어도) 다른 기기가 올린 트리를 받아야 한다.
+  // 기록이 없거나 가리키던 파일이 없어진 경우 이름으로 다시 찾는다.
   const ff = await getSync<FileRecord>('foldersFile')
-  if (ff?.fileId) {
-    const rf = await drive.getMeta(ff.fileId)
-    if (rf && !rf.trashed && rf.version !== ff.version) {
-      if (await mergeFolders(rf.id, rf.appProperties?.enc)) {
-        await putSync('foldersFile', { fileId: rf.id, version: rf.version })
+  let rf = ff?.fileId ? await drive.getMeta(ff.fileId) : null
+  if (!rf) rf = await drive.findByName(FOLDERS_NAME, f.root)
+  if (rf && !rf.trashed && rf.version !== ff?.version) {
+    const merged = await mergeFolders(rf.id, rf.appProperties?.enc)
+    if (merged !== null) {
+      await putSync('foldersFile', { fileId: rf.id, version: rf.version })
+      if (merged) {
         r.folders = true
         changed.add('__folders__')
       }
@@ -371,9 +385,10 @@ async function pull(f: { root: string; docs: string; assets: string }) {
   return r
 }
 
-async function mergeFolders(fileId: string, enc: string | undefined): Promise<boolean> {
+/** folders.json을 받아 로컬에 반영한다. 파일을 읽을 수 없으면 null, 읽었으면 변경 여부를 돌려준다. */
+async function mergeFolders(fileId: string, enc: string | undefined): Promise<boolean | null> {
   const data = await drive.downloadJson<FoldersFileV1>(fileId, enc)
-  if (data.kind !== 'inkpad-folders' || !Array.isArray(data.folders)) return false
+  if (data.kind !== 'inkpad-folders' || !Array.isArray(data.folders)) return null
   const dirty = new Set((await db.outbox.toArray()).filter((r) => r.entity === 'folder').map((r) => r.entityId))
   let any = false
   for (const fo of data.folders) {
