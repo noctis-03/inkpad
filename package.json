@@ -1,36 +1,14 @@
 {
-  "name": "webapp",
-  "type": "module",
+  "name": "handnote",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pen-first handwriting notebook. Local-first (IndexedDB) with optional Google Drive sync, deployed on Cloudflare Workers.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && vite build -c vite.server.config.ts && echo _worker.js > dist/.assetsignore",
-    "typecheck": "tsc -p tsconfig.json",
-    "preview": "wrangler dev --ip 0.0.0.0 --port 3000",
-    "deploy": "npm run build && wrangler pages deploy dist",
-    "clean-port": "fuser -k 3000/tcp 2>/dev/null || true",
-    "test": "curl -s http://localhost:3000/api/health"
-  },
-  "dependencies": {
-    "dexie": "^4.4.6",
-    "fflate": "^0.8.3",
-    "hono": "^4.13.8",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^6.3.289",
-    "perfect-freehand": "^1.2.3",
-    "rbush": "^4.0.1",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "zustand": "^5.0.15"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "local": "python3 -m http.server 8080 -d public"
   },
   "devDependencies": {
-    "@hono/vite-build": "^1.11.1",
-    "@hono/vite-dev-server": "^0.26.1",
-    "@types/rbush": "^4.0.0",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "typescript": "^7.0.2",
-    "vite": "^8.1.4",
-    "wrangler": "^4.110.0"
+    "wrangler": "^4.136.0"
   }
 }

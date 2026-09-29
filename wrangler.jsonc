@@ -1,15 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "inkpad",
-  "compatibility_date": "2026-09-28",
-  "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
-  "preview_urls": false,
-  "main": "dist/_worker.js",
+  "name": "handnote",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
   "assets": {
-    "directory": "./dist"
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
   },
-  "vars": {
-    "GOOGLE_CLIENT_ID": "975400615913-hh65mgge5ot31jl428c1ermdm4slhg4i.apps.googleusercontent.com"
-  }
+  "observability": { "enabled": true }
 }
