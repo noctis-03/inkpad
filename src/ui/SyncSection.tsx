@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { login, logout } from '../sync/token'
-import { onSyncProgress, onSyncStatus, planPush, pullNow, pushNow, type PushPlan, type SyncStatus } from '../sync/sync'
+import { downloadCloudNote, listCloudNotes, onSyncProgress, onSyncStatus, planPush, pullNow, pushNow, syncNow, type CloudNoteInfo, type PushPlan, type SyncStatus } from '../sync/sync'
 import { downloadAllMissing, listMissingAssets, onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
 import { formatDate, formatBytes } from '../shared/util'
@@ -25,6 +25,12 @@ const STATUS_COLOR: Record<SyncStatus, string> = {
 }
 
 const CHANGE_LABEL = { add: '추가', modify: '수정', delete: '삭제' } as const
+const CLOUD_STATE: Record<CloudNoteInfo['state'], { label: string; color: string }> = {
+  same: { label: '최신', color: '#16a34a' },
+  'remote-new': { label: '받을 업데이트', color: '#2563eb' },
+  pending: { label: '올리기 대기', color: '#d97706' },
+  absent: { label: '새 노트', color: '#2563eb' }
+}
 
 function fmtBytes(n: number) {
   if (n < 1024) return `${n}B`
@@ -32,7 +38,10 @@ function fmtBytes(n: number) {
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)}MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)}GB`
 }
-void fmtBytes
+
+function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
+  void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
+}
 
 export function SyncSection() {
   const [status, setStatus] = useState<SyncStatus>('idle')
@@ -44,6 +53,8 @@ export function SyncSection() {
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
   const [pullingAssets, setPullingAssets] = useState<{ done: number; total: number } | null>(null)
   const [preview, setPreview] = useState<PushPlan | null>(null)
+  const [cloud, setCloud] = useState<CloudNoteInfo[] | null>(null)
+  const [cloudLoading, setCloudLoading] = useState(false)
   const [nameInput, setNameInput] = useState('')
 
   useEffect(() => {
@@ -94,25 +105,38 @@ export function SyncSection() {
   }, [status, progress, preview, pullingAssets])
 
   const signedOut = status === 'auth-required' || status === 'disabled'
+  const working = status === 'syncing'
+
+  const loadCloud = useCallback(async () => {
+    setCloudLoading(true)
+    try {
+      setCloud(await listCloudNotes())
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '클라우드 목록을 가져오지 못했습니다.', 'error')
+    } finally {
+      setCloudLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (signedOut) return
+    void loadCloud()
+  }, [signedOut, loadCloud, lastPush, lastPull])
 
   const doPull = async () => {
     const r = await pullNow()
     if (r) {
-      const bits = [r.docs ? `문서 ${r.docs}개` : '', r.folders ? '폴더' : ''].filter(Boolean)
-      if (bits.length) {
-        toast(`받았습니다: ${bits.join(', ')}.`)
-        if (r.conflicts) toast(`다른 기기와 충돌한 문서 ${r.conflicts}개를 머지했습니다. "올리기"로 허브에 반영하세요.`, 'info')
-      } else {
-        toast('이미 최신 상태입니다.')
-      }
+      const bits = [r.docs ? `노트 ${r.docs}개` : '', r.folders ? '폴더' : ''].filter(Boolean)
+      toast(bits.length ? `받았습니다: ${bits.join(', ')}.` : '이미 최신 상태입니다.', bits.length ? 'success' : 'info')
+      void loadCloud()
     }
   }
 
   const openPushPreview = async () => {
     try {
       const plan = await planPush()
-      if (!plan.docs.length && !plan.folders && !plan.assets.count && !plan.remoteAhead) {
-        toast('올릴 변경이 없습니다. 이미 최신 상태입니다.')
+      if (!plan.docs.length && !plan.folders && !plan.assets.count) {
+        toast('올릴 변경이 없습니다. 이미 최신 상태입니다.', 'info')
         return
       }
       setPreview(plan)
@@ -124,6 +148,7 @@ export function SyncSection() {
   const doPush = async () => {
     setPreview(null)
     await pushNow()
+    void loadCloud()
   }
 
   const pullAllAssets = async () => {
@@ -146,12 +171,26 @@ export function SyncSection() {
     toast(`기기 이름을 "${await getDeviceName()}"(으)로 바꿨습니다.`)
   }
 
+  const downloadOne = async (info: CloudNoteInfo) => {
+    setCloudLoading(true)
+    try {
+      const r = await downloadCloudNote(info)
+      if (r === 'applied') toast(`"${info.title}"을(를) 받았습니다.`)
+      else if (r === 'skipped') toast('받지 못했습니다. 이 기기에서 수정 중인 노트는 "올리기"로 머지됩니다.', 'info')
+      else toast('허브에서 그 노트를 찾지 못했습니다.', 'error')
+      await loadCloud()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '받기 실패', 'error')
+      setCloudLoading(false)
+    }
+  }
+
   if (signedOut) {
     return (
       <section className="panel-section" id="sync-settings">
         <h3>동기화 · Google Drive</h3>
         <p className="hint">
-          노트를 Google Drive의 앱 전용 폴더에 저장해 기기 사이에서 동기화합니다. 데이터는 이 기기에도 그대로 남아 오프라인에서도 쓸 수 있습니다.
+          노트를 Google Drive의 앱 전용 폴더에 저장해 기기 사이에서 주고받습니다. 데이터는 이 기기에도 그대로 남아 오프라인에서도 쓸 수 있습니다.
         </p>
         {status === 'auth-required' ? (
           <div className="btn-row">
@@ -167,8 +206,6 @@ export function SyncSection() {
       </section>
     )
   }
-
-  const working = status === 'syncing'
 
   return (
     <section className="panel-section" id="sync-settings">
@@ -192,7 +229,7 @@ export function SyncSection() {
       <div className="setting-row">
         <span className="setting-label">
           이 기기 이름
-          <small>커밋 메시지와 버전 기록에 표시됩니다</small>
+          <small>클라우드 목록에 표시됩니다</small>
         </span>
         <span className="setting-control">
           <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
@@ -234,7 +271,7 @@ export function SyncSection() {
         <button className="text-btn" onClick={() => void pullAllAssets()} disabled={!missing.n || !!pullingAssets || working}>
           원본 모두 받기
         </button>
-        <button className="text-btn" onClick={() => void logout().then(() => void pushNow())}>
+        <button className="text-btn" onClick={() => void logout().then(() => void syncNow())}>
           로그아웃
         </button>
       </div>
@@ -245,10 +282,47 @@ export function SyncSection() {
         </p>
       )}
 
+      <div className="setting-row" style={{ marginTop: 10 }}>
+        <span className="setting-label">
+          클라우드 노트
+          <small>Drive에 올라가 있는 노트 — 골라서 받을 수 있습니다</small>
+        </span>
+        <span className="setting-control">
+          <button className="text-btn" onClick={() => void loadCloud()} disabled={cloudLoading || working}>
+            <Icon name="restore" size={16} /> 새로 고침
+          </button>
+        </span>
+      </div>
+
+      {cloud && cloud.length === 0 && <p className="hint">아직 클라우드에 올라간 노트가 없습니다. "올리기"로 올려 주세요.</p>}
+      {cloud && cloud.length > 0 && (
+        <div className="cloud-list">
+          {cloud.map((c) => (
+            <div key={c.docId} className="cloud-row">
+              <div className="cloud-main">
+                <span className="cloud-title">{c.title}</span>
+                <span className="cloud-meta">
+                  {c.device ? `${c.device} · ` : ''}
+                  {formatDate(c.updatedAt)}
+                </span>
+              </div>
+              <span className="cloud-badge" style={{ color: CLOUD_STATE[c.state].color }}>
+                {CLOUD_STATE[c.state].label}
+              </span>
+              {c.state !== 'same' && c.state !== 'pending' && (
+                <button className="text-btn small" disabled={cloudLoading || working} onClick={() => void downloadOne(c)}>
+                  받기
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <p className="hint">
-        <b>받기</b>는 다른 기기가 올린 변경을 가져오고, <b>올리기</b>는 이 기기의 변경을 한 커밋으로 올립니다 — 커밋에 뭐가 들어갈지는 올리기 전에 미리 보여줍니다. 다른 기기가
-        먼저 올렸으면 올리기가 먼저 받아서 머지합니다. 같은 문서를 두 기기에서 고쳤으면 페이지·청크 단위로 합치고, 겹친 부분은 원격을 우선합니다 — 이 기기의 편집은 버전 기록에
-        남아 되돌리기로 복구할 수 있습니다. 기기 데이터가 지워지면 받기 한 번으로 복구됩니다.
+        <b>받기</b>는 클라우드의 변경을 가져오고, <b>올리기</b>는 이 기기의 변경을 올린 뒤 다른 기기의 변경도 함께 받아옵니다 — 올리기 전에 뭐가 올라갈지 미리 보여줍니다.
+        다른 기기가 먼저 올린 노트를 이 기기에서도 고쳤으면 마지막 동기화 시점을 기준으로 페이지·청크 단위로 머지하고(겹친 부분은 클라우드 우선), 머지 전 모습은 버전 기록에 남습니다.
+        기기 데이터가 지워지면 받기로 복구됩니다.
       </p>
 
       {preview && <PushPreview plan={preview} busy={working} onConfirm={() => void doPush()} onClose={() => setPreview(null)} />}
@@ -263,15 +337,14 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
   const n = plan.docs.length + (plan.folders ? 1 : 0) + plan.assets.count
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-label="커밋 미리보기">
-        <h2 className="modal-title">커밋 미리보기</h2>
+      <div className="modal" role="dialog" aria-label="올리기 미리보기">
+        <h2 className="modal-title">올리기 미리보기</h2>
         <p className="hint">
-          허브에 올라갈 변경 {n}건{plan.remoteAhead ? ' · 다른 기기의 변경이 있어 먼저 받아 머지합니다' : ''}
-          {!plan.connected ? ' · 오프라인 — 허브 상태와 비교하지 않았습니다' : ''}
+          클라우드에 올라갈 변경 {n}건{!plan.connected ? ' · 오프라인 — 클라우드 상태와 비교하지 않았습니다' : ''}
         </p>
         {plan.conflicts.length > 0 && (
           <p className="hint warn">
-            다른 기기도 고친 문서 {plan.conflicts.length}개 — 페이지·청크 단위로 합치고 겹친 부분은 원격을 우선합니다. 이 기기의 편집은 버전 기록에 남겨 언제든 복구할 수
+            다른 기기도 고친 노트 {plan.conflicts.length}개 — 마지막 동기화 시점 기준으로 머지합니다(겹친 부분은 클라우드 우선). 머지 전 모습은 버전 기록에 남겨 복구할 수
             있습니다.
           </p>
         )}
@@ -310,8 +383,4 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
       </div>
     </div>
   )
-}
-
-function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
-  void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
 }

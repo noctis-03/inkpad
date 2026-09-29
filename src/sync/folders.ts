@@ -37,19 +37,14 @@ export async function resetRemoteRecords() {
     await db.syncState.bulkDelete(
       keys.filter(
         (k) =>
-          k.startsWith('doc:') ||
-          k.startsWith('asset:') ||
-          k.startsWith('base:') ||
-          k === 'foldersFile' ||
-          k === 'deviceRec' ||
-          k === 'commitCache'
+          k.startsWith('doc:') || k.startsWith('asset:') || k.startsWith('base:') || k === 'foldersFile'
       )
     )
   })
   await enqueueEverything()
 }
 
-export async function ensureFolders(): Promise<{ root: string; docs: string; assets: string; commits: string; devices: string }> {
+export async function ensureFolders(): Promise<{ root: string; docs: string; assets: string }> {
   const cached = await getSync<string>('rootFolderId')
   let root: string | undefined
   if (cached) {
@@ -64,9 +59,7 @@ export async function ensureFolders(): Promise<{ root: string; docs: string; ass
   const rootChanged = cached !== root
   const docs = await ensureSubFolder(root, 'docs', 'docsFolderId', rootChanged)
   const assets = await ensureSubFolder(root, 'assets', 'assetsFolderId', rootChanged)
-  const commits = await ensureSubFolder(root, 'commits', 'commitsFolderId', rootChanged)
-  const devices = await ensureSubFolder(root, 'devices', 'devicesFolderId', rootChanged)
-  return { root, docs, assets, commits, devices }
+  return { root, docs, assets }
 }
 
 async function ensureSubFolder(rootId: string, name: string, key: string, forceFind: boolean): Promise<string> {

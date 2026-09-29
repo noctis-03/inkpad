@@ -606,6 +606,46 @@ textarea {
   border-radius: 10px;
   margin: 8px 0;
 }
+.cloud-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 4px 0 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.cloud-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.cloud-row + .cloud-row {
+  border-top: 1px solid var(--line);
+}
+.cloud-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cloud-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .push-row {
   display: flex;
   align-items: center;

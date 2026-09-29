@@ -129,7 +129,7 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
                         </dd>
                       </div>
                       <div>
-                        <dt>동기화 대기</dt>
+                        <dt>동기화 대기 (Drive)</dt>
                         <dd>{stats.pending}건</dd>
                       </div>
                       <div>
@@ -145,7 +145,7 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
                 )}
                 {stats && !stats.persisted && (
                   <p className="hint warn">
-                    Safari는 오래 쓰지 않은 사이트의 데이터를 지울 수 있습니다. 홈 화면에 추가하고, 정기적으로 전체 백업을 받아 두세요. 동기화를 설정해 두면 GitHub 허브에서 복구할 수 있습니다. (설정 탭의 "동기화 · GitHub")
+                    Safari는 오래 쓰지 않은 사이트의 데이터를 지울 수 있습니다. 홈 화면에 추가하고, 정기적으로 전체 백업을 받아 두세요. 동기화를 설정해 두면 Drive에서 복구할 수 있습니다. (설정 탭의 "동기화 · Google Drive")
                   </p>
                 )}
                 <div className="btn-row">
