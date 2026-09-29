@@ -91,8 +91,6 @@ export function Library() {
 
   const currentFolderId = section.kind === 'folder' ? section.id : null
 
-  const mappedCategories = useMemo(() => new Set(folders.flatMap((f) => f.categories ?? [])), [folders])
-
   const visible = useMemo(() => {
     let list = section.kind === 'trash' ? trash : docs
     if (section.kind !== 'trash') list = list.filter((d) => !d.category || !hiddenCats.has(d.category)) // 숨긴 카테고리는 이 기기에서 미사용
@@ -103,7 +101,7 @@ export function Library() {
     } else if (section.kind === 'category') {
       list = list.filter((d) => d.category === section.name)
     } else if (section.kind === 'uncategorized') {
-      list = list.filter((d) => d.category == null || !mappedCategories.has(d.category))
+      list = list.filter((d) => d.category == null) // 카테고리가 아예 없는 노트만 — 매핑 안 된 카테고리는 사이드바의 카테고리 항목으로 보인다
     }
     const q = query.trim().toLowerCase()
     if (q) list = list.filter((d) => d.title.toLowerCase().includes(q))
@@ -112,7 +110,7 @@ export function Library() {
     else if (prefs.sort === 'created') sorted.sort((a, b) => b.createdAt - a.createdAt)
     else sorted.sort((a, b) => (section.kind === 'trash' ? (b.deletedAt ?? 0) - (a.deletedAt ?? 0) : b.updatedAt - a.updatedAt))
     return sorted
-  }, [docs, trash, folders, mappedCategories, hiddenCats, section, query, prefs.sort])
+  }, [docs, trash, folders, hiddenCats, section, query, prefs.sort])
 
   const allCategories = useMemo(() => {
     const s = new Set<string>()
@@ -289,11 +287,8 @@ export function Library() {
     } else if (action === 'new') {
       return onNewFolder(f.id)
     } else if (action === 'delete') {
-      const count = docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length
       const ok = await confirmDialog(`"${f.name}" 폴더 삭제`, {
-        message: count
-          ? `이 폴더의 카테고리 매핑을 없앱니다. 노트 ${count}개는 삭제되지 않고 미분류로 표시됩니다.`
-          : '이 폴더의 카테고리 매핑을 없앱니다. 하위 폴더도 함께 삭제됩니다.',
+        message: '이 폴더의 카테고리 매핑을 없앱니다. 노트는 삭제되지 않고 각 카테고리 메뉴에서 계속 볼 수 있습니다.',
         ok: '삭제',
         danger: true
       })
@@ -372,7 +367,7 @@ export function Library() {
             >
               <Icon name="tag" size={18} /> 미분류{' '}
               <span className="count">
-                {docs.filter((d) => (d.category == null || !mappedCategories.has(d.category)) && !(d.category && hiddenCats.has(d.category))).length}
+                {docs.filter((d) => d.category == null).length}
               </span>
             </button>
             {shownCategories.length > 0 && (

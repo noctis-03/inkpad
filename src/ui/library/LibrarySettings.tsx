@@ -248,7 +248,7 @@ function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
 
   const removeFolder = async (f: Folder) => {
     const ok = await confirmDialog(`"${f.name}" 폴더 삭제`, {
-      message: '이 폴더의 카테고리 매핑을 없앱니다. 노트는 삭제되지 않고 미분류로 표시됩니다.',
+      message: '이 폴더의 카테고리 매핑을 없앱니다. 노트는 삭제되지 않고 각 카테고리 메뉴에서 계속 볼 수 있습니다.',
       ok: '삭제',
       danger: true
     })
@@ -292,7 +292,7 @@ function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
                   ))}
                 </div>
               ) : (
-                <p className="hint">매핑 없음 — 이 폴더를 열면 미분류 노트가 보입니다.</p>
+                <p className="hint">매핑 없음 — 이 폴더에는 표시될 노트가 없습니다.</p>
               )}
               <div className="cat-add-row">
                 <input
