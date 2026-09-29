@@ -1,20 +1,18 @@
 import { useEffect, useState } from 'react'
-import { useUI } from '../app/store'
-import { clearConfig, getDeviceName, getConfig, saveConfig, setDeviceName, type GhConfig } from '../sync/token'
-import { forgetRemote, onSyncProgress, onSyncStatus, planPush, pullNow, pushNow, type PushPlan, type SyncStatus } from '../sync/sync'
-import { createRepo, verify } from '../sync/github'
+import { login, logout } from '../sync/token'
+import { onSyncProgress, onSyncStatus, planPush, pullNow, pushNow, type PushPlan, type SyncStatus } from '../sync/sync'
 import { downloadAllMissing, listMissingAssets, onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
-import { formatDate } from '../shared/util'
+import { formatDate, formatBytes } from '../shared/util'
 import { Icon } from './Icon'
 
 const STATUS_LABEL: Record<SyncStatus, string> = {
-  idle: '연결됨',
+  idle: '동기화됨',
   syncing: '작업 중…',
   offline: '오프라인 — 기기에 저장됨',
-  'auth-required': '토큰 확인 필요',
+  'auth-required': '로그인 필요',
   error: '동기화 오류',
-  disabled: '미연결'
+  disabled: '서버 미설정'
 }
 
 const STATUS_COLOR: Record<SyncStatus, string> = {
@@ -34,12 +32,10 @@ function fmtBytes(n: number) {
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)}MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)}GB`
 }
+void fmtBytes
 
 export function SyncSection() {
-  const toast = useUI((s) => s.toast)
   const [status, setStatus] = useState<SyncStatus>('idle')
-  const [cfg, setCfg] = useState<GhConfig | null | undefined>(undefined)
-  const [device, setDevice] = useState('')
   const [lastPush, setLastPush] = useState<number | null>(null)
   const [lastPull, setLastPull] = useState<number | null>(null)
   const [pending, setPending] = useState(0)
@@ -48,14 +44,7 @@ export function SyncSection() {
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
   const [pullingAssets, setPullingAssets] = useState<{ done: number; total: number } | null>(null)
   const [preview, setPreview] = useState<PushPlan | null>(null)
-
-  // 연결 폼 상태
-  const [repo, setRepo] = useState('')
-  const [branch, setBranch] = useState('main')
-  const [token, setToken] = useState('')
   const [nameInput, setNameInput] = useState('')
-  const [settingUp, setSettingUp] = useState(false)
-  const [setupError, setSetupError] = useState<string | null>(null)
 
   useEffect(() => {
     const un = onSyncStatus(setStatus)
@@ -71,10 +60,11 @@ export function SyncSection() {
     }
   }, [])
 
+  // 원본 지연 로딩 진행률
   useEffect(() => {
-    const un = onAssetProgress((e) => setFetching(e.done ? null : { loaded: e.loaded, total: e.total }))
+    const off = onAssetProgress((e) => setFetching(e.done ? null : { loaded: e.loaded, total: e.total }))
     return () => {
-      un()
+      off()
       setFetching(null)
     }
   }, [])
@@ -82,17 +72,13 @@ export function SyncSection() {
   useEffect(() => {
     let alive = true
     const load = async () => {
-      const [c, d, lp, ll, n, assets] = await Promise.all([
-        getConfig(),
-        getDeviceName(),
+      const [lp, ll, n, assets] = await Promise.all([
         db.syncState.get('lastPushAt'),
         db.syncState.get('lastPullAt'),
         db.outbox.count(),
         db.assets.toArray()
       ])
       if (!alive) return
-      setCfg(c ?? null)
-      setDevice(d)
       setLastPush((lp?.value as number) ?? null)
       setLastPull((ll?.value as number) ?? null)
       setPending(n)
@@ -107,63 +93,18 @@ export function SyncSection() {
     }
   }, [status, progress, preview, pullingAssets])
 
-  const connect = async () => {
-    setSettingUp(true)
-    setSetupError(null)
-    const temp: GhConfig = { repo: repo.trim(), branch: branch.trim() || 'main', token: token.trim() }
-    try {
-      await saveConfig(temp)
-      if (nameInput.trim()) await setDeviceName(nameInput)
-      await verify()
-      setCfg(temp)
-      toast(`GitHub 저장소 ${temp.repo}에 연결했습니다.`, 'success')
-    } catch (e) {
-      await clearConfig()
-      setSetupError(e instanceof Error ? e.message : '연결하지 못했습니다.')
-    } finally {
-      setSettingUp(false)
-    }
-  }
-
-  const createAndConnect = async () => {
-    setSettingUp(true)
-    setSetupError(null)
-    const temp: GhConfig = { repo: repo.trim(), branch: branch.trim() || 'main', token: token.trim() }
-    try {
-      await saveConfig(temp)
-      try {
-        await verify()
-      } catch {
-        // 저장소가 없으면 만든다 (토큰 권한에 따라 실패할 수 있다)
-        const name = temp.repo.includes('/') ? temp.repo.split('/')[1] : temp.repo
-        await createRepo(name, false)
-        await verify()
-      }
-      if (nameInput.trim()) await setDeviceName(nameInput)
-      setCfg(temp)
-      toast(`GitHub 저장소 ${temp.repo}에 연결했습니다.`, 'success')
-    } catch (e) {
-      await clearConfig()
-      setSetupError(e instanceof Error ? e.message : '저장소를 만들지 못했습니다.')
-    } finally {
-      setSettingUp(false)
-    }
-  }
-
-  const disconnect = async () => {
-    await clearConfig()
-    await forgetRemote()
-    setCfg(null)
-    setToken('')
-    toast('연결을 해제했습니다. 기기의 데이터는 그대로 남습니다.', 'info')
-  }
+  const signedOut = status === 'auth-required' || status === 'disabled'
 
   const doPull = async () => {
     const r = await pullNow()
     if (r) {
-      const bits = [r.docs ? `문서 ${r.docs}개` : '', r.folders ? '폴더' : '', r.indexedAssets ? `원본 위치 ${r.indexedAssets}개` : ''].filter(Boolean)
-      toast(bits.length ? `받았습니다: ${bits.join(', ')}.` : '이미 최신 상태입니다.', r.docs ? 'success' : 'info')
-      if (r.conflicts) toast(`다른 기기와 충돌한 문서 ${r.conflicts}개가 있습니다. "올리기"를 누르면 머지됩니다.`, 'info')
+      const bits = [r.docs ? `문서 ${r.docs}개` : '', r.folders ? '폴더' : ''].filter(Boolean)
+      if (bits.length) {
+        toast(`받았습니다: ${bits.join(', ')}.`)
+        if (r.conflicts) toast(`다른 기기와 충돌한 문서 ${r.conflicts}개를 머지했습니다. "올리기"로 허브에 반영하세요.`, 'info')
+      } else {
+        toast('이미 최신 상태입니다.')
+      }
     }
   }
 
@@ -171,7 +112,7 @@ export function SyncSection() {
     try {
       const plan = await planPush()
       if (!plan.docs.length && !plan.folders && !plan.assets.count && !plan.remoteAhead) {
-        toast('올릴 변경이 없습니다. 이미 최신 상태입니다.', 'info')
+        toast('올릴 변경이 없습니다. 이미 최신 상태입니다.')
         return
       }
       setPreview(plan)
@@ -197,64 +138,32 @@ export function SyncSection() {
     }
   }
 
-  if (cfg === undefined) return <section className="panel-section" id="sync-settings" />
+  const saveName = async () => {
+    const { setDeviceName, getDeviceName } = await import('../sync/token')
+    if (!nameInput.trim()) return
+    await setDeviceName(nameInput)
+    setNameInput('')
+    toast(`기기 이름을 "${await getDeviceName()}"(으)로 바꿨습니다.`)
+  }
 
-  if (!cfg) {
+  if (signedOut) {
     return (
       <section className="panel-section" id="sync-settings">
-        <h3>동기화 · GitHub</h3>
+        <h3>동기화 · Google Drive</h3>
         <p className="hint">
-          GitHub 저장소를 허브로 써서 기기 사이에 동기화합니다. 자동 동기화는 없고, <b>받기</b>/<b>올리기</b> 버튼을 눌렀을 때만 움직입니다.
-          데이터는 기기마다 온전한 사본으로 남아 있어서, 이 기기 데이터가 지워져도 받기 한 번이면 복구됩니다.
+          노트를 Google Drive의 앱 전용 폴더에 저장해 기기 사이에서 동기화합니다. 데이터는 이 기기에도 그대로 남아 오프라인에서도 쓸 수 있습니다.
         </p>
-        <div className="setting-row">
-          <span className="setting-label">
-            저장소
-            <small>owner/repo — GitHub 저장소 (예: myname/inkpad-data)</small>
-          </span>
-          <span className="setting-control">
-            <input className="text-input" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repo" />
-          </span>
-        </div>
-        <div className="setting-row">
-          <span className="setting-label">
-            브랜치
-            <small>비워 두면 main</small>
-          </span>
-          <span className="setting-control">
-            <input className="text-input" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" />
-          </span>
-        </div>
-        <div className="setting-row">
-          <span className="setting-label">
-            토큰 (PAT)
-            <small>repo 읽기·쓰기 권한 — 이 기기에만 저장됩니다</small>
-          </span>
-          <span className="setting-control">
-            <input className="text-input" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" />
-          </span>
-        </div>
-        <div className="setting-row">
-          <span className="setting-label">
-            이 기기 이름
-            <small>커밋 메시지와 버전 기록에 표시됩니다</small>
-          </span>
-          <span className="setting-control">
-            <input className="text-input" value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder={device} />
-          </span>
-        </div>
-        {setupError && <p className="hint warn">{setupError}</p>}
-        <div className="btn-row">
-          <button className="primary-btn" onClick={() => void connect()} disabled={!repo.trim() || !token.trim() || settingUp}>
-            <Icon name="cloud" size={18} /> {settingUp ? '확인 중…' : '연결하기'}
-          </button>
-          <button className="text-btn" onClick={() => void createAndConnect()} disabled={!repo.trim() || !token.trim() || settingUp}>
-            저장소가 없으면 만들어서 연결
-          </button>
-        </div>
-        <p className="hint">
-          토큰은 GitHub의 Settings → Developer settings → Fine-grained personal access tokens에서 만들고, 이 앱이 쓸 저장소에 Contents 읽기·쓰기 권한을 주세요.
-        </p>
+        {status === 'auth-required' ? (
+          <div className="btn-row">
+            <button className="primary-btn" onClick={() => login()}>
+              <Icon name="upload" size={18} /> Google로 로그인
+            </button>
+          </div>
+        ) : (
+          <p className="hint warn">
+            서버에 OAuth 설정이 없습니다(Cloudflare의 GOOGLE_CLIENT_ID 등 환경 변수). 로컬 저장은 계속 동작합니다.
+          </p>
+        )}
       </section>
     )
   }
@@ -263,7 +172,7 @@ export function SyncSection() {
 
   return (
     <section className="panel-section" id="sync-settings">
-      <h3>동기화 · GitHub</h3>
+      <h3>동기화 · Google Drive</h3>
       <div className="setting-row">
         <span className="setting-label">
           상태
@@ -282,12 +191,22 @@ export function SyncSection() {
       </div>
       <div className="setting-row">
         <span className="setting-label">
-          허브 · 기기
-          <small>기기마다 전체 사본을 가지고, 커밋 단위로 주고받습니다</small>
+          이 기기 이름
+          <small>커밋 메시지와 버전 기록에 표시됩니다</small>
         </span>
         <span className="setting-control">
-          <span style={{ whiteSpace: 'nowrap' }}>
-            {cfg.repo} / <b>{device}</b>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <input
+              className="text-input"
+              style={{ minWidth: 120 }}
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="기기 이름"
+              aria-label="기기 이름"
+            />
+            <button className="text-btn" onClick={() => void saveName()} disabled={!nameInput.trim()}>
+              저장
+            </button>
           </span>
         </span>
       </div>
@@ -295,8 +214,8 @@ export function SyncSection() {
       {progress && <p className="hint">{progress}</p>}
       {fetching && (
         <p className="hint">
-          원본 받는 중… {fmtBytes(fetching.loaded)}
-          {fetching.total ? ` / ${fmtBytes(fetching.total)}` : ''}
+          원본 받는 중… {formatBytes(fetching.loaded)}
+          {fetching.total ? ` / ${formatBytes(fetching.total)}` : ''}
         </p>
       )}
       {pullingAssets && (
@@ -315,21 +234,21 @@ export function SyncSection() {
         <button className="text-btn" onClick={() => void pullAllAssets()} disabled={!missing.n || !!pullingAssets || working}>
           원본 모두 받기
         </button>
-        <button className="text-btn" onClick={() => void disconnect()} disabled={working}>
-          연결 해제
+        <button className="text-btn" onClick={() => void logout().then(() => void pushNow())}>
+          로그아웃
         </button>
       </div>
 
       {missing.n > 0 && (
         <p className="hint">
-          이 기기에 없는 원본 {missing.n}개 · {fmtBytes(missing.bytes)} — 문서를 열 때 자동으로 받아옵니다.
+          이 기기에 없는 원본 {missing.n}개 · {formatBytes(missing.bytes)} — 문서를 열 때 자동으로 받아옵니다.
         </p>
       )}
 
       <p className="hint">
-        <b>받기</b>는 허브에서 다른 기기의 변경을 가져오고, <b>올리기</b>는 이 기기의 변경을 한 커밋으로 올립니다 — 커밋에 뭐가 들어갈지는 올리기 전에 미리 보여줍니다.
-        다른 기기가 먼저 올렸으면 올리기가 먼저 받아서 머지합니다. 같은 문서를 두 기기에서 고쳤으면 양쪽 내용이 모두 버전 기록에 남습니다.
-        데이터가 지워진 기기는 받기 한 번으로 되살아납니다.
+        <b>받기</b>는 다른 기기가 올린 변경을 가져오고, <b>올리기</b>는 이 기기의 변경을 한 커밋으로 올립니다 — 커밋에 뭐가 들어갈지는 올리기 전에 미리 보여줍니다. 다른 기기가
+        먼저 올렸으면 올리기가 먼저 받아서 머지합니다. 같은 문서를 두 기기에서 고쳤으면 페이지·청크 단위로 합치고, 겹친 부분은 원격을 우선합니다 — 이 기기의 편집은 버전 기록에
+        남아 되돌리기로 복구할 수 있습니다. 기기 데이터가 지워지면 받기 한 번으로 복구됩니다.
       </p>
 
       {preview && <PushPreview plan={preview} busy={working} onConfirm={() => void doPush()} onClose={() => setPreview(null)} />}
@@ -348,10 +267,12 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
         <h2 className="modal-title">커밋 미리보기</h2>
         <p className="hint">
           허브에 올라갈 변경 {n}건{plan.remoteAhead ? ' · 다른 기기의 변경이 있어 먼저 받아 머지합니다' : ''}
+          {!plan.connected ? ' · 오프라인 — 허브 상태와 비교하지 않았습니다' : ''}
         </p>
         {plan.conflicts.length > 0 && (
           <p className="hint warn">
-            다른 기기도 고친 문서 {plan.conflicts.length}개 — 이 기기의 편집은 버전 기록에 남기고, 허브 버전을 현재 상태로 가져옵니다. 되돌리기로 언제든 복구할 수 있습니다.
+            다른 기기도 고친 문서 {plan.conflicts.length}개 — 페이지·청크 단위로 합치고 겹친 부분은 원격을 우선합니다. 이 기기의 편집은 버전 기록에 남겨 언제든 복구할 수
+            있습니다.
           </p>
         )}
         {(adds.length > 0 || mods.length > 0 || dels.length > 0) && (
@@ -374,7 +295,7 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
           <div className="push-row">
             <span className="push-badge add">추가</span>
             <span className="push-name">
-              원본(PDF·이미지) {plan.assets.count}개 · {fmtBytes(plan.assets.bytes)}
+              원본(PDF·이미지) {plan.assets.count}개 · {formatBytes(plan.assets.bytes)}
             </span>
           </div>
         )}
@@ -389,4 +310,8 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
       </div>
     </div>
   )
+}
+
+function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
+  void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
 }

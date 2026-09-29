@@ -31,9 +31,9 @@ export function VersionPanel({ docId }: { docId: ID }) {
     } catch (e) {
       const msg =
         e instanceof AuthRequiredError
-          ? '먼저 설정에서 GitHub 저장소를 연결해 주세요.'
+          ? '먼저 Google로 로그인해 주세요.'
           : e instanceof SyncNotConfiguredError
-            ? 'GitHub 저장소가 연결되어 있지 않습니다.'
+            ? '서버에 OAuth 설정이 없습니다.'
             : e instanceof Error
               ? e.message
               : '버전 기록을 가져오지 못했습니다.'
@@ -109,7 +109,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
             <div className="setting-row">
               <span className="setting-label">
                 버전 {revs.length}개
-                <small>GitHub 커밋 이력 — 모든 버전이 영구 보존됩니다</small>
+                <small>동기화 커밋 이력 — 되돌릴 수 있는 버전입니다</small>
               </span>
             </div>
           </section>
@@ -142,7 +142,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
 
           <section className="panel-section">
             <p className="hint">
-              버전은 GitHub 커밋 이력으로 남으므로 지워지지 않고, 충돌로 보존된 이 기기의 편집도 여기서 되돌릴 수 있습니다.
+              문서를 올릴 때마다 그 시점이 커밋으로 남습니다. 충돌 머지로 대체된 이 기기의 편집도 여기서 되돌릴 수 있습니다. 365일 지난 옛 버전의 스냅샷은 자동으로 정리됩니다.
             </p>
             <div className="btn-row">
               <button className="text-btn" onClick={() => void load()}>

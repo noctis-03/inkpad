@@ -1,28 +1,36 @@
-// 동기화 엔진 — GitHub을 허브로 쓰는 풀/푸시 방식.
-// git을 흉내 낸다:
-//  - 이 기기(브라우저 IndexedDB)가 "로컬 저장소", GitHub 저장소가 "원격 허브"다.
-//  - 올리기(push) = 변경 파일을 모아 한 커밋으로 만들어 브랜치를 이동시킨다.
-//    커밋에 뭐가 들어갈지는 올리기 전에 미리 보여준다 (planPush → UI 미리보기).
-//  - 받기(pull) = 허브 트리와 로컬 기록(blob SHA)을 비교해 달라진 파일만 내려받는다.
-//  - 머지 = 다른 기기가 먼저 올렸으면(push 전 head가 틀리면) 받기를 먼저 하고 push한다.
-//    양쪽에서 같은 문서를 고쳤으면: 이 기기의 편집을 먼저 커밋해 이력에 남기고,
-//    원격 버전을 현재 상태로 적용한다 → 둘 다 보존되고 버전 기록에서 되돌릴 수 있다.
+// 동기화 엔진 — git의 풀/푸시 모델을 Google Drive 위에 구현한 것.
+//
+// 허브 레이아웃 (Drive의 앱 폴더 안):
+//   Inkpad/docs/<docId>.<commitId>.json  문서 스냅샷 — 커밋이 가리키는 시점의 값 (gzip)
+//   Inkpad/folders.json                  폴더 트리 헤드 (gzip)
+//   Inkpad/assets/<sha256>.<ext>         원본 PDF·이미지 (내용 주소, 중복 없음)
+//   Inkpad/commits/<commitId>.json       커밋: 부모·기기·변경 목록
+//   Inkpad/devices/<deviceId>.json       각 기기의 헤드 포인터 — 자기 파일만 쓰므로 기기끼리 충돌하지 않는다
+//
+// git과의 대응:
+//   로컬 저장소 = 이 기기의 IndexedDB (전체 사본 — 기기 데이터가 지워져도 받기로 복원)
+//   허브        = Drive 폴더 / 커밋 = "스냅샷 업로드 + 커밋 파일 + 내 기기 헤드 전진"
+//   받기        = 다른 기기 헤드에서 아직 못 받은 커밋을 걷아 스냅샷을 적용 (필요하면 머지)
+//   올리기      = 먼저 받아 머지한 뒤 자기 커밋을 만들어 헤드를 전진 (pull → push)
+//   충돌        = 공통 조상(base) 스냅샷으로 페이지·청크 단위 3-way 머지.
+//                 같은 청크를 양쪽에서 고쳤으면 원격이 우선하고, 이 기기의 편집은
+//                 커밋 이력(스냅샷)에 남아 버전 되돌리기로 복구할 수 있다.
 // 규칙:
-//  1. 받기/올리기 모두 버튼을 눌렀을 때만 실행된다 (자동 동기화 없음)
-//  2. 원본 바이트(PDF·이미지)는 받기에서 내려받지 않는다 — 문서를 열 때 지연 로딩 (sync/assets.ts)
-//  3. 문서/폴더 JSON은 gzip으로 올린다. 파일 내용의 gzip 마법 부호로 판정한다
-//  4. 삭제는 outbox delete(tombstone) → 허브에서 파일 삭제(커밋) → 로컬 휴지통(30일 보관)
-//  5. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
+//  1. 받기/올리기는 버튼을 눌렀을 때만 실행 (자동 동기화 없음)
+//  2. 원본 바이트는 받기에서 받지 않고, 문서를 열 때 지연 로딩 (sync/assets.ts)
+//  3. 스냅샷·폴더 JSON은 gzip으로 올린다 (appProperties.enc 표식)
+//  4. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
 import type { ID } from '../shared/model'
+import { ulid } from '../shared/ulid'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
+import { enqueue } from '../storage/repo'
 import { applyDocFile } from './apply'
-import * as gh from './github'
-import { docPath, foldersPath, ROOT as HUB_ROOT } from './github'
-import { indexAssets, cacheTree } from './assets'
-import { enqueue, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
+import * as drive from './drive'
+import { indexAssets } from './assets'
+import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, packFolders, type DocFileV1, type FoldersFileV1 } from './pack'
-import { AuthRequiredError, SyncNotConfiguredError, getDeviceName, getConfig } from './token'
+import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 
 const SYNC_LOCK = 'inkpad-sync'
 
@@ -42,7 +50,16 @@ const setStatus = (s: SyncStatus) => {
   listeners.forEach((f) => f(s))
 }
 
-// 진행률 문장 (UI의 한 줄 표시)
+function handleSyncError(e: unknown) {
+  if (e instanceof AuthRequiredError) setStatus('auth-required')
+  else if (e instanceof SyncNotConfiguredError) setStatus('disabled')
+  else {
+    console.error('[sync]', e)
+    setStatus(navigator.onLine ? 'error' : 'offline')
+  }
+}
+
+// 진행률 문장 (UI 한 줄 표시)
 const progressListeners = new Set<(t: string | null) => void>()
 export const onSyncProgress = (fn: (t: string | null) => void) => {
   progressListeners.add(fn)
@@ -51,16 +68,12 @@ export const onSyncProgress = (fn: (t: string | null) => void) => {
     progressListeners.delete(fn)
   }
 }
-let progress: string | null = null
-const setProgress = (t: string | null) => {
-  progress = t
-  progressListeners.forEach((f) => f(t))
-}
+const setProgress = (t: string | null) => progressListeners.forEach((f) => f(t))
 
 // ───────────────── 원격 변경 알림 ─────────────────
 
 export const REMOTE_EVENT = 'inkpad-remote-changed'
-/** 충돌이 이력 보존으로 해소됐을 때 (UI가 "버전 기록 보기" 안내를 띄운다) */
+/** 머지로 충돌이 해소됐을 때 (UI가 "버전 기록 보기" 안내를 띄운다) */
 export const CONFLICT_EVENT = 'inkpad-conflict-resolved'
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-sync') : null
 channel?.addEventListener('message', (ev: MessageEvent<string[]>) => {
@@ -71,31 +84,85 @@ function emitRemoteChanged(ids: Set<string>) {
   channel?.postMessage([...ids])
 }
 
-// ───────────────── 허브 트리 유틸 ─────────────────
+// ───────────────── 커밋 기록 ─────────────────
 
-function entriesMap(entries: gh.TreeEntry[]): Map<string, gh.TreeEntry> {
-  return new Map(entries.map((e) => [e.path, e]))
+export interface CommitChange {
+  kind: 'doc' | 'folders'
+  docId?: ID
+  path: string
+  fileId?: string
+  deleted?: boolean
 }
 
-// ───────────────── 올리기 계획 (git status에 해당) ─────────────────
-
-export interface PushDoc {
-  docId: ID
-  title: string
-  change: 'add' | 'modify' | 'delete'
+export interface CommitMeta {
+  id: string
+  parents: string[]
+  deviceId: string
+  deviceName: string
+  time: number
+  message: string
+  changes: CommitChange[]
 }
 
-export interface PushPlan {
-  docs: PushDoc[]
-  folders: boolean
-  /** 새로 올릴 원본(PDF·이미지) 수와 총 바이트 */
-  assets: { count: number; bytes: number }
-  /** 받기 이후에도 양쪽에서 바뀐 문서 (올리기가 머지로 해소한다) */
-  conflicts: { docId: ID; title: string }[]
-  /** 올리는 시점에 허브가 우리가 아는 헤드와 다른지 (머지가 필요하다는 뜻) */
-  remoteAhead: boolean
-  connected: boolean
+type CommitCache = Record<string, CommitMeta>
+
+async function getCommitCache(): Promise<CommitCache> {
+  return ((await getSync<CommitCache>('commitCache')) ?? {}) as CommitCache
 }
+async function putCommitCache(c: CommitCache) {
+  await putSync('commitCache', c)
+}
+
+interface DeviceRec {
+  id: string
+  name: string
+  head: string
+  updatedAt: number
+  fileId?: string
+}
+
+async function deviceId(): Promise<string> {
+  let id = await getSync<string>('deviceId')
+  if (!id) {
+    id = ulid()
+    await putSync('deviceId', id)
+  }
+  return id
+}
+
+/** 허브의 커밋 목록을 캐시에 받아온다 (아직 없는 것만 내려받음) */
+async function listHubCommits(commitsFolderId: string): Promise<CommitCache> {
+  const cache = await getCommitCache()
+  let dirty = false
+  for (const file of await drive.listFiles(commitsFolderId)) {
+    const id = file.name.slice('commits/'.length, -'.json'.length)
+    if (!id || cache[id]) continue
+    try {
+      cache[id] = await drive.downloadJson<CommitMeta>(file.id, file.appProperties?.enc)
+      dirty = true
+    } catch (e) {
+      console.warn('[sync] 커밋 기록을 읽지 못했습니다:', id, e)
+    }
+  }
+  if (dirty) await putCommitCache(cache)
+  return cache
+}
+
+async function otherHeads(devicesFolderId: string): Promise<DeviceRec[]> {
+  const mine = await deviceId()
+  const out: DeviceRec[] = []
+  for (const file of await drive.listFiles(devicesFolderId)) {
+    try {
+      const rec = await drive.downloadJson<DeviceRec>(file.id)
+      if (rec?.id && rec.head && rec.id !== mine) out.push(rec)
+    } catch (e) {
+      console.warn('[sync] 기기 기록을 읽지 못했습니다:', file.name, e)
+    }
+  }
+  return out
+}
+
+// ───────────────── outbox → 문서 단위 정리 ─────────────────
 
 interface PendingDoc {
   seqs: number[]
@@ -121,33 +188,53 @@ async function pendingDocs(): Promise<Map<ID, PendingDoc>> {
   return docs
 }
 
-/** 올리기 전 미리보기: 이 커밋에 뭐가 들어갈지 계산한다 (헤드·트리 조회 2회) */
+/** 머지로 덮어쓰기 전에 그 문서의 대기 행을 비운다 (applyDocFile의 pending 가드 통과용) */
+async function clearDocOutbox(docId: ID) {
+  const p = await pendingDocs()
+  const seqs = p.get(docId)?.seqs ?? []
+  if (seqs.length) await db.outbox.bulkDelete(seqs)
+}
+
+// ───────────────── 올리기 계획 (git status에 해당) ─────────────────
+
+export interface PushDoc {
+  docId: ID
+  title: string
+  change: 'add' | 'modify' | 'delete'
+}
+
+export interface PushPlan {
+  docs: PushDoc[]
+  folders: boolean
+  /** 새로 올릴 원본(PDF·이미지) 수와 총 바이트 */
+  assets: { count: number; bytes: number }
+  /** 다른 기기도 고친 문서 — 올리기가 머지로 해소한다 */
+  conflicts: { docId: ID; title: string }[]
+  /** 받지 않은 다른 기기의 커밋이 있는지 (머지가 필요하다는 뜻) */
+  remoteAhead: boolean
+  connected: boolean
+}
+
 export async function planPush(): Promise<PushPlan> {
   const rows = await db.outbox.toArray()
-  const docs = await pendingDocs()
-  const folderSeqs = rows.filter((r) => r.entity === 'folder').length
-  const assetRows = rows.filter((r) => r.entity === 'asset')
-
+  const pending = await pendingDocs()
   const plan: PushPlan = {
     docs: [],
-    folders: folderSeqs > 0,
+    folders: rows.some((r) => r.entity === 'folder'),
     assets: { count: 0, bytes: 0 },
     conflicts: [],
     remoteAhead: false,
     connected: true
   }
 
-  for (const [docId] of docs) {
+  for (const [docId] of pending) {
     const doc = await db.documents.get(docId)
-    if (!doc || doc.deletedAt) {
-      plan.docs.push({ docId, title: doc?.title ?? docId, change: 'delete' })
-      continue
-    }
-    const rec = await getSync<FileRecord>(`doc:${docId}`)
-    plan.docs.push({ docId, title: doc.title, change: rec?.path ? 'modify' : 'add' })
+    if (!doc) continue
+    if (doc.deletedAt) plan.docs.push({ docId, title: doc.title, change: 'delete' })
+    else plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add' })
   }
 
-  for (const r of assetRows) {
+  for (const r of rows.filter((x) => x.entity === 'asset')) {
     const a = await db.assets.get(r.entityId)
     if (!a?.blob) continue
     if (await getSync(`asset:${a.sha256}`)) continue
@@ -157,19 +244,23 @@ export async function planPush(): Promise<PushPlan> {
 
   // 허브 상태와 비교 (오프라인이면 비교를 건너뛴다)
   if (navigator.onLine) {
-    const head = await gh.getHead()
-    const lastHead = await getSync<string>('headSha')
-    if (head && lastHead && head.sha !== lastHead) plan.remoteAhead = true
-    if (head) {
-      const entries = entriesMap(await gh.listTree(head))
-      for (const d of plan.docs) {
-        if (d.change !== 'modify') continue
-        const rec = await getSync<FileRecord>(`doc:${d.docId}`)
-        const entry = entries.get(docPath(d.docId))
-        if (entry && rec && rec.blobSha !== entry.sha && !plan.conflicts.some((c) => c.docId === d.docId)) {
-          plan.conflicts.push({ docId: d.docId, title: d.title })
+    try {
+      const f = await ensureFolders()
+      const before = new Set(Object.keys(await getCommitCache()))
+      const cache = await listHubCommits(f.commits)
+      const mine = await deviceId()
+      const fresh = Object.values(cache).filter((c) => !before.has(c.id) && c.deviceId !== mine)
+      plan.remoteAhead = fresh.length > 0
+      for (const c of fresh) {
+        for (const ch of c.changes) {
+          if (ch.kind !== 'doc' || !ch.docId || !pending.has(ch.docId)) continue
+          const d = plan.docs.find((x) => x.docId === ch.docId)
+          if (d && !plan.conflicts.some((x) => x.docId === ch.docId)) plan.conflicts.push({ docId: ch.docId, title: d.title })
         }
       }
+    } catch (e) {
+      console.warn('[sync] 허브 상태 확인 실패 — 미리보기만 표시합니다:', e)
+      plan.connected = false
     }
   } else {
     plan.connected = false
@@ -178,20 +269,251 @@ export async function planPush(): Promise<PushPlan> {
   return plan
 }
 
-// ───────────────── 올리기 (push = 커밋 만들어 브랜치 이동) ─────────────────
+// ───────────────── 3-way 문서 머지 ─────────────────
 
-interface CommitCtx {
-  head: gh.Head | null
-  tree: Map<string, gh.TreeEntry>
-  /** 이번 커밋에 담을 변경 (path → blob SHA, 삭제는 null) */
-  changes: Map<string, string | null>
-  seqsByDoc: Map<ID, PendingDoc>
-  uploadedAt: Map<ID, number>
-  firstCommit: boolean // 빈 저장소의 첫 커밋인지
-  stats: { add: number; modify: number; delete: number; assets: number; folders: number }
+const j = (v: unknown) => JSON.stringify(v)
+
+function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFileV1): { file: DocFileV1; conflicts: number } {
+  let conflicts = 0
+  const b = base
+
+  // 문서 메타: 이 기기가 안 바친 필드는 원격 값을 따른다
+  const doc: DocFileV1['doc'] = { ...theirs.doc, id: ours.doc.id, updatedAt: Math.max(ours.doc.updatedAt, theirs.doc.updatedAt) }
+  if (b) {
+    if (ours.doc.title !== b.doc.title) doc.title = ours.doc.title
+    if (ours.doc.folderId !== b.doc.folderId) doc.folderId = ours.doc.folderId
+    if (ours.doc.mode !== b.doc.mode) doc.mode = ours.doc.mode
+    if (j(ours.doc.pageOrder) !== j(b.doc.pageOrder)) doc.pageOrder = ours.doc.pageOrder
+    else if (j(theirs.doc.pageOrder) !== j(b.doc.pageOrder)) doc.pageOrder = theirs.doc.pageOrder
+  }
+
+  // 페이지: id 기준 유니언. base에 있었는데 한쪽에만 없으면 그쪽의 삭제를 따른다
+  const pageOf = (list: DocFileV1['pages'], id: ID) => list.find((p) => p.id === id)
+  const pageIds = new Set<ID>([...ours.pages.map((p) => p.id), ...theirs.pages.map((p) => p.id)])
+  const pages: DocFileV1['pages'] = []
+  for (const id of pageIds) {
+    const o = pageOf(ours.pages, id)
+    const t = pageOf(theirs.pages, id)
+    const bb = b ? pageOf(b.pages, id) : undefined
+    if (o && t) pages.push(t) // 정의가 같은 페이지 — 원격 우선
+    else if (o) {
+      if (!bb) pages.push(o) // 원격에서 지운 페이지지만 base가 없어 판단 불가 — 유지
+    } else if (t) {
+      if (!bb) pages.push(t) // 원격이 새로 만든 페이지
+    }
+  }
+
+  // 청크(필기 저장 단위): base와 비교해 한쪽만 바꿨으면 그쪽, 양쪽 다 바꿨으면 원격 우선
+  const keyOf = (c: { pageId: ID; key: string }) => `${c.pageId}|${c.key}`
+  const baseEls = new Map<string, string>((b?.chunks ?? []).map((c) => [keyOf(c), j(c.elements)]))
+  const oursMap = new Map(ours.chunks.map((c) => [keyOf(c), c]))
+  const theirsMap = new Map(theirs.chunks.map((c) => [keyOf(c), c]))
+  const chunks: DocFileV1['chunks'] = []
+  for (const k of new Set<string>([...oursMap.keys(), ...theirsMap.keys()])) {
+    const o = oursMap.get(k)
+    const t = theirsMap.get(k)
+    const bb = baseEls.get(k)
+    if (o && t) {
+      if (j(o.elements) === j(t.elements)) chunks.push(t)
+      else if (bb === undefined || j(o.elements) === bb) chunks.push(t)
+      else if (j(t.elements) === bb) chunks.push(o)
+      else {
+        chunks.push(t) // 양쪽에서 다르게 고침 — 원격 우선, 이 기기 편집은 커밋 이력에 보존
+        conflicts++
+      }
+    } else if (o) {
+      if (bb === undefined) chunks.push(o) // 이 기기의 새 청크
+      // base에 있었는데 원격에 없다 → 원격이 지움 (버림)
+    } else if (t) {
+      if (bb === undefined) chunks.push(t) // 원격의 새 청크
+      // base에 있었는데 이 기기에 없다 → 이 기기가 지움 (버림)
+    }
+  }
+
+  // 에셋: 유니언
+  const assetIds = new Set<ID>([...ours.assets.map((a) => a.id), ...theirs.assets.map((a) => a.id)])
+  const assets = [...assetIds].flatMap((id) => [theirs.assets.find((a) => a.id === id) ?? ours.assets.find((a) => a.id === id)!])
+
+  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, assets }, conflicts }
 }
 
-/** 올리기. 실행 시점의 outbox를 다시 계산한다. */
+/**
+ * 충돌 머지: base(마지막으로 맞춘 시점)·이 기기·원격 스냅샷으로 3-way.
+ * 결과를 이 기기에 적용하고 발행 큐에 올린다 — 실제 허브 반영은 올리기가 한다.
+ */
+async function mergeDoc(
+  docId: ID,
+  change: CommitChange,
+  commit: CommitMeta,
+  docFiles: { byId: Map<string, drive.RemoteFile>; byName: Map<string, drive.RemoteFile> }
+) {
+  const ours = await packDocument(docId)
+  let base: DocFileV1 | null = null
+  const baseRec = await getSync<{ path: string }>(`base:${docId}`)
+  const baseFile = baseRec ? docFiles.byName.get(baseRec.path) : undefined
+  if (baseFile) {
+    try {
+      base = await drive.downloadJson<DocFileV1>(baseFile.id, baseFile.appProperties?.enc)
+    } catch (e) {
+      console.warn('[sync] base 스냅샷을 읽지 못해 원격 우선으로 대체합니다:', e)
+    }
+  }
+  const remoteFile = change.fileId ? docFiles.byId.get(change.fileId) : undefined
+  if (!remoteFile) return
+  const theirs = await drive.downloadJson<DocFileV1>(remoteFile.id, remoteFile.appProperties?.enc)
+  if (theirs?.kind !== 'inkpad-doc') return
+
+  await clearDocOutbox(docId)
+  const merged = mergeDocs(base, ours, theirs)
+  await applyDocFile(merged.file)
+  await db.transaction('rw', db.outbox, async () => {
+    await enqueue('document', docId)
+  })
+  await putSync(`base:${docId}`, { path: change.path, commitId: commit.id })
+  emitRemoteChanged(new Set<string>([docId]))
+  window.dispatchEvent(new CustomEvent(CONFLICT_EVENT, { detail: { docId, revisionId: commit.id } }))
+}
+
+// ───────────────── 받기 (pull) ─────────────────
+
+export interface PullResult {
+  docs: number
+  folders: boolean
+  conflicts: number
+}
+
+/** 받기. 허브의 커밋을 걷아 아직 적용하지 않은 것만 골라 내려받는다 */
+export async function pullNow(): Promise<PullResult | null> {
+  if (!navigator.onLine) {
+    setStatus('offline')
+    return null
+  }
+  return navigator.locks.request(SYNC_LOCK, { ifAvailable: true }, async (lock) => {
+    if (!lock) return null // 다른 탭에서 동기화 중
+    setStatus('syncing')
+    try {
+      const f = await ensureFolders()
+      const r = await mergeIntoLocal(f)
+      await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
+      setStatus('idle')
+      return { docs: r.docs, folders: r.folders, conflicts: r.conflicts }
+    } catch (e) {
+      handleSyncError(e)
+      return null
+    } finally {
+      setProgress(null)
+    }
+  }) as Promise<PullResult | null>
+}
+
+async function mergeIntoLocal(f: { docs: string; assets: string; commits: string; devices: string; root: string }) {
+  const result = { docs: 0, folders: false, conflicts: 0, appliedHeads: [] as string[] }
+  setProgress('허브 커밋 확인 중…')
+  const before = new Set(Object.keys(await getCommitCache()))
+  const cache = await listHubCommits(f.commits)
+  const newCommits = Object.values(cache)
+    .filter((c) => !before.has(c.id))
+    .sort((a, b) => a.id.localeCompare(b.id)) // ULID라 시각순
+  if (!newCommits.length) return result
+
+  result.appliedHeads = (await otherHeads(f.devices)).map((h) => h.head).filter((h) => newCommits.some((c) => c.id === h))
+
+  // 스냅샷 메타 (파일 ID → enc, 이름 → 메타)
+  const docsFiles = await drive.listFiles(f.docs)
+  const byId = new Map(docsFiles.map((x) => [x.id, x]))
+  const byName = new Map(docsFiles.map((x) => [x.name, x]))
+
+  const pending = new Set(await pendingDocs().then((m) => [...m.keys()]))
+  const changed = new Set<string>()
+
+  for (const c of newCommits) {
+    for (const ch of c.changes) {
+      if (ch.kind === 'folders') {
+        if (!ch.fileId) continue
+        try {
+          const meta = byId.get(ch.fileId)
+          const data = await drive.downloadJson<FoldersFileV1>(ch.fileId, meta?.appProperties?.enc)
+          if (await mergeFolders(data, pending)) {
+            await putSync('foldersFile', { fileId: ch.fileId, version: '0' })
+            result.folders = true
+            changed.add('__folders__')
+          }
+        } catch (e) {
+          console.warn('[sync] 폴더 트리를 읽지 못했습니다:', e)
+        }
+        continue
+      }
+      if (ch.kind !== 'doc' || !ch.docId) continue
+      if (ch.deleted) {
+        if (pending.has(ch.docId)) continue // 이 기기의 삭제·수정은 올리기에서 처리
+        const local = await db.documents.get(ch.docId)
+        if (local && !local.deletedAt) {
+          const now = Date.now()
+          await db.documents.update(ch.docId, { deletedAt: now, updatedAt: now })
+          await putSync(`base:${ch.docId}`, { path: ch.path, commitId: c.id })
+          changed.add(ch.docId)
+          result.docs++
+        }
+        continue
+      }
+      if (!ch.fileId) continue
+      if (pending.has(ch.docId)) {
+        // 양쪽에서 고침 → 3-way 머지 (결과는 다음 올리기에서 발행)
+        result.conflicts++
+        await mergeDoc(ch.docId, ch, c, { byId, byName })
+        pending.add(ch.docId)
+        continue
+      }
+      const meta = byId.get(ch.fileId)
+      let file: DocFileV1
+      try {
+        file = await drive.downloadJson<DocFileV1>(ch.fileId, meta?.appProperties?.enc)
+      } catch (e) {
+        console.warn('[sync] 스냅샷을 읽지 못했습니다 (정리됨):', ch.path, e)
+        continue
+      }
+      if (file?.kind !== 'inkpad-doc') continue
+      if (await applyDocFile(file)) {
+        await putSync(`base:${ch.docId}`, { path: ch.path, commitId: c.id })
+        changed.add(ch.docId)
+        result.docs++
+      }
+    }
+  }
+
+  // 원본 바이트는 받지 않는다. 위치 기록만 채워 두고, 문서를 열 때 지연 로딩한다 (규칙 2)
+  await indexAssets(f.assets)
+
+  if (changed.size) emitRemoteChanged(changed)
+  return result
+}
+
+async function mergeFolders(data: FoldersFileV1, pending: Set<ID>): Promise<boolean> {
+  if (data.kind !== 'inkpad-folders' || !Array.isArray(data.folders)) return false
+  const dirty = new Set((await db.outbox.toArray()).filter((r) => r.entity === 'folder').map((r) => r.entityId))
+  let any = false
+  for (const fo of data.folders) {
+    if (dirty.has(fo.id) || pending.has(fo.id)) continue
+    const local = await db.folders.get(fo.id)
+    if (local && local.updatedAt >= fo.updatedAt) continue
+    await db.folders.put(fo)
+    any = true
+  }
+  for (const local of await db.folders.toArray()) {
+    if (dirty.has(local.id) || pending.has(local.id) || data.folders.some((x) => x.id === local.id)) continue
+    if (!local.deletedAt) {
+      const now = Date.now()
+      await db.folders.update(local.id, { deletedAt: now, updatedAt: now })
+      await enqueue('folder', local.id, 'delete')
+      any = true
+    }
+  }
+  return any
+}
+
+// ───────────────── 올리기 (push = 커밋 만들어 헤드 전진) ─────────────────
+
+/** 올리기. 버튼을 누르면 먼저 받아 머지한 뒤, 이 기기의 변경을 한 커밋으로 올린다. */
 export async function pushNow(): Promise<void> {
   if (!navigator.onLine) {
     setStatus('offline')
@@ -212,396 +534,169 @@ export async function pushNow(): Promise<void> {
   })
 }
 
-function handleSyncError(e: unknown) {
-  if (e instanceof AuthRequiredError) setStatus('auth-required')
-  else if (e instanceof SyncNotConfiguredError) setStatus('disabled')
-  else {
-    console.error('[sync]', e)
-    setStatus(navigator.onLine ? 'error' : 'offline')
-  }
-}
+async function doPush() {
+  const f = await ensureFolders()
 
-async function doPush(): Promise<boolean> {
-  setProgress('허브 상태 확인 중…')
-  const head = await gh.getHead()
-  const lastHead = await getSync<string>('headSha')
-
-  // 다른 기기가 먼저 올렸다 → 먼저 받아서 머지한다 (git pull --rebase에 해당)
-  if (head && lastHead && head.sha !== lastHead) {
-    await doPull(head, true)
+  // 0) 허브가 비었고 이 기기에 데이터가 있으면 전부 올릴 준비 (첫 올리기 / 업그레이드)
+  const cache = await listHubCommits(f.commits)
+  if (!Object.keys(cache).length && !(await getSync<DeviceRec>('deviceRec'))) {
+    if ((await db.documents.count()) > 0) await enqueueEverything()
   }
 
-  let cur = await gh.getHead()
-  let tree = cur ? entriesMap(await gh.listTree(cur)) : new Map<string, gh.TreeEntry>()
-  if (cur) cacheTree(cur.sha, [...tree.values()])
+  // 1) 먼저 받아 머지 (git pull before push)
+  const pulled = await mergeIntoLocal(f)
 
-  // 첫 올리기: 기록이 없고 outbox가 비어 있으면 로컬 전체를 큐에 올린다 (기존 데이터가 있던 기기)
-  if (!(await getSync('headSha')) && !(await db.outbox.count())) {
-    const hasLocal = (await db.documents.count()) > 0
-    if (hasLocal) await enqueueEverything()
-  }
+  const ourId = await deviceId()
+  const deviceName = await getDeviceName()
+  const prev = await getSync<DeviceRec>('deviceRec')
+  const commitId = ulid()
+  const changes: CommitChange[] = []
+  const rows = await db.outbox.toArray()
+  const seqsByDoc = await pendingDocs()
+  const folderSeqs = rows.filter((r) => r.entity === 'folder').map((r) => r.seq!)
+  const stats = { add: 0, modify: 0, del: 0 }
 
-  const ctx: CommitCtx = {
-    head: cur,
-    tree,
-    changes: new Map(),
-    seqsByDoc: await pendingDocs(),
-    uploadedAt: new Map(),
-    firstCommit: !cur,
-    stats: { add: 0, modify: 0, delete: 0, assets: 0, folders: 0 }
-  }
-
-  const outboxRows = await db.outbox.toArray()
-  const folderSeqs = outboxRows.filter((r) => r.entity === 'folder').map((r) => r.seq!)
-  const assetRows = outboxRows.filter((r) => r.entity === 'asset')
-
-  // 1) 원본(에셋) 먼저 — 내용 주소로 중복 없이
-  const device = await getDeviceName()
-  let assetDone = 0
+  // 2) 원본(PDF·이미지) — 내용 주소로 중복 없이
+  const assetRows = rows.filter((r) => r.entity === 'asset')
+  let done = 0
   for (const r of assetRows) {
     const row = await db.assets.get(r.entityId)
     if (!row?.blob) {
-      await db.outbox.delete(r.seq!)
-      continue // 원본이 아직 없다(다른 기기에서 받아와야 함)
-    }
-    assetDone++
-    setProgress(`원본 올리는 중 ${assetDone}…`)
-    const path = gh.assetsPrefix() + assetFileName(row.sha256, row.mime).slice('assets/'.length)
-    const known = await getSync<FileRecord>(`asset:${row.sha256}`)
-    const entry = ctx.tree.get(path)
-    if (known?.blobSha === entry?.sha) {
-      await db.outbox.delete(r.seq!)
+      await db.outbox.delete(r.seq!) // 원본이 아직 없다(다른 기기에서 받아와야 함)
       continue
     }
-    if (!entry) {
-      const sha = await gh.createBlob(row.blob)
-      ctx.changes.set(path, sha)
-      await putSync(`asset:${row.sha256}`, { path, blobSha: sha })
-      ctx.stats.assets++
-    } else {
-      await putSync(`asset:${row.sha256}`, { path, blobSha: entry.sha })
+    if (!(await getSync(`asset:${row.sha256}`))) {
+      done++
+      setProgress(`원본 올리는 중 ${done}…`)
+      const name = assetFileName(row.sha256, row.mime)
+      const found = await drive.findByName(name, f.assets)
+      if (found) {
+        await putSync(`asset:${row.sha256}`, { fileId: found.id, version: found.version })
+      } else {
+        const res = await drive.upload(row.blob, { name, mimeType: row.mime, appProperties: { sha256: row.sha256 } }, f.assets)
+        await putSync(`asset:${row.sha256}`, { fileId: res.id, version: res.version })
+      }
     }
     await db.outbox.delete(r.seq!)
   }
 
-  // 2) 폴더 트리
+  // 3) 폴더 트리
   if (folderSeqs.length) {
     setProgress('폴더 올리는 중…')
     const before = await packFolders()
-    const blob = await gzipJson(before)
-    const sha = await gh.createBlob(blob)
-    ctx.changes.set(foldersPath(), sha)
-    ctx.stats.folders = 1
-    ctx.uploadedAt.set('__folders__', before.updatedAt)
-  }
-
-  // 3) 문서 (충돌 머지 포함)
-  let docDone = 0
-  for (const [docId, info] of ctx.seqsByDoc) {
-    const doc = await db.documents.get(docId)
-    docDone++
-    setProgress(`문서 반영 중 ${docDone}/${ctx.seqsByDoc.size}…`)
-    if (!doc || doc.deletedAt) {
-      await pushTombstone(docId, info, ctx)
-      continue
-    }
-    const rec = await getSync<FileRecord>(`doc:${docId}`)
-    const entry = ctx.tree.get(docPath(docId))
-    const remoteChanged = !!(entry && rec?.blobSha && entry.sha !== rec.blobSha)
-    if (remoteChanged) {
-      // 머지: 이 기기의 편집을 커밋해 이력에 남기고, 원격 버전을 현재로 적용한다
-      await resolveConflict(docId, entry!, info, ctx)
-      continue
-    }
-    await pushDoc(docId, info, ctx, device)
-  }
-
-  // 4) 커밋 & 브랜치 이동 — 이 커밋에 뭐가 들어갔는지 메시지로 남긴다
-  if (ctx.changes.size || (ctx.head === null && ctx.firstCommit)) {
-    const s = ctx.stats
-    const bits = [
-      s.add ? `추가 ${s.add}` : '',
-      s.modify ? `수정 ${s.modify}` : '',
-      s.delete ? `삭제 ${s.delete}` : '',
-      s.folders ? '폴더' : '',
-      s.assets ? `원본 ${s.assets}개` : ''
-    ].filter(Boolean)
-    const message = `InkPad: 기기 "${device}" — ${bits.join(', ') || '변경 없음'}`
-    setProgress('커밋 만드는 중…')
-    await commitAndMove(ctx, message)
-  }
-
-  // 성공한 커밋 기준으로 outbox·기록 정리
-  await finalizeOutbox(ctx)
-  if (folderSeqs.length) await db.outbox.bulkDelete(folderSeqs)
-  setProgress(null)
-  return true
-}
-
-async function commitAndMove(ctx: CommitCtx, message: string): Promise<void> {
-  if (!ctx.changes.size && ctx.head) return
-  const items: gh.TreeItem[] = [...ctx.changes].map(([path, sha]) => ({ path, sha }))
-  const treeSha = await gh.createTree(ctx.head?.tree ?? null, items)
-  const commitSha = await gh.createCommit(message, treeSha, ctx.head ? [ctx.head.sha] : [])
-  if (ctx.head) await gh.updateRef(commitSha)
-  else await gh.createBranchRef(commitSha)
-  // 새 헤드 기준으로 트리 갱신 (이어지는 머지 커밋을 위해)
-  const newHead: gh.Head = { sha: commitSha, tree: treeSha }
-  ctx.head = newHead
-  for (const [path, sha] of ctx.changes) {
-    if (sha === null) ctx.tree.delete(path)
-    else ctx.tree.set(path, { path, sha })
-  }
-  ctx.changes.clear()
-  cacheTree(commitSha, [...ctx.tree.values()])
-  await putSync('headSha', commitSha)
-}
-
-async function pushDoc(docId: ID, info: PendingDoc, ctx: CommitCtx, device: string) {
-  const rec = await getSync<FileRecord>(`doc:${docId}`)
-  const file = await packDocument(docId)
-  // 참조 원본을 먼저 올린다 (outbox에 없는 것도)
-  for (const am of file.assets) {
-    const row = await db.assets.get(am.id)
-    if (!row?.blob) continue
-    const path = gh.assetsPrefix() + assetFileName(row.sha256, row.mime).slice('assets/'.length)
-    if (ctx.tree.has(path) || (await getSync(`asset:${row.sha256}`))) continue
-    const sha = await gh.createBlob(row.blob)
-    ctx.changes.set(path, sha)
-    await putSync(`asset:${row.sha256}`, { path, blobSha: sha })
-  }
-  const blob = await gzipJson(file)
-  const sha = await gh.createBlob(blob)
-  ctx.changes.set(docPath(docId), sha)
-  await putSync(`doc:${docId}`, { path: docPath(docId), blobSha: sha })
-  ctx.uploadedAt.set(docId, file.doc.updatedAt)
-  if (rec?.path) ctx.stats.modify++
-  else ctx.stats.add++
-  void device
-}
-
-/** 로컬에서 삭제된 문서: 허브 커밋에서 파일을 지운다. 이력은 남으니 복구 가능 */
-async function pushTombstone(docId: ID, info: PendingDoc, ctx: CommitCtx) {
-  const rec = await getSync<FileRecord>(`doc:${docId}`)
-  if (rec?.path) {
-    ctx.changes.set(rec.path, null)
-    ctx.stats.delete++
-  }
-  await db.syncState.delete(`doc:${docId}`)
-  await db.outbox.bulkDelete(info.seqs)
-}
-
-async function finalizeOutbox(ctx: CommitCtx) {
-  for (const [docId, info] of ctx.seqsByDoc) {
-    const uploadedAt = ctx.uploadedAt.get(docId)
-    if (uploadedAt === undefined) continue
-    await db.transaction('rw', [db.documents, db.outbox], async () => {
-      const cur = await db.documents.get(docId)
-      if (!cur) return
-      if (cur.updatedAt === uploadedAt) await db.outbox.bulkDelete(info.seqs)
-      // 아니면 outbox가 남아 다음 올리기에서 다시 반영된다
+    const rec = await getSync<FileRecord>('foldersFile')
+    const res = await drive.upload(
+      await gzipJson(before),
+      { name: 'folders.json', mimeType: 'application/json', appProperties: { type: 'folders', enc: drive.ENC_GZIP } },
+      f.root,
+      rec?.fileId
+    )
+    changes.push({ kind: 'folders', path: 'folders.json', fileId: res.id })
+    await db.transaction('rw', [db.folders, db.outbox], async () => {
+      const after = await packFolders()
+      if (after.updatedAt === before.updatedAt) await db.outbox.bulkDelete(folderSeqs)
+      // 아니면 outbox가 남아 다음 올리기에서 다시 올려진다
     })
   }
-}
 
-// ───────────────── 충돌 머지 ─────────────────
-
-/**
- * 양쪽에서 같은 문서를 고쳤을 때 (git의 머지 커밋에 해당):
- *  1. 이 기기의 편집을 먼저 커밋해 이력에 남긴다 → 나중에 버전 기록에서 되돌릴 수 있다
- *  2. 원격(다른 기기) 버전을 현재 상태로 적용하고 그것도 커밋한다
- *  문서가 복제되지 않고, 데이터도 잃지 않는다.
- */
-async function resolveConflict(docId: ID, entry: gh.TreeEntry, info: PendingDoc, ctx: CommitCtx) {
-  const device = await getDeviceName()
-  const local = await packDocument(docId)
-  const localSha = await gh.createBlob(await gzipJson(local))
-  ctx.changes.set(docPath(docId), localSha)
-  await commitAndMove(ctx, `InkPad 머지: 기기 "${device}" 편집 보존 — ${local.doc.title}`)
-  await putSync(`doc:${docId}`, { path: docPath(docId), blobSha: localSha })
-
-  // outbox를 비운 뒤 원격 내용을 적용한다 (적용 가드 통과용)
-  await db.outbox.bulkDelete(info.seqs)
-  const content = await gh.readGzipJson<DocFileV1>(entry.sha)
-  await applyDocFile(content)
-  const remoteSha = await gh.createBlob(await gzipJson(content))
-  ctx.changes.set(docPath(docId), remoteSha)
-  await commitAndMove(ctx, `InkPad 머지: 원격 버전 적용 — ${content.doc.title}`)
-  await putSync(`doc:${docId}`, { path: docPath(docId), blobSha: remoteSha })
-  ctx.uploadedAt.set(docId, content.doc.updatedAt)
-  emitRemoteChanged(new Set<string>([docId]))
-  window.dispatchEvent(new CustomEvent(CONFLICT_EVENT, { detail: { docId, revisionId: localSha } }))
-}
-
-// ───────────────── 받기 (pull) ─────────────────
-
-export interface PullResult {
-  docs: number
-  folders: boolean
-  conflicts: number
-  indexedAssets: number
-}
-
-/** 받기. 허브에서 달라진 파일만 골라 내려받는다 */
-export async function pullNow(): Promise<PullResult | null> {
-  if (!navigator.onLine) {
-    setStatus('offline')
-    return null
-  }
-  return (await navigator.locks.request(SYNC_LOCK, { ifAvailable: true }, async (lock) => {
-    if (!lock) return null // 다른 탭에서 동기화 중
-    setStatus('syncing')
-    try {
-      const head = await gh.getHead()
-      if (!head) {
-        setStatus('idle')
-        return { docs: 0, folders: false, conflicts: 0, indexedAssets: 0 }
-      }
-      const r = await doPull(head, false)
-      await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
-      setStatus('idle')
-      return r
-    } catch (e) {
-      handleSyncError(e)
-      return null
-    } finally {
-      setProgress(null)
-    }
-  })) as PullResult | null
-}
-
-async function doPull(head: gh.Head, insidePush: boolean): Promise<PullResult> {
-  const result: PullResult = { docs: 0, folders: false, conflicts: 0, indexedAssets: 0 }
-  setProgress('허브 목록 받는 중…')
-  const entries = entriesMap(await gh.listTree(head))
-  cacheTree(head.sha, [...entries.values()])
-  await putSync('headSha', head.sha)
-
-  const outboxRows = await db.outbox.toArray()
-  const pending = new Set(outboxRows.filter((r) => r.entity === 'document').map((r) => r.entityId))
-  for (const [docId] of await pendingDocs()) pending.add(docId)
-  const changed = new Set<string>()
-
-  // 폴더 트리
-  const ff = entries.get(foldersPath())
-  if (ff) {
-    const rec = await getSync<FileRecord>('foldersFile')
-    if (!rec || rec.blobSha !== ff.sha) {
-      if (await mergeFolders(ff.sha, pending, changed)) {
-        await putSync('foldersFile', { path: foldersPath(), blobSha: ff.sha })
-        result.folders = true
-      }
-    }
-  }
-
-  // 문서
-  const recs = new Map<string, FileRecord>()
-  for (const kv of await db.syncState.toArray()) {
-    if (kv.key.startsWith('doc:')) recs.set(kv.key.slice(4), kv.value as FileRecord)
-  }
+  // 4) 문서 스냅샷 — 커밋당 파일 하나 (docs/<docId>.<commitId>.json)
   let n = 0
-  const docsPrefix = `${HUB_ROOT}/docs/`
-  const remoteDocs = [...entries.keys()].filter((p) => p.startsWith(docsPrefix) && p.endsWith('.json'))
-  for (const path of remoteDocs) {
-    const docId = path.slice(docsPrefix.length, -'.json'.length)
-    const local = await db.documents.get(docId)
-    if (local?.deletedAt) continue // 로컬 삭제는 올리기에서 처리된다
-    if (pending.has(docId)) {
-      // 양쪽에서 바뀜 → 올리기가 머지로 해소한다
-      const rec = recs.get(docId)
-      const entry = entries.get(path)
-      if (entry && rec && rec.blobSha !== entry.sha) {
-        result.conflicts++
-        if (!insidePush) continue
-      }
+  for (const [docId, info] of seqsByDoc) {
+    n++
+    setProgress(`문서 올리는 중 ${n}/${seqsByDoc.size}…`)
+    const doc = await db.documents.get(docId)
+    if (!doc) {
+      await db.outbox.bulkDelete(info.seqs)
+      continue // 대상이 이미 정리됨
+    }
+    const path = `docs/${docId}.${commitId}.json`
+    if (doc.deletedAt) {
+      changes.push({ kind: 'doc', docId, path, deleted: true })
+      stats.del++
+      await db.syncState.delete(`base:${docId}`)
+      await db.outbox.bulkDelete(info.seqs)
       continue
     }
-    const rec = recs.get(docId)
-    const entry = entries.get(path)
-    if (!entry) continue
-    if (rec && rec.blobSha === entry.sha) continue // 이미 최신
-    n++
-    setProgress(`문서 받는 중 ${n}…`)
-    const file = await gh.readGzipJson<DocFileV1>(entry.sha)
-    if (await applyDocFile(file)) {
-      await putSync(`doc:${docId}`, { path, blobSha: entry.sha })
-      changed.add(docId)
-      result.docs++
-    }
+    const file = await packDocument(docId)
+    const res = await drive.upload(file, {
+      name: path,
+      mimeType: 'application/json',
+      appProperties: { docId, updatedAt: String(file.doc.updatedAt), enc: drive.ENC_GZIP }
+    }, f.docs)
+    changes.push({ kind: 'doc', docId, path, fileId: res.id })
+    if (await getSync(`base:${docId}`)) stats.modify++
+    else stats.add++
+    await putSync(`base:${docId}`, { path, commitId })
+    // 업로드 중에 또 수정됐으면 outbox가 남아 다음 올리기에서 다시 반영된다
+    await db.transaction('rw', [db.documents, db.outbox], async () => {
+      const cur = await db.documents.get(docId)
+      if (cur && cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(info.seqs)
+    })
   }
 
-  // 허브에서 사라진 문서 → 로컬에서도 휴지통으로 (규칙 4)
-  if (!insidePush) {
-    for (const l of await db.documents.toArray()) {
-      if (l.deletedAt || pending.has(l.id)) continue
-      const rec = recs.get(l.id)
-      if (!rec?.path || entries.has(rec.path)) continue
-      const now = Date.now()
-      await db.documents.update(l.id, { deletedAt: now, updatedAt: now })
-      await enqueue('document', l.id, 'delete')
-      changed.add(l.id)
+  // 5) 커밋 파일 + 내 기기 헤드 전진
+  const bits = [
+    stats.add ? `추가 ${stats.add}` : '',
+    stats.modify ? `수정 ${stats.modify}` : '',
+    stats.del ? `삭제 ${stats.del}` : '',
+    folderSeqs.length ? '폴더' : '',
+    assetRows.length ? `원본 ${assetRows.length}개` : '',
+    pulled.appliedHeads.length ? '다른 기기 변경 머지' : ''
+  ].filter(Boolean)
+  const message = `InkPad: 기기 "${deviceName}" — ${bits.join(', ') || '변경 없음'}`
+  const parents = [...new Set([prev?.head, ...pulled.appliedHeads].filter((x): x is string => !!x))]
+  const meta: CommitMeta = { id: commitId, parents, deviceId: ourId, deviceName, time: Date.now(), message, changes }
+  setProgress('커밋 만드는 중…')
+  await drive.upload(meta, { name: `commits/${commitId}.json`, mimeType: 'application/json' }, f.commits)
+  cache[commitId] = meta
+  await putCommitCache(cache)
+
+  const rec: DeviceRec = { id: ourId, name: deviceName, head: commitId, updatedAt: Date.now(), ...(prev?.fileId ? { fileId: prev.fileId } : {}) }
+  const dres = await drive.upload(rec, { name: `devices/${ourId}.json`, mimeType: 'application/json' }, f.devices, prev?.fileId)
+  rec.fileId = dres.id
+  await putSync('deviceRec', rec)
+
+  // 6) 오래된 스냅샷 정리 — 각 문서의 최신 스냅샷은 남기고 365일 지난 옛날 것만
+  try {
+    const cutoff = Date.now() - 365 * 24 * 3600 * 1000
+    const files = await drive.listFiles(f.docs)
+    const latest = new Map<string, number>()
+    for (const file of files) {
+      const id = file.appProperties?.docId ?? ''
+      const t = file.modifiedTime ? Date.parse(file.modifiedTime) : 0
+      if (!latest.has(id) || latest.get(id)! < t) latest.set(id, t)
     }
+    for (const file of files) {
+      const id = file.appProperties?.docId ?? ''
+      const t = file.modifiedTime ? Date.parse(file.modifiedTime) : 0
+      if (t < cutoff && t < (latest.get(id) ?? 0)) await drive.trash(file.id)
+    }
+  } catch (e) {
+    console.warn('[sync] 오래된 스냅샷 정리 실패:', e)
   }
-
-  // 원본 바이트는 받지 않는다. 위치 기록만 채워 두고, 문서를 열 때 지연 로딩한다 (규칙 2)
-  result.indexedAssets = await indexAssets(entries)
-
-  if (changed.size) emitRemoteChanged(changed)
-  return result
 }
 
-async function mergeFolders(blobSha: string, pending: Set<ID>, changed: Set<string>): Promise<boolean> {
-  const data = await gh.readGzipJson<FoldersFileV1>(blobSha)
-  if (data.kind !== 'inkpad-folders' || !Array.isArray(data.folders)) return false
-  const dirty = new Set((await db.outbox.toArray()).filter((r) => r.entity === 'folder').map((r) => r.entityId))
-  for (const f of data.folders) {
-    if (dirty.has(f.id)) continue
-    const local = await db.folders.get(f.id)
-    if (local && local.updatedAt >= f.updatedAt) continue
-    await db.folders.put(f)
-    changed.add('__folders__')
-  }
-  for (const local of await db.folders.toArray()) {
-    if (dirty.has(local.id) || data.folders.some((x) => x.id === local.id)) continue
-    if (!local.deletedAt) {
-      const now = Date.now()
-      await db.folders.update(local.id, { deletedAt: now, updatedAt: now })
-      await enqueue('folder', local.id, 'delete')
-      changed.add('__folders__')
-    }
-  }
-  void pending
-  return true
-}
-
-// ───────────────── 실행 (규칙 5) ─────────────────
+// ───────────────── 실행 (규칙 4) ─────────────────
 
 /** 받고 올리기 — 버전 되돌리기 등 "둘 다 필요한" 곳에서 쓴다 */
 export async function syncNow(): Promise<void> {
-  if (!(await getConfig())) {
-    setStatus('disabled')
+  try {
+    await getAccessToken()
+  } catch (e) {
+    handleSyncError(e)
     return
   }
   await pullNow()
   await pushNow()
 }
 
-// 받기/올리기는 사용자가 버튼을 눌렀을 때만 실행된다 (자동 동기화 없음).
-// 여기서는 온라인/오프라인 상태 표시만 담당한다.
+// 받기/올리기는 사용자가 버튼을 눌렀을 때만 실행된다 (자동 백그라운드 동기화 없음).
+// 여기서는 온라인/오프라인 상태 표시와 세션 확인(네트워크 확인만, Drive 호출 없음)만 한다.
 export function startSync() {
-  window.addEventListener('online', () => setStatus(status === 'offline' ? 'idle' : status))
+  window.addEventListener('online', () => setStatus('idle'))
   window.addEventListener('offline', () => setStatus('offline'))
-  void (async () => {
-    setStatus((await getConfig()) ? 'idle' : 'disabled')
-  })()
+  getAccessToken().catch((e) => {
+    if (e instanceof AuthRequiredError) setStatus('auth-required')
+    else if (e instanceof SyncNotConfiguredError) setStatus('disabled')
+  })
 }
-
-// ───────────────── 재초기화 (설정에서 사용) ─────────────────
-
-/** 위치 기록을 모두 지우고 전체 재업로드를 예약한다 (저장소를 바꿨을 때) */
-export async function forgetRemote() {
-  const { resetRemoteRecords } = await import('./folders')
-  await resetRemoteRecords()
-  progress = null
-}
-
