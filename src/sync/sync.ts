@@ -605,12 +605,10 @@ async function doPush() {
     n++
     setProgress(`문서 올리는 중 ${n}/${seqsByDoc.size}…`)
     const doc = await db.documents.get(docId)
-    if (!doc) {
-      await db.outbox.bulkDelete(info.seqs)
-      continue // 대상이 이미 정리됨
-    }
     const path = `docs/${docId}.${commitId}.json`
-    if (doc.deletedAt) {
+    if (!doc || doc.deletedAt) {
+      // 휴지통 이동·휴지통 비우기(영구 삭제) 모두 "삭제 커밋"으로 기록한다 —
+      // 안 그러면 허브에 노트가 남아 다른 기기의 받기에서 되살아난다
       changes.push({ kind: 'doc', docId, path, deleted: true })
       stats.del++
       await db.syncState.delete(`base:${docId}`)
