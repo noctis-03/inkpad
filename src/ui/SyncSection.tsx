@@ -85,6 +85,7 @@ export function SyncSection() {
   const loadCloud = useCallback(async () => {
     setLoading(true)
     try {
+      // 이 기기의 대기 변경이 방금 올려졌다면 먼저 비워 버전 판정이 정확해진다
       setCloud(await listCloudNotes())
     } catch (e) {
       toast(e instanceof Error ? e.message : '클라우드 목록을 가져오지 못했습니다.', 'error')
@@ -231,8 +232,12 @@ export function SyncSection() {
           {cloud.map((c) => (
             <div key={c.docId} className="cloud-row">
               <span className="cloud-title">{c.title}</span>
-              {c.state === 'remote-new' && <span className="dot-new" aria-label="새 노트" />}
-              {c.state === 'deleted-local' && <span className="dot-del" aria-label="이 기기에서 지운 노트" />}
+              {c.state === 'remote-new' && (
+                <span className="dot-new" aria-label="새 노트" title="클라우드에서 받을 변경이 있습니다" />
+              )}
+              {c.state === 'deleted-local' && (
+                <span className="dot-del" aria-label="이 기기에서 지운 노트" title="이 기기에서 지운 노트입니다" />
+              )}
               <span className="cloud-meta">
                 {c.device ? `${c.device} · ` : ''}
                 {formatDate(c.updatedAt)}
