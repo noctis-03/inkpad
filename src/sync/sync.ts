@@ -425,7 +425,9 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     if (!docId) continue
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
-    const same = !!rec && rec.version === remote.version
+    // Drive 인덱스 지연으로 listFiles의 version이 잠깐 stale해질 수 있다.
+    // 내 기록이 클라우드 version보다 '같거나 새로우면'(>=) 이미 맞춰진 것으로 본다.
+    const same = !!rec && BigInt(rec.version) >= BigInt(remote.version)
     const localGone = !local || !!local.deletedAt
     const gone = localGone || !!(await getSync(`gone:${docId}`))
     out.push({
