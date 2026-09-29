@@ -27,7 +27,12 @@ import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
 
-type Section = { kind: 'all' } | { kind: 'folder'; id: ID } | { kind: 'uncategorized' } | { kind: 'trash' }
+type Section =
+  | { kind: 'all' }
+  | { kind: 'category'; name: string }
+  | { kind: 'folder'; id: ID }
+  | { kind: 'uncategorized' }
+  | { kind: 'trash' }
 
 export function Library() {
   const navigate = useUI((s) => s.navigate)
@@ -95,6 +100,8 @@ export function Library() {
       const f = folders.find((x) => x.id === section.id)
       const cats = new Set(f?.categories ?? [])
       list = list.filter((d) => d.category != null && cats.has(d.category))
+    } else if (section.kind === 'category') {
+      list = list.filter((d) => d.category === section.name)
     } else if (section.kind === 'uncategorized') {
       list = list.filter((d) => d.category == null || !mappedCategories.has(d.category))
     }
@@ -113,6 +120,9 @@ export function Library() {
     for (const f of folders) for (const c of f.categories ?? []) s.add(c)
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
   }, [docs, folders])
+
+  /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
+  const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
 
   const subfolders = useMemo(
     () => (section.kind === 'trash' || query ? [] : folders.filter((f) => f.parentId === currentFolderId)),
@@ -306,9 +316,11 @@ export function Library() {
       ? '휴지통'
       : section.kind === 'uncategorized'
         ? '미분류'
-        : section.kind === 'folder'
-          ? breadcrumb.at(-1)?.name ?? '폴더'
-          : '모든 노트'
+        : section.kind === 'category'
+          ? section.name
+          : section.kind === 'folder'
+            ? breadcrumb.at(-1)?.name ?? '폴더'
+            : '모든 노트'
 
   return (
     <div className="library" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -354,6 +366,30 @@ export function Library() {
             <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
             </button>
+            <button
+              className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
+              onClick={() => setSection({ kind: 'uncategorized' })}
+            >
+              <Icon name="tag" size={18} /> 미분류{' '}
+              <span className="count">
+                {docs.filter((d) => (d.category == null || !mappedCategories.has(d.category)) && !(d.category && hiddenCats.has(d.category))).length}
+              </span>
+            </button>
+            {shownCategories.length > 0 && (
+              <>
+                <div className="tree-label">카테고리</div>
+                {shownCategories.map((c) => (
+                  <button
+                    key={c}
+                    className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
+                    onClick={() => setSection({ kind: 'category', name: c })}
+                  >
+                    <Icon name="tag" size={18} /> <span className="tree-name">{c}</span>
+                    <span className="count">{docs.filter((d) => d.category === c).length}</span>
+                  </button>
+                ))}
+              </>
+            )}
             <div className="tree-label">
               폴더
               <button className="icon-mini" onClick={() => onNewFolder(null)} aria-label="새 폴더">
@@ -369,15 +405,6 @@ export function Library() {
               onSelect={(id) => setSection({ kind: 'folder', id })}
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
             />
-            <button
-              className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
-              onClick={() => setSection({ kind: 'uncategorized' })}
-            >
-              <Icon name="tag" size={18} /> 미분류{' '}
-              <span className="count">
-                {docs.filter((d) => (d.category == null || !mappedCategories.has(d.category)) && !(d.category && hiddenCats.has(d.category))).length}
-              </span>
-            </button>
             <button className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
               <Icon name="trash" size={18} /> 휴지통 <span className="count">{trash.length}</span>
             </button>
@@ -521,6 +548,7 @@ export function Library() {
       {showNew && (
         <NewDocumentSheet
           folderId={currentFolderId}
+          category={section.kind === 'category' ? section.name : undefined}
           onClose={() => setShowNew(false)}
           onCreated={(d) => {
             setShowNew(false)

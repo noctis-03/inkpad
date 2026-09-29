@@ -16,6 +16,8 @@ const INFINITE_BGS: BackgroundType[] = ['dot', 'grid', 'lined', 'blank']
 
 export function NewDocumentSheet(props: {
   folderId: ID | null
+  /** 카테고리 뷰에서 만들면 그 카테고리를 기본값으로 */
+  category?: string | null
   onClose: () => void
   onCreated: (d: DocumentMeta) => void
   onImportPdf: () => void
@@ -45,6 +47,7 @@ export function NewDocumentSheet(props: {
       title: t,
       mode,
       folderId: props.folderId,
+      category: props.category ?? undefined,
       pages: Array.from({ length: mode === 'paged' ? pageCount : 1 }, () => ({ size: mode === 'paged' ? s : null, background }))
     })
     props.onCreated(doc)
