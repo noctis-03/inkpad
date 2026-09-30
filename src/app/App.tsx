@@ -6,22 +6,13 @@ import { Editor } from '../ui/editor/Editor'
 import { Icon } from '../ui/Icon'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
-import { migrateFoldersToCategories } from '../storage/categoryMigration'
 
 export function App() {
   const route = useUI((s) => s.route)
-  const [ready, setReady] = useState(false)
-  useEffect(() => {
-    // 폴더 → 카테고리 전환 마이그레이션 (1회). 끝난 뒤 화면을 그린다.
-    void migrateFoldersToCategories()
-      .catch((e) => console.error('[migrate]', e))
-      .finally(() => setReady(true))
-  }, [])
   useEffect(() => {
     // 휴지통 30일 정리 (로컬). 서버 쪽은 Phase 2에서 요청 시 lazy 정리
     void purgeExpiredTrash().catch(() => {})
   }, [])
-  if (!ready) return null
   return (
     <div className="app-shell">
       {route.name === 'editor' ? <Editor key={route.docId} docId={route.docId} /> : <Library />}
