@@ -122,6 +122,11 @@ export function Library() {
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
 
+  // 보고 있던 카테고리가 숨김 처리되면 전체로
+  useEffect(() => {
+    if (section.kind === 'category' && !shownCategories.includes(section.name)) setSection({ kind: 'all' })
+  }, [shownCategories, section])
+
   const subfolders = useMemo(
     () => (section.kind === 'trash' || query ? [] : folders.filter((f) => f.parentId === currentFolderId)),
     [folders, section, currentFolderId, query]
@@ -361,30 +366,24 @@ export function Library() {
             <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
             </button>
+            <div className="tree-label">카테고리</div>
+            {shownCategories.map((c) => (
+              <button
+                key={c}
+                className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
+                onClick={() => setSection({ kind: 'category', name: c })}
+              >
+                <Icon name="tag" size={18} /> <span className="tree-name">{c}</span>
+                <span className="count">{docs.filter((d) => d.category === c).length}</span>
+              </button>
+            ))}
             <button
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
               onClick={() => setSection({ kind: 'uncategorized' })}
             >
-              <Icon name="tag" size={18} /> 미분류{' '}
-              <span className="count">
-                {docs.filter((d) => d.category == null).length}
-              </span>
+              <Icon name="tag" size={18} /> <span className="tree-name">미분류</span>
+              <span className="count">{docs.filter((d) => d.category == null).length}</span>
             </button>
-            {shownCategories.length > 0 && (
-              <>
-                <div className="tree-label">카테고리</div>
-                {shownCategories.map((c) => (
-                  <button
-                    key={c}
-                    className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
-                    onClick={() => setSection({ kind: 'category', name: c })}
-                  >
-                    <Icon name="tag" size={18} /> <span className="tree-name">{c}</span>
-                    <span className="count">{docs.filter((d) => d.category === c).length}</span>
-                  </button>
-                ))}
-              </>
-            )}
             <div className="tree-label">
               폴더
               <button className="icon-mini" onClick={() => onNewFolder(null)} aria-label="새 폴더">
