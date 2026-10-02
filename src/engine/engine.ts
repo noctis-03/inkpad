@@ -168,6 +168,7 @@ export class Engine {
   private camListeners = new Set<(c: { x: number; y: number; zoom: number }) => void>()
   private blockListeners = new Set<() => void>()
   private blockCreatedListeners = new Set<(id: ID) => void>()
+  private emptyTapListeners = new Set<(wx: number, wy: number) => void>()
   private blockPointer: { id: number; sx: number; sy: number; camX: number; camY: number; moved: boolean } | null = null
 
   // 렌더
@@ -333,6 +334,19 @@ export class Engine {
     this.blockCreatedListeners.add(fn)
     return () => {
       this.blockCreatedListeners.delete(fn)
+    }
+  }
+
+  /**
+   * 블록 편집 모드에서 빈 곳을 탭했을 때의 월드 좌표.
+   * 구독자가 있으면 엔진은 곧바로 블록을 만들지 않고 위치만 알려준다 —
+   * UI가 "새 블록 고스트"로 종류를 확인한 뒤 createBlock을 호출한다.
+   * (구독자가 없으면 예전처럼 즉시 생성한다)
+   */
+  onEmptyTap(fn: (wx: number, wy: number) => void) {
+    this.emptyTapListeners.add(fn)
+    return () => {
+      this.emptyTapListeners.delete(fn)
     }
   }
 
@@ -1052,7 +1066,9 @@ export class Engine {
       if (!bp.moved && !this.readOnly) {
         const p = this.local(e)
         const w = this.cam.screenToWorld(p.x, p.y)
-        this.createBlock(w.x, w.y)
+        // UI가 고스트로 종류를 확인하는 동안에는 만들지 않는다 (구독자가 있을 때만)
+        if (this.emptyTapListeners.size) for (const fn of this.emptyTapListeners) fn(w.x, w.y)
+        else this.createBlock(w.x, w.y)
       }
       return
     }

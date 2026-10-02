@@ -45,6 +45,7 @@ export function EditorToolbar(props: {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState('')
   const [picker, setPicker] = useState(false)
+  const [blockPicker, setBlockPicker] = useState(false)
   const [widthPop, setWidthPop] = useState(false)
   const pressTimer = useRef(0)
 
@@ -68,6 +69,17 @@ export function EditorToolbar(props: {
     if (isHl) setStyle({ ...style, highlighter: { ...style.highlighter, width: w } })
     else if (tool === 'eraser') setStyle({ ...style, eraserSize: w })
     else setStyle({ ...style, pen: { ...style.pen, width: w } })
+  }
+
+  // 새 블록 기본 글자 크기 — 숫자 칩 6개(12 14 16 20 24 32) 대신 스테퍼 하나로
+  const stepBlockFont = (dir: number) => {
+    const cur = style.block.fontSize
+    let i = BLOCK_FONT_SIZES.indexOf(cur)
+    if (i < 0) i = BLOCK_FONT_SIZES.findIndex((s) => s >= cur)
+    if (i < 0) i = BLOCK_FONT_SIZES.length - 1
+    const next = BLOCK_FONT_SIZES[Math.max(0, Math.min(BLOCK_FONT_SIZES.length - 1, i + dir))]
+    if (next === cur) return
+    setStyle({ ...style, block: { ...style.block, fontSize: next } })
   }
 
   const showStyle = tool === 'pen' || tool === 'highlighter' || tool === 'eraser'
@@ -133,7 +145,7 @@ export function EditorToolbar(props: {
       </nav>
 
       {editMode === 'block' && (
-        <nav className="toolbar-group" aria-label="블록 종류">
+        <nav className="toolbar-group" aria-label="새 블록 종류">
           <button
             className={'tb-btn' + (blockKind === 'text' ? ' is-active' : '')}
             onClick={() => setBlockKind('text')}
@@ -154,7 +166,7 @@ export function EditorToolbar(props: {
       )}
 
       {editMode === 'block' && (
-        <nav className="toolbar-group" aria-label="블록 스타일">
+        <nav className="toolbar-group" aria-label="새 블록 기본 스타일">
           <button
             className={'tb-btn' + (settings.blockSnap ? ' is-active' : '')}
             onClick={() => setSettings({ blockSnap: !settings.blockSnap })}
@@ -163,25 +175,52 @@ export function EditorToolbar(props: {
           >
             <Icon name="grid" />
           </button>
-          {BLOCK_FONT_SIZES.map((fs) => (
-            <button
-              key={fs}
-              className={'tb-btn block-size' + (style.block.fontSize === fs ? ' is-active' : '')}
-              onClick={() => setStyle({ ...style, block: { ...style.block, fontSize: fs } })}
-              aria-label={`글자 크기 ${fs}`}
-            >
-              {fs}
+          <div className="block-font">
+            <button className="tb-btn" onClick={() => stepBlockFont(-1)} aria-label="기본 글자 작게">
+              A−
             </button>
-          ))}
-          {PEN_COLORS.slice(0, 5).map((c) => (
+            <span className="tb-value" aria-label={`기본 글자 크기 ${style.block.fontSize}`}>
+              {style.block.fontSize}
+            </span>
+            <button className="tb-btn" onClick={() => stepBlockFont(1)} aria-label="기본 글자 크게">
+              A+
+            </button>
+          </div>
+          <div className="color-pop-anchor">
             <button
-              key={c}
-              className={'color-swatch small' + (style.block.color.slice(0, 7) === c.slice(0, 7) ? ' is-active' : '')}
-              style={{ ['--swatch' as string]: c }}
-              onClick={() => setStyle({ ...style, block: { ...style.block, color: c } })}
-              aria-label={`글자 색 ${c}`}
+              className="color-swatch is-current"
+              style={{ ['--swatch' as string]: style.block.color }}
+              onClick={() => setBlockPicker(!blockPicker)}
+              aria-label="기본 글자 색"
             />
-          ))}
+            {blockPicker && (
+              <div className="color-pop" role="listbox">
+                {PEN_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={'color-swatch' + (style.block.color.slice(0, 7) === c.slice(0, 7) ? ' is-active' : '')}
+                    style={{ ['--swatch' as string]: c }}
+                    onClick={() => {
+                      setStyle({ ...style, block: { ...style.block, color: c } })
+                      setBlockPicker(false)
+                    }}
+                    aria-label={`색상 ${c}`}
+                  />
+                ))}
+                <label className="color-custom" aria-label="직접 선택">
+                  <Icon name="palette" size={18} />
+                  <input
+                    type="color"
+                    value={style.block.color.slice(0, 7)}
+                    onChange={(e) => {
+                      setStyle({ ...style, block: { ...style.block, color: e.target.value + 'ff' } })
+                      setBlockPicker(false)
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
         </nav>
       )}
 

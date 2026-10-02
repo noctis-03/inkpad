@@ -19,9 +19,13 @@ export function SelectionBar({ engine }: { engine: Engine }) {
         <button className="tb-btn" onClick={() => engine.duplicateSelection()} aria-label="복제">
           <Icon name="copy" size={20} />
         </button>
-        {PEN_COLORS.slice(0, 5).map((c) => (
+        {PEN_COLORS.map((c) => (
           <button key={c} className="color-swatch small" style={{ ['--swatch' as string]: c }} onClick={() => engine.recolorSelection(c)} aria-label={`색 ${c}로 바꾸기`} />
         ))}
+        <label className="color-custom small" aria-label="직접 선택">
+          <Icon name="palette" size={18} />
+          <input type="color" defaultValue="#111827" onChange={(e) => engine.recolorSelection(e.target.value + 'ff')} />
+        </label>
         <button className="tb-btn danger" onClick={() => engine.deleteSelection()} aria-label="삭제">
           <Icon name="trash" size={20} />
         </button>
