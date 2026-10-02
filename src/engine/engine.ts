@@ -124,6 +124,8 @@ export class Engine {
   private rectLeft = 0
   private rectTop = 0
   private momentum: { vx: number; vy: number; t: number } | null = null
+  /** 가운데(휠) 버튼 드래그 팬 상태 */
+  private middlePan: { id: number; sx: number; sy: number; camX: number; camY: number } | null = null
 
   // 선택
   private selection: StrokeRec[] = []
@@ -653,6 +655,13 @@ export class Engine {
     this.on(r, 'pointerleave', this.onPointerLeave)
     this.on(r, 'wheel', this.onWheel, { passive: false })
     const prevent = (e: Event) => e.preventDefault()
+    // 휠(가운데) 버튼: 브라우저 자동 스크롤 대신 드래그 팬으로 사용
+    this.on(r, 'mousedown', (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault()
+    })
+    this.on(r, 'auxclick', (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault()
+    })
     this.on(r, 'touchstart', prevent, { passive: false })
     this.on(r, 'touchmove', prevent, { passive: false })
     this.on(r, 'contextmenu', prevent)
@@ -707,7 +716,10 @@ export class Engine {
     this.recordPointerStats(e)
     this.momentum = null
     if (this.isPenLike(e)) {
-      if (e.pointerType === 'mouse' && e.button !== 0) return
+      if (e.pointerType === 'mouse' && e.button !== 0) {
+        if (e.button === 1) this.startMiddlePan(e)
+        return
+      }
       if (this.active && this.active.pointerType !== 'touch') return
       this.cancelTouchInteractions()
       if (this.readOnly) return
@@ -748,6 +760,13 @@ export class Engine {
   }
 
   private onPointerMove = (e: PointerEvent) => {
+    if (this.middlePan && this.middlePan.id === e.pointerId) {
+      const p = this.local(e)
+      this.cam.x = this.middlePan.camX - (p.x - this.middlePan.sx) / this.cam.zoom
+      this.cam.y = this.middlePan.camY - (p.y - this.middlePan.sy) / this.cam.zoom
+      this.onCameraMoved()
+      return
+    }
     if (this.isPenLike(e)) {
       const a = this.active
       if (a && a.pointerId === e.pointerId) {
@@ -786,6 +805,10 @@ export class Engine {
   }
 
   private onPointerUp = (e: PointerEvent) => {
+    if (this.middlePan && this.middlePan.id === e.pointerId) {
+      this.endMiddlePan()
+      return
+    }
     if (this.isPenLike(e)) {
       if (this.active && this.active.pointerId === e.pointerId) {
         this.finishActive(true)
@@ -797,6 +820,10 @@ export class Engine {
   }
 
   private onPointerCancel = (e: PointerEvent) => {
+    if (this.middlePan && this.middlePan.id === e.pointerId) {
+      this.endMiddlePan()
+      return
+    }
     if (this.active && this.active.pointerId === e.pointerId) {
       this.finishActive(this.settings.cancelBehavior === 'commit')
       if (this.isPenLike(e)) this.lastPenUp = performance.now()
@@ -809,6 +836,25 @@ export class Engine {
       this.cursor = null
       this.liveDirty = true
     }
+  }
+
+  /** 휠(가운데) 버튼을 누른 채 드래그하면 화면을 1:1로 끌어 이동 */
+  private startMiddlePan(e: PointerEvent) {
+    this.momentum = null
+    this.cancelTouchInteractions()
+    const p = this.local(e)
+    this.middlePan = { id: e.pointerId, sx: p.x, sy: p.y, camX: this.cam.x, camY: this.cam.y }
+    this.capture(e.pointerId)
+    if (this.cursor) {
+      this.cursor = null
+      this.liveDirty = true
+    }
+    this.root.style.cursor = 'grabbing'
+  }
+
+  private endMiddlePan() {
+    this.middlePan = null
+    this.root.style.cursor = ''
   }
 
   private onWheel = (e: WheelEvent) => {
