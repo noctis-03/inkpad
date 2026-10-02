@@ -1,7 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useUI } from '../app/store'
 import { login, logout } from '../sync/token'
-import { downloadCloudNote, deleteCloudNote, listCloudNotes, onSyncStatus, planPush, pullNow, pushNow, syncNow, type CloudNoteInfo, type PushPlan, type SyncStatus } from '../sync/sync'
+import {
+  downloadCloudNote,
+  deleteCloudNote,
+  listCloudNotes,
+  onSyncStatus,
+  planPush,
+  pullNow,
+  pushNow,
+  syncNow,
+  type CloudNoteInfo,
+  type CloudNoteState,
+  type PushPlan,
+  type SyncStatus
+} from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
 import { formatDate } from '../shared/util'
@@ -57,6 +70,257 @@ function DeviceNameRow() {
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
+}
+
+// ───────────────── 클라우드 노트 목록 ─────────────────
+
+/** 상태별 표시 정보 — 레일 색과 배지 문구의 단일 출처 */
+const STATE_META: Record<CloudNoteState, { label: string; tone: 'recv' | 'push' | 'fresh' | 'gone' }> = {
+  'remote-new': { label: '받을 것', tone: 'recv' },
+  pending: { label: '올릴 것', tone: 'push' },
+  same: { label: '최신', tone: 'fresh' },
+  'deleted-local': { label: '삭제됨', tone: 'gone' }
+}
+
+const STATE_ORDER: CloudNoteState[] = ['remote-new', 'pending', 'same', 'deleted-local']
+
+/** 목록 그룹 — 받을 것 → 올릴 것 → 최신(접힘) → 이 기기에서 삭제됨(접힘) */
+const GROUPS: { key: CloudNoteState; title: string; tone: 'recv' | 'push' | 'fresh' | 'gone'; startCollapsed: boolean }[] = [
+  { key: 'remote-new', title: '받을 것', tone: 'recv', startCollapsed: false },
+  { key: 'pending', title: '올릴 것', tone: 'push', startCollapsed: false },
+  { key: 'same', title: '최신', tone: 'fresh', startCollapsed: true },
+  { key: 'deleted-local', title: '이 기기에서 삭제됨', tone: 'gone', startCollapsed: true }
+]
+
+function CloudList({
+  cloud,
+  busy,
+  onDownload,
+  onDelete,
+  onPush
+}: {
+  cloud: CloudNoteInfo[] | null
+  busy: boolean
+  onDownload: (info: CloudNoteInfo) => void
+  onDelete: (info: CloudNoteInfo) => void
+  onPush: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<CloudNoteState | 'all'>('all')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ same: true, 'deleted-local': true })
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+
+  const counts = useMemo(() => {
+    const c: Record<CloudNoteState, number> = { 'remote-new': 0, pending: 0, same: 0, 'deleted-local': 0 }
+    for (const n of cloud ?? []) c[n.state]++
+    return c
+  }, [cloud])
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return (cloud ?? []).filter((n) => {
+      if (filter !== 'all' && n.state !== filter) return false
+      if (!q) return true
+      return `${n.title} ${n.category ?? ''} ${n.device ?? ''}`.toLowerCase().includes(q)
+    })
+  }, [cloud, filter, query])
+
+  const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => n.state === g.key) })).filter((g) => g.items.length > 0)
+
+  // 아직 못 받아 온 상태 — 빈 공간 대신 같은 골격의 스켈레톤
+  if (cloud === null) {
+    return (
+      <div className="cloud-panel">
+        <div className="cloud-toolbar">
+          <span className="cloud-search">
+            <Icon name="search" size={16} />
+            <input value="" placeholder="노트 검색" aria-label="클라우드 노트 검색" disabled readOnly />
+          </span>
+        </div>
+        <div className="cloud-items">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="cloud-skel">
+              <span className="bar t" />
+              <span className="bar m" />
+              <span className="bar s" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (!cloud.length) {
+    return (
+      <p className="cloud-empty">
+        클라우드에 노트가 없습니다.
+        <br />
+        노트를 만든 뒤 <b>올리기</b>를 눌러 주세요.
+      </p>
+    )
+  }
+
+  return (
+    <div className="cloud-panel">
+      <div className="cloud-toolbar">
+        <span className="cloud-search">
+          <Icon name="search" size={16} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="제목 · 카테고리 · 기기 검색"
+            aria-label="클라우드 노트 검색"
+          />
+          {query && (
+            <button className="cloud-clear" onClick={() => setQuery('')} aria-label="검색 지우기">
+              <Icon name="close" size={13} />
+            </button>
+          )}
+        </span>
+        {filter !== 'all' && (
+          <button className="text-btn small" onClick={() => setFilter('all')}>
+            전체
+          </button>
+        )}
+      </div>
+
+      <div className="cloud-summary" role="group" aria-label="상태별 필터">
+        {STATE_ORDER.map((k) => {
+          const m = STATE_META[k]
+          const on = filter === k
+          return (
+            <button
+              key={k}
+              className={'cloud-sum ' + m.tone + (on ? ' is-active' : '')}
+              aria-pressed={on}
+              title={on ? '필터 해제' : `${m.label}만 보기`}
+              onClick={() => setFilter(on ? 'all' : k)}
+            >
+              <b>{counts[k]}</b>
+              <span>{m.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {groups.length === 0 && <p className="cloud-empty">조건에 맞는 노트가 없습니다.</p>}
+
+      {groups.map((g) => {
+        const isOpen = !collapsed[g.key]
+        return (
+          <section className="cloud-group" key={g.key}>
+            <button
+              className={'cloud-group-head ' + g.tone}
+              onClick={() => setCollapsed((m) => ({ ...m, [g.key]: !m[g.key] }))}
+              aria-expanded={isOpen}
+            >
+              <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={13} />
+              <span>{g.title}</span>
+              <b>{g.items.length}</b>
+            </button>
+
+            {isOpen && (
+              <div className="cloud-items">
+                {g.items.map((c) => {
+                  const m = STATE_META[c.state]
+                  // 받을 것 · 삭제됨은 행 전체를 눌러 바로 처리한다
+                  const tappable = c.state === 'remote-new' || c.state === 'deleted-local'
+                  const act = c.state === 'deleted-local' ? '이 기기로 되살리기' : '이 기기로 받기'
+                  return (
+                    <div key={c.docId} className="cloud-item-wrap">
+                      <div
+                        className={'cloud-item ' + m.tone + (tappable ? ' is-tappable' : '')}
+                        role={tappable ? 'button' : undefined}
+                        tabIndex={tappable ? 0 : undefined}
+                        aria-label={tappable ? `${c.title} — ${act}` : undefined}
+                        onClick={tappable ? () => onDownload(c) : undefined}
+                        onKeyDown={
+                          tappable
+                            ? (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  onDownload(c)
+                                }
+                              }
+                            : undefined
+                        }
+                      >
+                        <div className="cloud-body">
+                          <div className="cloud-name">{c.title}</div>
+                          <div className="cloud-sub">
+                            {c.category && <span>{c.category}</span>}
+                            {c.device && <span>{c.device}</span>}
+                            <span>{formatDate(c.updatedAt)}</span>
+                          </div>
+                        </div>
+
+                        {c.state === 'remote-new' ? (
+                          <span className="cloud-badge recv">받기</span>
+                        ) : (
+                          <span className={'cloud-badge ' + m.tone}>{m.label}</span>
+                        )}
+
+                        <button
+                          className="cloud-more"
+                          aria-label="더보기"
+                          aria-expanded={openMenu === c.docId}
+                          disabled={busy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setOpenMenu((prev) => (prev === c.docId ? null : c.docId))
+                          }}
+                        >
+                          <Icon name="more" size={16} />
+                        </button>
+                      </div>
+
+                      {openMenu === c.docId && (
+                        <div className="cloud-actions">
+                          {c.state === 'pending' ? (
+                            <button
+                              className="cloud-act"
+                              disabled={busy}
+                              onClick={() => {
+                                setOpenMenu(null)
+                                onPush()
+                              }}
+                            >
+                              <Icon name="upload" size={14} /> 지금 올리기
+                            </button>
+                          ) : (
+                            <button
+                              className="cloud-act"
+                              disabled={busy}
+                              onClick={() => {
+                                setOpenMenu(null)
+                                onDownload(c)
+                              }}
+                            >
+                              <Icon name={c.state === 'deleted-local' ? 'restore' : 'download'} size={14} /> {act}
+                            </button>
+                          )}
+                          <button
+                            className="cloud-act danger"
+                            disabled={busy}
+                            onClick={() => {
+                              setOpenMenu(null)
+                              onDelete(c)
+                            }}
+                          >
+                            <Icon name="trash" size={14} /> 클라우드에서 삭제
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )
+      })}
+    </div>
+  )
 }
 
 export function SyncSection() {
@@ -218,7 +482,7 @@ export function SyncSection() {
       <div className="setting-row" style={{ marginTop: 10 }}>
         <span className="setting-label">
           클라우드 노트
-          <small>Drive에 저장된 노트 — 눌러서 이 기기로 받습니다</small>
+          <small>Drive에 저장된 노트 — 받을 것을 먼저 보여줍니다</small>
         </span>
         <span className="setting-control">
           <button className="text-btn small" onClick={() => void loadCloud()} disabled={loading || status === 'syncing'}>
@@ -227,33 +491,14 @@ export function SyncSection() {
         </span>
       </div>
 
-      {cloud && cloud.length === 0 && <p className="hint">클라우드에 노트가 없습니다. 노트를 만든 뒤 "올리기"를 눌러 주세요.</p>}
-      {cloud && cloud.length > 0 && (
-        <div className="cloud-list">
-          {cloud.map((c) => (
-            <div key={c.docId} className="cloud-row">
-              <span className="cloud-title">{c.title}</span>
-              {c.state === 'remote-new' && (
-                <span className="dot-new" aria-label="새 노트" title="클라우드에서 받을 변경이 있습니다" />
-              )}
-              {c.state === 'deleted-local' && (
-                <span className="dot-del" aria-label="이 기기에서 지운 노트" title="이 기기에서 지운 노트입니다" />
-              )}
-              <span className="cloud-meta">
-                {c.category ? `${c.category} · ` : ''}
-                {c.device ? `${c.device} · ` : ''}
-                {formatDate(c.updatedAt)}
-              </span>
-              <button className="text-btn small" disabled={loading || status === 'syncing'} onClick={() => void downloadOne(c)}>
-                받기
-              </button>
-              <button className="icon-mini danger" aria-label="클라우드에서 삭제" disabled={loading || status === 'syncing'} onClick={() => void deleteOne(c)}>
-                <Icon name="trash" size={15} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <CloudList
+        cloud={cloud}
+        busy={loading || status === 'syncing'}
+        onDownload={(c) => void downloadOne(c)}
+        onDelete={(c) => void deleteOne(c)}
+        onPush={() => void doPush()}
+      />
+
       {preview && <PushPreview plan={preview} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
     </section>
   )
