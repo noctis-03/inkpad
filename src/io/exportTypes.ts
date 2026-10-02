@@ -24,6 +24,15 @@ export interface ExportPage {
   pdf?: { assetId: string; pageIndex: number; rotation: number }
   raster?: { jpeg: ArrayBuffer } // 원본을 pdf-lib로 못 읽을 때 (암호 등)
   paths: ExportPath[] // under → main 순서
+  images?: ExportImage[] // 텍스트·링크 블록 (투명 배경 PNG)
+}
+
+export interface ExportImage {
+  data: ArrayBuffer // PNG
+  x: number // 페이지 왼쪽 위 기준 (y 아래로)
+  y: number
+  w: number
+  h: number
 }
 
 export interface ExportJob {

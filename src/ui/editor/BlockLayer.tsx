@@ -153,8 +153,15 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       const dy = (e.clientY - d.sy) / z
       if (!d.moved && Math.hypot(dx, dy) * z > 4) d.moved = true
       if (!d.moved) return
-      if (d.mode === 'resize') d.el.style.width = Math.max(MIN_TEXT_W, snapOf(d.baseW + dx)) + 'px'
-      else {
+      if (d.mode === 'resize') {
+        d.el.style.width = Math.max(MIN_TEXT_W, snapOf(d.baseW + dx)) + 'px'
+        // 폭이 바뀌면 줄바꿈이 바뀐다 — 높이를 즉시 다시 잰다 (커밋되는 h도 이 기준으로)
+        const ta = d.el.querySelector<HTMLTextAreaElement>('.block-ta')
+        if (ta) {
+          ta.style.height = 'auto'
+          ta.style.height = ta.scrollHeight + 'px'
+        }
+      } else {
         d.el.style.left = snapOf(d.baseX + dx) + 'px'
         d.el.style.top = snapOf(d.baseY + dy) + 'px'
       }
@@ -191,8 +198,9 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
   const selectedIds = engine.selectedBlockIds()
   const blocks: BlockRec[] = engine.blocks()
 
-  const stepFont = (dir: number) => {
-    const cur = style.block.fontSize
+  const stepFont = (dir: number, curSize: number) => {
+    // 기본 스타일값이 아니라 이 블록의 현재 글자 크기 기준으로 단계를 움직인다
+    const cur = curSize
     let i = BLOCK_FONT_SIZES.indexOf(cur)
     if (i < 0) i = BLOCK_FONT_SIZES.findIndex((s) => s >= cur)
     if (i < 0) i = BLOCK_FONT_SIZES.length - 1
@@ -249,6 +257,7 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
             <BlockText
               value={value}
               editing={isEdit}
+              w={p.w}
               fontSize={p.fontSize}
               color={p.color}
               fontFamily={p.fontFamily}
@@ -310,10 +319,10 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
                     <Icon name="edit" size={18} />
                   </button>
                 )}
-                <button className="tb-btn" onClick={() => engine.updateBlock(el.id, { fontSize: stepFont(-1) })} aria-label="글자 작게">
+                <button className="tb-btn" onClick={() => engine.updateBlock(el.id, { fontSize: stepFont(-1, p.fontSize) })} aria-label="글자 작게">
                   A-
                 </button>
-                <button className="tb-btn" onClick={() => engine.updateBlock(el.id, { fontSize: stepFont(1) })} aria-label="글자 크게">
+                <button className="tb-btn" onClick={() => engine.updateBlock(el.id, { fontSize: stepFont(1, p.fontSize) })} aria-label="글자 크게">
                   A+
                 </button>
                 {!isLink &&
@@ -346,6 +355,7 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
 function BlockText({
   value,
   editing,
+  w,
   fontSize,
   color,
   fontFamily,
@@ -356,6 +366,7 @@ function BlockText({
 }: {
   value: string
   editing: boolean
+  w: number
   fontSize: number
   color: string
   fontFamily?: string
@@ -366,8 +377,27 @@ function BlockText({
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState(value)
+  /** Esc로 닫은 것인지 — 취소면 미확정 내용을 버리고 저장값으로 되돌린다 */
+  const canceledRef = useRef(false)
 
   useEffect(() => setDraft(value), [value])
+
+  // 편집이 닫히는 순간을 여기서 정리한다.
+  //  - blur는 편집 상태가 이미 false가 된 뒤에 와서 커밋을 놓칠 수 있다 (모드 전환 등 강제 종료)
+  //  - Esc로 취한 경우에는 커밋하지 않고 표시값을 저장값으로 되돌린다
+  useEffect(() => {
+    if (editing) {
+      canceledRef.current = false
+      return
+    }
+    if (canceledRef.current) {
+      setDraft(value)
+      return
+    }
+    if (draft !== value) onCommit(draft, ref.current?.scrollHeight ?? 0)
+    // draft·value는 editing이 바뀐 렌더의 최신값을 그대로 쓴다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing])
 
   // 높이 자동 측정 + 편집 시작 시 포커스 (CSS transform은 레이아웃에 영향이 없어 scrollHeight는 월드 단위다)
   useLayoutEffect(() => {
@@ -380,7 +410,7 @@ function BlockText({
       const n = ta.value.length
       ta.setSelectionRange(n, n)
     }
-  }, [draft, editing, fontSize, fontFamily])
+  }, [draft, editing, w, fontSize, fontFamily])
 
   return (
     <textarea
@@ -394,11 +424,13 @@ function BlockText({
       style={{ fontSize, color, fontFamily: fontFamily ?? 'inherit', textAlign: align ?? 'left' }}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
-        if (editing) onCommit(draft, ref.current?.scrollHeight ?? 0)
+        if (editing || draft !== value) onCommit(draft, ref.current?.scrollHeight ?? 0)
       }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.preventDefault()
+          canceledRef.current = true
+          setDraft(value)
           onCancel()
         } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault()

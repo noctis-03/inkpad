@@ -966,7 +966,8 @@ export class Engine {
     if (this.active && this.active.pointerType === 'touch') this.finishActive(false)
 
     const live = this.liveTouches()
-    if (live.length === 1 && this.settings.fingerDraw && !this.readOnly) {
+    // 블록 편집 모드에서는 손가락으로도 잉크를 그리지 않는다 (블록 위 터치는 팬/제스처로만)
+    if (live.length === 1 && this.settings.fingerDraw && !this.readOnly && this.editMode === 'draw') {
       this.startStroke(e)
       this.gesture = this.newGesture(live, 1)
       return

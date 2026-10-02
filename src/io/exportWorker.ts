@@ -75,6 +75,11 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
         // drawSvgPath는 SVG 좌표(y 아래로)를 (x, y) 기준으로 뒤집어 그린다
         page.drawSvgPath(path.d, { x: 0, y: p.h, color: rgb(path.r, path.g, path.b), opacity: path.a, borderWidth: 0 })
       }
+      // 텍스트·링크 블록 — 투명 배경 PNG로 얹는다 (좌표계는 paths와 같은 y-아래 기준)
+      for (const img of p.images ?? []) {
+        const embedded = await out.embedPng(img.data)
+        page.drawImage(embedded, { x: img.x, y: p.h - img.y - img.h, width: img.w, height: img.h })
+      }
       done++
       if (done % 5 === 0 || done === job.pages.length) post({ type: 'progress', done, total: job.pages.length })
     }

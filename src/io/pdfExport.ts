@@ -1,11 +1,11 @@
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
-import type { Page, Stroke } from '../shared/model'
+import type { LinkElement, Page, Stroke, TextBox } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
 import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
-import type { ExportJob, ExportPage, ExportPath, WorkerOut } from './exportTypes'
+import type { ExportImage, ExportJob, ExportPage, ExportPath, WorkerOut } from './exportTypes'
 import { recallPassword } from './passwords'
 
 export interface ExportOptions {
@@ -46,6 +46,82 @@ function strokesToPaths(strokes: Stroke[], dx: number, dy: number): ExportPath[]
   return out
 }
 
+// ───────── 텍스트·링크 블록 (블록 편집 모드) ─────────
+
+/** 블록 높이 추정 — 저장된 h가 없으면 줄 수로 (선택 박스·썸네일과 같은 규약) */
+const blockH = (el: TextBox | LinkElement): number =>
+  el.h ?? el.fontSize * 1.35 * Math.max(1, (el.type === 'link' ? el.label : el.text).split('\n').length)
+
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const out: string[] = []
+  for (const para of text.split('\n')) {
+    if (!para) {
+      out.push('')
+      continue
+    }
+    let line = ''
+    for (const ch of para) {
+      const next = line + ch
+      if (line && ctx.measureText(next).width > maxW) {
+        out.push(line)
+        line = ch
+      } else line = next
+    }
+    out.push(line)
+  }
+  return out
+}
+
+/** 블록을 캔버스에 그린다 (썸네일과 같은 규약: baseline top, 줄 간격 1.35) */
+function drawTextBlock(ctx: CanvasRenderingContext2D, el: TextBox | LinkElement, ox: number, oy: number) {
+  ctx.font = `${el.fontSize}px ${el.fontFamily ?? 'sans-serif'}`
+  ctx.fillStyle = el.color
+  ctx.textBaseline = 'top'
+  ctx.textAlign = el.align ?? 'left'
+  const lh = el.fontSize * 1.35
+  const lines = wrapLines(ctx, el.type === 'link' ? el.label : el.text, el.w)
+  const tx = ox + (el.align === 'center' ? el.w / 2 : el.align === 'right' ? el.w : 0)
+  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], tx, oy + i * lh)
+  if (el.type === 'link' && el.url && el.label) {
+    const last = lines[lines.length - 1] ?? ''
+    const wpx = ctx.measureText(last).width
+    const ux = ox + (el.align === 'center' ? (el.w - wpx) / 2 : el.align === 'right' ? el.w - wpx : 0)
+    const uy = oy + (lines.length - 1) * lh + el.fontSize * 1.15
+    ctx.beginPath()
+    ctx.moveTo(ux, uy)
+    ctx.lineTo(ux + wpx, uy)
+    ctx.strokeStyle = el.color
+    ctx.lineWidth = Math.max(0.5, el.fontSize / 14)
+    ctx.stroke()
+  }
+}
+
+/**
+ * 텍스트 블록을 투명 배경 PNG(3배)로 만든다.
+ * 워커(pdf-lib)에 한글 글꼴을 싣지 않고도 화면과 같은 모양을 내보내기 위한 것 — 표준 폰트로는 라틴 문자만 그릴 수 있다.
+ */
+function rasterBlockImage(el: TextBox | LinkElement): { data: ArrayBuffer; w: number; h: number } | null {
+  const scale = 3
+  const measure = document.createElement('canvas').getContext('2d')
+  if (!measure) return null
+  measure.font = `${el.fontSize}px ${el.fontFamily ?? 'sans-serif'}`
+  const lines = wrapLines(measure, el.type === 'link' ? el.label : el.text, el.w)
+  const lh = el.fontSize * 1.35
+  const h = Math.max(lh, lines.length * lh + el.fontSize * 0.4)
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round((el.w + 2) * scale))
+  c.height = Math.max(1, Math.round(h * scale))
+  const ctx = c.getContext('2d')
+  if (!ctx) return null
+  ctx.scale(scale, scale)
+  drawTextBlock(ctx, el, -el.x, -el.y)
+  const b64 = c.toDataURL('image/png').split(',')[1] ?? ''
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return { data: bytes.buffer, w: el.w + 2, h }
+}
+
 const rgb3 = (hex: string): [number, number, number] => {
   const c = parseColor(hex)
   return [c.r, c.g, c.b]
@@ -69,10 +145,16 @@ function patternFor(page: Page): ExportPage['pattern'] {
 export async function exportDocumentPdf(documentId: string, opts: ExportOptions = {}): Promise<Blob> {
   const { doc, pages, chunks } = await loadDocument(documentId)
   const strokesByPage = new Map<string, Stroke[]>()
+  const blocksByPage = new Map<string, (TextBox | LinkElement)[]>()
   for (const c of chunks) {
     const arr = strokesByPage.get(c.pageId) ?? []
-    for (const e of c.elements) if (e.type === 'stroke') arr.push(e)
+    const blocks = blocksByPage.get(c.pageId) ?? []
+    for (const e of c.elements) {
+      if (e.type === 'stroke') arr.push(e)
+      else if (e.type === 'text' || e.type === 'link') blocks.push(e)
+    }
     strokesByPage.set(c.pageId, arr)
+    blocksByPage.set(c.pageId, blocks)
   }
 
   if (doc.mode === 'infinite') return exportInfinitePdf(doc.title, chunks, opts)
@@ -85,7 +167,13 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
     paper: p.pdf ? null : rgb3(p.background.type === 'blank' ? p.background.color : '#ffffff'),
     pattern: p.pdf || opts.includePattern === false ? null : patternFor(p),
     pdf: p.pdf ? { ...p.pdf } : undefined,
-    paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0)
+    paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0),
+    images: (blocksByPage.get(p.id) ?? [])
+      .map((el) => {
+        const img = rasterBlockImage(el)
+        return img ? { data: img.data, x: el.x, y: el.y, w: img.w, h: img.h } : null
+      })
+      .filter((v): v is ExportImage => !!v)
   }))
 
   const sources: Record<string, ArrayBuffer> = {}
@@ -156,10 +244,20 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
   const pad = 24
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const world: Stroke[] = []
+  const blocksWorld: { el: TextBox | LinkElement; ox: number; oy: number }[] = []
   for (const c of chunks) {
     const { ox, oy } = parseChunkKey(c.key)
     for (const e of c.elements) {
-      if (e.type !== 'stroke') continue
+      if (e.type !== 'stroke') {
+        if (e.type === 'text' || e.type === 'link') {
+          blocksWorld.push({ el: e, ox, oy })
+          minX = Math.min(minX, e.x + ox)
+          minY = Math.min(minY, e.y + oy)
+          maxX = Math.max(maxX, e.x + ox + e.w)
+          maxY = Math.max(maxY, e.y + oy + blockH(e))
+        }
+        continue
+      }
       minX = Math.min(minX, e.bbox[0] + ox)
       minY = Math.min(minY, e.bbox[1] + oy)
       maxX = Math.max(maxX, e.bbox[2] + ox)
@@ -172,7 +270,7 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
       world.push({ ...e, points: pts })
     }
   }
-  if (!world.length) {
+  if (!world.length && !blocksWorld.length) {
     minX = minY = 0
     maxX = 595
     maxY = 842
@@ -188,7 +286,19 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
     }
     return { ...s, points: pts, width: s.width * k }
   })
-  const page: ExportPage = { w: w * k, h: h * k, paper: [1, 1, 1], pattern: null, paths: strokesToPaths(scaled, 0, 0) }
+  const images: ExportImage[] = []
+  for (const b of blocksWorld) {
+    const img = rasterBlockImage(b.el)
+    if (!img) continue
+    images.push({
+      data: img.data,
+      x: (b.el.x + b.ox - minX + pad) * k,
+      y: (b.el.y + b.oy - minY + pad) * k,
+      w: img.w * k,
+      h: img.h * k
+    })
+  }
+  const page: ExportPage = { w: w * k, h: h * k, paper: [1, 1, 1], pattern: null, paths: strokesToPaths(scaled, 0, 0), images }
   const result = await runWorker({ title, pages: [page], sources: {} }, opts)
   if (result.type !== 'done') throw new Error('PDF를 만들지 못했습니다.')
   return new Blob([result.bytes], { type: 'application/pdf' })
