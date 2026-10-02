@@ -1,5 +1,5 @@
 import { Camera, clampZoom } from './camera'
-import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX } from './constants'
+import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
 import { History, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
@@ -815,8 +815,12 @@ export class Engine {
     e.preventDefault()
     this.momentum = null
     const p = this.local(e)
-    if (e.ctrlKey || e.metaKey) this.cam.zoomAt(p.x, p.y, this.cam.zoom * Math.exp(-e.deltaY * 0.01))
-    else {
+    if (e.ctrlKey || e.metaKey) {
+      // deltaMode: 0 = 픽셀, 1 = 줄, 2 = 페이지 — 브라우저마다 단위가 달라 먼저 정규화한다.
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.renderer.cssH : 1
+      const factor = Math.exp(-e.deltaY * unit * WHEEL_ZOOM_SENSITIVITY)
+      this.cam.zoomAt(p.x, p.y, this.cam.zoom * factor)
+    } else {
       this.cam.x += e.deltaX / this.cam.zoom
       this.cam.y += e.deltaY / this.cam.zoom
     }
