@@ -473,10 +473,12 @@ export function Library() {
                       <Icon name={d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                     )}
                     <span className="doc-badge">{d.mode === 'infinite' ? '무한' : `${d.pageOrder.length}쪽`}</span>
+                    {d.category && <span className="doc-cat">{d.category}</span>}
                   </div>
                   <div className="doc-info">
                     <h3 className="doc-title">{d.title}</h3>
                     <p className="doc-date">
+                      {d.category && <span className="doc-cat-text">{d.category}</span>}
                       {section.kind === 'trash' && d.deletedAt ? `삭제 ${formatDate(d.deletedAt)}` : formatDate(d.updatedAt)}
                     </p>
                   </div>

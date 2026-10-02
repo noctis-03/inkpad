@@ -810,6 +810,40 @@ textarea {
   color: #fff;
   font-size: 11px;
 }
+/* 미리보기 왼쪽 위 카테고리 (미분류 = category 없음 → 표시 안 함) */
+.doc-cat {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #ffffffd9;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px #0000001f;
+}
+/* 리스트 보기에서는 미리보기 위 배지는 숨기고 정보줄에 표시 */
+.doc-list .doc-cat {
+  display: none;
+}
+.doc-cat-text {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: #eef2f7;
+  color: #4b5563;
+  font-size: 11px;
+  font-weight: 600;
+}
+.doc-grid .doc-cat-text {
+  display: none;
+}
 .doc-info {
   padding: 8px 32px 0 2px;
 }
