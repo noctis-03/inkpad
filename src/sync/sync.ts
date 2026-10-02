@@ -24,8 +24,9 @@ import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
-import { assetFileName, packDocument, type DocFileV1 } from './pack'
+import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { mergeDocs } from './merge'
+import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 
 const SYNC_LOCK = 'inkpad-sync'
@@ -181,16 +182,20 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   const file = await packDocument(docId)
   for (const am of file.assets) await ensureAssetUploaded(am.id, f.assets) // 참조 원본을 먼저 올린다
   const device = await getDeviceName()
+  // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
+  const restored = (await getSync<string>(`revKind:${docId}`)) === 'restore'
+  const rev: RevMarker = { kind: restored ? 'restore' : 'push', device, at: Date.now() }
   const result = await drive.upload(
-    await gzipJson(file),
+    await gzipJson({ ...file, rev }),
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: file.doc.title, device, enc: drive.ENC_GZIP, ...categoryProp(file.doc.category) }
+      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: file.doc.title, device, enc: drive.ENC_GZIP, revKind: rev.kind, ...categoryProp(file.doc.category) }
     },
     f.docs,
     remote?.id
   )
+  await rememberRevTag(result.id, { device, revKind: rev.kind }, restored)
   await markSynced(docId, file, result, info.seqs)
 }
 
@@ -203,6 +208,8 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     await putSync(`doc:${docId}`, { fileId: remote.id, version: remote.version })
     await putSync(`base:${docId}`, { blob: base })
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
+    await db.syncState.delete(`curRev:${docId}`) // 되돌림 표식 해제 — 이제 헤드가 곧 이 기기의 현재
+    await db.syncState.delete(`revKind:${docId}`)
     if (cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(seqs)
     // 아니면 outbox가 남아 다음 라운드에서 다시 올려진다
   })
@@ -216,6 +223,8 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
 async function pushTombstone(docId: ID, info: PendingDoc) {
   await putSync(`gone:${docId}`, Date.now())
   await db.syncState.delete(`base:${docId}`)
+  await db.syncState.delete(`curRev:${docId}`)
+  await db.syncState.delete(`revKind:${docId}`)
   await db.outbox.bulkDelete(info.seqs)
 }
 
@@ -247,30 +256,37 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
   const theirs = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
   if (theirs?.kind !== 'inkpad-doc') return
   const base = await loadBase(docId)
+  const { file: merged, conflicts } = mergeDocs(base, local, theirs)
+  const device = await getDeviceName()
 
-  // 머지 전 이 기기 상태를 리비전으로 남긴다 (고정하지 않으면 Drive가 약 30일 보관)
-  await drive.upload(
-    await gzipJson(local),
-    { name: `docs/${docId}.json`, mimeType: 'application/json', appProperties: { docId, enc: drive.ENC_GZIP } },
+  // 머지 전 이 기기 상태를 리비전으로 남긴다 — 머지에서 밀린 편집의 백업('버려짐').
+  // 고정해 두어야 버전 기록에서 내려받아 표식(기기명)을 읽을 수 있고 30일 자동 삭제도 피한다.
+  const backupRev: RevMarker = { kind: 'merge-backup', device, at: Date.now(), conflicts }
+  const backup = await drive.upload(
+    await gzipJson({ ...local, rev: backupRev }),
+    { name: `docs/${docId}.json`, mimeType: 'application/json', appProperties: { docId, enc: drive.ENC_GZIP, revKind: backupRev.kind } },
     docsFolderId,
     remote.id
   )
+  await rememberRevTag(backup.id, { device, revKind: backupRev.kind, conflicts }, true)
 
-  const { file: merged } = mergeDocs(base, local, theirs)
   await applyDocFile(merged, { force: true })
-  const device = await getDeviceName()
+  const mergedRev: RevMarker = { kind: 'merge', device, at: Date.now(), conflicts }
   const result = await drive.upload(
-    await gzipJson(merged),
+    await gzipJson({ ...merged, rev: mergedRev }),
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: merged.doc.title, device, enc: drive.ENC_GZIP, ...categoryProp(merged.doc.category) }
+      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: merged.doc.title, device, enc: drive.ENC_GZIP, revKind: mergedRev.kind, ...(conflicts ? { revConflicts: String(conflicts) } : {}), ...categoryProp(merged.doc.category) }
     },
     docsFolderId,
     remote.id
   )
+  await rememberRevTag(result.id, { device, revKind: mergedRev.kind, conflicts })
   await putSync(`doc:${docId}`, { fileId: result.id, version: result.version })
   await saveBase(docId, merged)
+  await db.syncState.delete(`curRev:${docId}`) // 머지 결과가 곧 이 기기의 현재
+  await db.syncState.delete(`revKind:${docId}`)
   emitRemoteChanged(new Set<string>([docId]))
   window.dispatchEvent(new CustomEvent(CONFLICT_EVENT, { detail: { docId, revisionId: result.version } }))
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useUI } from '../app/store'
 import { login, logout } from '../sync/token'
 import { downloadCloudNote, deleteCloudNote, listCloudNotes, onSyncStatus, planPush, pullNow, pushNow, syncNow, type CloudNoteInfo, type PushPlan, type SyncStatus } from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
@@ -316,5 +317,21 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
         </div>
       </div>
     </div>
+  )
+}
+
+/** 동기화 전용 사이드 패널 — 설정 패널에서 분리되어 툴바의 동기화 버튼으로 연다 */
+export function SyncPanel() {
+  const close = useUI((s) => s.setPanel)
+  return (
+    <aside id="sync-panel" className="side-panel" aria-label="동기화">
+      <header className="panel-header">
+        <h2>동기화</h2>
+        <button className="tb-btn" onClick={() => close('sync')} aria-label="닫기">
+          <Icon name="close" />
+        </button>
+      </header>
+      <SyncSection />
+    </aside>
   )
 }

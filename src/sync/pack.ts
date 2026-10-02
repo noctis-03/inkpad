@@ -19,6 +19,15 @@ export interface AssetMeta {
   createdAt: number
 }
 
+/** 리비전 표식 — 이 리비전이 왜 올라왔는지 버전 기록에 표시하기 위한 것 */
+export interface RevMarker {
+  /** push: 일반 업로드 · merge: 머지 결과 · merge-backup: 머지에서 밀린 이 기기 상태 · restore: 되돌리기로 만든 버전 */
+  kind: 'push' | 'merge' | 'merge-backup' | 'restore'
+  device: string
+  at: number
+  conflicts?: number
+}
+
 export interface DocFileV1 {
   kind: 'inkpad-doc'
   schemaVersion: 1
@@ -26,6 +35,8 @@ export interface DocFileV1 {
   pages: Page[]
   chunks: { pageId: ID; key: string; elements: Element[] }[]
   assets: AssetMeta[]
+  /** 리비전 표식 — 버전 기록의 기기명·머지됨·버려짐 표시에 쓴다 (옛 파일엔 없다) */
+  rev?: RevMarker
 }
 
 /** 문서를 Drive 파일로 직렬화. 문서가 없으면 예외. */

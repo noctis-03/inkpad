@@ -461,6 +461,29 @@ button {
   border-color: #fcd34d;
   background: #fffbeb;
 }
+.rev-tag.cloud {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.rev-tag.merged {
+  color: #047857;
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+}
+.rev-tag.dropped {
+  color: #b91c1c;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+.rev-tag.restored {
+  color: #7c3aed;
+  border-color: #c4b5fd;
+  background: #f5f3ff;
+}
+.rev-tag.edited {
+  border-style: dashed;
+}
 .rev-size {
   font-size: 11px;
   color: var(--muted);

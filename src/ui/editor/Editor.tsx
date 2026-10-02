@@ -17,6 +17,7 @@ import { SelectionBar } from './SelectionBar'
 import { PagePanel } from './PagePanel'
 import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
+import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
@@ -242,6 +243,7 @@ export function Editor({ docId }: { docId: ID }) {
           {engine && <SelectionBar engine={engine} />}
           {engine && <PageIndicator engine={engine} paged={paged} />}
           {panel === 'settings' && <SettingsPanel />}
+          {panel === 'sync' && <SyncPanel />}
           {panel === 'page' && engine && <PagePanel engine={engine} doc={doc!} />}
           {panel === 'export' && engine && doc && <ExportPanel engine={engine} doc={doc} />}
           {panel === 'history' && <VersionPanel docId={docId} />}

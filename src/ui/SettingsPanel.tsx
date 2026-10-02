@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useUI } from '../app/store'
 import type { PressureMode, Settings } from '../engine/types'
 import { Icon } from './Icon'
-import { SyncSection } from './SyncSection'
 import { NetUsageSection } from './NetUsageDebug'
 
 function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
@@ -211,7 +210,6 @@ function PressureTester() {
 export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) {
   return (
     <>
-      <SyncSection />
       <PressureSection />
       <section className="panel-section">
         <h3>필기</h3>

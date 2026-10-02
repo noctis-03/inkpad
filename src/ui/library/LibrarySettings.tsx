@@ -3,6 +3,7 @@ import { useUI } from '../../app/store'
 import { confirmDialog, promptDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { SettingsSections } from '../SettingsPanel'
+import { SyncSection } from '../SyncSection'
 import { formatBytes, isStandalone } from '../../shared/util'
 import { MAX_CATEGORY_CHARS, normalizeCategory, type DocumentMeta, type Folder, type ID } from '../../shared/model'
 import {
@@ -26,7 +27,7 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
   const setBusy = useUI((s) => s.setBusy)
   const reset = useUI((s) => s.resetSettings)
   const [stats, setStats] = useState<Stats | null>(null)
-  const [tab, setTab] = useState<'pen' | 'data' | 'folders'>('pen')
+  const [tab, setTab] = useState<'pen' | 'data' | 'folders' | 'sync'>('pen')
 
   const load = () => void storageStats().then(setStats)
   useEffect(load, [])
@@ -93,6 +94,9 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
             <button className={tab === 'pen' ? 'is-active' : ''} onClick={() => setTab('pen')}>
               필기
             </button>
+            <button className={tab === 'sync' ? 'is-active' : ''} onClick={() => setTab('sync')}>
+              동기화
+            </button>
             <button className={tab === 'folders' ? 'is-active' : ''} onClick={() => setTab('folders')}>
               폴더 · 카테고리
             </button>
@@ -107,6 +111,8 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
         <div className="sheet-scroll">
           {tab === 'folders' ? (
             <FolderCategorySettings onChanged={onChanged} />
+          ) : tab === 'sync' ? (
+            <SyncSection />
           ) : tab === 'pen' ? (
             <>
               <SettingsSections />
