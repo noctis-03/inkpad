@@ -173,14 +173,30 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       e.stopPropagation()
       dragRef.current = null
       const z = live.current.zoom
-      d.el.style.left = ''
-      d.el.style.top = ''
-      d.el.style.width = ''
       if (!d.moved) return
       const dx = (e.clientX - d.sx) / z
       const dy = (e.clientY - d.sy) / z
       if (d.mode === 'resize') engine.updateBlock(d.el.dataset.id!, { w: Math.max(MIN_TEXT_W, snapOf(d.baseW + dx)) })
       else engine.moveBlock(d.el.dataset.id!, d.baseX + dx, d.baseY + dy)
+      syncBlockStyle(d.el)
+    }
+
+    /**
+     * 블록 DOM의 위치·폭 인라인 스타일을 모델 값으로 맞춘다.
+     *
+     * left/top/width는 React가 렌더링하는 값이라 수동으로 `style.left = ''`처럼 지우면 안 된다:
+     * react-dom은 이전 렌더와 값이 같은 스타일 속성을 DOM에 다시 쓰지 않으므로
+     * (setValueForStyles의 `prevStyles[key] !== styles[key]` 검사) 지운 채로 남아
+     * 블록 폭이 내용 폭으로 줄어드는 현상이 생긴다. 드래그가 끝나면 지우지 말고
+     * 커밋된 모델 값으로 맞춰 React 렌더와 DOM을 항상 일치시킨다.
+     */
+    const syncBlockStyle = (el: HTMLElement) => {
+      const rec = engine.blocks().find((b) => b.el.id === el.dataset.id)
+      if (!rec || (rec.el.type !== 'text' && rec.el.type !== 'link')) return
+      const p = rec.el as PositionedEl
+      el.style.left = rec.ox + p.x + 'px'
+      el.style.top = rec.oy + p.y + 'px'
+      el.style.width = p.w + 'px'
     }
 
     layer.addEventListener('pointerdown', onDown, true)
