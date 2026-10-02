@@ -104,6 +104,20 @@ export interface TextBox extends BaseElement {
   fontFamily?: string
   align?: 'left' | 'center' | 'right'
 }
+export interface LinkElement extends BaseElement {
+  type: 'link'
+  /** 저장 단위(페이지/청크) 원점 기준 상대좌표 — 획·텍스트와 같은 규약 */
+  x: number
+  y: number
+  w: number
+  h?: number
+  label: string
+  url: string
+  fontSize: number
+  color: string
+  fontFamily?: string
+  align?: 'left' | 'center' | 'right'
+}
 export interface ImageElement extends BaseElement {
   type: 'image'; assetId: ID; x: number; y: number; w: number; h: number; rotation: number
 }
@@ -112,7 +126,15 @@ export interface ShapeElement extends BaseElement {
   x: number; y: number; w: number; h: number; color: string; width: number
 }
 
-export type Element = Stroke | TextBox | ImageElement | ShapeElement
+export type Element = Stroke | TextBox | LinkElement | ImageElement | ShapeElement
+
+/** 블록 편집 모드에서 빈 곳을 탭했을 때 만드는 블록 종류 */
+export type BlockKind = 'text' | 'link'
+
+/** 외부로 열어도 되는 링크인지 (javascript: 등 차단) */
+export function isSafeUrl(raw: string): boolean {
+  return /^(https?:|mailto:)/i.test(raw.trim())
+}
 
 export interface Asset {
   id: ID

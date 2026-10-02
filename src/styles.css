@@ -1695,6 +1695,50 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* 링크 블록 */
+.block-link .link-badge {
+  position: absolute;
+  left: -16px;
+  top: 2px;
+  display: inline-flex;
+  color: var(--accent);
+  opacity: 0.85;
+  pointer-events: none;
+}
+.link-pop {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 6px 20px #00000026;
+  transform-origin: bottom left;
+}
+.link-input {
+  width: 240px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+  outline: none;
+}
+.link-input:focus {
+  border-color: var(--accent);
+}
+.link-pop .tb-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 4px;
+}
+
 /* 알림 / 진행 */
 .toasts {
   position: fixed;

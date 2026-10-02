@@ -40,6 +40,7 @@ export function Editor({ docId }: { docId: ID }) {
   const style = useUI((s) => s.style)
   const tool = useUI((s) => s.tool)
   const editMode = useUI((s) => s.editMode)
+  const blockKind = useUI((s) => s.blockKind)
   const panel = useUI((s) => s.panel)
   const sidebar = useUI((s) => s.sidebar)
 
@@ -102,6 +103,7 @@ export function Editor({ docId }: { docId: ID }) {
         })
         eng.setTool(st.tool)
         eng.setEditMode(st.editMode)
+        eng.setBlockKind(st.blockKind)
         engineRef.current = eng
         setEngine(eng)
         ;(window as unknown as { inkpad: Engine }).inkpad = eng
@@ -137,6 +139,7 @@ export function Editor({ docId }: { docId: ID }) {
   useEffect(() => engineRef.current?.setStyle(style), [style])
   useEffect(() => engineRef.current?.setTool(tool), [tool])
   useEffect(() => engineRef.current?.setEditMode(editMode), [editMode])
+  useEffect(() => engineRef.current?.setBlockKind(blockKind), [blockKind])
 
   // 원본 지연 로딩 진행률
   useEffect(() => {

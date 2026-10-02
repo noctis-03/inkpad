@@ -11,7 +11,7 @@ import {
   type ViewInfo
 } from '../engine/types'
 import type { SaveState } from '../engine/engine'
-import type { ID } from '../shared/model'
+import type { BlockKind, ID } from '../shared/model'
 
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다 (설계 3장).
 const LS_SETTINGS = 'inkpad.settings.v2'
@@ -82,6 +82,7 @@ interface UIState {
   tool: Tool
   prevTool: Tool
   editMode: EditMode
+  blockKind: BlockKind
   settings: Settings
   style: ToolStyle
   presets: Preset[]
@@ -99,6 +100,7 @@ interface UIState {
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
   setEditMode: (m: EditMode) => void
+  setBlockKind: (k: BlockKind) => void
   toggleQuick: () => void
   setSettings: (p: Partial<Settings>) => void
   resetSettings: () => void
@@ -125,6 +127,7 @@ export const useUI = create<UIState>((set, get) => ({
   tool: 'pen',
   prevTool: 'eraser',
   editMode: 'draw',
+  blockKind: 'text',
   settings: load(LS_SETTINGS, DEFAULT_SETTINGS),
   style: load(LS_STYLE, DEFAULT_STYLE),
   presets: load(LS_PRESETS, DEFAULT_PRESETS),
@@ -150,6 +153,7 @@ export const useUI = create<UIState>((set, get) => ({
     set({ activePreset: null })
   },
   setEditMode: (editMode) => set({ editMode, selection: null }),
+  setBlockKind: (blockKind) => set({ blockKind }),
   toggleQuick: () => {
     const { tool, prevTool } = get()
     const next: Tool = tool === 'eraser' ? (prevTool === 'eraser' ? 'pen' : prevTool) : 'eraser'

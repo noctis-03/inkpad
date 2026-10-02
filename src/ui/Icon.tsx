@@ -44,7 +44,9 @@ const PATHS: Record<string, string> = {
   arrowUp: 'm5 12 7-7 7 7M12 19V5',
   arrowDown: 'M12 5v14M19 12l-7 7-7-7',
   blocks: 'M4 4h7v16H4zM13 4h7v7h-7zM13 13h7v7h-7z',
-  type: 'M4 7V5h16v2M12 5v14M9 19h6'
+  type: 'M4 7V5h16v2M12 5v14M9 19h6',
+  link: 'M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1L11.5 4.4M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.5-1.5',
+  external: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3'
 }
 
 export function Icon({ name, size = 22, className }: { name: string; size?: number; className?: string }) {
