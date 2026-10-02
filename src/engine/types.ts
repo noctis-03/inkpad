@@ -4,6 +4,13 @@ export type { ID, Stroke, StrokeOpts, BackgroundType }
 export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso'
 
 /**
+ * 편집 모드 — 도구(tool)와는 별개 축.
+ *  draw  : 필기 모드. 캔버스 엔진이 포인터를 전담한다.
+ *  block : 블록 편집 모드. 잉크 대신 DOM 블록(텍스트 등)을 만들고 편집한다.
+ */
+export type EditMode = 'draw' | 'block'
+
+/**
  * 필압 처리 방식
  *  auto     : 펜이 필압을 보내는지 자동 감지 → 있으면 필압, 없으면 fallbackMode
  *  pressure : 항상 필압 사용 (Apple Pencil)
@@ -38,6 +45,9 @@ export interface Settings {
   resolution: number
   showHud: boolean
   momentum: boolean // 한 손가락 스크롤 관성
+  // 블록 편집
+  blockSnap: boolean // 그리드 스냅
+  blockSnapStep: number // 스냅 간격 (pt)
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -59,7 +69,9 @@ export const DEFAULT_SETTINGS: Settings = {
   gestureRender: 'auto',
   resolution: 1,
   showHud: false,
-  momentum: true
+  momentum: true,
+  blockSnap: true,
+  blockSnapStep: 16
 }
 
 export interface PenStyle {
@@ -71,6 +83,7 @@ export interface ToolStyle {
   pen: PenStyle
   highlighter: PenStyle
   eraserSize: number // 화면 기준 지름 (CSS px)
+  block: { fontSize: number; color: string } // 새 텍스트 블록 기본값
 }
 
 export interface Preset {

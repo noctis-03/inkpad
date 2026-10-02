@@ -1,9 +1,16 @@
-import { MAX_HISTORY, type ID, type Page } from '../shared/model'
+import { MAX_HISTORY, type Element, type ID, type Page } from '../shared/model'
 import type { Entry } from './scene'
 
 export interface PageSnapshot {
   order: ID[]
   pages: Page[] // 이 명령으로 바뀌는 페이지들의 상태
+}
+
+/** 블록(비획 요소) 명령 단위 — 어느 저장 단위(페이지/청크)에 속하는지 함께 기록한다 */
+export interface BlockEntry {
+  el: Element
+  pageId: ID
+  key: string
 }
 
 /**
@@ -15,6 +22,9 @@ export interface PageSnapshot {
 export interface Command {
   removed: Entry[]
   added: Entry[]
+  /** 블록(텍스트 등) — 추가형 확장이라 기존 획 명령은 그대로 둔다 */
+  removedEls?: BlockEntry[]
+  addedEls?: BlockEntry[]
   pagesBefore?: PageSnapshot
   pagesAfter?: PageSnapshot
   label?: string
@@ -25,7 +35,7 @@ export class History {
   private redoStack: Command[] = []
 
   push(cmd: Command) {
-    if (!cmd.removed.length && !cmd.added.length && !cmd.pagesAfter) return
+    if (!cmd.removed.length && !cmd.added.length && !cmd.removedEls?.length && !cmd.addedEls?.length && !cmd.pagesAfter) return
     this.undoStack.push(cmd)
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift()
     this.redoStack.length = 0

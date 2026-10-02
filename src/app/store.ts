@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
+  type EditMode,
   type EngineStats,
   type Preset,
   type SelectionInfo,
@@ -23,11 +24,13 @@ export const HL_COLORS = ['#facc1566', '#4ade8066', '#60a5fa66', '#f472b666', '#
 export const PEN_WIDTHS = [1, 1.5, 2.5, 4, 6, 10]
 export const HL_WIDTHS = [10, 16, 24]
 export const ERASER_SIZES = [12, 24, 48]
+export const BLOCK_FONT_SIZES = [12, 14, 16, 20, 24, 32]
 
 const DEFAULT_STYLE: ToolStyle = {
   pen: { color: PEN_COLORS[0], width: PEN_WIDTHS[2] },
   highlighter: { color: HL_COLORS[0], width: HL_WIDTHS[1] },
-  eraserSize: ERASER_SIZES[1]
+  eraserSize: ERASER_SIZES[1],
+  block: { fontSize: 16, color: PEN_COLORS[0] }
 }
 
 // FR-TL-01: 프리셋 5개
@@ -78,6 +81,7 @@ interface UIState {
   route: Route
   tool: Tool
   prevTool: Tool
+  editMode: EditMode
   settings: Settings
   style: ToolStyle
   presets: Preset[]
@@ -94,6 +98,7 @@ interface UIState {
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
+  setEditMode: (m: EditMode) => void
   toggleQuick: () => void
   setSettings: (p: Partial<Settings>) => void
   resetSettings: () => void
@@ -119,6 +124,7 @@ export const useUI = create<UIState>((set, get) => ({
   route: initialRoute(),
   tool: 'pen',
   prevTool: 'eraser',
+  editMode: 'draw',
   settings: load(LS_SETTINGS, DEFAULT_SETTINGS),
   style: load(LS_STYLE, DEFAULT_STYLE),
   presets: load(LS_PRESETS, DEFAULT_PRESETS),
@@ -143,6 +149,7 @@ export const useUI = create<UIState>((set, get) => ({
     if (t !== cur) set({ tool: t, prevTool: cur })
     set({ activePreset: null })
   },
+  setEditMode: (editMode) => set({ editMode, selection: null }),
   toggleQuick: () => {
     const { tool, prevTool } = get()
     const next: Tool = tool === 'eraser' ? (prevTool === 'eraser' ? 'pen' : prevTool) : 'eraser'

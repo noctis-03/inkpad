@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Engine } from '../../engine/engine'
 import type { Tool } from '../../engine/types'
-import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, useUI } from '../../app/store'
+import { BLOCK_FONT_SIZES, ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, useUI } from '../../app/store'
 import type { DocumentMeta } from '../../shared/model'
 import { Icon } from '../Icon'
 
@@ -24,6 +24,10 @@ export function EditorToolbar(props: {
   const { engine, doc } = props
   const tool = useUI((s) => s.tool)
   const setTool = useUI((s) => s.setTool)
+  const editMode = useUI((s) => s.editMode)
+  const setEditMode = useUI((s) => s.setEditMode)
+  const settings = useUI((s) => s.settings)
+  const setSettings = useUI((s) => s.setSettings)
   const style = useUI((s) => s.style)
   const setStyle = useUI((s) => s.setStyle)
   const view = useUI((s) => s.view)
@@ -107,6 +111,59 @@ export function EditorToolbar(props: {
         </button>
       </nav>
 
+      <nav className="toolbar-group" aria-label="편집 모드">
+        <button
+          className={'tb-btn' + (editMode === 'draw' ? ' is-active' : '')}
+          onClick={() => setEditMode('draw')}
+          aria-label="필기 모드"
+          aria-pressed={editMode === 'draw'}
+        >
+          <Icon name="pen" />
+        </button>
+        <button
+          className={'tb-btn' + (editMode === 'block' ? ' is-active' : '')}
+          onClick={() => setEditMode('block')}
+          aria-label="블록 편집 모드"
+          aria-pressed={editMode === 'block'}
+        >
+          <Icon name="blocks" />
+        </button>
+      </nav>
+
+      {editMode === 'block' && (
+        <nav className="toolbar-group" aria-label="블록 스타일">
+          <button
+            className={'tb-btn' + (settings.blockSnap ? ' is-active' : '')}
+            onClick={() => setSettings({ blockSnap: !settings.blockSnap })}
+            aria-label="그리드 스냅"
+            aria-pressed={settings.blockSnap}
+          >
+            <Icon name="grid" />
+          </button>
+          {BLOCK_FONT_SIZES.map((fs) => (
+            <button
+              key={fs}
+              className={'tb-btn block-size' + (style.block.fontSize === fs ? ' is-active' : '')}
+              onClick={() => setStyle({ ...style, block: { ...style.block, fontSize: fs } })}
+              aria-label={`글자 크기 ${fs}`}
+            >
+              {fs}
+            </button>
+          ))}
+          {PEN_COLORS.slice(0, 5).map((c) => (
+            <button
+              key={c}
+              className={'color-swatch small' + (style.block.color.slice(0, 7) === c.slice(0, 7) ? ' is-active' : '')}
+              style={{ ['--swatch' as string]: c }}
+              onClick={() => setStyle({ ...style, block: { ...style.block, color: c } })}
+              aria-label={`글자 색 ${c}`}
+            />
+          ))}
+        </nav>
+      )}
+
+      {editMode === 'draw' && (
+        <>
       <nav className="toolbar-group" aria-label="도구">
         {TOOLS.map((t) => (
           <button
@@ -203,6 +260,8 @@ export function EditorToolbar(props: {
             )}
           </div>
         </nav>
+      )}
+        </>
       )}
 
       <div className="toolbar-spacer" />

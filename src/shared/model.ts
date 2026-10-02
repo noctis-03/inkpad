@@ -90,7 +90,19 @@ export interface Stroke extends BaseElement {
 }
 
 export interface TextBox extends BaseElement {
-  type: 'text'; x: number; y: number; w: number; text: string; fontSize: number; color: string
+  type: 'text'
+  /** 블록이 속한 저장 단위(문서형=페이지, 무한=청크) 원점 기준 상대좌표 — 획(points)과 같은 규약 */
+  x: number
+  y: number
+  /** 고정 폭 (pt). 줄바꿈 기준 */
+  w: number
+  /** 마지막으로 측정한 높이 (없으면 렌더 시 계산) */
+  h?: number
+  text: string
+  fontSize: number
+  color: string
+  fontFamily?: string
+  align?: 'left' | 'center' | 'right'
 }
 export interface ImageElement extends BaseElement {
   type: 'image'; assetId: ID; x: number; y: number; w: number; h: number; rotation: number
@@ -121,6 +133,9 @@ export const SYNC_DEBOUNCE_MS = 3000
 export const TRASH_RETENTION_DAYS = 30
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024
 export const MAX_CATEGORY_CHARS = 40 // 카테고리 이름 길이 제한 (한글 40자 ≈ 120바이트 < Drive appProperties 124바이트)
+export const BLOCK_SNAP_STEP = 16 // 블록 편집 모드 그리드 스냅 간격 (pt)
+export const DEFAULT_TEXT_W = 240 // 새 텍스트 블록 기본 폭 (pt)
+export const MIN_TEXT_W = 48 // 텍스트 블록 최소 폭 (pt)
 
 /** 카테고리 이름 정규화 — trim, 연속 공백 정리, 앞뒤 슬래시 제거. 빈 이름이면 null */
 export function normalizeCategory(raw: string): string | null {

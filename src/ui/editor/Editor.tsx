@@ -12,6 +12,7 @@ import { ensureAssetLocal, onAssetProgress } from '../../sync/assets'
 import { CONFLICT_EVENT, REMOTE_EVENT } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
+import { BlockLayer } from './BlockLayer'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
 import { PagePanel } from './PagePanel'
@@ -32,11 +33,13 @@ export function Editor({ docId }: { docId: ID }) {
   const [readOnly, setReadOnly] = useState(false)
   const [thumbTick, setThumbTick] = useState(0)
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
+  const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null)
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
   const settings = useUI((s) => s.settings)
   const style = useUI((s) => s.style)
   const tool = useUI((s) => s.tool)
+  const editMode = useUI((s) => s.editMode)
   const panel = useUI((s) => s.panel)
   const sidebar = useUI((s) => s.sidebar)
 
@@ -98,6 +101,7 @@ export function Editor({ docId }: { docId: ID }) {
           }
         })
         eng.setTool(st.tool)
+        eng.setEditMode(st.editMode)
         engineRef.current = eng
         setEngine(eng)
         ;(window as unknown as { inkpad: Engine }).inkpad = eng
@@ -132,6 +136,7 @@ export function Editor({ docId }: { docId: ID }) {
   useEffect(() => engineRef.current?.setSettings(settings), [settings])
   useEffect(() => engineRef.current?.setStyle(style), [style])
   useEffect(() => engineRef.current?.setTool(tool), [tool])
+  useEffect(() => engineRef.current?.setEditMode(editMode), [editMode])
 
   // 원본 지연 로딩 진행률
   useEffect(() => {
@@ -162,6 +167,12 @@ export function Editor({ docId }: { docId: ID }) {
         eng.deleteSelection()
       } else if (e.key === 'Escape') eng.clearSelection()
       else if (!mod) {
+        if (e.key.toLowerCase() === 'b') {
+          const cur = useUI.getState().editMode
+          useUI.getState().setEditMode(cur === 'block' ? 'draw' : 'block')
+          return
+        }
+        if (useUI.getState().editMode !== 'draw') return
         const map: Record<string, 'pen' | 'highlighter' | 'eraser' | 'lasso'> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso' }
         const tl = map[e.key.toLowerCase()]
         if (tl) useUI.getState().setTool(tl)
@@ -230,7 +241,16 @@ export function Editor({ docId }: { docId: ID }) {
       <div className="editor-body">
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
         <div className="editor-area">
-          <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
+          <main
+            id="canvas-root"
+            className="canvas-root"
+            ref={(el) => {
+              hostRef.current = el
+              setCanvasEl(el)
+            }}
+            data-mode={doc?.mode}
+          />
+          {canvasEl && engine && <BlockLayer engine={engine} host={canvasEl} />}
           {!engine && <div className="loading">문서 여는 중…</div>}
           {fetching && (
             <div className="loading">
