@@ -146,3 +146,14 @@ export function strokeInPolygon(points: number[], ox: number, oy: number, poly: 
   }
   return total > 0 && inside / total >= 0.6
 }
+
+/** 올가미 선택 판정(사각형 요소): 중심이나 네 모서리 중 하나라도 다각형 안에 있으면 선택 */
+export function rectInPolygon(x: number, y: number, w: number, h: number, poly: number[]): boolean {
+  if (pointInPolygon(x + w / 2, y + h / 2, poly)) return true
+  return (
+    pointInPolygon(x, y, poly) ||
+    pointInPolygon(x + w, y, poly) ||
+    pointInPolygon(x, y + h, poly) ||
+    pointInPolygon(x + w, y + h, poly)
+  )
+}

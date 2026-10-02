@@ -6,7 +6,7 @@ import type { Layout } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
 import { getPath, type Scene, type StrokeRec } from './scene'
 import { layoutTextBox } from './text'
-import type { Background, StrokeOpts } from '../shared/model'
+import type { Background, StrokeOpts, TextBox } from '../shared/model'
 
 export interface Box {
   minX: number
@@ -34,9 +34,24 @@ export interface Cursor {
   color: string
 }
 
+/** 선택된 텍스트 요소 (월드 원점 포함) */
+export interface SelectionText {
+  element: TextBox
+  ox: number
+  oy: number
+}
+
 export interface Overlay {
   lasso?: number[] // 월드 좌표 다각형
-  selection?: { recs: StrokeRec[]; dx: number; dy: number; scale: number; cx: number; cy: number }
+  selection?: {
+    recs: StrokeRec[]
+    texts?: SelectionText[]
+    dx: number
+    dy: number
+    scale: number
+    cx: number
+    cy: number
+  }
 }
 
 /**
@@ -328,7 +343,7 @@ export class Renderer {
     }
     const k = cam.zoom * this.scale
     if (overlay?.selection) {
-      const { recs, dx, dy, scale, cx, cy } = overlay.selection
+      const { recs, texts, dx, dy, scale, cx, cy } = overlay.selection
       for (const rec of recs) {
         // 월드 좌표: p' = c + (p - c) * scale + d
         const ox = cx + (rec.ox - cx) * scale + dx
@@ -336,6 +351,18 @@ export class Renderer {
         ctx.setTransform(k * scale, 0, 0, k * scale, (ox - cam.x) * k, (oy - cam.y) * k)
         ctx.fillStyle = rec.stroke.color
         ctx.fill(getPath(rec))
+      }
+      for (const st of texts ?? []) {
+        const el = st.element
+        const lay = layoutTextBox(el)
+        const x = el.x + st.ox + dx
+        const y = el.y + st.oy + dy
+        ctx.setTransform(k, 0, 0, k, (x - cam.x) * k, (y - cam.y) * k)
+        ctx.font = lay.font
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = el.color
+        for (let i = 0; i < lay.lines.length; i++) ctx.fillText(lay.lines[i], 0, i * lay.lineHeight)
       }
       this.liveHasContent = true
     }

@@ -1,6 +1,6 @@
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
-import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
+import { hitStroke, pointsBBox, q2, rectInPolygon, splitStroke, strokeInPolygon } from './geometry'
 import { History, type Command, type ElementEntry, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
@@ -18,7 +18,7 @@ import type {
   ToolStyle,
   ViewInfo
 } from './types'
-import type { Background, DocumentMeta, ID, Page, Stroke, StrokeOpts, TextBox, ViewState } from '../shared/model'
+import type { Background, DocumentMeta, Element, ID, Page, Stroke, StrokeOpts, TextBox, ViewState } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
@@ -117,6 +117,15 @@ interface TextSession {
   view: TextEditSession
 }
 
+/** 올가미로 선택된 R-tree 밖 요소 (월드 원점 포함) */
+interface ExtraSel {
+  element: Element
+  pageId: ID
+  key: string
+  ox: number
+  oy: number
+}
+
 const LAT_SAMPLES = 120
 const SAVE_DEBOUNCE_MS = 500
 
@@ -157,6 +166,7 @@ export class Engine {
 
   // 선택
   private selection: StrokeRec[] = []
+  private selectionExtras: ExtraSel[] = []
   private selectionBox: Box | null = null
 
   // 텍스트 편집 (편집 중에만 존재 — 확정하면 캔버스 확정 레이어로 넘어간다)
@@ -276,7 +286,7 @@ export class Engine {
   }
 
   setTool(t: Tool) {
-    if (t !== 'lasso' && this.selection.length) this.clearSelection()
+    if (t !== 'lasso' && this.hasSelection) this.clearSelection()
     if (t !== 'text' && this.text) this.commitText()
     this.tool = t
     this.cursor = null
@@ -398,41 +408,71 @@ export class Engine {
   }
 
   deleteSelection() {
-    if (!this.selection.length || this.readOnly) return
+    if (!this.hasSelection || this.readOnly) return
     const removed = this.selection.map(toEntry)
+    const extrasRemoved = this.selectionExtras.map(toElementEntry)
     this.clearSelection(false)
-    this.exec({ removed, added: [] })
+    this.exec({ removed, added: [], extrasRemoved })
   }
 
   /** 선택한 획의 색 바꾸기 (형광펜은 투명도 유지) */
   recolorSelection(color: string) {
-    if (!this.selection.length || this.readOnly) return
+    if (!this.hasSelection || this.readOnly) return
     const removed = this.selection.map(toEntry)
     const added = removed.map((e) => {
       const alpha = e.stroke.tool === 'highlighter' ? e.stroke.color.slice(7, 9) || '66' : color.slice(7, 9) || 'ff'
       return { ...e, stroke: { ...e.stroke, color: color.slice(0, 7) + alpha } }
     })
-    this.exec({ removed, added })
-    this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
+    const extrasRemoved = this.selectionExtras.map(toElementEntry)
+    const extrasAdded: ElementEntry[] = this.selectionExtras.map((e) => ({
+      pageId: e.pageId,
+      key: e.key,
+      element: { ...e.element, color: color.slice(0, 7) + (color.slice(7, 9) || 'ff') } as Element
+    }))
+    this.exec({ removed, added, extrasRemoved, extrasAdded })
+    this.selectByEntries(added, extrasAdded)
   }
 
   /** 선택 영역 복제 (약간 옆으로) */
   duplicateSelection() {
-    if (!this.selection.length || this.readOnly) return
+    if (!this.hasSelection || this.readOnly) return
     const off = 24 / this.cam.zoom
     const added = this.selection.map((r) => this.movedEntry(r, off, off, ulid()))
-    this.exec({ removed: [], added })
-    this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
+    const extrasAdded: ElementEntry[] = this.selectionExtras.map((e) => {
+      const m = this.movedExtraEntry(e, off, off)
+      return { ...m, element: { ...m.element, id: ulid() } }
+    })
+    this.exec({ removed: [], added, extrasAdded })
+    this.selectByEntries(added, extrasAdded)
   }
 
   clearSelection(redraw = true) {
-    if (!this.selection.length) return
+    if (!this.selection.length && !this.selectionExtras.length) return
     this.selection = []
+    this.selectionExtras = []
     this.selectionBox = null
     this.renderer.hidden = null
+    this.renderer.hiddenExtras = null
     if (redraw) this.committedDirty = true
     this.liveDirty = true
     this.cb.onSelection?.(null)
+  }
+
+  /** 선택된 획·텍스트가 하나라도 있는지 */
+  get hasSelection() {
+    return this.selection.length > 0 || this.selectionExtras.length > 0
+  }
+
+  /** exec 직후 저장된 id로 선택을 다시 잡는다 */
+  private selectByEntries(recs: Entry[], extras: ElementEntry[]) {
+    const r = recs.map((e) => this.scene.recs.get(e.stroke.id)).filter((x): x is StrokeRec => !!x)
+    const x = extras.map((e) => this.resolveExtra(e.element.id)).filter((v): v is ExtraSel => !!v)
+    this.setSelection(r, x)
+  }
+
+  private resolveExtra(id: ID): ExtraSel | null {
+    const found = this.scene.extraEntries().find((v) => v.element.id === id)
+    return found ? { element: found.element, pageId: found.pageId, key: found.key, ox: found.ox, oy: found.oy } : null
   }
 
   // ─────────────────────────── 텍스트 ───────────────────────────
@@ -750,7 +790,7 @@ export class Engine {
       touched.add(e.pageId)
       extrasTouched = true
     }
-    if (this.selection.length) this.clearSelection(false)
+    if (this.hasSelection) this.clearSelection(false)
     if (snap || extrasTouched || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
       this.committedDirty = true
     } else {
@@ -1120,7 +1160,7 @@ export class Engine {
       const pad = 12 / this.cam.zoom
       if (sb && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
         a.moveFrom = w
-      } else if (this.selection.length) {
+      } else if (this.hasSelection) {
         this.clearSelection()
       }
     }
@@ -1286,8 +1326,10 @@ export class Engine {
       }
       const removed = this.selection.map(toEntry)
       const added = this.selection.map((r) => this.movedEntry(r, dx, dy, r.stroke.id))
-      this.exec({ removed, added })
-      this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
+      const extrasRemoved = this.selectionExtras.map(toElementEntry)
+      const extrasAdded = this.selectionExtras.map((e) => this.movedExtraEntry(e, dx, dy))
+      this.exec({ removed, added, extrasRemoved, extrasAdded })
+      this.selectByEntries(added, extrasAdded)
       return
     }
     const poly = a.lasso
@@ -1298,7 +1340,25 @@ export class Engine {
       minY = Math.min(minY, poly[i + 1]); maxY = Math.max(maxY, poly[i + 1])
     }
     const sel = this.scene.query(minX, minY, maxX, maxY).filter((r) => strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
-    this.setSelection(sel)
+    const extras: ExtraSel[] = this.scene
+      .extraEntries()
+      .filter((e) => {
+        const el = e.element
+        if (el.type !== 'text') return false
+        return rectInPolygon(el.x + e.ox, el.y + e.oy, Math.max(24, el.w), layoutTextBox(el).height, poly)
+      })
+      .map((e) => ({ element: e.element, pageId: e.pageId, key: e.key, ox: e.ox, oy: e.oy }))
+    this.setSelection(sel, extras)
+  }
+
+  /** 텍스트 등 R-tree 밖 요소를 (dx, dy) 옮긴 새 저장 단위. paged에서는 들어간 페이지로 옮겨 간다 */
+  private movedExtraEntry(e: ExtraSel, dx: number, dy: number): ElementEntry {
+    const el = e.element
+    if (el.type !== 'text') return { element: el, pageId: e.pageId, key: e.key }
+    const gx = el.x + e.ox + dx
+    const gy = el.y + e.oy + dy
+    const t = this.layout.targetAt(gx, gy) ?? { pageId: e.pageId, key: e.key, ox: e.ox, oy: e.oy }
+    return { pageId: t.pageId, key: t.key, element: { ...el, x: q2(gx - t.ox), y: q2(gy - t.oy) } }
   }
 
   /** 획을 월드 좌표로 (dx, dy) 옮긴 새 Entry. paged에서는 시작점이 들어간 페이지로 옮겨 간다 */
@@ -1317,16 +1377,25 @@ export class Engine {
     return { pageId: t.pageId, key: t.key, stroke: { ...s, id, points: pts, bbox: pointsBBox(pts, s.width) } }
   }
 
-  private setSelection(recs: StrokeRec[]) {
+  private setSelection(recs: StrokeRec[], extras: ExtraSel[] = []) {
     this.selection = recs
-    if (!recs.length) {
+    this.selectionExtras = extras
+    if (!recs.length && !extras.length) {
       this.clearSelection()
       return
     }
     let box: Box | null = null
     for (const r of recs) box = unionBox(box, r.item)
+    for (const e of extras) {
+      const el = e.element
+      if (el.type !== 'text') continue
+      const gx = el.x + e.ox
+      const gy = el.y + e.oy
+      box = unionBox(box, { minX: gx, minY: gy, maxX: gx + Math.max(24, el.w), maxY: gy + layoutTextBox(el).height })
+    }
     this.selectionBox = box
-    this.renderer.hidden = new Set(recs.map((r) => r.stroke.id))
+    this.renderer.hidden = recs.length ? new Set(recs.map((r) => r.stroke.id)) : null
+    this.renderer.hiddenExtras = extras.length ? new Set(extras.map((e) => e.element.id)) : null
     this.committedDirty = true
     this.liveDirty = true
     this.emitSelection()
@@ -1339,7 +1408,7 @@ export class Engine {
     const p0 = this.cam.worldToScreen(b.minX + d.x, b.minY + d.y)
     const p1 = this.cam.worldToScreen(b.maxX + d.x, b.maxY + d.y)
     this.cb.onSelection({
-      count: this.selection.length,
+      count: this.selection.length + this.selectionExtras.length,
       rect: { x: p0.x, y: p0.y, w: p1.x - p0.x, h: p1.y - p0.y },
       moving: !!this.active?.moveFrom
     })
@@ -1543,7 +1612,7 @@ export class Engine {
         this.stats.committedMs = r.lastFullMs
         this.stats.renderPath = moving ? 'redraw' : 'idle'
       }
-      if (this.selection.length) this.emitSelection()
+      if (this.hasSelection) this.emitSelection()
       this.emitView()
     }
 
@@ -1562,9 +1631,12 @@ export class Engine {
           : null
       let overlay: Overlay | null = null
       if (a && a.tool === 'lasso' && !a.moveFrom) overlay = { lasso: a.lasso }
-      if (this.selection.length) {
+      if (this.hasSelection) {
         const d = a?.moveFrom ? a.moveD : { x: 0, y: 0 }
-        overlay = { ...(overlay ?? {}), selection: { recs: this.selection, dx: d.x, dy: d.y, scale: 1, cx: 0, cy: 0 } }
+        const texts = this.selectionExtras
+          .filter((e) => e.element.type === 'text')
+          .map((e) => ({ element: e.element as TextBox, ox: e.ox, oy: e.oy }))
+        overlay = { ...(overlay ?? {}), selection: { recs: this.selection, texts, dx: d.x, dy: d.y, scale: 1, cx: 0, cy: 0 } }
         if (a?.moveFrom) this.emitSelection()
       }
       r.drawLive(this.cam, live, this.cursor, overlay)
@@ -1758,6 +1830,10 @@ export class Engine {
 
 function toEntry(r: StrokeRec): Entry {
   return { stroke: r.stroke, pageId: r.pageId, key: r.key }
+}
+
+function toElementEntry(e: { element: Element; pageId: ID; key: string }): ElementEntry {
+  return { element: e.element, pageId: e.pageId, key: e.key }
 }
 
 function midpoint(ts: { x: number; y: number }[]) {
