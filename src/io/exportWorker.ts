@@ -14,14 +14,17 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
     out.setCreator('Inkpad')
     out.setProducer('Inkpad (pdf-lib)')
 
-    // 한글 폰트: pdf-lib 기본 폰트(WinAnsi)로는 한글이 사라지므로 TTF를 서브셋으로 심는다.
+    // 한글 폰트: pdf-lib 기본 폰트(WinAnsi)로는 한글이 사라지므로 TTF를 심는다.
+    // subset: true는 쓰지 않는다 — pdf-lib/fontkit 서브셋터가 CJK 글자를 대량 누락시킨다
+    // (검증: 같은 텍스트를 기준 렌더와 비교했을 때 잉크가 22~63%만 남았다).
+    // 전체 폰트를 심으면 문서당 1회 약 355KB (나눔스퀘어 TTF 723KB → Flate 압축).
     // 폰트에 없는 글자(이모지 등)는 그리기 전에 걸러낸다 (drawText가 예외를 던지는 것 방지).
     let font: PDFFont | null = null
     let hasGlyph: ((cp: number) => boolean) | null = null
     if (job.font && job.pages.some((p) => p.texts?.length)) {
       out.registerFontkit(fontkit)
       const bytes = new Uint8Array(job.font)
-      font = await out.embedFont(bytes, { subset: true })
+      font = await out.embedFont(bytes, { subset: false })
       const fk = fontkit.create(bytes) as unknown as { hasGlyphForCodePoint(cp: number): boolean }
       hasGlyph = (cp) => fk.hasGlyphForCodePoint(cp)
     }

@@ -1,8 +1,8 @@
 // PDF 내보내기에 심을 한글 폰트.
 //
 // pdf-lib의 기본 폰트(Helvetica 등)는 WinAnsi 인코딩이라 한글이 통째로 사라진다.
-// 그래서 나눔스퀘어(TTF, OFL 라이선스)를 앱에 함께 담고, 내보낼 때 필요한 글자만
-// 서브셋으로 심는다 (남는 글자는 pdf-lib/fontkit이 알아서 버린다).
+// 그래서 나눔스퀘어(TTF, OFL 라이선스)를 앱에 함께 담고, 내보낼 때 문서에 통째로 심는다.
+// (pdf-lib/fontkit의 subset: true는 CJK 글자를 대량 누락시키므로 쓰지 않는다 — exportWorker.ts 주석 참고)
 //
 // public/fonts 에 두어 서비스 워커 프리캐시에 포함되게 한다 → 오프라인에서도 내보내기 가능.
 const FONT_URL = `${import.meta.env.BASE_URL}fonts/NanumSquareR.ttf`
