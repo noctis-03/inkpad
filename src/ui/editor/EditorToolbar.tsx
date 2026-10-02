@@ -162,6 +162,14 @@ export function EditorToolbar(props: {
           >
             <Icon name="link" />
           </button>
+          <button
+            className={'tb-btn' + (blockKind === 'memo' ? ' is-active' : '')}
+            onClick={() => setBlockKind('memo')}
+            aria-label="메모 블록"
+            aria-pressed={blockKind === 'memo'}
+          >
+            <Icon name="note" />
+          </button>
         </nav>
       )}
 

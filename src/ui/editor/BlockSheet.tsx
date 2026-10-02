@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BLOCK_FONT_SIZES, PEN_COLORS, useUI } from '../../app/store'
 import type { Engine } from '../../engine/engine'
 import type { BlockRec } from '../../engine/scene'
-import { MIN_TEXT_W, isSafeUrl, type Element, type ID, type LinkElement, type TextBox } from '../../shared/model'
+import { MIN_MEMO_H, MIN_MEMO_W, MIN_TEXT_W, isSafeUrl, type Element, type ID, type LinkElement, type MemoElement, type TextBox } from '../../shared/model'
 import { Icon } from '../Icon'
 
 /**
@@ -20,10 +20,10 @@ const FONT_FAMILIES: { label: string; value?: string }[] = [
   { label: '손글씨', value: "'Snell Roundhand', 'Apple SD Gothic Neo', cursive" }
 ]
 
-const wOf = (e: Element) => (e.type === 'text' || e.type === 'link' ? e.w : 0)
+const wOf = (e: Element) => (e.type === 'text' || e.type === 'link' || e.type === 'memo' ? e.w : 0)
 
 const bodyOf = (e: Element) =>
-  e.type === 'text' ? (e as TextBox).text : e.type === 'link' ? (e as LinkElement).label : ''
+  e.type === 'text' || e.type === 'memo' ? (e as TextBox | MemoElement).text : e.type === 'link' ? (e as LinkElement).label : ''
 
 export function BlockSheet({
   engine,
@@ -51,8 +51,9 @@ export function BlockSheet({
   const [urlDraft, setUrlDraft] = useState('')
   const [filter, setFilter] = useState('')
 
-  const el = block && (block.el.type === 'text' || block.el.type === 'link') ? block.el : null
+  const el = block && (block.el.type === 'text' || block.el.type === 'link' || block.el.type === 'memo') ? block.el : null
   const isLink = el?.type === 'link'
+  const isMemo = el?.type === 'memo'
   const url = isLink ? (el as LinkElement).url : ''
 
   useEffect(() => setUrlDraft(url), [url, block?.el.id])
@@ -72,7 +73,8 @@ export function BlockSheet({
     }
   }, [])
 
-  const nameOf = (b: BlockRec) => bodyOf(b.el) || (b.el.type === 'link' ? '이름 없는 링크' : '빈 텍스트 블록')
+  const nameOf = (b: BlockRec) =>
+    bodyOf(b.el) || (b.el.type === 'link' ? '이름 없는 링크' : b.el.type === 'memo' ? '빈 메모' : '빈 텍스트 블록')
 
   const stepFont = (dir: number) => {
     if (!el) return
@@ -94,9 +96,17 @@ export function BlockSheet({
 
   const bumpWidth = (dir: number) => {
     if (!el) return
-    const next = Math.max(MIN_TEXT_W, Math.round((el.w + dir * 16) / 8) * 8)
+    const minW = el.type === 'memo' ? MIN_MEMO_W : MIN_TEXT_W
+    const next = Math.max(minW, Math.round((el.w + dir * 16) / 8) * 8)
     if (next === el.w) return
     engine.updateBlock(el.id, { w: next })
+  }
+
+  const bumpHeight = (dir: number) => {
+    if (!el || el.type !== 'memo') return
+    const next = Math.max(MIN_MEMO_H, Math.round((el.h + dir * 16) / 8) * 8)
+    if (next === el.h) return
+    engine.updateBlock(el.id, { h: next })
   }
 
   const applyUrl = () => {
@@ -159,7 +169,7 @@ export function BlockSheet({
             {bodyOf(el) || (isLink ? '이름 없는 링크' : '빈 텍스트 블록')}
           </div>
           <div className="bs-spec-m">
-            <span>{isLink ? 'LINK' : 'TEXT'}</span>
+            <span>{isLink ? 'LINK' : isMemo ? 'MEMO' : 'TEXT'}</span>
             <span>
               {Math.round(el.w)} × {Math.round(el.h ?? 0)}
             </span>
@@ -311,6 +321,17 @@ export function BlockSheet({
                 ＋
               </button>
             </div>
+            {isMemo && (
+              <div className="bs-row">
+                <button className="bs-btn" onClick={() => bumpHeight(-1)} aria-label="높이 줄이기">
+                  −
+                </button>
+                <span className="bs-val">{Math.round((el as MemoElement).h)}</span>
+                <button className="bs-btn" onClick={() => bumpHeight(1)} aria-label="높이 늘리기">
+                  ＋
+                </button>
+              </div>
+            )}
             <div className="bs-row">
               <button
                 className={'bs-btn' + (settings.blockSnap ? ' is-on' : '')}
@@ -346,7 +367,7 @@ export function BlockSheet({
           />
           <div className="bs-rows">
             {rows.map((b) => {
-              if (b.el.type !== 'text' && b.el.type !== 'link') return null
+              if (b.el.type !== 'text' && b.el.type !== 'link' && b.el.type !== 'memo') return null
               const on = b.el.id === block?.el.id
               return (
                 <div key={b.el.id} className={'bs-row-item' + (on ? ' is-on' : '')}>
@@ -357,7 +378,7 @@ export function BlockSheet({
                       onTab('style')
                     }}
                   >
-                    <Icon name={b.el.type === 'link' ? 'link' : 'type'} size={15} />
+                    <Icon name={b.el.type === 'link' ? 'link' : b.el.type === 'memo' ? 'note' : 'type'} size={15} />
                     <span className="bs-row-t">{nameOf(b)}</span>
                     <span className="bs-row-n">{Math.round(wOf(b.el))}pt</span>
                   </button>

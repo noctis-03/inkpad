@@ -20,6 +20,8 @@ import type {
 } from './types'
 import {
   BLOCK_SNAP_STEP,
+  DEFAULT_MEMO_H,
+  DEFAULT_MEMO_W,
   DEFAULT_TEXT_W,
   type Background,
   type BlockKind,
@@ -27,6 +29,7 @@ import {
   type Element,
   type ID,
   type LinkElement,
+  type MemoElement,
   type Page,
   type Stroke,
   type StrokeOpts,
@@ -40,6 +43,7 @@ export type BlockPatch = Partial<{
   y: number
   w: number
   h: number
+  hFixed: boolean
   fontSize: number
   color: string
   fontFamily: string
@@ -400,13 +404,16 @@ export class Engine {
     const el: Element =
       this.blockKind === 'link'
         ? ({ ...base, type: 'link', label: '', url: '' } as LinkElement)
-        : ({ ...base, type: 'text', text: '' } as TextBox)
+        : this.blockKind === 'memo'
+          ? ({ ...base, type: 'memo', w: DEFAULT_MEMO_W, h: DEFAULT_MEMO_H, text: '' } as MemoElement)
+          : ({ ...base, type: 'text', text: '' } as TextBox)
     this.exec({
       removed: [],
       added: [],
       removedEls: [],
       addedEls: [{ el, pageId: t.pageId, key: t.key }],
-      label: this.blockKind === 'link' ? '링크 블록 추가' : '텍스트 블록 추가'
+      label:
+        this.blockKind === 'link' ? '링크 블록 추가' : this.blockKind === 'memo' ? '메모 블록 추가' : '텍스트 블록 추가'
     })
     for (const fn of this.blockCreatedListeners) fn(el.id)
     return el.id
@@ -584,8 +591,8 @@ export class Engine {
     const added = this.selection.map((r) => this.movedEntry(r, off, off, ulid()))
     const addedEls: BlockEntry[] = this.selectionBlocks.map((b) => {
       const el = b.el
-      const ex = el.type === 'text' || el.type === 'link' ? el.x : 0
-      const ey = el.type === 'text' || el.type === 'link' ? el.y : 0
+      const ex = el.type === 'text' || el.type === 'link' || el.type === 'memo' ? el.x : 0
+      const ey = el.type === 'text' || el.type === 'link' || el.type === 'memo' ? el.y : 0
       return { el: patchEl(el, { id: ulid(), x: ex + off, y: ey + off }), pageId: b.pageId, key: b.key }
     })
     this.exec({ removed: [], added, removedEls: [], addedEls })
@@ -1378,8 +1385,8 @@ export class Engine {
   /** 블록을 월드 좌표로 (dx, dy) 옮긴 새 항목. 시작점이 들어간 페이지/청크로 옮겨 간다 */
   private movedBlockEntry(rec: BlockRec, dx: number, dy: number): BlockEntry {
     const el = rec.el
-    const ex = el.type === 'text' || el.type === 'link' ? el.x : 0
-    const ey = el.type === 'text' || el.type === 'link' ? el.y : 0
+    const ex = el.type === 'text' || el.type === 'link' || el.type === 'memo' ? el.x : 0
+    const ey = el.type === 'text' || el.type === 'link' || el.type === 'memo' ? el.y : 0
     const wx = rec.ox + ex + dx
     const wy = rec.oy + ey + dy
     const t = this.layout.targetAt(wx, wy) ?? { pageId: rec.pageId, key: rec.key, ox: rec.ox, oy: rec.oy }

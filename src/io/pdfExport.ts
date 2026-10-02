@@ -1,7 +1,7 @@
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
-import type { LinkElement, Page, Stroke, TextBox } from '../shared/model'
+import type { LinkElement, MemoElement, Page, Stroke, TextBox } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
 import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
@@ -49,7 +49,7 @@ function strokesToPaths(strokes: Stroke[], dx: number, dy: number): ExportPath[]
 // ───────── 텍스트·링크 블록 (블록 편집 모드) ─────────
 
 /** 블록 높이 추정 — 저장된 h가 없으면 줄 수로 (선택 박스·썸네일과 같은 규약) */
-const blockH = (el: TextBox | LinkElement): number =>
+const blockH = (el: TextBox | LinkElement | MemoElement): number =>
   el.h ?? el.fontSize * 1.35 * Math.max(1, (el.type === 'link' ? el.label : el.text).split('\n').length)
 
 function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
@@ -96,14 +96,92 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, el: TextBox | LinkElement,
   }
 }
 
+/** 둥근 사각형 경로 (반경 r) */
+function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + rr, y)
+  ctx.arcTo(x + w, y, x + w, y + h, rr)
+  ctx.arcTo(x + w, y + h, x, y + h, rr)
+  ctx.arcTo(x, y + h, x, y, rr)
+  ctx.arcTo(x, y, x + w, y, rr)
+  ctx.closePath()
+}
+
+/** 메모 블록을 카드(헤더 밴드 + 흰 본문)로 그린다 — 화면의 .block-memo와 같은 규약 (헤더 34, 모서리 12, 본문 패딩 12) */
+function drawMemoBlock(ctx: CanvasRenderingContext2D, el: MemoElement, ox: number, oy: number) {
+  const R = 10
+  const HEAD = 34
+  const pad = 12
+  // 카드 본체 + 테두리
+  rrPath(ctx, ox + 0.5, oy + 0.5, el.w - 1, el.h - 1, R)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.strokeStyle = '#e4e9f0'
+  ctx.lineWidth = 1
+  ctx.stroke()
+  // 헤더 밴드 (카드 모서리에 맞춰 클리핑)
+  ctx.save()
+  rrPath(ctx, ox + 0.5, oy + 0.5, el.w - 1, el.h - 1, R)
+  ctx.clip()
+  ctx.fillStyle = '#eef1f4'
+  ctx.fillRect(ox, oy, el.w, HEAD)
+  ctx.restore()
+  // 헤더: 문서 아이콘(단순화) + 제목
+  ctx.fillStyle = '#6b7a90'
+  rrPath(ctx, ox + 12, oy + 9.5, 15, 15, 3)
+  ctx.fill()
+  ctx.strokeStyle = '#eef1f4'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(ox + 15.5, oy + 13.5)
+  ctx.lineTo(ox + 23.5, oy + 13.5)
+  ctx.moveTo(ox + 15.5, oy + 17)
+  ctx.lineTo(ox + 21.5, oy + 17)
+  ctx.stroke()
+  ctx.fillStyle = '#46536a'
+  ctx.font = `600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  ctx.fillText('메모', ox + 33, oy + HEAD / 2 + 1)
+  // 본문 텍스트 (헤더 아래, 카드 안에 클리핑)
+  ctx.save()
+  rrPath(ctx, ox + 0.5, oy + 0.5, el.w - 1, el.h - 1, R)
+  ctx.clip()
+  ctx.font = `${el.fontSize}px ${el.fontFamily ?? 'sans-serif'}`
+  ctx.fillStyle = el.color
+  ctx.textBaseline = 'top'
+  ctx.textAlign = el.align ?? 'left'
+  const lh = el.fontSize * 1.35
+  const lines = wrapLines(ctx, el.text, el.w - pad * 2)
+  const tx = ox + pad + (el.align === 'center' ? (el.w - pad * 2) / 2 : el.align === 'right' ? el.w - pad * 2 : 0)
+  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], tx, oy + HEAD + 10 + i * lh)
+  ctx.restore()
+}
+
 /**
  * 텍스트 블록을 투명 배경 PNG(3배)로 만든다.
  * 워커(pdf-lib)에 한글 글꼴을 싣지 않고도 화면과 같은 모양을 내보내기 위한 것 — 표준 폰트로는 라틴 문자만 그릴 수 있다.
  */
-function rasterBlockImage(el: TextBox | LinkElement): { data: ArrayBuffer; w: number; h: number } | null {
+function rasterBlockImage(el: TextBox | LinkElement | MemoElement): { data: ArrayBuffer; w: number; h: number } | null {
   const scale = 3
   const measure = document.createElement('canvas').getContext('2d')
   if (!measure) return null
+  // 메모: 카드 크기 그대로 (헤더·본문 포함)
+  if (el.type === 'memo') {
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.round((el.w + 2) * scale))
+    c.height = Math.max(1, Math.round((el.h + 2) * scale))
+    const ctx = c.getContext('2d')
+    if (!ctx) return null
+    ctx.scale(scale, scale)
+    drawMemoBlock(ctx, el, 0, 0)
+    const b64 = c.toDataURL('image/png').split(',')[1] ?? ''
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return { data: bytes.buffer, w: el.w + 2, h: el.h + 2 }
+  }
   measure.font = `${el.fontSize}px ${el.fontFamily ?? 'sans-serif'}`
   const lines = wrapLines(measure, el.type === 'link' ? el.label : el.text, el.w)
   const lh = el.fontSize * 1.35
@@ -114,7 +192,8 @@ function rasterBlockImage(el: TextBox | LinkElement): { data: ArrayBuffer; w: nu
   const ctx = c.getContext('2d')
   if (!ctx) return null
   ctx.scale(scale, scale)
-  drawTextBlock(ctx, el, -el.x, -el.y)
+  // 블록 원점 (0,0) 기준으로 그린다 — 배치는 호출부에서 el.x·el.y로 한다
+  drawTextBlock(ctx, el, 0, 0)
   const b64 = c.toDataURL('image/png').split(',')[1] ?? ''
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
@@ -145,13 +224,13 @@ function patternFor(page: Page): ExportPage['pattern'] {
 export async function exportDocumentPdf(documentId: string, opts: ExportOptions = {}): Promise<Blob> {
   const { doc, pages, chunks } = await loadDocument(documentId)
   const strokesByPage = new Map<string, Stroke[]>()
-  const blocksByPage = new Map<string, (TextBox | LinkElement)[]>()
+  const blocksByPage = new Map<string, (TextBox | LinkElement | MemoElement)[]>()
   for (const c of chunks) {
     const arr = strokesByPage.get(c.pageId) ?? []
     const blocks = blocksByPage.get(c.pageId) ?? []
     for (const e of c.elements) {
       if (e.type === 'stroke') arr.push(e)
-      else if (e.type === 'text' || e.type === 'link') blocks.push(e)
+      else if (e.type === 'text' || e.type === 'link' || e.type === 'memo') blocks.push(e)
     }
     strokesByPage.set(c.pageId, arr)
     blocksByPage.set(c.pageId, blocks)
@@ -244,12 +323,12 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
   const pad = 24
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const world: Stroke[] = []
-  const blocksWorld: { el: TextBox | LinkElement; ox: number; oy: number }[] = []
+  const blocksWorld: { el: TextBox | LinkElement | MemoElement; ox: number; oy: number }[] = []
   for (const c of chunks) {
     const { ox, oy } = parseChunkKey(c.key)
     for (const e of c.elements) {
       if (e.type !== 'stroke') {
-        if (e.type === 'text' || e.type === 'link') {
+        if (e.type === 'text' || e.type === 'link' || e.type === 'memo') {
           blocksWorld.push({ el: e, ox, oy })
           minX = Math.min(minX, e.x + ox)
           minY = Math.min(minY, e.y + oy)

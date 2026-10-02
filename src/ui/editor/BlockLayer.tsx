@@ -3,15 +3,17 @@ import { createPortal } from 'react-dom'
 import { BLOCK_FONT_SIZES, PEN_COLORS, useUI } from '../../app/store'
 import type { Engine } from '../../engine/engine'
 import type { BlockRec } from '../../engine/scene'
-import { MIN_TEXT_W, isSafeUrl, type Element, type ID, type LinkElement, type TextBox } from '../../shared/model'
+import { MIN_MEMO_H, MIN_MEMO_W, MIN_TEXT_W, isSafeUrl, type Element, type ID, type LinkElement, type MemoElement, type TextBox } from '../../shared/model'
 import { Icon } from '../Icon'
 import { BlockSheet, type SheetTab } from './BlockSheet'
 
-/** 좌표를 가진 블록 요소 (텍스트·링크) */
+/** 좌표를 가진 블록 요소 (텍스트·링크·메모) */
 type PositionedEl = Element & {
   x: number
   y: number
   w: number
+  h?: number
+  hFixed?: boolean
   fontSize: number
   color: string
   fontFamily?: string
@@ -22,16 +24,20 @@ interface DragState {
   pointerId: number
   id: ID
   mode: 'move' | 'resize'
-  /** 리사이즈 기준 변: l = 왼쪽 핸들(왼쪽 변 고정), r = 오른쪽 핸들 */
-  edge: 'l' | 'r' | null
   sx: number
   sy: number
   baseX: number
   baseY: number
   baseW: number
+  /** 드래그 시작 시점 박스 높이 (월드 px) — 텍스트·링크는 내용 높이, 메모는 박스 높이 */
+  baseH: number
+  isMemo: boolean
   moved: boolean
   el: HTMLElement
 }
+
+/** 흔한 가로:세로 비율 — 메모 리사이즈에서 가까우면 격자 스냅 위에 비율로 맞춘다 */
+const RATIOS = [1, 4 / 3, 3 / 4, 3 / 2, 2 / 3, 16 / 9, 9 / 16, 2, 1 / 2]
 
 /** 새 블록을 놓을 월드 좌표 (대안 C의 생성 어포던스만 흡수) */
 interface GhostState {
@@ -160,7 +166,7 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
         return
       }
       const blockEl = target.closest<HTMLElement>('.block')
-      const inUi = !!target.closest('.block-pill, .block-quick, .block-url')
+      const inUi = !!target.closest('.block-pill, .block-quick, .block-url, .bm-close')
       const handle = target.closest<HTMLElement>('.block-handle')
 
       if (!blockEl) {
@@ -174,29 +180,36 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       const id = blockEl.dataset.id!
       const inText = target.classList.contains('block-ta')
       const isEditingThis = live.current.editing === id
+      const rec = engine.blocks().find((b) => b.el.id === id)
+      if (!rec) return
       // 손가락은 팬/줌 제스처로 넘긴다 (편집 중이거나 UI·핸들·본문일 때만 예외)
       if (e.pointerType === 'touch' && !isEditingThis && !inUi && !handle && !inText) return
       e.stopPropagation()
       if (inUi) return
       if (inText) {
         engine.selectBlock(id)
+        // 메모 본문 탭 = 바로 편집 (시안: '탭하여 메모 작성...')
+        if (rec.el.type === 'memo' && !isEditingThis) {
+          setSheetTab(null)
+          setQuickId(null)
+          setEditing(id)
+        }
         return
       }
       engine.selectBlock(id)
       if (isEditingThis && !handle) return
-      const rec = engine.blocks().find((b) => b.el.id === id)
-      if (!rec) return
       const p = rec.el as PositionedEl
       dragRef.current = {
         pointerId: e.pointerId,
         id,
         mode: handle ? 'resize' : 'move',
-        edge: handle ? ((handle.dataset.edge as 'l' | 'r') ?? 'r') : null,
         sx: e.clientX,
         sy: e.clientY,
         baseX: rec.ox + p.x,
         baseY: rec.oy + p.y,
         baseW: p.w,
+        baseH: blockEl.offsetHeight,
+        isMemo: rec.el.type === 'memo',
         moved: false,
         el: blockEl
       }
@@ -212,6 +225,22 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       return s ? Math.round(v / s) * s : Math.round(v * 100) / 100
     }
 
+    /** w에 대한 h가 흔한 비율에 가까우면(스냅 단위의 60% 이내) 비율 값으로 맞춘다 */
+    const ratioSnap = (w: number, h: number, step: number) => {
+      if (!step) return h
+      let best: number | null = null
+      let bestD = Infinity
+      for (const r of RATIOS) {
+        const rh = w / r
+        const d = Math.abs(rh - h)
+        if (d <= step * 0.6 && d < bestD) {
+          bestD = d
+          best = rh
+        }
+      }
+      return best !== null ? Math.round(best * 100) / 100 : h
+    }
+
     const onMove = (e: PointerEvent) => {
       const d = dragRef.current
       if (!d || d.pointerId !== e.pointerId) return
@@ -222,17 +251,21 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       if (!d.moved && Math.hypot(dx, dy) * z > 4) d.moved = true
       if (!d.moved) return
       if (d.mode === 'resize') {
-        if (d.edge === 'l') {
-          d.el.style.left = snapOf(d.baseX + dx) + 'px'
-          d.el.style.width = Math.max(MIN_TEXT_W, snapOf(d.baseW - dx)) + 'px'
+        const minW = d.isMemo ? MIN_MEMO_W : MIN_TEXT_W
+        const w = Math.max(minW, snapOf(d.baseW + dx))
+        d.el.style.width = w + 'px'
+        if (d.isMemo) {
+          // 메모: 박스 높이를 직접 조절 — 격자 스냅 위에서 흔한 비율(1:1, 4:3…)이면 비율에 맞춘다
+          const h = Math.max(MIN_MEMO_H, snapOf(d.baseH + dy))
+          d.el.style.height = ratioSnap(w, h, live.current.step) + 'px'
         } else {
-          d.el.style.width = Math.max(MIN_TEXT_W, snapOf(d.baseW + dx)) + 'px'
-        }
-        // 폭이 바뀌면 줄바꿈이 바뀐다 — 높이를 즉시 다시 잰다 (커밋되는 h도 이 기준으로)
-        const ta = d.el.querySelector<HTMLTextAreaElement>('.block-ta')
-        if (ta) {
-          ta.style.height = 'auto'
-          ta.style.height = ta.scrollHeight + 'px'
+          // 텍스트·링크: 폭이 바뀌면 줄바꿈이 바뀐다 — 높이를 즉시 다시 잰다 (세로는 최소 높이로만 작동)
+          const ta = d.el.querySelector<HTMLTextAreaElement>('.block-ta')
+          if (ta) {
+            ta.style.height = 'auto'
+            const auto = ta.scrollHeight
+            ta.style.height = Math.max(auto, snapOf(d.baseH + dy)) + 'px'
+          }
         }
       } else {
         d.el.style.left = snapOf(d.baseX + dx) + 'px'
@@ -251,11 +284,25 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
      */
     const syncBlockStyle = (el: HTMLElement) => {
       const rec = engine.blocks().find((b) => b.el.id === el.dataset.id)
-      if (!rec || (rec.el.type !== 'text' && rec.el.type !== 'link')) return
+      if (!rec) return
+      const kind = rec.el.type
+      if (kind !== 'text' && kind !== 'link' && kind !== 'memo') return
       const p = rec.el as PositionedEl
       el.style.left = rec.ox + p.x + 'px'
       el.style.top = rec.oy + p.y + 'px'
       el.style.width = p.w + 'px'
+      const ta = el.querySelector<HTMLElement>('.block-ta')
+      if (kind === 'memo') {
+        el.style.height = p.h + 'px'
+      } else {
+        el.style.height = ''
+        if (ta) {
+          ta.style.height = 'auto'
+          const auto = ta.scrollHeight
+          const minH = rec.el.hFixed ? rec.el.h ?? 0 : 0
+          ta.style.height = Math.max(auto, minH) + 'px'
+        }
+      }
     }
 
     const onUp = (e: PointerEvent) => {
@@ -269,13 +316,19 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       const dy = (e.clientY - d.sy) / z
       if (d.mode === 'resize') {
         const rec = engine.blocks().find((b) => b.el.id === d.id)
-        if (!rec || (rec.el.type !== 'text' && rec.el.type !== 'link')) return
-        const p = rec.el as PositionedEl
-        const w = Math.max(MIN_TEXT_W, snapOf(d.baseW + (d.edge === 'l' ? -dx : dx)))
-        if (d.edge === 'l') {
-          engine.updateBlock(d.id, { x: snapOf(rec.ox + p.x + dx) - rec.ox, w })
-        } else {
-          engine.updateBlock(d.id, { w })
+        if (!rec) return
+        if (rec.el.type === 'memo') {
+          const w = Math.max(MIN_MEMO_W, snapOf(d.baseW + dx))
+          const h = Math.max(MIN_MEMO_H, ratioSnap(w, Math.max(MIN_MEMO_H, snapOf(d.baseH + dy)), live.current.step))
+          engine.updateBlock(d.id, { w, h })
+        } else if (rec.el.type === 'text' || rec.el.type === 'link') {
+          // 세로는 내용 높이를 넘어 늘였을 때만 고정(hFixed) — 평소엔 내용에 맞춰 자동 측정
+          const ta = d.el.querySelector<HTMLTextAreaElement>('.block-ta')
+          if (ta) ta.style.height = 'auto'
+          const autoH = ta ? ta.scrollHeight : 0
+          const w = Math.max(MIN_TEXT_W, snapOf(d.baseW + dx))
+          const h = Math.max(autoH, snapOf(d.baseH + dy))
+          engine.updateBlock(d.id, { w, h, hFixed: h > autoH + 0.5 ? true : undefined })
         }
       } else {
         engine.moveBlock(d.id, d.baseX + dx, d.baseY + dy)
@@ -332,7 +385,7 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
   }
 
   /** 고스트 확정: 종류를 정하고 그 자리에 블록을 만든다 */
-  const createAt = (kind: 'text' | 'link') => {
+  const createAt = (kind: 'text' | 'link' | 'memo') => {
     if (!ghost) return
     engine.setBlockKind(kind)
     useUI.getState().setBlockKind(kind)
@@ -355,28 +408,60 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
       <div className="block-layer" ref={layerRef} data-mode={editMode}>
         {blocks.map((b) => {
           const el = b.el
-          if (el.type !== 'text' && el.type !== 'link') return null
+          if (el.type !== 'text' && el.type !== 'link' && el.type !== 'memo') return null
           const p = el as PositionedEl
           const isLink = el.type === 'link'
+          const isMemo = el.type === 'memo'
           const isSel = selectedIds.has(el.id)
           const isEdit = editing === el.id
-          const value = isLink ? (el as LinkElement).label : (el as TextBox).text
+          const value = isLink ? (el as LinkElement).label : el.text
           const commit = (v: string, h: number) => {
             setEditing(null)
-            if (isLink) {
+            if (isMemo) {
+              // 메모는 박스 높이가 고정 — 내용 높이는 무시한다
+              if (!v.trim()) engine.deleteBlock(el.id)
+              else engine.updateBlock(el.id, { text: v })
+            } else if (isLink) {
               if (!v.trim() && !(el as LinkElement).url) engine.deleteBlock(el.id)
-              else engine.updateBlock(el.id, { label: v, h })
+              else engine.updateBlock(el.id, { label: v, h: p.hFixed ? Math.max(p.h ?? 0, h) : h })
             } else if (!v.trim()) engine.deleteBlock(el.id)
-            else engine.updateBlock(el.id, { text: v, h })
+            else engine.updateBlock(el.id, { text: v, h: p.hFixed ? Math.max(p.h ?? 0, h) : h })
           }
           return (
             <div
               key={el.id}
-              className={'block' + (isSel ? ' is-selected' : '') + (isEdit ? ' is-editing' : '') + (isLink ? ' block-link' : '')}
+              className={
+                'block' +
+                (isSel ? ' is-selected' : '') +
+                (isEdit ? ' is-editing' : '') +
+                (isLink ? ' block-link' : '') +
+                (isMemo ? ' block-memo' : '')
+              }
               data-id={el.id}
               data-editing={isEdit ? '1' : ''}
-              style={{ left: b.ox + p.x, top: b.oy + p.y, width: p.w }}
+              style={{
+                left: b.ox + p.x,
+                top: b.oy + p.y,
+                width: p.w,
+                ...(isMemo ? { height: (el as MemoElement).h } : {})
+              }}
             >
+              {isMemo && (
+                <div className="bm-head">
+                  <Icon name="page" size={15} />
+                  <span className="bm-title">메모</span>
+                  <button
+                    className="bm-close"
+                    onClick={() => {
+                      engine.deleteBlock(el.id)
+                      engine.clearSelection()
+                    }}
+                    aria-label="메모 삭제"
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                </div>
+              )}
               <BlockText
                 value={value}
                 editing={isEdit}
@@ -385,16 +470,15 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
                 color={p.color}
                 fontFamily={p.fontFamily}
                 align={p.align}
-                placeholder={isLink ? '링크 이름' : '내용을 입력하세요'}
+                placeholder={isLink ? '링크 이름' : isMemo ? '탭하여 메모 작성...' : '내용을 입력하세요'}
+                grow={!isMemo}
+                minH={!isMemo && p.hFixed ? ((el as TextBox | LinkElement).h ?? undefined) : undefined}
                 onCommit={commit}
                 onCancel={() => setEditing(null)}
               />
               {isSel && !isEdit && interactive && (
                 <>
-                  <span className="block-handle nw" data-edge="l" aria-hidden />
-                  <span className="block-handle ne" data-edge="r" aria-hidden />
-                  <span className="block-handle sw" data-edge="l" aria-hidden />
-                  <span className="block-handle se" data-edge="r" aria-hidden />
+                  <span className="block-handle se" data-edge="se" aria-hidden />
                   <div className="block-pill" style={{ transform: `scale(${1 / zoom})` }}>
                     <button className="pb-btn" onClick={() => editText(el.id)} aria-label={isLink ? '링크 이름 편집' : '내용 편집'}>
                       <Icon name="edit" size={18} />
@@ -493,6 +577,10 @@ export function BlockLayer({ engine, host }: { engine: Engine; host: HTMLElement
                 <Icon name="link" size={15} />
                 링크
               </button>
+              <button className="bg-kind" onClick={() => createAt('memo')}>
+                <Icon name="note" size={15} />
+                메모
+              </button>
               <button className="bg-x" onClick={() => setGhost(null)} aria-label="취소">
                 <Icon name="close" size={15} />
               </button>
@@ -525,6 +613,8 @@ function BlockText({
   fontFamily,
   align,
   placeholder,
+  grow,
+  minH,
   onCommit,
   onCancel
 }: {
@@ -536,6 +626,10 @@ function BlockText({
   fontFamily?: string
   align?: 'left' | 'center' | 'right'
   placeholder: string
+  /** true = 내용에 맞춰 높이 자동 측정 (텍스트·링크) / false = 박스 높이 고정 (메모, CSS flex로 채움) */
+  grow: boolean
+  /** 고정된 최소 높이 (월드 px) — 우하단 핸들로 내용보다 크게 늘인 경우 */
+  minH?: number
   onCommit: (v: string, h: number) => void
   onCancel: () => void
 }) {
@@ -567,14 +661,17 @@ function BlockText({
   useLayoutEffect(() => {
     const ta = ref.current
     if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = ta.scrollHeight + 'px'
+    if (grow) {
+      ta.style.height = 'auto'
+      const auto = ta.scrollHeight
+      ta.style.height = (minH ? Math.max(auto, minH) : auto) + 'px'
+    }
     if (editing && document.activeElement !== ta) {
       ta.focus()
       const n = ta.value.length
       ta.setSelectionRange(n, n)
     }
-  }, [draft, editing, w, fontSize, fontFamily])
+  }, [draft, editing, w, fontSize, fontFamily, grow, minH])
 
   return (
     <textarea

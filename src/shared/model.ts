@@ -103,6 +103,8 @@ export interface TextBox extends BaseElement {
   color: string
   fontFamily?: string
   align?: 'left' | 'center' | 'right'
+  /** 우하단 핸들로 고정한 최소 높이 — 없으면 내용에 맞춰 자동 측정 */
+  hFixed?: boolean
 }
 export interface LinkElement extends BaseElement {
   type: 'link'
@@ -117,6 +119,8 @@ export interface LinkElement extends BaseElement {
   color: string
   fontFamily?: string
   align?: 'left' | 'center' | 'right'
+  /** 우하단 핸들로 고정한 최소 높이 — 없으면 내용에 맞춰 자동 측정 */
+  hFixed?: boolean
 }
 export interface ImageElement extends BaseElement {
   type: 'image'; assetId: ID; x: number; y: number; w: number; h: number; rotation: number
@@ -126,10 +130,24 @@ export interface ShapeElement extends BaseElement {
   x: number; y: number; w: number; h: number; color: string; width: number
 }
 
-export type Element = Stroke | TextBox | LinkElement | ImageElement | ShapeElement
+export interface MemoElement extends BaseElement {
+  type: 'memo'
+  x: number
+  y: number
+  w: number
+  /** 박스 높이 — 헤더(34pt) + 본문. 내용이 넘치면 본문이 스크롤된다 */
+  h: number
+  text: string
+  fontSize: number
+  color: string
+  fontFamily?: string
+  align?: 'left' | 'center' | 'right'
+}
+
+export type Element = Stroke | TextBox | LinkElement | MemoElement | ImageElement | ShapeElement
 
 /** 블록 편집 모드에서 빈 곳을 탭했을 때 만드는 블록 종류 */
-export type BlockKind = 'text' | 'link'
+export type BlockKind = 'text' | 'link' | 'memo'
 
 /** 외부로 열어도 되는 링크인지 (javascript: 등 차단) */
 export function isSafeUrl(raw: string): boolean {
@@ -158,6 +176,10 @@ export const MAX_CATEGORY_CHARS = 40 // 카테고리 이름 길이 제한 (한�
 export const BLOCK_SNAP_STEP = 16 // 블록 편집 모드 그리드 스냅 간격 (pt)
 export const DEFAULT_TEXT_W = 240 // 새 텍스트 블록 기본 폭 (pt)
 export const MIN_TEXT_W = 48 // 텍스트 블록 최소 폭 (pt)
+export const DEFAULT_MEMO_W = 240 // 새 메모 블록 기본 폭 (pt)
+export const DEFAULT_MEMO_H = 176 // 새 메모 블록 기본 높이 (pt)
+export const MIN_MEMO_W = 120 // 메모 블록 최소 폭 (pt)
+export const MIN_MEMO_H = 88 // 메모 블록 최소 높이 (pt)
 
 /** 카테고리 이름 정규화 — trim, 연속 공백 정리, 앞뒤 슬래시 제거. 빈 이름이면 null */
 export function normalizeCategory(raw: string): string | null {
