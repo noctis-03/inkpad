@@ -42,7 +42,9 @@ const PATHS: Record<string, string> = {
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.3-4.3',
   palette: 'M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4 4h-2a2 2 0 0 0-1.5 3.3A1.7 1.7 0 0 1 12 22ZM7.5 10.5h.01M12 7.5h.01M16.5 10.5h.01',
   arrowUp: 'm5 12 7-7 7 7M12 19V5',
-  arrowDown: 'M12 5v14M19 12l-7 7-7-7'
+  arrowDown: 'M12 5v14M19 12l-7 7-7-7',
+  blocks: 'M4 4h7v16H4zM13 4h7v7h-7zM13 13h7v7h-7z',
+  type: 'M4 7V5h16v2M12 5v14M9 19h6'
 }
 
 export function Icon({ name, size = 22, className }: { name: string; size?: number; className?: string }) {

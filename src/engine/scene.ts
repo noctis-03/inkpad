@@ -26,6 +26,15 @@ export interface StrokeRec extends Entry {
   path?: Path2D
 }
 
+/** 런타임 블록 레코드: 비(非)획 요소 + 저장 단위 위치 + 월드 원점 (원점은 layout에서 매번 계산) */
+export interface BlockRec {
+  el: Element
+  pageId: ID
+  key: string
+  ox: number
+  oy: number
+}
+
 export const groupKey = (pageId: ID, key: string) => `${pageId}|${key}`
 
 export function getPath(rec: { stroke: Stroke; path?: Path2D }): Path2D {
@@ -43,8 +52,10 @@ export function getPath(rec: { stroke: Stroke; path?: Path2D }): Path2D {
 export class Scene {
   recs = new Map<ID, StrokeRec>()
   groups = new Map<string, Map<ID, StrokeRec>>()
-  /** 아직 렌더링하지 않는 요소 (텍스트/이미지/도형, Phase 3). 저장할 때 그대로 돌려준다 */
+  /** 획이 아닌 요소 (텍스트/이미지/도형). 저장할 때 그대로 돌려준다 */
   extras = new Map<string, Element[]>()
+  /** 블록 id → 소속 저장 단위 (조회 O(1)) */
+  private extraIndex = new Map<ID, { pageId: ID; key: string }>()
   tree = new RBush<IndexItem>()
   private zCounter = 0
 
@@ -128,6 +139,58 @@ export class Scene {
     return out
   }
 
+  // ───────── 블록(비획 요소) ─────────
+
+  addExtra(pageId: ID, key: string, el: Element): BlockRec {
+    const gk = groupKey(pageId, key)
+    let arr = this.extras.get(gk)
+    if (!arr) this.extras.set(gk, (arr = []))
+    if (!arr.includes(el)) arr.push(el)
+    this.extraIndex.set(el.id, { pageId, key })
+    const { ox, oy } = this.layout.origin(pageId, key)
+    return { el, pageId, key, ox, oy }
+  }
+
+  removeExtra(id: ID): BlockRec | undefined {
+    const loc = this.extraIndex.get(id)
+    if (!loc) return
+    this.extraIndex.delete(id)
+    const gk = groupKey(loc.pageId, loc.key)
+    const arr = this.extras.get(gk)
+    if (!arr) return
+    const i = arr.findIndex((e) => e.id === id)
+    if (i < 0) return
+    const [el] = arr.splice(i, 1)
+    if (!arr.length) this.extras.delete(gk)
+    const { ox, oy } = this.layout.origin(loc.pageId, loc.key)
+    return { el, pageId: loc.pageId, key: loc.key, ox, oy }
+  }
+
+  findExtra(id: ID): BlockRec | undefined {
+    const loc = this.extraIndex.get(id)
+    if (!loc) return
+    const el = this.extras.get(groupKey(loc.pageId, loc.key))?.find((e) => e.id === id)
+    if (!el) return
+    const { ox, oy } = this.layout.origin(loc.pageId, loc.key)
+    return { el, pageId: loc.pageId, key: loc.key, ox, oy }
+  }
+
+  allExtras(): BlockRec[] {
+    const out: BlockRec[] = []
+    for (const [gk, arr] of this.extras) {
+      const i = gk.indexOf('|')
+      const pageId = gk.slice(0, i)
+      const key = gk.slice(i + 1)
+      const { ox, oy } = this.layout.origin(pageId, key)
+      for (const el of arr) out.push({ el, pageId, key, ox, oy })
+    }
+    return out
+  }
+
+  extrasOfPage(pageId: ID): BlockRec[] {
+    return this.allExtras().filter((b) => b.pageId === pageId)
+  }
+
   /** 저장용: 청크의 전체 요소 */
   groupElements(gk: string): Element[] {
     const g = this.groups.get(gk)
@@ -161,6 +224,7 @@ export class Scene {
     this.recs.clear()
     this.groups.clear()
     this.extras.clear()
+    this.extraIndex.clear()
     this.tree.clear()
   }
 }

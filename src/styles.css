@@ -1592,6 +1592,109 @@ textarea {
   color: var(--danger);
 }
 
+/* ───────── 블록 편집 모드 ───────── */
+.block-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  pointer-events: none;
+  touch-action: none;
+  z-index: 2;
+}
+.block {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 4px;
+}
+.block-layer[data-mode='block'] .block {
+  pointer-events: auto;
+  cursor: move;
+}
+.block.is-selected {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+.block.is-editing {
+  cursor: text;
+}
+.block-ta {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+.block-ta::placeholder {
+  color: #9aa3ad;
+}
+.block.is-editing .block-ta {
+  pointer-events: auto;
+}
+.block-resize {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-sizing: content-box;
+  cursor: nwse-resize;
+}
+.block-toolbar {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 6px 20px #00000026;
+  white-space: nowrap;
+  transform-origin: bottom left;
+}
+.block-toolbar .tb-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.block-toolbar .color-swatch.small {
+  width: 32px;
+  height: 32px;
+}
+.block-toolbar .color-swatch.small::after {
+  inset: 8px;
+}
+.block-toolbar .color-swatch.small.is-active::before {
+  inset: 4px;
+}
+.block-size {
+  min-width: 30px;
+  height: 32px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 알림 / 진행 */
 .toasts {
   position: fixed;

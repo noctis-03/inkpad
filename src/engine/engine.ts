@@ -1,14 +1,15 @@
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
-import { History, type Command, type PageSnapshot } from './history'
+import { History, type BlockEntry, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
-import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
+import { Scene, getPath, groupKey, type BlockRec, type Entry, type StrokeRec } from './scene'
 import { drawPattern } from './background'
 import type {
+  EditMode,
   EngineStats,
   PressureCapability,
   SelectionInfo,
@@ -17,7 +18,19 @@ import type {
   ToolStyle,
   ViewInfo
 } from './types'
-import type { Background, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
+import {
+  BLOCK_SNAP_STEP,
+  DEFAULT_TEXT_W,
+  type Background,
+  type DocumentMeta,
+  type Element,
+  type ID,
+  type Page,
+  type Stroke,
+  type StrokeOpts,
+  type TextBox,
+  type ViewState
+} from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
@@ -131,6 +144,13 @@ export class Engine {
   private selection: StrokeRec[] = []
   private selectionBox: Box | null = null
 
+  // 블록 편집 모드
+  private editMode: EditMode = 'draw'
+  private camListeners = new Set<(c: { x: number; y: number; zoom: number }) => void>()
+  private blockListeners = new Set<() => void>()
+  private blockCreatedListeners = new Set<(id: ID) => void>()
+  private blockPointer: { id: number; sx: number; sy: number; camX: number; camY: number; moved: boolean } | null = null
+
   // 렌더
   private raf = 0
   private liveDirty = true
@@ -209,14 +229,9 @@ export class Engine {
   private loadChunks(d: LoadedDocument) {
     const entries: Entry[] = []
     for (const c of d.chunks) {
-      const gk = groupKey(c.pageId, c.key)
       for (const el of c.elements) {
         if (el.type === 'stroke') entries.push({ stroke: el, pageId: c.pageId, key: c.key })
-        else {
-          const arr = this.scene.extras.get(gk) ?? []
-          arr.push(el)
-          this.scene.extras.set(gk, arr)
-        }
+        else this.scene.addExtra(c.pageId, c.key, el)
       }
     }
     this.scene.addMany(entries)
@@ -256,6 +271,119 @@ export class Engine {
   setReadOnly(v: boolean) {
     this.readOnly = v
     if (v) this.finishActive(false)
+  }
+
+  // ─────────────────────────── 외부 API: 편집 모드 ───────────────────────────
+
+  setEditMode(m: EditMode) {
+    if (m === this.editMode) return
+    this.editMode = m
+    this.finishActive(false)
+    this.blockPointer = null
+    if (m === 'block') this.clearSelection()
+    this.cursor = null
+    this.liveDirty = true
+    this.root.style.cursor = m === 'block' ? 'default' : ''
+  }
+
+  get mode() {
+    return this.editMode
+  }
+
+  // ─────────────────────────── 외부 API: 블록 (텍스트 등) ───────────────────────────
+
+  /** 카메라(팬/줌) 변화 구독 — DOM 블록 레이어가 변환을 따라가기 위한 것 */
+  onCameraChange(fn: (c: { x: number; y: number; zoom: number }) => void) {
+    this.camListeners.add(fn)
+    fn({ x: this.cam.x, y: this.cam.y, zoom: this.cam.zoom })
+    return () => {
+      this.camListeners.delete(fn)
+    }
+  }
+
+  /** 블록 목록 변화 구독 (추가·수정·삭제·페이지 재배치) */
+  onBlocksChange(fn: () => void) {
+    this.blockListeners.add(fn)
+    return () => {
+      this.blockListeners.delete(fn)
+    }
+  }
+
+  /** 새 블록이 만들어졌을 때 (곧바로 편집을 열기 위한 것) */
+  onBlockCreated(fn: (id: ID) => void) {
+    this.blockCreatedListeners.add(fn)
+    return () => {
+      this.blockCreatedListeners.delete(fn)
+    }
+  }
+
+  blocks(): BlockRec[] {
+    return this.scene.allExtras()
+  }
+
+  private emitBlocks() {
+    for (const fn of this.blockListeners) fn()
+  }
+
+  private snap(v: number) {
+    if (!this.settings.blockSnap) return Math.round(v * 100) / 100
+    const step = Math.max(1, this.settings.blockSnapStep || BLOCK_SNAP_STEP)
+    return Math.round(v / step) * step
+  }
+
+  /** 빈 곳을 탭했을 때: 스냅된 위치에 빈 텍스트 블록을 만든다 */
+  createTextBlock(wx: number, wy: number): ID | null {
+    if (this.readOnly) return null
+    const t = this.layout.targetAt(wx, wy)
+    if (!t) return null
+    const el: TextBox = {
+      id: ulid(),
+      type: 'text',
+      layer: 'main',
+      z: this.scene.nextZ(),
+      createdAt: Date.now(),
+      x: this.snap(wx - t.ox),
+      y: this.snap(wy - t.oy),
+      w: DEFAULT_TEXT_W,
+      text: '',
+      fontSize: this.style.block.fontSize,
+      color: this.style.block.color
+    }
+    this.exec({ removed: [], added: [], removedEls: [], addedEls: [{ el, pageId: t.pageId, key: t.key }], label: '텍스트 블록 추가' })
+    for (const fn of this.blockCreatedListeners) fn(el.id)
+    return el.id
+  }
+
+  /** 텍스트 블록 내용·스타일·폭 수정 */
+  updateTextBlock(id: ID, patch: Partial<TextBox>) {
+    if (this.readOnly) return
+    const rec = this.scene.findExtra(id)
+    if (!rec) return
+    const before: BlockEntry = { el: rec.el, pageId: rec.pageId, key: rec.key }
+    const after: BlockEntry = { el: { ...(rec.el as TextBox), ...patch }, pageId: rec.pageId, key: rec.key }
+    this.exec({ removed: [], added: [], removedEls: [before], addedEls: [after], label: '텍스트 수정' })
+  }
+
+  /** 블록을 월드 좌표 (wx, wy)로 이동 (스냅 적용, 다른 페이지/청크로도 이동) */
+  moveBlock(id: ID, wx: number, wy: number) {
+    if (this.readOnly) return
+    const rec = this.scene.findExtra(id)
+    if (!rec) return
+    const t = this.layout.targetAt(wx, wy) ?? { pageId: rec.pageId, key: rec.key, ox: rec.ox, oy: rec.oy }
+    const nx = this.snap(wx - t.ox)
+    const ny = this.snap(wy - t.oy)
+    const el = rec.el as TextBox
+    if (t.pageId === rec.pageId && t.key === rec.key && nx === el.x && ny === el.y) return
+    const before: BlockEntry = { el: rec.el, pageId: rec.pageId, key: rec.key }
+    const after: BlockEntry = { el: { ...el, x: nx, y: ny }, pageId: t.pageId, key: t.key }
+    this.exec({ removed: [], added: [], removedEls: [before], addedEls: [after], label: '블록 이동' })
+  }
+
+  deleteBlock(id: ID) {
+    if (this.readOnly) return
+    const rec = this.scene.findExtra(id)
+    if (!rec) return
+    this.exec({ removed: [], added: [], removedEls: [{ el: rec.el, pageId: rec.pageId, key: rec.key }], addedEls: [], label: '블록 삭제' })
   }
 
   get pages(): Page[] {
@@ -434,9 +562,10 @@ export class Engine {
     if (!page) return
     this.clearSelection()
     const removed = this.scene.entriesOfPage(page.id)
+    const removedEls: BlockEntry[] = this.scene.extrasOfPage(page.id).map((b) => ({ el: b.el, pageId: b.pageId, key: b.key }))
     const before = this.snapshot([page])
     const order = before.order.filter((id) => id !== page.id)
-    this.exec({ removed, added: [], pagesBefore: before, pagesAfter: { order, pages: [] }, label: '페이지 삭제' })
+    this.exec({ removed, added: [], removedEls, addedEls: [], pagesBefore: before, pagesAfter: { order, pages: [] }, label: '페이지 삭제' })
   }
 
   duplicatePage(index: number) {
@@ -446,10 +575,11 @@ export class Engine {
     const now = Date.now()
     const page: Page = { ...src, id: ulid(), createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
     const added = this.scene.entriesOfPage(src.id).map((e) => ({ ...e, pageId: page.id, stroke: { ...e.stroke, id: ulid() } }))
+    const addedEls: BlockEntry[] = this.scene.extrasOfPage(src.id).map((b) => ({ el: { ...b.el, id: ulid() }, pageId: page.id, key: b.key }))
     const before = this.snapshot([])
     const order = [...before.order]
     order.splice(index + 1, 0, page.id)
-    this.exec({ removed: [], added, pagesBefore: before, pagesAfter: { order, pages: [page] }, label: '페이지 복제' })
+    this.exec({ removed: [], added, removedEls: [], addedEls, pagesBefore: before, pagesAfter: { order, pages: [page] }, label: '페이지 복제' })
   }
 
   movePage(from: number, to: number) {
@@ -524,11 +654,14 @@ export class Engine {
     this.scene.relayout()
     this.cb.onPagesChanged?.(next)
     this.pagesDirty = true
+    this.emitBlocks()
   }
 
   private applyCommand(cmd: Command, inverse: boolean) {
     const toRemove = inverse ? cmd.added : cmd.removed
     const toAdd = inverse ? cmd.removed : cmd.added
+    const elsRemove = (inverse ? cmd.addedEls : cmd.removedEls) ?? []
+    const elsAdd = (inverse ? cmd.removedEls : cmd.addedEls) ?? []
     const snap = inverse ? cmd.pagesBefore : cmd.pagesAfter
     let box: Box | null = null
     const touched = new Set<ID>()
@@ -547,12 +680,27 @@ export class Engine {
       this.markDirty(e.pageId, e.key)
       touched.add(e.pageId)
     }
-    if (this.selection.length) this.clearSelection(false)
-    if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
-      this.committedDirty = true
-    } else {
-      this.renderer.redrawRegion(this.scene, this.cam, box)
+    for (const b of elsRemove) {
+      const rec = this.scene.removeExtra(b.el.id)
+      if (!rec) continue
+      this.markDirty(rec.pageId, rec.key)
+      touched.add(rec.pageId)
     }
+    for (const b of elsAdd) {
+      this.scene.addExtra(b.pageId, b.key, b.el)
+      this.markDirty(b.pageId, b.key)
+      touched.add(b.pageId)
+    }
+    if (this.selection.length) this.clearSelection(false)
+    const strokeChanged = toRemove.length + toAdd.length > 0
+    if (strokeChanged) {
+      if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
+        this.committedDirty = true
+      } else {
+        this.renderer.redrawRegion(this.scene, this.cam, box)
+      }
+    }
+    if (elsRemove.length || elsAdd.length) this.emitBlocks()
     for (const id of touched) this.bumpPage(id)
     this.scheduleSave()
     this.emitView(true)
@@ -720,6 +868,15 @@ export class Engine {
         if (e.button === 1) this.startMiddlePan(e)
         return
       }
+      // 블록 편집 모드: 펜/마우스는 빈 곳 탭 = 블록 생성, 끌기 = 화면 이동 (필기는 하지 않는다)
+      if (this.editMode === 'block') {
+        if (this.active) return
+        const bp = this.local(e)
+        this.cancelTouchInteractions()
+        this.capture(e.pointerId)
+        this.blockPointer = { id: e.pointerId, sx: bp.x, sy: bp.y, camX: this.cam.x, camY: this.cam.y, moved: false }
+        return
+      }
       if (this.active && this.active.pointerType !== 'touch') return
       this.cancelTouchInteractions()
       if (this.readOnly) return
@@ -767,6 +924,19 @@ export class Engine {
       this.onCameraMoved()
       return
     }
+    if (this.blockPointer && this.blockPointer.id === e.pointerId) {
+      const bp = this.blockPointer
+      const p = this.local(e)
+      const dx = p.x - bp.sx
+      const dy = p.y - bp.sy
+      if (!bp.moved && Math.hypot(dx, dy) > TAP_SLOP_PX) bp.moved = true
+      if (bp.moved) {
+        this.cam.x = bp.camX - dx / this.cam.zoom
+        this.cam.y = bp.camY - dy / this.cam.zoom
+        this.onCameraMoved()
+      }
+      return
+    }
     if (this.isPenLike(e)) {
       const a = this.active
       if (a && a.pointerId === e.pointerId) {
@@ -780,7 +950,7 @@ export class Engine {
             : []
         this.stats.predictedCount = a.predicted.length
         this.liveDirty = true
-      } else if (!a && !this.readOnly) {
+      } else if (!a && !this.readOnly && this.editMode !== 'block') {
         const p = this.local(e)
         this.setCursor(p.x, p.y)
       }
@@ -809,6 +979,16 @@ export class Engine {
       this.endMiddlePan()
       return
     }
+    if (this.blockPointer && this.blockPointer.id === e.pointerId) {
+      const bp = this.blockPointer
+      this.blockPointer = null
+      if (!bp.moved && !this.readOnly) {
+        const p = this.local(e)
+        const w = this.cam.screenToWorld(p.x, p.y)
+        this.createTextBlock(w.x, w.y)
+      }
+      return
+    }
     if (this.isPenLike(e)) {
       if (this.active && this.active.pointerId === e.pointerId) {
         this.finishActive(true)
@@ -822,6 +1002,10 @@ export class Engine {
   private onPointerCancel = (e: PointerEvent) => {
     if (this.middlePan && this.middlePan.id === e.pointerId) {
       this.endMiddlePan()
+      return
+    }
+    if (this.blockPointer && this.blockPointer.id === e.pointerId) {
+      this.blockPointer = null
       return
     }
     if (this.active && this.active.pointerId === e.pointerId) {
@@ -859,6 +1043,15 @@ export class Engine {
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault()
+    this.applyWheel(e)
+  }
+
+  /** 블록 DOM 위에서 발생한 휠 이벤트를 엔진 팬/줌으로 전달 (React onWheel은 passive라 preventDefault는 하지 않는다) */
+  forwardWheel(e: WheelEvent) {
+    this.applyWheel(e)
+  }
+
+  private applyWheel(e: WheelEvent) {
     this.momentum = null
     const p = this.local(e)
     if (e.ctrlKey || e.metaKey) {
@@ -1259,6 +1452,10 @@ export class Engine {
   // ─────────────────────────── 카메라 / 렌더 루프 ───────────────────────────
 
   private onCameraMoved() {
+    if (this.camListeners.size) {
+      const c = { x: this.cam.x, y: this.cam.y, zoom: this.cam.zoom }
+      for (const fn of this.camListeners) fn(c)
+    }
     if (!this.layout.paged) {
       const bg = this.layout.pages[0]?.background ?? { type: 'dot', spacing: 32, color: '' }
       this.renderer.drawInfiniteBackground(this.cam, bg)
@@ -1464,6 +1661,11 @@ export class Engine {
         ctx.fill(getPath(rec))
       }
     }
+    // 블록(텍스트)도 썸네일에 그린다
+    ctx.setTransform(scale, 0, 0, scale, -ox * scale, -oy * scale)
+    for (const b of this.scene.extrasOfPage(pageId)) {
+      if (b.el.type === 'text') drawTextBlock(ctx, b.el, b.ox, b.oy)
+    }
     return c
   }
 
@@ -1564,6 +1766,39 @@ function eventTimeToPerf(ts: number) {
   const now = performance.now()
   if (ts > now + 60_000) return now - (Date.now() - ts)
   return ts
+}
+
+/** 텍스트 블록을 캔버스에 그린다 (썸네일·미리보기용) */
+function drawTextBlock(ctx: CanvasRenderingContext2D, el: TextBox, ox: number, oy: number) {
+  const size = el.fontSize
+  ctx.font = `${size}px ${el.fontFamily ?? 'sans-serif'}`
+  ctx.fillStyle = el.color
+  ctx.textBaseline = 'top'
+  ctx.textAlign = el.align ?? 'left'
+  const lh = size * 1.35
+  const tx = ox + el.x + (el.align === 'center' ? el.w / 2 : el.align === 'right' ? el.w : 0)
+  const lines = wrapText(ctx, el.text, el.w)
+  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], tx, oy + el.y + i * lh)
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const out: string[] = []
+  for (const para of text.split('\n')) {
+    if (!para) {
+      out.push('')
+      continue
+    }
+    let line = ''
+    for (const ch of para) {
+      const next = line + ch
+      if (line && ctx.measureText(next).width > maxW) {
+        out.push(line)
+        line = ch
+      } else line = next
+    }
+    out.push(line)
+  }
+  return out
 }
 
 export { PAGE_GAP }
