@@ -3,6 +3,7 @@ import { useUI } from '../app/store'
 import type { PressureMode, Settings } from '../engine/types'
 import { Icon } from './Icon'
 import { SyncSection } from './SyncSection'
+import { NetUsageSection } from './NetUsageDebug'
 
 function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -261,6 +262,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
           </Row>
         </section>
       )}
+
+      {/* 디버깅용: 앱 인터넷 사용량 (셀룰러 데이터 확인) — 이 한 줄과 import를 지우면 사라진다 */}
+      {showDebug && <NetUsageSection />}
     </>
   )
 }

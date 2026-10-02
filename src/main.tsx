@@ -3,6 +3,10 @@ import { App } from './app/App'
 import { useUI } from './app/store'
 import { startSync } from './sync/sync'
 import './styles.css'
+import { installNetMeter } from './shared/netMeter'
+
+// 디버깅용 네트워크 사용량 계량 (셀룰러 데이터 확인용, 나중에 떼어 낼 수 있음)
+installNetMeter()
 
 createRoot(document.getElementById('root')!).render(<App />)
 
