@@ -12,7 +12,10 @@ export function SelectionBar({ engine }: { engine: Engine }) {
     <>
       <SelectionBox rect={sel.rect} />
       <div className="selection-bar" style={{ top, left }} role="toolbar" aria-label="선택 영역">
-        <span className="sel-count">{sel.count}개</span>
+        <span className="sel-count">
+          {sel.count}개
+          {sel.blocks > 0 && sel.count > sel.blocks ? ` (블록 ${sel.blocks})` : ''}
+        </span>
         <button className="tb-btn" onClick={() => engine.duplicateSelection()} aria-label="복제">
           <Icon name="copy" size={20} />
         </button>

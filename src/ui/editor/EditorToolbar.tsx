@@ -26,6 +26,8 @@ export function EditorToolbar(props: {
   const setTool = useUI((s) => s.setTool)
   const editMode = useUI((s) => s.editMode)
   const setEditMode = useUI((s) => s.setEditMode)
+  const blockKind = useUI((s) => s.blockKind)
+  const setBlockKind = useUI((s) => s.setBlockKind)
   const settings = useUI((s) => s.settings)
   const setSettings = useUI((s) => s.setSettings)
   const style = useUI((s) => s.style)
@@ -129,6 +131,27 @@ export function EditorToolbar(props: {
           <Icon name="blocks" />
         </button>
       </nav>
+
+      {editMode === 'block' && (
+        <nav className="toolbar-group" aria-label="블록 종류">
+          <button
+            className={'tb-btn' + (blockKind === 'text' ? ' is-active' : '')}
+            onClick={() => setBlockKind('text')}
+            aria-label="텍스트 블록"
+            aria-pressed={blockKind === 'text'}
+          >
+            <Icon name="type" />
+          </button>
+          <button
+            className={'tb-btn' + (blockKind === 'link' ? ' is-active' : '')}
+            onClick={() => setBlockKind('link')}
+            aria-label="링크 블록"
+            aria-pressed={blockKind === 'link'}
+          >
+            <Icon name="link" />
+          </button>
+        </nav>
+      )}
 
       {editMode === 'block' && (
         <nav className="toolbar-group" aria-label="블록 스타일">

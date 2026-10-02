@@ -132,6 +132,7 @@ export interface ViewInfo {
 
 export interface SelectionInfo {
   count: number
+  blocks: number // 선택에 포함된 블록 수
   rect: { x: number; y: number; w: number; h: number } // 화면 좌표 (캔버스 기준)
   moving: boolean
 }
