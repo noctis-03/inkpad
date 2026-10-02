@@ -16,6 +16,9 @@
 //     카테고리를 함께 넣어, 클라우드 노트 목록을 메타만으로 그린다
 //  9. 폴더·카테고리 매핑·숨김은 기기별 로컬 전용 — Drive로 주고받지 않는다.
 //     카테고리는 문서 파일의 category 필드로 동기화하고, 숨긴 카테고리의 노트는 받기에서 건너뛴다
+// 10. 문서 위치 기록(doc:)의 version은 앞으로만 간다. Drive version은 실제보다 뒤처져 보일 수 있고
+//     (listFiles 인덱스 지연, 리비전 고정·해제 같은 메타데이터 전용 쓰기도 값을 올린다),
+//     뒤처진 값으로 덮으면 방금 올린 노트가 "받을 것"으로 오판된다
 import type { ID } from '../shared/model'
 import { gzipJson, gunzipJson } from '../storage/compress'
 import { db } from '../storage/db'
@@ -94,6 +97,26 @@ async function loadBase(docId: ID): Promise<DocFileV1 | null> {
   } catch {
     return null
   }
+}
+
+/** Drive version 비교용 — int64 문자열이라 Number로는 정밀도를 잃는다. 없거나 깨졌으면 0으로 본다 */
+function verNum(v: string | undefined): bigint {
+  try {
+    return BigInt(v ?? 0)
+  } catch {
+    return 0n
+  }
+}
+
+/**
+ * 문서 위치 기록(doc:)을 앞으로만 갱신한다 (규칙 10).
+ * Drive version은 실제보다 뒤처져 보일 수 있어(인덱스 지연, 메타데이터 전용 쓰기),
+ * 뒤처진 값으로 덮으면 방금 올린 노트가 "받을 것"으로 오판된다.
+ */
+async function putDocRecord(docId: ID, fileId: string, version: string): Promise<void> {
+  const rec = await getSync<FileRecord>(`doc:${docId}`)
+  if (rec && verNum(rec.version) >= verNum(version)) return
+  await putSync(`doc:${docId}`, { fileId, version })
 }
 
 interface PendingDoc {
@@ -196,7 +219,11 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     remote?.id
   )
   await rememberRevTag(result.id, { device, revKind: rev.kind }, restored)
-  await markSynced(docId, file, result, info.seqs)
+  // 업로드 직후의 메타 쓰기(리비전 고정 등)도 Drive version을 올린다. 업로드 응답의 version을
+  // 그대로 저장하면 기록이 한 발 뒤처져, 목록이 방금 올린 노트를 "받을 것"으로 오판한다.
+  // 그래서 헤드를 다시 읽어 저장한다 (규칙 10)
+  const head = (await drive.getMeta(result.id).catch(() => null)) ?? result
+  await markSynced(docId, file, head, info.seqs)
 }
 
 /** 업로드가 끝난 뒤 로컬 상태 반영 (규칙 3) — base 스냅샷도 함께 갱신 */
@@ -205,7 +232,7 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
   await db.transaction('rw', [db.documents, db.outbox, db.syncState], async () => {
     const cur = await db.documents.get(docId)
     if (!cur) return
-    await putSync(`doc:${docId}`, { fileId: remote.id, version: remote.version })
+    await putDocRecord(docId, remote.id, remote.version) // 앞으로만 (규칙 10)
     await putSync(`base:${docId}`, { blob: base })
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
     await db.syncState.delete(`curRev:${docId}`) // 되돌림 표식 해제 — 이제 헤드가 곧 이 기기의 현재
@@ -283,7 +310,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
     remote.id
   )
   await rememberRevTag(result.id, { device, revKind: mergedRev.kind, conflicts })
-  await putSync(`doc:${docId}`, { fileId: result.id, version: result.version })
+  await putDocRecord(docId, result.id, result.version) // 앞으로만 (규칙 10)
   await saveBase(docId, merged)
   await db.syncState.delete(`curRev:${docId}`) // 머지 결과가 곧 이 기기의 현재
   await db.syncState.delete(`revKind:${docId}`)
@@ -347,12 +374,15 @@ async function pull(f: { docs: string; assets: string }) {
     if (local?.deletedAt) continue // 휴지통에 있는 노트도 되살리지 않는다
     if (pendingDocs_.has(docId)) continue // 로컬 변경은 push의 머지에서 처리
     const rec = recs.get(docId)
-    if (rec && rec.version === remote.version) continue // 이미 최신
+    // 이미 맞춰진 노트는 건너뛴다. Drive version은 실제보다 뒤처져 보일 수 있으므로
+    // '같거나 내 기록이 더 새로우면'(>=) 최신으로 본다. 그렇지 않으면 방금 올린 노트를
+    // 남의 변경으로 오판해 되받고, 기록까지 뒤로 밀린다 (규칙 10)
+    if (rec && verNum(rec.version) >= verNum(remote.version)) continue
     n++
     const file = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
     if (file?.kind !== 'inkpad-doc') continue
     if (await applyDocFile(file)) {
-      await putSync(`doc:${docId}`, { fileId: remote.id, version: remote.version })
+      await putDocRecord(docId, remote.id, remote.version)
       await saveBase(docId, file)
       changed.add(docId)
       r.docs++
@@ -397,9 +427,8 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     if (!docId) continue
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
-    // Drive 인덱스 지연으로 listFiles의 version이 잠깐 stale해질 수 있다.
-    // 내 기록이 클라우드 version보다 '같거나 새로우면'(>=) 이미 맞춰진 것으로 본다.
-    const same = !!rec && BigInt(rec.version) >= BigInt(remote.version)
+    // 받기(pull)와 같은 규칙을 쓴다 — 내 기록이 '같거나 새로우면' 이미 맞춰진 것으로 본다 (규칙 10)
+    const same = !!rec && verNum(rec.version) >= verNum(remote.version)
     const localGone = !local || !!local.deletedAt
     const gone = localGone || !!(await getSync(`gone:${docId}`))
     out.push({
@@ -427,7 +456,7 @@ export async function downloadCloudNote(
   const p = pending.get(info.docId)
   if (p) await db.outbox.bulkDelete(p.seqs) // 삭제 대기였다면 사용자가 명시적으로 받은 것이 우선
   if (!(await applyDocFile(file))) return 'skipped'
-  await putSync(`doc:${info.docId}`, { fileId: info.fileId, version: info.version })
+  await putDocRecord(info.docId, info.fileId, info.version) // 앞으로만 (규칙 10)
   await saveBase(info.docId, file)
   await db.syncState.delete(`gone:${info.docId}`) // 명시적으로 받았으니 되살린 것
   emitRemoteChanged(new Set<string>([info.docId]))
