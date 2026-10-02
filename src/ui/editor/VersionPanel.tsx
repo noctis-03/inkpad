@@ -4,7 +4,7 @@ import { confirmDialog } from '../../app/dialogs'
 import { formatDate } from '../../shared/util'
 import type { ID } from '../../shared/model'
 import { db } from '../../storage/db'
-import { AuthRequiredError, SyncNotConfiguredError } from '../../sync/token'
+import { AuthRequiredError, SyncNotConfiguredError, getDeviceName } from '../../sync/token'
 import { onSyncStatus, syncNow } from '../../sync/sync'
 import { getSync } from '../../sync/folders'
 import {
@@ -40,6 +40,11 @@ export function VersionPanel({ docId }: { docId: ID }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [marker, setMarker] = useState<CurMarker | null>(null)
   const [docUpdatedAt, setDocUpdatedAt] = useState<number | null>(null)
+  const [myDevice, setMyDevice] = useState('')
+
+  useEffect(() => {
+    void getDeviceName().then(setMyDevice)
+  }, [])
 
   const load = useCallback(async () => {
     setError(null)
@@ -214,7 +219,8 @@ export function VersionPanel({ docId }: { docId: ID }) {
                         {r.revKind === 'restore' && <span className="rev-tag restored">되돌림</span>}
                         {r.keepForever && <span className="rev-tag pinned">고정됨</span>}
                         {r.conflicts ? <span className="rev-size">충돌 {r.conflicts}</span> : null}
-                        {r.device && <span className="rev-size">{r.device}</span>}
+                        {/* 이 기기가 올린 버전 → 태그로, 다른 기기가 올렸고 이름을 알면 → 기기명으로, 모르면 → 표시 없음 */}
+                        {r.device && (r.device === myDevice ? <span className="rev-tag mine">이 기기에서 올림</span> : <span className="rev-size">{r.device}</span>)}
                         {r.size > 0 && <span className="rev-size">{fmtSize(r.size)}</span>}
                       </span>
                     </div>

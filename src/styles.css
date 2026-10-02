@@ -484,6 +484,10 @@ button {
 .rev-tag.edited {
   border-style: dashed;
 }
+.rev-tag.mine {
+  border-style: dashed;
+  color: var(--muted);
+}
 .rev-size {
   font-size: 11px;
   color: var(--muted);
