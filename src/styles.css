@@ -826,7 +826,6 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  box-shadow: 0 1px 3px #0000001f;
 }
 /* 리스트 보기에서는 미리보기 위 배지는 숨기고 정보줄에 표시 */
 .doc-list .doc-cat {
