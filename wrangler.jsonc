@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inkpad",
+  "compatibility_date": "2026-09-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "main": "dist/_worker.js",
+  "assets": {
+    "directory": "./dist"
+  },
+  "vars": {
+    "GOOGLE_CLIENT_ID": "975400615913-hh65mgge5ot31jl428c1ermdm4slhg4i.apps.googleusercontent.com"
+  }
+}
