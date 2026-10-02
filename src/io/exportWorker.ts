@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 // PDF 내보내기 Worker (14.2): 원본 PDF 페이지 위에 필기를 벡터 경로로 합친다.
-import { PDFDocument, rgb, degrees, EncryptedPDFError, type PDFEmbeddedPage } from 'pdf-lib'
+import fontkit from '@pdf-lib/fontkit'
+import { PDFDocument, rgb, degrees, EncryptedPDFError, type PDFEmbeddedPage, type PDFFont } from 'pdf-lib'
 import type { ExportJob, WorkerOut } from './exportTypes'
 
 const post = (m: WorkerOut, transfer?: Transferable[]) => (self as unknown as Worker).postMessage(m, transfer ?? [])
@@ -12,6 +13,18 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
     out.setTitle(job.title)
     out.setCreator('Inkpad')
     out.setProducer('Inkpad (pdf-lib)')
+
+    // 한글 폰트: pdf-lib 기본 폰트(WinAnsi)로는 한글이 사라지므로 TTF를 서브셋으로 심는다.
+    // 폰트에 없는 글자(이모지 등)는 그리기 전에 걸러낸다 (drawText가 예외를 던지는 것 방지).
+    let font: PDFFont | null = null
+    let hasGlyph: ((cp: number) => boolean) | null = null
+    if (job.font && job.pages.some((p) => p.texts?.length)) {
+      out.registerFontkit(fontkit)
+      const bytes = new Uint8Array(job.font)
+      font = await out.embedFont(bytes, { subset: true })
+      const fk = fontkit.create(bytes) as unknown as { hasGlyphForCodePoint(cp: number): boolean }
+      hasGlyph = (cp) => fk.hasGlyphForCodePoint(cp)
+    }
 
     // 1) 원본 PDF 로드. 못 읽으면 메인 스레드에 래스터 대체를 요청한다
     const srcDocs = new Map<string, PDFDocument>()
@@ -74,6 +87,27 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
       for (const path of p.paths) {
         // drawSvgPath는 SVG 좌표(y 아래로)를 (x, y) 기준으로 뒤집어 그린다
         page.drawSvgPath(path.d, { x: 0, y: p.h, color: rgb(path.r, path.g, path.b), opacity: path.a, borderWidth: 0 })
+      }
+      if (font && p.texts?.length) {
+        for (const t of p.texts) {
+          // 화면은 textBaseline='top' → PDF는 baseline 기준이라 어긋난다. ascent만큼 올려 맞춘다.
+          const ascender = font.heightAtSize(t.size, { descender: false })
+          let top = p.h - t.y
+          for (const raw of t.lines) {
+            const line = hasGlyph ? [...raw].filter((ch) => hasGlyph!(ch.codePointAt(0)!)).join('') : raw
+            if (line) {
+              page.drawText(line, {
+                x: t.x,
+                y: top - ascender,
+                size: t.size,
+                font,
+                color: rgb(t.color[0], t.color[1], t.color[2]),
+                opacity: t.color[3]
+              })
+            }
+            top -= t.lineHeight
+          }
+        }
       }
       done++
       if (done % 5 === 0 || done === job.pages.length) post({ type: 'progress', done, total: job.pages.length })

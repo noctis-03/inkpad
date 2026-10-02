@@ -34,6 +34,7 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
         pageIndices,
         includePattern: pattern,
         askPassword: askPdfPassword,
+        onWarning: (m) => toast(m, 'info'),
         onProgress: (d, t, phase) => setBusy({ text: phase, progress: t ? d / t : undefined })
       })
       setBusy(null)

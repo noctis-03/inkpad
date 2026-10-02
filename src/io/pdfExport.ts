@@ -1,17 +1,20 @@
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
+import { layoutTextBox } from '../engine/text'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
-import type { Page, Stroke } from '../shared/model'
+import type { Page, Stroke, TextBox } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
 import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
-import type { ExportJob, ExportPage, ExportPath, WorkerOut } from './exportTypes'
+import type { ExportJob, ExportPage, ExportPath, ExportText, WorkerOut } from './exportTypes'
+import { tryLoadExportFont } from './fonts'
 import { recallPassword } from './passwords'
 
 export interface ExportOptions {
   pageIndices?: number[] // 없으면 전체
   includePattern?: boolean
   onProgress?: (done: number, total: number, phase: string) => void
+  onWarning?: (message: string) => void
   askPassword?: (incorrect: boolean) => Promise<string | null>
 }
 
@@ -51,6 +54,23 @@ const rgb3 = (hex: string): [number, number, number] => {
   return [c.r, c.g, c.b]
 }
 
+/**
+ * 텍스트 박스 → 내보내기 좌표.
+ * 줄바꿈은 화면과 같은 함수(engine/text)로 계산하므로 PDF에서도 줄이 어긋나지 않는다.
+ */
+function textToExport(t: TextBox, dx = 0, dy = 0, scale = 1): ExportText {
+  const lay = layoutTextBox(t)
+  const c = parseColor(t.color)
+  return {
+    x: t.x * scale + dx,
+    y: t.y * scale + dy,
+    size: t.fontSize * scale,
+    lineHeight: lay.lineHeight * scale,
+    color: [c.r, c.g, c.b, c.a],
+    lines: lay.lines
+  }
+}
+
 function patternFor(page: Page): ExportPage['pattern'] {
   if (!page.size) return null
   const g = patternGeometry(page.background, page.size.w, page.size.h)
@@ -69,13 +89,24 @@ function patternFor(page: Page): ExportPage['pattern'] {
 export async function exportDocumentPdf(documentId: string, opts: ExportOptions = {}): Promise<Blob> {
   const { doc, pages, chunks } = await loadDocument(documentId)
   const strokesByPage = new Map<string, Stroke[]>()
+  const textsByPage = new Map<string, TextBox[]>()
   for (const c of chunks) {
-    const arr = strokesByPage.get(c.pageId) ?? []
-    for (const e of c.elements) if (e.type === 'stroke') arr.push(e)
-    strokesByPage.set(c.pageId, arr)
+    const strokes = strokesByPage.get(c.pageId) ?? []
+    const texts = textsByPage.get(c.pageId) ?? []
+    for (const e of c.elements) {
+      if (e.type === 'stroke') strokes.push(e)
+      else if (e.type === 'text') texts.push(e)
+    }
+    strokesByPage.set(c.pageId, strokes)
+    textsByPage.set(c.pageId, texts)
   }
 
-  if (doc.mode === 'infinite') return exportInfinitePdf(doc.title, chunks, opts)
+  // 한글 폰트는 텍스트가 있을 때만 받는다. 못 받으면 텍스트만 빠지고 내보내기는 계속한다.
+  const hasText = [...textsByPage.values()].some((t) => t.length > 0)
+  const font = hasText ? await tryLoadExportFont() : undefined
+  if (hasText && !font) opts.onWarning?.('내보내기용 글꼴을 불러오지 못해 PDF에서 텍스트를 건너뛰었습니다.')
+
+  if (doc.mode === 'infinite') return exportInfinitePdf(doc.title, chunks, opts, font)
 
   const indices = opts.pageIndices ?? pages.map((_, i) => i)
   const selected = indices.map((i) => pages[i]).filter(Boolean)
@@ -85,7 +116,8 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
     paper: p.pdf ? null : rgb3(p.background.type === 'blank' ? p.background.color : '#ffffff'),
     pattern: p.pdf || opts.includePattern === false ? null : patternFor(p),
     pdf: p.pdf ? { ...p.pdf } : undefined,
-    paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0)
+    paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0),
+    texts: (textsByPage.get(p.id) ?? []).map((t) => textToExport(t))
   }))
 
   const sources: Record<string, ArrayBuffer> = {}
@@ -100,7 +132,7 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
     }
   }
 
-  const job: ExportJob = { title: doc.title, pages: expPages, sources }
+  const job: ExportJob = { title: doc.title, pages: expPages, sources, font }
   let result = await runWorker(job, opts)
   if (result.type === 'need-raster') {
     // 암호가 걸린 PDF 등: 해당 페이지를 pdf.js로 이미지로 만들어 대체 (벡터 필기는 그대로)
@@ -152,13 +184,23 @@ async function rasterize(job: ExportJob, pages: Page[], assetIds: string[], opts
 }
 
 /** 무한 캔버스: 필기 전체 영역을 PDF 1페이지로 (14.3). 너무 크면 비율을 유지한 채 줄인다 */
-async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: ExportOptions): Promise<Blob> {
+async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: ExportOptions, font?: ArrayBuffer): Promise<Blob> {
   const pad = 24
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const world: Stroke[] = []
+  const texts: { t: TextBox; ox: number; oy: number }[] = []
   for (const c of chunks) {
     const { ox, oy } = parseChunkKey(c.key)
     for (const e of c.elements) {
+      if (e.type === 'text') {
+        const lay = layoutTextBox(e)
+        minX = Math.min(minX, e.x + ox)
+        minY = Math.min(minY, e.y + oy)
+        maxX = Math.max(maxX, e.x + ox + Math.max(24, e.w))
+        maxY = Math.max(maxY, e.y + oy + lay.height)
+        texts.push({ t: e, ox, oy })
+        continue
+      }
       if (e.type !== 'stroke') continue
       minX = Math.min(minX, e.bbox[0] + ox)
       minY = Math.min(minY, e.bbox[1] + oy)
@@ -172,7 +214,7 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
       world.push({ ...e, points: pts })
     }
   }
-  if (!world.length) {
+  if (!world.length && !texts.length) {
     minX = minY = 0
     maxX = 595
     maxY = 842
@@ -188,8 +230,15 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
     }
     return { ...s, points: pts, width: s.width * k }
   })
-  const page: ExportPage = { w: w * k, h: h * k, paper: [1, 1, 1], pattern: null, paths: strokesToPaths(scaled, 0, 0) }
-  const result = await runWorker({ title, pages: [page], sources: {} }, opts)
+  const page: ExportPage = {
+    w: w * k,
+    h: h * k,
+    paper: [1, 1, 1],
+    pattern: null,
+    paths: strokesToPaths(scaled, 0, 0),
+    texts: texts.map(({ t, ox, oy }) => textToExport(t, (ox - minX + pad) * k, (oy - minY + pad) * k, k))
+  }
+  const result = await runWorker({ title, pages: [page], sources: {}, font }, opts)
   if (result.type !== 'done') throw new Error('PDF를 만들지 못했습니다.')
   return new Blob([result.bytes], { type: 'application/pdf' })
 }
