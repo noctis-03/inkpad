@@ -2,6 +2,7 @@ import RBush from 'rbush'
 import { outlineToPath, strokeOutline } from './geometry'
 import type { Layout } from './layout'
 import type { Element, ID, Stroke } from '../shared/model'
+import { layoutTextBox } from './text'
 import type { ElementEntry } from './history'
 
 /** 저장 단위 위치가 붙은 획 */
@@ -187,6 +188,34 @@ export class Scene {
     if (this.recs.size === 0) return null
     const root = (this.tree as unknown as { data: IndexItem }).data
     return { minX: root.minX, minY: root.minY, maxX: root.maxX, maxY: root.maxY }
+  }
+
+  /**
+   * 획 + R-tree 밖 요소(텍스트 등)를 모두 포함한 경계.
+   * 무한 캔버스의 전체 보기와 썸네일이 쓴다 — bounds()는 획만 보므로
+   * 텍스트만 있는 영역이 잘리거나, 텍스트만 있는 노트가 빈 썸네일이 된다.
+   */
+  contentBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null {
+    let b = this.bounds()
+    for (const e of this.extraEntries()) {
+      const el = e.element
+      if (el.type !== 'text') continue
+      const gx = el.x + e.ox
+      const gy = el.y + e.oy
+      const minX = gx
+      const minY = gy
+      const maxX = gx + Math.max(24, el.w)
+      const maxY = gy + layoutTextBox(el).height
+      b = b
+        ? {
+            minX: Math.min(b.minX, minX),
+            minY: Math.min(b.minY, minY),
+            maxX: Math.max(b.maxX, maxX),
+            maxY: Math.max(b.maxY, maxY)
+          }
+        : { minX, minY, maxX, maxY }
+    }
+    return b
   }
 
   /** 페이지 배치가 바뀐 뒤 원점과 인덱스를 다시 계산 (Path2D는 상대좌표라 그대로 재사용) */

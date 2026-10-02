@@ -340,7 +340,7 @@ export class Engine {
     if (this.layout.paged) {
       const lb = this.layout.bounds
       b = { minX: lb.x, minY: lb.y, maxX: lb.x + lb.w, maxY: lb.y + lb.h }
-    } else b = this.scene.bounds()
+    } else b = this.scene.contentBounds()
     if (!b) return this.resetView()
     const pad = 32
     const w = Math.max(1, b.maxX - b.minX)
@@ -1716,7 +1716,7 @@ export class Engine {
       oy = r.y
       recs = this.scene.recsOfPage(pageId)
     } else {
-      const b = this.scene.bounds() ?? { minX: -400, minY: -300, maxX: 400, maxY: 300 }
+      const b = this.scene.contentBounds() ?? { minX: -400, minY: -300, maxX: 400, maxY: 300 }
       const pad = 40
       ox = b.minX - pad
       oy = b.minY - pad
