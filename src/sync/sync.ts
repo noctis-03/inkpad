@@ -427,8 +427,15 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     if (!docId) continue
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
-    // 받기(pull)와 같은 규칙을 쓴다 — 내 기록이 '같거나 새로우면' 이미 맞춰진 것으로 본다 (규칙 10)
-    const same = !!rec && verNum(rec.version) >= verNum(remote.version)
+    // 1) 위치 기록의 version으로 판정 — 받기(pull)와 같은 규칙. 내 기록이 '같거나 새로우면' 최신 (규칙 10)
+    const sameByVersion = !!rec && verNum(rec.version) >= verNum(remote.version)
+    // 2) 내용 표식으로도 판정. Drive version은 뒤처져 보일 수 있고, 기록이 한 번 낡으면
+    //    목록은 읽기만 하므로 스스로 못 고쳐 방금 올린 노트가 영영 "받을 것"으로 남는다.
+    //    appProperties.updatedAt은 이 앱이 올릴 때 직접 쓴 값이라 그런 지연·불일치에 흔들리지
+    //    않는다. 둘 중 하나라도 맞으면 이미 맞춰진 것으로 본다
+    const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
+    const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
+    const same = sameByVersion || sameByContent
     const localGone = !local || !!local.deletedAt
     const gone = localGone || !!(await getSync(`gone:${docId}`))
     out.push({
