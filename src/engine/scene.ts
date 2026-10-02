@@ -2,6 +2,7 @@ import RBush from 'rbush'
 import { outlineToPath, strokeOutline } from './geometry'
 import type { Layout } from './layout'
 import type { Element, ID, Stroke } from '../shared/model'
+import type { ElementEntry } from './history'
 
 /** 저장 단위 위치가 붙은 획 */
 export interface Entry {
@@ -125,6 +126,52 @@ export class Scene {
     const out: StrokeRec[] = []
     for (const [gk, g] of this.groups) if (gk.startsWith(pageId + '|')) out.push(...g.values())
     out.sort((a, b) => a.stroke.z - b.stroke.z)
+    return out
+  }
+
+  // ───────── R-tree에 없는 요소 (텍스트 등) ─────────
+  // 개수가 많지 않다는 전제로 선형 순회한다. 종류가 늘어나면 별도 인덱스가 필요하다.
+
+  addExtra(e: ElementEntry) {
+    const gk = groupKey(e.pageId, e.key)
+    const arr = this.extras.get(gk) ?? []
+    arr.push(e.element)
+    this.extras.set(gk, arr)
+  }
+
+  removeExtra(id: ID): ElementEntry | undefined {
+    for (const [gk, arr] of this.extras) {
+      const i = arr.findIndex((el) => el.id === id)
+      if (i < 0) continue
+      const [element] = arr.splice(i, 1)
+      if (!arr.length) this.extras.delete(gk)
+      const bar = gk.indexOf('|')
+      return { pageId: gk.slice(0, bar), key: gk.slice(bar + 1), element }
+    }
+    return undefined
+  }
+
+  /** 요소의 저장 위치(+ 월드 원점) 목록 — 렌더·히트 테스트용 */
+  extraEntries(): (ElementEntry & { ox: number; oy: number })[] {
+    const out: (ElementEntry & { ox: number; oy: number })[] = []
+    for (const [gk, arr] of this.extras) {
+      const bar = gk.indexOf('|')
+      const pageId = gk.slice(0, bar)
+      const key = gk.slice(bar + 1)
+      const { ox, oy } = this.layout.origin(pageId, key)
+      for (const element of arr) out.push({ element, pageId, key, ox, oy })
+    }
+    return out
+  }
+
+  extrasOfPage(pageId: ID): ElementEntry[] {
+    const out: ElementEntry[] = []
+    for (const [gk, arr] of this.extras) {
+      if (!gk.startsWith(pageId + '|')) continue
+      const bar = gk.indexOf('|')
+      const key = gk.slice(bar + 1)
+      for (const element of arr) out.push({ element, pageId, key })
+    }
     return out
   }
 

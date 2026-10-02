@@ -14,6 +14,7 @@ import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
+import { TextOverlay } from './TextOverlay'
 import { PagePanel } from './PagePanel'
 import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
@@ -94,7 +95,8 @@ export function Editor({ docId }: { docId: ID }) {
               }
             },
             onPagesChanged: (p) => setPages(p),
-            onPageContentChanged: () => setThumbTick((t) => t + 1)
+            onPageContentChanged: () => setThumbTick((t) => t + 1),
+            onTextEdit: (s) => useUI.setState({ textEdit: s })
           }
         })
         eng.setTool(st.tool)
@@ -111,7 +113,7 @@ export function Editor({ docId }: { docId: ID }) {
       const e = eng
       engineRef.current = null
       setEngine(null)
-      useUI.setState({ selection: null, stats: null })
+      useUI.setState({ selection: null, stats: null, textEdit: null })
       releaseDocLock(docId)
       if (e) {
         const view = e.getViewState()
@@ -162,7 +164,9 @@ export function Editor({ docId }: { docId: ID }) {
         eng.deleteSelection()
       } else if (e.key === 'Escape') eng.clearSelection()
       else if (!mod) {
-        const map: Record<string, 'pen' | 'highlighter' | 'eraser' | 'lasso'> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso' }
+        const map: Record<string, 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'text'> = {
+          p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', t: 'text'
+        }
         const tl = map[e.key.toLowerCase()]
         if (tl) useUI.getState().setTool(tl)
       }
@@ -240,6 +244,7 @@ export function Editor({ docId }: { docId: ID }) {
           )}
           <Hud />
           {!readOnly && <QuickSwitch />}
+          {engine && <TextOverlay engine={engine} />}
           {engine && <SelectionBar engine={engine} />}
           {engine && <PageIndicator engine={engine} paged={paged} />}
           {panel === 'settings' && <SettingsPanel />}

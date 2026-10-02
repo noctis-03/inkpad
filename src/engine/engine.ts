@@ -1,12 +1,13 @@
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
-import { History, type Command, type PageSnapshot } from './history'
+import { History, type Command, type ElementEntry, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
 import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
+import { layoutTextBox, TEXT_LINE_HEIGHT } from './text'
 import { drawPattern } from './background'
 import type {
   EngineStats,
@@ -17,11 +18,24 @@ import type {
   ToolStyle,
   ViewInfo
 } from './types'
-import type { Background, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
+import type { Background, DocumentMeta, ID, Page, Stroke, StrokeOpts, TextBox, ViewState } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
 export type SaveState = 'saved' | 'pending' | 'saving' | 'error'
+
+/** 편집 중인 텍스트 세션 — React 오버레이가 이 값으로 textarea를 그린다 */
+export interface TextEditSession {
+  sessionId: number
+  sx: number
+  sy: number
+  width: number // 화면 px
+  fontSize: number // 화면 px
+  lineHeight: number
+  color: string
+  value: string
+  editingId: ID | null
+}
 
 export interface EngineCallbacks {
   onStats?: (s: EngineStats) => void
@@ -31,6 +45,7 @@ export interface EngineCallbacks {
   onPressureCapability?: (c: PressureCapability) => void
   onPagesChanged?: (pages: Page[]) => void
   onPageContentChanged?: (pageId: ID) => void
+  onTextEdit?: (s: TextEditSession | null) => void
 }
 
 export interface EngineOptions {
@@ -89,6 +104,19 @@ interface Gesture {
   samples: { t: number; x: number; y: number }[]
 }
 
+/** 편집 중인 텍스트 박스의 내부 상태 (화면 좌표 view + 저장 좌표) */
+interface TextSession {
+  pageId: ID
+  key: string
+  x: number
+  y: number
+  w: number
+  fontSize: number
+  color: string
+  editingId: ID | null
+  view: TextEditSession
+}
+
 const LAT_SAMPLES = 120
 const SAVE_DEBOUNCE_MS = 500
 
@@ -130,6 +158,10 @@ export class Engine {
   // 선택
   private selection: StrokeRec[] = []
   private selectionBox: Box | null = null
+
+  // 텍스트 편집 (편집 중에만 존재 — 확정하면 캔버스 확정 레이어로 넘어간다)
+  private text: TextSession | null = null
+  private textSeq = 0
 
   // 렌더
   private raf = 0
@@ -227,6 +259,7 @@ export class Engine {
     this.destroyed = true
     cancelAnimationFrame(this.raf)
     clearTimeout(this.settleTimer)
+    this.text = null
     this.ro.disconnect()
     this.disposers.forEach((d) => d())
     await this.flush()
@@ -244,6 +277,7 @@ export class Engine {
 
   setTool(t: Tool) {
     if (t !== 'lasso' && this.selection.length) this.clearSelection()
+    if (t !== 'text' && this.text) this.commitText()
     this.tool = t
     this.cursor = null
     this.liveDirty = true
@@ -346,12 +380,14 @@ export class Engine {
   // ─────────────────────────── 외부 API: 편집 ───────────────────────────
 
   undo() {
+    if (this.text) this.commitText()
     if (this.active || this.readOnly) return
     const cmd = this.history.popUndo()
     if (cmd) this.applyCommand(cmd, true)
   }
 
   redo() {
+    if (this.text) this.commitText()
     if (this.active || this.readOnly) return
     const cmd = this.history.popRedo()
     if (cmd) this.applyCommand(cmd, false)
@@ -399,6 +435,155 @@ export class Engine {
     this.cb.onSelection?.(null)
   }
 
+  // ─────────────────────────── 텍스트 ───────────────────────────
+
+  /** 편집 중인 텍스트가 있는지 */
+  get textEditing() {
+    return !!this.text
+  }
+
+  updateTextDraft(value: string) {
+    if (!this.text) return
+    this.text.view.value = value
+    this.emitTextEdit()
+  }
+
+  /** 확정 — 빈 값이면 아무것도 만들지 않는다. 기존 박스를 편집 중이었으면 교체한다 */
+  commitText() {
+    const s = this.text
+    if (!s) return
+    this.text = null
+    this.emitTextEdit()
+    this.liveDirty = true
+    this.renderer.hiddenExtras = null
+    if (!s.view.value.trim()) {
+      this.committedDirty = true
+      return
+    }
+    const prev = s.editingId ? this.scene.extraEntries().find((e) => e.element.id === s.editingId) : undefined
+    const box: TextBox = {
+      id: s.editingId ?? ulid(),
+      type: 'text',
+      layer: 'main',
+      z: prev ? prev.element.z : this.scene.nextZ(),
+      createdAt: Date.now(),
+      x: s.x,
+      y: s.y,
+      w: s.w,
+      text: s.view.value,
+      fontSize: s.fontSize,
+      color: s.color
+    }
+    this.exec({
+      removed: [],
+      added: [],
+      extrasRemoved: prev ? [{ element: prev.element, pageId: prev.pageId, key: prev.key }] : [],
+      extrasAdded: [{ element: box, pageId: s.pageId, key: s.key }],
+      label: prev ? '텍스트 수정' : '텍스트 추가'
+    })
+  }
+
+  cancelText() {
+    if (!this.text) return
+    this.text = null
+    this.emitTextEdit()
+    this.renderer.hiddenExtras = null
+    this.committedDirty = true
+  }
+
+  private emitTextEdit() {
+    this.cb.onTextEdit?.(this.text ? { ...this.text.view } : null)
+  }
+
+  /** 텍스트 도구로 월드 좌표를 탭: 기존 박스면 편집, 빈 곳이면 새 박스 */
+  private startTextAt(wx: number, wy: number) {
+    if (this.text) this.commitText()
+    const hit = this.hitText(wx, wy)
+    if (hit) {
+      this.beginText(hit)
+      return
+    }
+    const t = this.layout.targetAt(wx, wy)
+    if (!t) return
+    const ts = this.style.text
+    this.beginText({
+      pageId: t.pageId,
+      key: t.key,
+      x: wx - t.ox,
+      y: wy - t.oy,
+      w: ts.width,
+      fontSize: ts.size,
+      color: ts.color,
+      editingId: null,
+      text: ''
+    })
+  }
+
+  private beginText(src: {
+    pageId: ID
+    key: string
+    x: number
+    y: number
+    w: number
+    fontSize: number
+    color: string
+    editingId: ID | null
+    text: string
+  }) {
+    const { ox, oy } = this.layout.origin(src.pageId, src.key)
+    const p = this.cam.worldToScreen(src.x + ox, src.y + oy)
+    this.renderer.hiddenExtras = src.editingId ? new Set([src.editingId]) : null
+    this.text = {
+      pageId: src.pageId,
+      key: src.key,
+      x: src.x,
+      y: src.y,
+      w: src.w,
+      fontSize: src.fontSize,
+      color: src.color,
+      editingId: src.editingId,
+      view: {
+        sessionId: ++this.textSeq,
+        sx: p.x,
+        sy: p.y,
+        width: src.w * this.cam.zoom,
+        fontSize: src.fontSize * this.cam.zoom,
+        lineHeight: TEXT_LINE_HEIGHT,
+        color: src.color,
+        value: src.text,
+        editingId: src.editingId
+      }
+    }
+    this.liveDirty = true
+    this.emitTextEdit()
+  }
+
+  /** 월드 좌표 아래의 텍스트 박스 (Step 1은 선형 순회 — 개수가 많아지면 인덱스로 교체) */
+  private hitText(wx: number, wy: number) {
+    const pad = 4 / this.cam.zoom
+    for (const e of this.scene.extraEntries()) {
+      const el = e.element
+      if (el.type !== 'text') continue
+      const gx = el.x + e.ox
+      const gy = el.y + e.oy
+      const lay = layoutTextBox(el)
+      if (wx >= gx - pad && wx <= gx + Math.max(24, el.w) + pad && wy >= gy - pad && wy <= gy + lay.height + pad) {
+        return {
+          pageId: e.pageId,
+          key: e.key,
+          x: el.x,
+          y: el.y,
+          w: el.w,
+          fontSize: el.fontSize,
+          color: el.color,
+          editingId: el.id,
+          text: el.text
+        }
+      }
+    }
+    return null
+  }
+
   // ─────────────────────────── 외부 API: 페이지 ───────────────────────────
 
   private snapshot(changed: Page[]): PageSnapshot {
@@ -434,9 +619,10 @@ export class Engine {
     if (!page) return
     this.clearSelection()
     const removed = this.scene.entriesOfPage(page.id)
+    const extrasRemoved = this.scene.extrasOfPage(page.id)
     const before = this.snapshot([page])
     const order = before.order.filter((id) => id !== page.id)
-    this.exec({ removed, added: [], pagesBefore: before, pagesAfter: { order, pages: [] }, label: '페이지 삭제' })
+    this.exec({ removed, added: [], extrasRemoved, pagesBefore: before, pagesAfter: { order, pages: [] }, label: '페이지 삭제' })
   }
 
   duplicatePage(index: number) {
@@ -446,10 +632,11 @@ export class Engine {
     const now = Date.now()
     const page: Page = { ...src, id: ulid(), createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
     const added = this.scene.entriesOfPage(src.id).map((e) => ({ ...e, pageId: page.id, stroke: { ...e.stroke, id: ulid() } }))
+    const extrasAdded = this.scene.extrasOfPage(src.id).map((e) => ({ ...e, pageId: page.id, element: { ...e.element, id: ulid() } }))
     const before = this.snapshot([])
     const order = [...before.order]
     order.splice(index + 1, 0, page.id)
-    this.exec({ removed: [], added, pagesBefore: before, pagesAfter: { order, pages: [page] }, label: '페이지 복제' })
+    this.exec({ removed: [], added, extrasAdded, pagesBefore: before, pagesAfter: { order, pages: [page] }, label: '페이지 복제' })
   }
 
   movePage(from: number, to: number) {
@@ -540,6 +727,16 @@ export class Engine {
         touched.add(rec.pageId)
       }
     }
+    // R-tree 밖 요소(텍스트 등) — 별도 경로로 add/remove
+    let extrasTouched = false
+    for (const e of (inverse ? cmd.extrasAdded : cmd.extrasRemoved) ?? []) {
+      const r = this.scene.removeExtra(e.element.id)
+      if (r) {
+        this.markDirty(r.pageId, r.key)
+        touched.add(r.pageId)
+        extrasTouched = true
+      }
+    }
     if (snap) this.applySnapshot(snap)
     for (const e of toAdd) {
       const rec = this.scene.add(e)
@@ -547,8 +744,14 @@ export class Engine {
       this.markDirty(e.pageId, e.key)
       touched.add(e.pageId)
     }
+    for (const e of (inverse ? cmd.extrasRemoved : cmd.extrasAdded) ?? []) {
+      this.scene.addExtra(e)
+      this.markDirty(e.pageId, e.key)
+      touched.add(e.pageId)
+      extrasTouched = true
+    }
     if (this.selection.length) this.clearSelection(false)
-    if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
+    if (snap || extrasTouched || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
       this.committedDirty = true
     } else {
       this.renderer.redrawRegion(this.scene, this.cam, box)
@@ -840,6 +1043,7 @@ export class Engine {
 
   /** 휠(가운데) 버튼을 누른 채 드래그하면 화면을 1:1로 끌어 이동 */
   private startMiddlePan(e: PointerEvent) {
+    if (this.text) return
     this.momentum = null
     this.cancelTouchInteractions()
     const p = this.local(e)
@@ -859,6 +1063,7 @@ export class Engine {
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault()
+    if (this.text) return // 편집 중에는 화면을 움직이지 않는다 (오버레이 좌표 어긋남 방지)
     this.momentum = null
     const p = this.local(e)
     if (e.ctrlKey || e.metaKey) {
@@ -879,6 +1084,10 @@ export class Engine {
     const p = this.local(e)
     const w = this.cam.screenToWorld(p.x, p.y)
     const tool = this.tool
+    if (tool === 'text') {
+      this.startTextAt(w.x, w.y)
+      return
+    }
     const target = this.layout.targetAt(w.x, w.y)
     if (!target) return
     const hl = tool === 'highlighter'
@@ -1137,7 +1346,7 @@ export class Engine {
   }
 
   private setCursor(sx: number, sy: number, force = false) {
-    if ((this.active && !force) || this.tool === 'lasso') return
+    if ((this.active && !force) || this.tool === 'lasso' || this.tool === 'text') return
     const eraser = this.tool === 'eraser'
     const st = this.tool === 'highlighter' ? this.style.highlighter : this.style.pen
     this.cursor = {
@@ -1172,6 +1381,7 @@ export class Engine {
   }
 
   private updateGesture() {
+    if (this.text) return // 텍스트 편집 중에는 팬/줌 금지
     const g = this.gesture
     if (!g) return
     const live = this.liveTouches()
@@ -1464,6 +1674,18 @@ export class Engine {
         ctx.fill(getPath(rec))
       }
     }
+    for (const e of this.scene.extrasOfPage(pageId)) {
+      const el = e.element
+      if (el.type !== 'text') continue
+      const lay = layoutTextBox(el)
+      const { ox: ex, oy: ey } = this.layout.origin(e.pageId, e.key)
+      ctx.setTransform(scale, 0, 0, scale, (ex + el.x - ox) * scale, (ey + el.y - oy) * scale)
+      ctx.font = lay.font
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillStyle = el.color
+      for (let i = 0; i < lay.lines.length; i++) ctx.fillText(lay.lines[i], 0, i * lay.lineHeight)
+    }
     return c
   }
 
@@ -1527,7 +1749,8 @@ export class Engine {
 
   clearAll() {
     const removed = [...this.scene.recs.values()].map(toEntry)
-    if (removed.length) this.exec({ removed, added: [] })
+    const extrasRemoved = this.scene.extraEntries().map((e) => ({ element: e.element, pageId: e.pageId, key: e.key }))
+    if (removed.length || extrasRemoved.length) this.exec({ removed, added: [], extrasRemoved })
   }
 }
 

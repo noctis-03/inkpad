@@ -9,8 +9,9 @@ import {
   type ToolStyle,
   type ViewInfo
 } from '../engine/types'
-import type { SaveState } from '../engine/engine'
+import type { SaveState, TextEditSession } from '../engine/engine'
 import type { ID } from '../shared/model'
+import { DEFAULT_TEXT_WIDTH } from '../engine/text'
 
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다 (설계 3장).
 const LS_SETTINGS = 'inkpad.settings.v2'
@@ -23,11 +24,13 @@ export const HL_COLORS = ['#facc1566', '#4ade8066', '#60a5fa66', '#f472b666', '#
 export const PEN_WIDTHS = [1, 1.5, 2.5, 4, 6, 10]
 export const HL_WIDTHS = [10, 16, 24]
 export const ERASER_SIZES = [12, 24, 48]
+export const TEXT_SIZES = [12, 16, 20, 28, 40]
 
 const DEFAULT_STYLE: ToolStyle = {
   pen: { color: PEN_COLORS[0], width: PEN_WIDTHS[2] },
   highlighter: { color: HL_COLORS[0], width: HL_WIDTHS[1] },
-  eraserSize: ERASER_SIZES[1]
+  eraserSize: ERASER_SIZES[1],
+  text: { color: PEN_COLORS[0], size: TEXT_SIZES[1], width: DEFAULT_TEXT_WIDTH }
 }
 
 // FR-TL-01: 프리셋 5개
@@ -86,6 +89,7 @@ interface UIState {
   stats: EngineStats | null
   view: ViewInfo
   selection: SelectionInfo | null
+  textEdit: TextEditSession | null
   saveState: SaveState
   panel: 'none' | 'settings' | 'sync' | 'page' | 'export' | 'debug' | 'history'
   sidebar: boolean
@@ -127,6 +131,7 @@ export const useUI = create<UIState>((set, get) => ({
   stats: null,
   view: { canUndo: false, canRedo: false, zoom: 1, currentPage: 0, pageCount: 1 },
   selection: null,
+  textEdit: null,
   saveState: 'saved',
   panel: 'none',
   sidebar: window.innerWidth >= 900,

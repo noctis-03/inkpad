@@ -1,9 +1,16 @@
-import { MAX_HISTORY, type ID, type Page } from '../shared/model'
+import { MAX_HISTORY, type Element, type ID, type Page } from '../shared/model'
 import type { Entry } from './scene'
 
 export interface PageSnapshot {
   order: ID[]
   pages: Page[] // 이 명령으로 바뀌는 페이지들의 상태
+}
+
+/** 아직 렌더 인덱스(R-tree)에 없는 요소(텍스트 등)의 저장 단위 위치 */
+export interface ElementEntry {
+  element: Element
+  pageId: ID
+  key: string
 }
 
 /**
@@ -15,6 +22,9 @@ export interface PageSnapshot {
 export interface Command {
   removed: Entry[]
   added: Entry[]
+  /** 텍스트·이미지·도형처럼 R-tree에 없는 요소의 추가/삭제 (undo 대상) */
+  extrasRemoved?: ElementEntry[]
+  extrasAdded?: ElementEntry[]
   pagesBefore?: PageSnapshot
   pagesAfter?: PageSnapshot
   label?: string
@@ -25,7 +35,7 @@ export class History {
   private redoStack: Command[] = []
 
   push(cmd: Command) {
-    if (!cmd.removed.length && !cmd.added.length && !cmd.pagesAfter) return
+    if (!cmd.removed.length && !cmd.added.length && !cmd.extrasRemoved?.length && !cmd.extrasAdded?.length && !cmd.pagesAfter) return
     this.undoStack.push(cmd)
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift()
     this.redoStack.length = 0

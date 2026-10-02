@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Engine } from '../../engine/engine'
 import type { Tool } from '../../engine/types'
-import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, useUI } from '../../app/store'
+import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, TEXT_SIZES, useUI } from '../../app/store'
 import type { DocumentMeta } from '../../shared/model'
 import { Icon } from '../Icon'
 
@@ -9,7 +9,8 @@ const TOOLS: { id: Tool; label: string; icon: string }[] = [
   { id: 'pen', label: '펜', icon: 'pen' },
   { id: 'highlighter', label: '형광펜', icon: 'highlighter' },
   { id: 'eraser', label: '지우개', icon: 'eraser' },
-  { id: 'lasso', label: '올가미', icon: 'lasso' }
+  { id: 'lasso', label: '올가미', icon: 'lasso' },
+  { id: 'text', label: '텍스트', icon: 'text' }
 ]
 
 const SAVE_LABEL = { saved: '저장됨', pending: '저장 대기', saving: '저장 중', error: '저장 실패' }
@@ -45,13 +46,15 @@ export function EditorToolbar(props: {
   useEffect(() => setTitle(doc?.title ?? ''), [doc?.title])
 
   const isHl = tool === 'highlighter'
+  const isText = tool === 'text'
   const colors = isHl ? HL_COLORS : PEN_COLORS
-  const widths = isHl ? HL_WIDTHS : tool === 'eraser' ? ERASER_SIZES : PEN_WIDTHS
-  const curColor = isHl ? style.highlighter.color : style.pen.color
-  const curWidth = isHl ? style.highlighter.width : tool === 'eraser' ? style.eraserSize : style.pen.width
+  const widths = isText ? TEXT_SIZES : isHl ? HL_WIDTHS : tool === 'eraser' ? ERASER_SIZES : PEN_WIDTHS
+  const curColor = isText ? style.text.color : isHl ? style.highlighter.color : style.pen.color
+  const curWidth = isText ? style.text.size : isHl ? style.highlighter.width : tool === 'eraser' ? style.eraserSize : style.pen.width
 
   const pickColor = (c: string) => {
-    if (isHl) setStyle({ ...style, highlighter: { ...style.highlighter, color: c } })
+    if (isText) setStyle({ ...style, text: { ...style.text, color: c } })
+    else if (isHl) setStyle({ ...style, highlighter: { ...style.highlighter, color: c } })
     else {
       setStyle({ ...style, pen: { ...style.pen, color: c } })
       if (tool !== 'pen') setTool('pen')
@@ -59,13 +62,14 @@ export function EditorToolbar(props: {
     setPicker(false)
   }
   const pickWidth = (w: number) => {
-    if (isHl) setStyle({ ...style, highlighter: { ...style.highlighter, width: w } })
+    if (isText) setStyle({ ...style, text: { ...style.text, size: w } })
+    else if (isHl) setStyle({ ...style, highlighter: { ...style.highlighter, width: w } })
     else if (tool === 'eraser') setStyle({ ...style, eraserSize: w })
     else setStyle({ ...style, pen: { ...style.pen, width: w } })
   }
 
-  const showStyle = tool === 'pen' || tool === 'highlighter' || tool === 'eraser'
-  const dotSize = (w: number) => Math.min(24, Math.max(3, tool === 'eraser' ? w / 2 : isHl ? w * 0.8 : w * 1.8))
+  const showStyle = tool === 'pen' || tool === 'highlighter' || tool === 'eraser' || isText
+  const dotSize = (w: number) => Math.min(24, Math.max(3, isText ? w * 0.55 : tool === 'eraser' ? w / 2 : isHl ? w * 0.8 : w * 1.8))
 
   return (
     <header id="editor-toolbar" className="toolbar">
@@ -181,7 +185,7 @@ export function EditorToolbar(props: {
             </div>
           )}
           <div className="color-pop-anchor">
-            <button className="width-btn is-current" onClick={() => setWidthPop(!widthPop)} aria-label={`굵기 ${curWidth}`}>
+            <button className="width-btn is-current" onClick={() => setWidthPop(!widthPop)} aria-label={`${isText ? '크기' : '굵기'} ${curWidth}`}>
               <span className="width-dot" style={{ width: dotSize(curWidth) }} />
             </button>
             {widthPop && (
@@ -194,7 +198,7 @@ export function EditorToolbar(props: {
                       pickWidth(w)
                       setWidthPop(false)
                     }}
-                    aria-label={`굵기 ${w}`}
+                    aria-label={`${isText ? '크기' : '굵기'} ${w}`}
                   >
                     <span className="width-dot" style={{ width: dotSize(w) }} />
                   </button>

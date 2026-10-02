@@ -1,7 +1,7 @@
 import type { BackgroundType, ID, Stroke, StrokeOpts } from '../shared/model'
 export type { ID, Stroke, StrokeOpts, BackgroundType }
 
-export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso'
+export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'text'
 
 /**
  * 필압 처리 방식
@@ -67,10 +67,17 @@ export interface PenStyle {
   width: number
 }
 
+export interface TextStyle {
+  color: string
+  size: number // 글자 크기 (월드 단위 = pt)
+  width: number // 박스 폭 (월드 단위 = pt)
+}
+
 export interface ToolStyle {
   pen: PenStyle
   highlighter: PenStyle
   eraserSize: number // 화면 기준 지름 (CSS px)
+  text: TextStyle
 }
 
 export interface Preset {

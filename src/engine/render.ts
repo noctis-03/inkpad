@@ -5,6 +5,7 @@ import { outlineToPath, strokeOutline } from './geometry'
 import type { Layout } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
 import { getPath, type Scene, type StrokeRec } from './scene'
+import { layoutTextBox } from './text'
 import type { Background, StrokeOpts } from '../shared/model'
 
 export interface Box {
@@ -64,6 +65,8 @@ export class Renderer {
   private liveHasContent = false
   /** 선택된 획은 확정 레이어에서 빼고 입력 레이어에 그린다 */
   hidden: Set<string> | null = null
+  /** 편집 중인 텍스트 박스는 DOM 오버레이가 대신 그린다 (이중 표시 방지) */
+  hiddenExtras: Set<string> | null = null
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -228,6 +231,27 @@ export class Renderer {
     return n
   }
 
+  /** 텍스트 박스(그리고 앞으로 추가될 R-tree 밖 요소)를 그린다 */
+  private drawTexts(ctx: CanvasRenderingContext2D, scene: Scene, cam: Camera, k: number, view: Box | null) {
+    for (const e of scene.extraEntries()) {
+      const el = e.element
+      if (el.type !== 'text') continue
+      if (this.hiddenExtras?.has(el.id)) continue // 편집 중 → 오버레이가 그림
+      if (el.fontSize * cam.zoom < 0.6) continue // LOD: 너무 작으면 건너뜀
+      const x = el.x + e.ox
+      const y = el.y + e.oy
+      const lay = layoutTextBox(el)
+      const w = Math.max(24, el.w)
+      if (view && (x > view.maxX || y > view.maxY || x + w < view.minX || y + lay.height < view.minY)) continue
+      ctx.setTransform(k, 0, 0, k, (x - cam.x) * k, (y - cam.y) * k)
+      ctx.font = lay.font
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillStyle = el.color
+      for (let i = 0; i < lay.lines.length; i++) ctx.fillText(lay.lines[i], 0, i * lay.lineHeight)
+    }
+  }
+
   fullRedraw(scene: Scene, cam: Camera) {
     const t0 = performance.now()
     const ctx = this.cctx
@@ -235,6 +259,7 @@ export class Renderer {
     ctx.clearRect(0, 0, this.committed.width, this.committed.height)
     const v = this.viewBox(cam)
     this.visibleCount = this.drawList(ctx, scene.query(v.minX, v.minY, v.maxX, v.maxY), cam)
+    this.drawTexts(ctx, scene, cam, cam.zoom * this.scale, v)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     this.renderedCam.copy(cam)
     if (this.transformed) {
@@ -259,7 +284,12 @@ export class Renderer {
     ctx.beginPath()
     ctx.rect(x0, y0, x1 - x0, y1 - y0)
     ctx.clip()
-    this.drawList(ctx, scene.query(x0 / k + cam.x, y0 / k + cam.y, x1 / k + cam.x, y1 / k + cam.y), cam)
+    const vx0 = x0 / k + cam.x
+    const vy0 = y0 / k + cam.y
+    const vx1 = x1 / k + cam.x
+    const vy1 = y1 / k + cam.y
+    this.drawList(ctx, scene.query(vx0, vy0, vx1, vy1), cam)
+    this.drawTexts(ctx, scene, cam, k, { minX: vx0, minY: vy0, maxX: vx1, maxY: vy1 })
     ctx.restore()
   }
 

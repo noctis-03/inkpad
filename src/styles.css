@@ -1564,6 +1564,32 @@ textarea {
   cursor: pointer;
 }
 
+/* 텍스트 편집 오버레이 (편집 중에만 표시) */
+.text-overlay {
+  position: absolute;
+  z-index: 7;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  outline: 1px dashed var(--accent);
+  outline-offset: 3px;
+  background: transparent;
+  color: var(--ink);
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0;
+  caret-color: var(--accent);
+  touch-action: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  transform-origin: 0 0;
+}
+
 /* 올가미 선택 */
 .selection-box {
   position: absolute;
