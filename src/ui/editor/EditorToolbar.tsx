@@ -235,7 +235,7 @@ export function EditorToolbar(props: {
         <button className={'tb-btn' + (panel === 'settings' ? ' is-active' : '')} onClick={() => setPanel('settings')} aria-label="설정">
           <Icon name="gear" />
         </button>
-        <button className={'tb-btn' + (panel === 'sync' ? ' is-active' : '')} onClick={() => setPanel('sync')} aria-label="동기화">
+        <button className={'tb-btn sync-btn' + (panel === 'sync' ? ' is-active' : '')} onClick={() => setPanel('sync')} aria-label="동기화">
           <Icon name="cloud" />
         </button>
       </nav>

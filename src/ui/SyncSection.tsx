@@ -335,3 +335,22 @@ export function SyncPanel() {
     </aside>
   )
 }
+
+/** 라이브러리용 동기화 시트 — 설정 버튼 옆 초록 동기화 버튼으로 연다 */
+export function SyncSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="sheet" role="dialog" aria-label="동기화">
+        <header className="sheet-header">
+          <h2>동기화</h2>
+          <button className="tb-btn" onClick={onClose} aria-label="닫기">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="sheet-scroll">
+          <SyncSection />
+        </div>
+      </div>
+    </div>
+  )
+}

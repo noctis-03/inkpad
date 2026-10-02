@@ -2040,3 +2040,14 @@ textarea {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* ───────── 동기화 버튼 (설정 버튼 오른쪽, 초록 계열) ───────── */
+.tb-btn.sync-btn {
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+.tb-btn.sync-btn:active,
+.tb-btn.sync-btn.is-active {
+  background: #dcfce7;
+}
