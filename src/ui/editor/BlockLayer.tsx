@@ -1,7 +1,7 @@
 // 편집 블록 레이어 — 캔버스 위의 DOM 오버레이.
 // 블록은 절대 캔버스(scene)에 그리지 않고, 엔진 카메라에 맞춰 transform으로 따라간다.
 // 블록 DOM은 #canvas-root의 자식이 아니므로 포인터 이벤트가 엔진으로 새지 않는다.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { GESTURE_SETTLE_MS, TAP_SLOP_PX } from '../../engine/constants'
 import type { Engine } from '../../engine/engine'
 import { BLOCK_META, MEMO_BG, anchorBlock, blockOrigin, blockWorldPos, createBlock, isSafeBlockUrl, normalizeBlockUrl } from '../../engine/blocks'
@@ -220,32 +220,63 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
   )
   const onFreshConsumed = useCallback(() => setFresh(null), [])
 
+  // ── 드래그 콜백은 안정된 참조로 고정한다(BlockCard는 memo) — 블록 id를 인자로 받는다 ──
+  const attachPageRef = useRef<ID | null>(null)
+  const onDragStart = useCallback(() => {
+    attachPageRef.current = null
+    setAttach(null)
+  }, [])
+  const onDragEnd = useCallback(() => {
+    attachPageRef.current = null
+    setAttach(null)
+  }, [])
+  const onDragMove = useCallback(
+    (id: ID, wx: number, wy: number, h: number) => {
+      const b = engine.blocks.get(id)
+      const a = anchorBlock(engine.layout, wx, wy, b?.w ?? 0, h)
+      if (!a || !engine.layout.paged) {
+        attachPageRef.current = null
+        return setAttach(null)
+      }
+      // 같은 페이지 위에 있는 동안 attach 사각형은 그대로다 — 매 pointermove마다 상태를 바꾸지 않는다
+      if (attachPageRef.current === a.pageId) return
+      attachPageRef.current = a.pageId
+      const r = engine.layout.rects.get(a.pageId)
+      setAttach(r ? { x: r.x, y: r.y, w: r.w, h: r.h } : null)
+    },
+    [engine]
+  )
+
   return (
     <div className="block-layer" data-export-open={panel === 'export' ? '' : undefined} hidden={!blocksVisible}>
       <div className="block-world" ref={worldRef}>
-        {blocks.map((b) => (
-          <BlockCard
-            key={b.id}
-            engine={engine}
-            block={b}
-            readOnly={readOnly}
-            fresh={fresh === b.id}
-            selected={selectedBlockId === b.id}
-            attachEl={attachEl}
-            onSelect={select}
-            onDragStart={() => setAttach(null)}
-            onDragMove={(wx, wy, h) => {
-              const a = anchorBlock(engine.layout, wx, wy, b.w, h)
-              if (!a || !engine.layout.paged) return setAttach(null)
-              const r = engine.layout.rects.get(a.pageId)
-              setAttach(r ? { x: r.x, y: r.y, w: r.w, h: r.h } : null)
-            }}
-            onDragEnd={() => setAttach(null)}
-            timerRun={timerRun}
-            ensureTick={ensureTick}
-            onFreshConsumed={onFreshConsumed}
-          />
-        ))}
+        {blocks.map((b) => {
+          const world = blockWorldPos(engine.layout, b)
+          const bh = engine.blocks.measuredHeight(b.id) || 72
+          const pr = engine.layout.paged ? engine.layout.rects.get(b.pageId) : undefined
+          const outside = !!pr && (world.x + b.w <= pr.x || world.x >= pr.x + pr.w || world.y + bh <= pr.y || world.y >= pr.y + pr.h)
+          return (
+            <BlockCard
+              key={b.id}
+              engine={engine}
+              block={b}
+              readOnly={readOnly}
+              fresh={fresh === b.id}
+              selected={selectedBlockId === b.id}
+              x={world.x}
+              y={world.y}
+              outside={outside}
+              attachEl={attachEl}
+              onSelect={select}
+              onDragStart={onDragStart}
+              onDragMove={onDragMove}
+              onDragEnd={onDragEnd}
+              onFreshConsumed={onFreshConsumed}
+              timerRun={timerRun}
+              ensureTick={ensureTick}
+            />
+          )
+        })}
         {attach && <div className="blk-attach" style={{ left: attach.x, top: attach.y, width: attach.w, height: attach.h }} />}
       </div>
       {placingBlock && <div className="block-catcher" onPointerDown={onCatcherTap} />}
@@ -261,25 +292,24 @@ interface CardProps {
   readOnly: boolean
   fresh: boolean
   selected: boolean
+  x: number
+  y: number
+  outside: boolean
   attachEl: (id: ID) => (el: HTMLElement | null) => void
   onSelect: (id: ID) => void
   onDragStart: () => void
-  onDragMove: (wx: number, wy: number, h: number) => void
+  onDragMove: (id: ID, wx: number, wy: number, h: number) => void
   onDragEnd: () => void
   timerRun: (id: ID, durationSec: number) => TimerRun
   ensureTick: () => void
   onFreshConsumed: () => void
 }
 
-function BlockCard(p: CardProps) {
-  const { engine, block, readOnly } = p
+const BlockCard = memo(function BlockCard(p: CardProps) {
+  const { engine, block, readOnly, x, y, outside } = p
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [editTick, setEditTick] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
-  const { x, y } = blockWorldPos(engine.layout, block)
-  const h = engine.blocks.measuredHeight(block.id) || 72
-  const r = engine.layout.paged ? engine.layout.rects.get(block.pageId) : undefined
-  const outside = !!r && (x + block.w <= r.x || x >= r.x + r.w || y + h <= r.y || y >= r.y + r.h)
   const meta = BLOCK_META[block.type]
 
   // fresh는 최초 마운트에서 한 번만 소비한다 — Undo/Redo로 다시 마운트될 때 편집 폼이 다시 열리지 않게
@@ -335,7 +365,7 @@ function BlockCard(p: CardProps) {
     const dy = (e.clientY - d.sy) / engine.cam.zoom
     d.el.style.left = `${d.wx + dx}px`
     d.el.style.top = `${d.wy + dy}px`
-    p.onDragMove(d.wx + dx, d.wy + dy, d.el.offsetHeight)
+    p.onDragMove(block.id, d.wx + dx, d.wy + dy, d.el.offsetHeight)
   }
   /** onHeadUp/onHeadCancel 공통 정리 — DOM 위치를 원래 값으로 되돌리고 드래그 상태를 비운다 */
   const endHeadDrag = (d: NonNullable<typeof drag.current>) => {
@@ -409,7 +439,7 @@ function BlockCard(p: CardProps) {
       )}
     </div>
   )
-}
+})
 
 function safeDomain(url: string): string {
   try {
