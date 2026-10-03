@@ -37,10 +37,29 @@ const SYNC_LOCK = 'inkpad-sync'
 /** appProperties에 담을 수 있는 값의 상한 (Google Drive 제한: UTF-8 124바이트) */
 const APP_PROPERTY_MAX_BYTES = 124
 
-/** appProperties용 category 표식 — 상한을 넘는 이름은 생략한다(본문에는 항상 들어간다) */
+/** appProperties 값 상한(키+값 합계)에 맞춰 뒤에서부터 잘라낸다 */
+function fitProp(key: string, value: string): string {
+  const enc = new TextEncoder()
+  let v = value
+  while (v && enc.encode(key).length + enc.encode(v).length > APP_PROPERTY_MAX_BYTES) v = Array.from(v).slice(0, -1).join('')
+  return v
+}
+
+/** appProperties용 title 표식 — 키 길이를 포함한 상한을 넘으면 잘라 넣는다(본문에는 항상 온전히 들어간다) */
+function titleProp(title: string | null | undefined): Record<string, string> {
+  if (!title) return {}
+  return { title: fitProp('title', title) }
+}
+
+/**
+ * appProperties용 category 표식 — 키+값 합계 상한을 넘으면 생략한다(본문에는 항상 들어간다).
+ * 값만 124바이트로 검사하면 한글 40자(≈120바이트)에 키 'category'(8바이트)가 붙어 128바이트가 되고,
+ * Drive가 업로드 전체를 거부한다. 키 길이를 포함해 검사해야 한다.
+ */
 function categoryProp(category: string | null | undefined): Record<string, string> {
   if (!category) return {}
-  if (new TextEncoder().encode(category).length > APP_PROPERTY_MAX_BYTES) return {}
+  const enc = new TextEncoder()
+  if (enc.encode('category').length + enc.encode(category).length > APP_PROPERTY_MAX_BYTES) return {}
   return { category }
 }
 
@@ -217,7 +236,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(file.doc.updatedAt), title: file.doc.title, device, enc: drive.ENC_GZIP, revKind: rev.kind, ...categoryProp(file.doc.category) }
+      appProperties: { docId, updatedAt: String(file.doc.updatedAt), ...titleProp(file.doc.title), device, enc: drive.ENC_GZIP, revKind: rev.kind, ...categoryProp(file.doc.category) }
     },
     f.docs,
     remote?.id
@@ -308,7 +327,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
     {
       name: `docs/${docId}.json`,
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), title: merged.doc.title, device, enc: drive.ENC_GZIP, revKind: mergedRev.kind, ...(conflicts ? { revConflicts: String(conflicts) } : {}), ...categoryProp(merged.doc.category) }
+      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), ...titleProp(merged.doc.title), device, enc: drive.ENC_GZIP, revKind: mergedRev.kind, ...(conflicts ? { revConflicts: String(conflicts) } : {}), ...categoryProp(merged.doc.category) }
     },
     docsFolderId,
     remote.id
