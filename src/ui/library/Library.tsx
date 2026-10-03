@@ -35,6 +35,7 @@ type Section =
   | { kind: 'all' }
   | { kind: 'notes' }
   | { kind: 'apps' }
+  | { kind: 'files' }
   | { kind: 'category'; name: string }
   | { kind: 'folder'; id: ID }
   | { kind: 'uncategorized' }
@@ -123,7 +124,7 @@ export function Library() {
   const currentFolderId = section.kind === 'folder' ? section.id : null
 
   const visible = useMemo(() => {
-    let list: DocumentMeta[] = section.kind === 'apps' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱에서는 노트를 숨긴다
+    let list: DocumentMeta[] = section.kind === 'apps' || section.kind === 'files' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱·기타 파일에서는 노트를 숨긴다
     if (section.kind !== 'trash') list = list.filter((d) => !d.category || !hiddenCats.has(d.category)) // 숨긴 카테고리는 이 기기에서 미사용
     if (section.kind === 'folder') {
       const f = folders.find((x) => x.id === section.id)
@@ -143,9 +144,9 @@ export function Library() {
     return sorted
   }, [docs, trash, folders, hiddenCats, section, query, prefs.sort])
 
-  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통과 모든 노트에는 표시하지 않는다) */
+  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·기타 파일에는 표시하지 않는다) */
   const visibleApps = useMemo(() => {
-    if (section.kind === 'trash' || section.kind === 'notes') return []
+    if (section.kind === 'trash' || section.kind === 'notes' || section.kind === 'files') return []
     let list = apps.filter((a) => !a.category || !hiddenCats.has(a.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -555,7 +556,9 @@ export function Library() {
               ? '모든 노트'
               : section.kind === 'apps'
                 ? '모든 앱'
-                : '전체'
+                : section.kind === 'files'
+                  ? '기타 파일'
+                  : '전체'
 
   return (
     <div className="library" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -609,6 +612,9 @@ export function Library() {
             </button>
             <button className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
               <Icon name="app" size={18} /> 모든 앱 <span className="count">{apps.length}</span>
+            </button>
+            <button className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
+              <Icon name="file" size={18} /> 기타 파일 <span className="count">{files.length}</span>
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
@@ -693,6 +699,16 @@ export function Library() {
                   <div className="btn-row center">
                     <button className="text-btn" onClick={() => void onAddApp()}>
                       <Icon name="plus" size={18} /> 앱 추가
+                    </button>
+                  </div>
+                </>
+              ) : section.kind === 'files' ? (
+                <>
+                  <Icon name="file" size={48} />
+                  <p>아직 파일이 없습니다.</p>
+                  <div className="btn-row center">
+                    <button className="text-btn" onClick={() => void onAddFile()}>
+                      <Icon name="plus" size={18} /> 파일 추가
                     </button>
                   </div>
                 </>
