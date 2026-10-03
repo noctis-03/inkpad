@@ -688,7 +688,7 @@ function BlockMenu(p: CardProps & { maxZ: () => number; requestEdit: () => void;
         <Icon name="copy" />
         복제
       </button>
-      <button className="menu-item" disabled={readOnly} onClick={done(() => engine.updateBlock(block.id, { z: p.maxZ() }))}>
+      <button className="menu-item" disabled={readOnly} onClick={done(() => engine.bringBlockToFront(block.id))}>
         <Icon name="arrowUp" />
         맨 앞으로
       </button>

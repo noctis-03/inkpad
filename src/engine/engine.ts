@@ -1,4 +1,4 @@
-import { BlockStore, anchorBlock } from './blocks'
+import { BlockStore, anchorBlock, refreshBlockIds } from './blocks'
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
@@ -473,7 +473,7 @@ export class Engine {
     if (!cur) return ''
     const now = Date.now()
     const copy: Block = {
-      ...cur,
+      ...refreshBlockIds(cur),
       id: ulid(),
       x: cur.x + 24,
       y: cur.y + 24,
@@ -489,6 +489,17 @@ export class Engine {
     let m = 0
     for (const b of this.blocks.list()) m = Math.max(m, b.z)
     return m
+  }
+
+  /** 블록을 맨 앞으로. 이미 맨 앞이면 z를 올리지 않는다(무한 증가 방지). */
+  bringBlockToFront(id: ID) {
+    if (this.readOnly) return
+    const cur = this.blocks.get(id)
+    if (!cur) return
+    let maxOther = 0
+    for (const b of this.blocks.list()) if (b.id !== id) maxOther = Math.max(maxOther, b.z)
+    if (cur.z > maxOther) return
+    this.updateBlock(id, { z: maxOther + 1 })
   }
 
   /** 카메라가 실제로 바뀐 프레임마다 리스너를 호출한다. React state로 매 프레임 전달하지 말 것. */
@@ -572,9 +583,10 @@ export class Engine {
     const now = Date.now()
     const page: Page = { ...src, id: ulid(), createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
     const added = this.scene.entriesOfPage(src.id).map((e) => ({ ...e, pageId: page.id, stroke: { ...e.stroke, id: ulid() } }))
+    const zBase = this.maxBlockZ()
     const blockCopies = this.blocks
       .ofPage(src.id)
-      .map((b) => ({ ...b, id: ulid(), pageId: page.id, createdAt: now, updatedAt: now }) as Block)
+      .map((b, i) => ({ ...refreshBlockIds(b), id: ulid(), pageId: page.id, z: zBase + 1 + i, createdAt: now, updatedAt: now }) as Block)
     const before = this.snapshot([])
     const order = [...before.order]
     order.splice(index + 1, 0, page.id)

@@ -116,6 +116,12 @@ export function createBlock(type: BlockType, documentId: ID, pageId: ID, x: numb
   }
 }
 
+/** 복제 시 todo 항목 id를 새로 발급한다(원본과 항목 id가 겹치지 않도록) */
+export function refreshBlockIds(b: Block): Block {
+  if (b.type !== 'todo') return b
+  return { ...b, data: { ...b.data, items: b.data.items.map((it) => ({ ...it, id: ulid() })) } }
+}
+
 /**
  * 엔진이 소유한 블록 저장소. Undo/Redo(Command.blocks)와 저장(dirty 집계)은 엔진이 담당하고
  * 여기서는 현재 값과 구독(React useSyncExternalStore)만 관리한다.
