@@ -328,9 +328,8 @@ function BlockCard(p: CardProps) {
     d.el.style.top = `${d.wy + dy}px`
     p.onDragMove(d.wx + dx, d.wy + dy, d.el.offsetHeight)
   }
-  const onHeadUp = (e: ReactPointerEvent) => {
-    const d = drag.current
-    if (!d || e.pointerId !== d.id) return
+  /** onHeadUp/onHeadCancel 공통 정리 — DOM 위치를 원래 값으로 되돌리고 드래그 상태를 비운다 */
+  const endHeadDrag = (d: NonNullable<typeof drag.current>) => {
     drag.current = null
     d.el.classList.remove('is-drag')
     d.el.style.zIndex = ''
@@ -338,8 +337,19 @@ function BlockCard(p: CardProps) {
     d.el.style.left = `${d.wx}px`
     d.el.style.top = `${d.wy}px`
     p.onDragEnd()
+  }
+  const onHeadUp = (e: ReactPointerEvent) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id) return
+    endHeadDrag(d)
     if (!d.moved) return
     engine.moveBlockToWorld(block.id, d.wx + (e.clientX - d.sx) / engine.cam.zoom, d.wy + (e.clientY - d.sy) / engine.cam.zoom, d.el.offsetHeight)
+  }
+  // 포인터가 취소된 드래그(시스템 제스처·팜 리젝션)는 커밋하지 않는다 — 원래 자리로 되돌린다
+  const onHeadCancel = (e: ReactPointerEvent) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id) return
+    endHeadDrag(d)
   }
 
   const maxZ = () => {
@@ -365,7 +375,7 @@ function BlockCard(p: CardProps) {
       style={style}
       onPointerDownCapture={() => p.onSelect(block.id)}
     >
-      <div className="blk-head" onPointerDown={onHeadDown} onPointerMove={onHeadMove} onPointerUp={onHeadUp} onPointerCancel={onHeadUp}>
+      <div className="blk-head" onPointerDown={onHeadDown} onPointerMove={onHeadMove} onPointerUp={onHeadUp} onPointerCancel={onHeadCancel}>
         <Icon name="grip" size={12} />
         <Icon name={meta.icon} size={13} />
         <span className="blk-label">{label}</span>
