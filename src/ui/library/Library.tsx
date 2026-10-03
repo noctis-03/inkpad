@@ -5,7 +5,6 @@ import { Icon } from '../Icon'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
-import { AppsSheet, FilesSheet } from '../CloudItemsSheets'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
 import { formatDate } from '../../shared/util'
@@ -64,8 +63,6 @@ export function Library() {
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showSync, setShowSync] = useState(false)
-  const [showApps, setShowApps] = useState(false)
-  const [showFiles, setShowFiles] = useState(false)
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
@@ -597,12 +594,6 @@ export function Library() {
         <button className="tb-btn sync-btn" onClick={() => setShowSync(true)} aria-label="동기화" title="동기화">
           <Icon name="cloud" />
         </button>
-        <button className="tb-btn" onClick={() => setShowApps(true)} aria-label="앱" title="앱">
-          <Icon name="app" />
-        </button>
-        <button className="tb-btn" onClick={() => setShowFiles(true)} aria-label="기타 파일" title="기타 파일">
-          <Icon name="file" />
-        </button>
         {section.kind !== 'trash' && (
           <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
             <Icon name="plus" size={18} /> 새로 만들기
@@ -948,8 +939,6 @@ export function Library() {
       )}
       {showSettings && <LibrarySettings onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {showSync && <SyncSheet onClose={() => setShowSync(false)} />}
-      {showApps && <AppsSheet onClose={() => setShowApps(false)} />}
-      {showFiles && <FilesSheet onClose={() => setShowFiles(false)} />}
     </div>
   )
 }
