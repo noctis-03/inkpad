@@ -235,6 +235,7 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
             }}
             onDragEnd={() => setAttach(null)}
             timerRun={timerRun}
+            ensureTick={ensureTick}
           />
         ))}
         {attach && <div className="blk-attach" style={{ left: attach.x, top: attach.y, width: attach.w, height: attach.h }} />}
@@ -258,6 +259,7 @@ interface CardProps {
   onDragMove: (wx: number, wy: number, h: number) => void
   onDragEnd: () => void
   timerRun: (id: ID, durationSec: number) => TimerRun
+  ensureTick: () => void
 }
 
 function BlockCard(p: CardProps) {
@@ -540,7 +542,7 @@ function TodoBody({ engine, block, fresh, readOnly }: Omit<CardProps, 'block'> &
   )
 }
 
-function TimerBody({ engine, block, readOnly, fire, timerRun, editTick }: Omit<CardProps, 'block'> & { block: TimerBlock; fire: () => void; editTick: number }) {
+function TimerBody({ engine, block, readOnly, fire, timerRun, editTick, ensureTick }: Omit<CardProps, 'block'> & { block: TimerBlock; fire: () => void; editTick: number }) {
   const [editing, setEditing] = useState(false)
   const [direct, setDirect] = useState('')
   const [, force] = useState(0)
@@ -559,6 +561,7 @@ function TimerBody({ engine, block, readOnly, fire, timerRun, editTick }: Omit<C
       if (run.remainSec <= 0) run.remainSec = block.data.durationSec
       run.endAt = Date.now() + run.remainSec * 1000
       fire()
+      ensureTick()
     }
     force((n) => n + 1)
   }
