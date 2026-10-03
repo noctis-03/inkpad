@@ -310,6 +310,13 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [editTick, setEditTick] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
+  const rootRefCallback = useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el
+      p.attachEl(block.id)(el)
+    },
+    [block.id, p.attachEl]
+  )
   const meta = BLOCK_META[block.type]
 
   // fresh는 최초 마운트에서 한 번만 소비한다 — Undo/Redo로 다시 마운트될 때 편집 폼이 다시 열리지 않게
@@ -402,10 +409,7 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
 
   return (
     <div
-      ref={(el) => {
-        rootRef.current = el
-        p.attachEl(block.id)(el)
-      }}
+      ref={rootRefCallback}
       className="blk"
       data-type={block.type}
       data-selected={p.selected ? '' : undefined}
