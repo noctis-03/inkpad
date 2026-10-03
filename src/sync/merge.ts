@@ -63,15 +63,23 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
     }
   }
 
-  // 블록: 청크와 같은 3-way. 한쪽 파일에 blocks 필드 자체가 없으면(블록 기능 이전 클라이언트가 올린 파일)
-  // 삭제로 해석하지 않고 반대쪽 블록을 유지한다. 머지 결과 페이지에 소속이 없는 블록은 버린다.
+  // 블록: 청크와 같은 3-way. 다만 한쪽 파일에 blocks 필드 자체가 없으면(블록 기능 이전 클라이언트가 올린 파일)
+  // 삭제로 해석하지 않고 반대쪽 블록을 통째로 유지한다. 머지 결과 페이지에 소속이 없는 블록은 버린다.
   const pageIdSet = new Set<string>(pages.map((pg) => pg.id))
-  const blockMapOf = (list: Block[] | undefined) => new Map<string, Block>((list ?? []).map((b) => [b.id, b]))
-  const oBlocks = blockMapOf(ours.blocks)
-  const tBlocks = blockMapOf(theirs.blocks)
-  const bBlocks = blockMapOf(base?.blocks)
-  const blocks: Block[] = []
-  if (ours.blocks !== undefined || theirs.blocks !== undefined) {
+  const filterLive = (list: Block[]) => list.filter((b) => pageIdSet.has(b.pageId))
+  let blocks: Block[] | undefined
+  if (ours.blocks === undefined && theirs.blocks === undefined) {
+    blocks = undefined // 양쪽 다 블록 기능 이전 파일 → 결과에도 blocks를 남기지 않는다(apply가 로컬 블록을 지우지 않게)
+  } else if (theirs.blocks === undefined) {
+    blocks = filterLive(ours.blocks!) // 원격이 옛 클라이언트가 올린 파일 → 이 기기 블록을 유지
+  } else if (ours.blocks === undefined) {
+    blocks = filterLive(theirs.blocks) // 이 기기가 옛 클라이언트 → 원격 블록을 유지
+  } else {
+    const blockMapOf = (list: Block[] | undefined) => new Map<string, Block>((list ?? []).map((b) => [b.id, b]))
+    const oBlocks = blockMapOf(ours.blocks)
+    const tBlocks = blockMapOf(theirs.blocks)
+    const bBlocks = blockMapOf(base?.blocks)
+    const merged: Block[] = []
     for (const id of new Set<string>([...oBlocks.keys(), ...tBlocks.keys()])) {
       const o = oBlocks.get(id)
       const t = tBlocks.get(id)
@@ -91,8 +99,9 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
       } else if (t) {
         if (!bb) chosen = t // 원격의 새 블록
       }
-      if (chosen && pageIdSet.has(chosen.pageId)) blocks.push(chosen)
+      if (chosen && pageIdSet.has(chosen.pageId)) merged.push(chosen)
     }
+    blocks = merged
   }
 
   // 에셋: 유니언
@@ -100,5 +109,5 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
   const assets = [...assetIds].map((id) => theirs.assets.find((a) => a.id === id) ?? ours.assets.find((a) => a.id === id)!)
 
   doc.category = doc.category ?? null // category 없는 옛 파일과의 머지 대비
-  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, blocks, assets }, conflicts }
+  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, ...(blocks ? { blocks } : {}), assets }, conflicts }
 }
