@@ -15,6 +15,12 @@ import type { ID } from '../shared/model'
 const LS_SETTINGS = 'inkpad.settings.v2'
 const LS_STYLE = 'inkpad.style.v2'
 const LS_LIBRARY = 'inkpad.library.v1'
+const LS_TOOLBAR = 'inkpad.toolbar.v1'
+
+export type ToolbarPos = 'top' | 'top-left' | 'top-right' | 'bottom' | 'bottom-left' | 'bottom-right' | 'left' | 'right'
+const TOOLBAR_POS: ToolbarPos[] = ['top', 'top-left', 'top-right', 'bottom', 'bottom-left', 'bottom-right', 'left', 'right']
+const tb = load<{ pos: ToolbarPos; collapsed: boolean }>(LS_TOOLBAR, { pos: 'top', collapsed: false })
+if (!TOOLBAR_POS.includes(tb.pos)) tb.pos = 'top'
 
 export const PEN_COLORS = ['#111827ff', '#2563ebff', '#dc2626ff', '#059669ff', '#7c3aedff', '#ea580cff', '#6b7280ff', '#db2777ff']
 export const HL_COLORS = ['#facc1566', '#4ade8066', '#60a5fa66', '#f472b666', '#fb923c66']
@@ -78,6 +84,8 @@ interface UIState {
   sidebar: boolean
   toasts: Toast[]
   busy: { text: string; progress?: number } | null
+  toolbarPos: ToolbarPos
+  toolbarCollapsed: boolean
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -91,6 +99,8 @@ interface UIState {
   toast: (text: string, kind?: Toast['kind'], action?: Toast['action']) => void
   dismissToast: (id: number) => void
   setBusy: (b: UIState['busy']) => void
+  setToolbarPos: (p: ToolbarPos) => void
+  setToolbarCollapsed: (v: boolean) => void
 }
 
 let toastSeq = 0
@@ -115,6 +125,8 @@ export const useUI = create<UIState>((set, get) => ({
   sidebar: window.innerWidth >= 900,
   toasts: [],
   busy: null,
+  toolbarPos: tb.pos,
+  toolbarCollapsed: tb.collapsed,
 
   navigate: (route) => {
     const hash = route.name === 'editor' ? `#/doc/${route.docId}` : '#/'
@@ -158,7 +170,15 @@ export const useUI = create<UIState>((set, get) => ({
     setTimeout(() => get().dismissToast(id), action ? 7000 : kind === 'error' ? 6000 : 3000)
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
-  setBusy: (busy) => set({ busy })
+  setBusy: (busy) => set({ busy }),
+  setToolbarPos: (toolbarPos) => {
+    save(LS_TOOLBAR, { pos: toolbarPos, collapsed: get().toolbarCollapsed })
+    set({ toolbarPos })
+  },
+  setToolbarCollapsed: (toolbarCollapsed) => {
+    save(LS_TOOLBAR, { pos: get().toolbarPos, collapsed: toolbarCollapsed })
+    set({ toolbarCollapsed })
+  }
 }))
 
 window.addEventListener('popstate', () => {

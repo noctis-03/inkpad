@@ -12,6 +12,7 @@ import { ensureAssetLocal, onAssetProgress } from '../../sync/assets'
 import { CONFLICT_EVENT, REMOTE_EVENT } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
+import { FloatingToolbar } from './FloatingToolbar'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
 import { PagePanel } from './PagePanel'
@@ -239,6 +240,7 @@ export function Editor({ docId }: { docId: ID }) {
             </div>
           )}
           <Hud />
+          {!readOnly && <FloatingToolbar engine={engine} />}
           {!readOnly && <QuickSwitch />}
           {engine && <SelectionBar engine={engine} />}
           {engine && <PageIndicator engine={engine} paged={paged} />}
