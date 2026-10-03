@@ -3,6 +3,7 @@ import { useUI } from './store'
 import { DialogHost } from './dialogs'
 import { Library } from '../ui/library/Library'
 import { Editor } from '../ui/editor/Editor'
+import { AppRunner } from '../ui/app/AppRunner'
 import { Icon } from '../ui/Icon'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
@@ -15,7 +16,13 @@ export function App() {
   }, [])
   return (
     <div className="app-shell">
-      {route.name === 'editor' ? <Editor key={route.docId} docId={route.docId} /> : <Library />}
+      {route.name === 'editor' ? (
+        <Editor key={route.docId} docId={route.docId} />
+      ) : route.name === 'app' ? (
+        <AppRunner key={route.appId} appId={route.appId} />
+      ) : (
+        <Library />
+      )}
       <InstallHint />
       <Toasts />
       <Busy />

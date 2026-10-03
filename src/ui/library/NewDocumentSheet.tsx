@@ -22,6 +22,7 @@ export function NewDocumentSheet(props: {
   onCreated: (d: DocumentMeta) => void
   onImportPdf: () => void
   onImportInkpad: () => void
+  onAddApp: () => void
 }) {
   const [mode, setMode] = useState<'paged' | 'infinite'>('paged')
   const [title, setTitle] = useState('')
@@ -80,6 +81,11 @@ export function NewDocumentSheet(props: {
             <Icon name="filePdf" size={30} />
             <strong>PDF 가져오기</strong>
             <small>필기 후 PDF로 내보내기</small>
+          </button>
+          <button className="mode-card" onClick={props.onAddApp}>
+            <Icon name="app" size={30} />
+            <strong>HTML 앱 추가</strong>
+            <small>단일 .html 파일 실행</small>
           </button>
         </div>
 

@@ -2613,3 +2613,12 @@ textarea {
 .ft-bar[data-hide~='block'] .ft-k-block, .ft-bar[data-hide~='block'] .ft-blocks-sep { display:none !important; }
 .ft-k-block { position:relative; }
 .ft-k-block[data-hidden]::after { content:''; position:absolute; right:8px; bottom:8px; width:5px; height:5px; border-radius:50%; background:var(--muted); }
+
+/* ───────── HTML 앱 실행 화면 (sandbox iframe) ───────── */
+.app-runner { position: fixed; inset: 0; display: flex; flex-direction: column; background: #fff; }
+.app-runner-bar { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 6px) 10px 6px; border-bottom: 1px solid #e5e7eb; }
+.app-runner-title { flex: 1; margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-runner-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+/* 클라우드 저장 대기 표시 (카드 왼쪽 위 주황 점) */
+.app-pending { position: absolute; top: 8px; left: 8px; width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; }
+.app-card .doc-thumb { color: #4f46e5; }

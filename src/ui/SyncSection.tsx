@@ -367,7 +367,7 @@ export function SyncSection() {
   const doPull = async () => {
     const r = await pullNow()
     if (r) {
-      const bits = [r.docs ? `노트 ${r.docs}개` : ''].filter(Boolean)
+      const bits = [r.docs ? `노트 ${r.docs}개` : '', r.apps ? `앱 ${r.apps}개` : ''].filter(Boolean)
       toast(bits.length ? `받았습니다: ${bits.join(', ')}.` : '이미 최신 상태입니다.', bits.length ? 'success' : 'info')
       void loadCloud()
     }
@@ -376,7 +376,7 @@ export function SyncSection() {
   const doPush = async () => {
     try {
       const plan = await planPush()
-      if (!plan.docs.length && !plan.assets.count) {
+      if (!plan.docs.length && !plan.assets.count && !plan.apps) {
         toast('올릴 변경이 없습니다. 이미 최신 상태입니다.', 'info')
         return
       }
@@ -511,7 +511,7 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
     { key: 'modify' as const, label: '수정한 노트', icon: 'edit', items: plan.docs.filter((d) => d.change === 'modify') },
     { key: 'delete' as const, label: '삭제한 노트', icon: 'trash', items: plan.docs.filter((d) => d.change === 'delete') }
   ].filter((g) => g.items.length > 0)
-  const total = plan.docs.length + plan.assets.count
+  const total = plan.docs.length + plan.assets.count + plan.apps
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="올리기 미리보기">
@@ -546,6 +546,18 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
               <div className="push-row">
                 <span className="push-stripe add" />
                 <span className="push-name">{Math.round(plan.assets.bytes / 1024)}KB</span>
+                <Icon name="upload" size={14} className="push-ico" />
+              </div>
+            </section>
+          )}
+          {plan.apps > 0 && (
+            <section className="push-group">
+              <h4 className="push-group-label">
+                <Icon name="app" size={13} /> HTML 앱 <b>{plan.apps}</b>
+              </h4>
+              <div className="push-row">
+                <span className="push-stripe add" />
+                <span className="push-name">추가 · 업데이트 · 삭제</span>
                 <Icon name="upload" size={14} className="push-ico" />
               </div>
             </section>

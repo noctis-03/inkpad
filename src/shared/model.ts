@@ -243,3 +243,21 @@ export type Block = MemoBlock | LinkBlock | TodoBlock | TimerBlock | JumpBlock
 export const BLOCK_DEFAULT_W: Record<BlockType, number> = { memo: 200, link: 230, todo: 210, timer: 170, jump: 190 }
 /** 페이지 가장자리에서 블록이 벗어날 수 있는 최대 거리(pt). 블록 분실 방지용이며 paged 모드에만 적용한다. */
 export const BLOCK_MAX_OUTSIDE = 1600
+
+// ───────── HTML 앱 (노트와 별개 — documents/chunks와 절대 섞지 않는다) ─────────
+// 앱 1개 = 단일 .html 파일 1개. PDF 내보내기·머지·엔진·.inkpad 형식은 앱을 몰라야 한다.
+export interface HtmlApp {
+  id: ID // ULID
+  title: string
+  category: string | null
+  html: string
+  size: number
+  createdAt: number
+  updatedAt: number
+  fileId?: string // Drive 파일 id
+  /** 클라우드 반영 대기 (오프라인·로그인 전에 바꾼 경우) */
+  pending?: 'upsert' | 'delete'
+  deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
+}
+export const MAX_APP_BYTES = 20 * 1024 * 1024
+export const MAX_APP_TITLE_CHARS = 40

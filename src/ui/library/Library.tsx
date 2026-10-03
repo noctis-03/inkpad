@@ -5,7 +5,7 @@ import { Icon } from '../Icon'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
-import type { DocumentMeta, Folder, ID } from '../../shared/model'
+import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, normalizeCategory } from '../../shared/model'
 import { formatDate } from '../../shared/util'
 import {
@@ -27,6 +27,7 @@ import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
+import { APPS_EVENT, addApp, deleteApp, listApps, updateAppHtml, updateAppMeta } from '../../sync/apps'
 
 type Section =
   | { kind: 'all' }
@@ -34,6 +35,8 @@ type Section =
   | { kind: 'folder'; id: ID }
   | { kind: 'uncategorized' }
   | { kind: 'trash' }
+
+type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp }
 
 export function Library() {
   const navigate = useUI((s) => s.navigate)
@@ -47,6 +50,7 @@ export function Library() {
   })
   const [docs, setDocs] = useState<DocumentMeta[]>([])
   const [trash, setTrash] = useState<DocumentMeta[]>([])
+  const [apps, setApps] = useState<HtmlApp[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [query, setQuery] = useState('')
@@ -56,17 +60,20 @@ export function Library() {
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
+  const [appMenu, setAppMenu] = useState<{ app: HtmlApp; x: number; y: number } | null>(null)
+  const [categorizingApp, setCategorizingApp] = useState<HtmlApp | null>(null)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
 
   const refresh = useCallback(async () => {
-    const [d, t, f, th, hid] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories()])
+    const [d, t, f, th, hid, ap] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
     setHiddenCats(new Set(hid))
+    setApps(ap)
     setThumbs((old) => {
       old.forEach((url) => URL.revokeObjectURL(url))
       const m = new Map<ID, string>()
@@ -84,6 +91,13 @@ export function Library() {
     const onRemote = () => void refresh()
     window.addEventListener(REMOTE_EVENT, onRemote)
     return () => window.removeEventListener(REMOTE_EVENT, onRemote)
+  }, [refresh])
+
+  // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
+  useEffect(() => {
+    const onApps = () => void refresh()
+    window.addEventListener(APPS_EVENT, onApps)
+    return () => window.removeEventListener(APPS_EVENT, onApps)
   }, [refresh])
 
   // 폴더가 사라졌으면 전체로
@@ -114,12 +128,38 @@ export function Library() {
     return sorted
   }, [docs, trash, folders, hiddenCats, section, query, prefs.sort])
 
+  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통에는 표시하지 않는다) */
+  const visibleApps = useMemo(() => {
+    if (section.kind === 'trash') return []
+    let list = apps.filter((a) => !a.category || !hiddenCats.has(a.category))
+    if (section.kind === 'folder') {
+      const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
+      list = list.filter((a) => a.category != null && cats.has(a.category))
+    } else if (section.kind === 'category') list = list.filter((a) => a.category === section.name)
+    else if (section.kind === 'uncategorized') list = list.filter((a) => a.category == null)
+    const q = query.trim().toLowerCase()
+    if (q) list = list.filter((a) => a.title.toLowerCase().includes(q))
+    return list
+  }, [apps, folders, hiddenCats, section, query])
+
+  /** 노트 + 앱을 한 목록으로 합쳐 정렬한다 (앱이 없으면 기존 노트 정렬을 그대로 쓴다) */
+  const items = useMemo<Item[]>(() => {
+    const list: Item[] = [...visible.map((d) => ({ kind: 'doc' as const, d })), ...visibleApps.map((a) => ({ kind: 'app' as const, a }))]
+    if (!visibleApps.length) return list
+    const m = (i: Item) => (i.kind === 'doc' ? i.d : i.a)
+    if (prefs.sort === 'title') list.sort((x, y) => m(x).title.localeCompare(m(y).title, 'ko'))
+    else if (prefs.sort === 'created') list.sort((x, y) => m(y).createdAt - m(x).createdAt)
+    else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
+    return list
+  }, [visible, visibleApps, prefs.sort])
+
   const allCategories = useMemo(() => {
     const s = new Set<string>()
     for (const d of docs) if (d.category) s.add(d.category)
+    for (const a of apps) if (a.category) s.add(a.category)
     for (const f of folders) for (const c of f.categories ?? []) s.add(c)
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [docs, folders])
+  }, [docs, apps, folders])
 
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
@@ -205,9 +245,11 @@ export function Library() {
     const files = [...e.dataTransfer.files]
     const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf')
     const inks = files.filter((f) => /\.(inkpad|zip)$/i.test(f.name))
-    const others = files.length - pdfs.length - inks.length
-    if (others) toast('지원 형식: PDF, .inkpad. Office 파일은 PDF로 변환한 뒤 가져와 주세요.', 'error')
+    const htmls = files.filter((f) => /\.html?$/i.test(f.name) || f.type === 'text/html')
+    const others = files.length - pdfs.length - inks.length - htmls.length
+    if (others) toast('지원 형식: PDF, .inkpad, .html. Office 파일은 PDF로 변환한 뒤 가져와 주세요.', 'error')
     if (pdfs.length) await importPdfFiles(pdfs, currentFolderId)
+    if (htmls.length) await addAppFiles(htmls)
     for (const f of inks) {
       try {
         await importInkpad(f, currentFolderId)
@@ -224,6 +266,81 @@ export function Library() {
     const f = await createFolder(name.trim(), parentId)
     await refresh()
     setSection({ kind: 'folder', id: f.id })
+  }
+
+  // ───────── HTML 앱 ─────────
+
+  /** 카테고리 뷰/폴더 뷰에서 추가하면 그 카테고리를 기본값으로 */
+  const defaultCategory = () =>
+    section.kind === 'category' ? section.name
+    : section.kind === 'folder' ? folders.find((f) => f.id === section.id)?.categories?.[0] ?? null
+    : null
+
+  const addAppFiles = async (files: File[]) => {
+    let last: HtmlApp | null = null
+    let offline = false
+    for (const f of files) {
+      try {
+        setBusy({ text: `${f.name} 추가하는 중` })
+        const r = await addApp(f, defaultCategory())
+        last = r.app
+        if (!r.uploaded) offline = true
+      } catch (e) {
+        toast(e instanceof Error ? e.message : '앱을 추가하지 못했습니다.', 'error')
+      } finally {
+        setBusy(null)
+      }
+    }
+    await refresh()
+    const lastApp = last
+    if (!lastApp) return
+    toast(offline ? '앱을 추가했습니다. 클라우드에는 다음 올리기 때 저장됩니다.' : '앱을 추가하고 클라우드에 저장했습니다.', 'success')
+    if (files.length === 1) navigate({ name: 'app', appId: lastApp.id })
+  }
+
+  const onAddApp = async () => {
+    const files = await pickFiles('.html,.htm,text/html', true)
+    if (files.length) await addAppFiles(files)
+  }
+
+  const appAction = async (action: string, a: HtmlApp) => {
+    setAppMenu(null)
+    switch (action) {
+      case 'run':
+        navigate({ name: 'app', appId: a.id })
+        return
+      case 'rename': {
+        const t = await promptDialog('이름 바꾸기', { value: a.title, ok: '저장' })
+        if (t?.trim()) await updateAppMeta(a.id, { title: t.trim() })
+        break
+      }
+      case 'category':
+        setCategorizingApp(a)
+        return
+      case 'update': {
+        const [f] = await pickFiles('.html,.htm,text/html')
+        if (!f) return
+        setBusy({ text: `"${a.title}" 업데이트하는 중` })
+        try {
+          const up = await updateAppHtml(a.id, f)
+          toast(up ? `"${a.title}"을(를) 업데이트했습니다.` : '업데이트했습니다. 클라우드에는 다음 올리기 때 저장됩니다.', 'success')
+        } catch (e) {
+          toast(e instanceof Error ? e.message : '업데이트 실패', 'error')
+        } finally {
+          setBusy(null)
+        }
+        break
+      }
+      case 'export':
+        await saveFile(new Blob([a.html], { type: 'text/html' }), `${a.title}.html`)
+        return
+      case 'delete':
+        if (!(await confirmDialog('앱 삭제', { message: `"${a.title}"을(를) 이 기기와 클라우드에서 삭제합니다.`, ok: '삭제', danger: true }))) return
+        await deleteApp(a.id)
+        toast(`"${a.title}"을(를) 삭제했습니다.`, 'info')
+        break
+    }
+    await refresh()
   }
 
   const docAction = async (action: string, d: DocumentMeta) => {
@@ -372,7 +489,7 @@ export function Library() {
         {treeOpen && (
           <nav className="folder-tree" aria-label="폴더">
             <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>
-              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
+              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length + apps.length}</span>
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
@@ -382,7 +499,7 @@ export function Library() {
                 onClick={() => setSection({ kind: 'category', name: c })}
               >
                 <Icon name="tag" size={18} /> <span className="tree-name">{c}</span>
-                <span className="count">{docs.filter((d) => d.category === c).length}</span>
+                <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length}</span>
               </button>
             ))}
             <button
@@ -390,7 +507,7 @@ export function Library() {
               onClick={() => setSection({ kind: 'uncategorized' })}
             >
               <Icon name="tag" size={18} /> <span className="tree-name">미분류</span>
-              <span className="count">{docs.filter((d) => d.category == null).length}</span>
+              <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length}</span>
             </button>
             <div className="tree-label">
               폴더
@@ -404,6 +521,7 @@ export function Library() {
               depth={0}
               activeId={currentFolderId}
               docs={docs}
+              apps={apps}
               onSelect={(id) => setSection({ kind: 'folder', id })}
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
             />
@@ -444,7 +562,7 @@ export function Library() {
             </section>
           )}
 
-          {visible.length === 0 ? (
+          {items.length === 0 ? (
             <div className="empty-state">
               {section.kind === 'trash' ? (
                 <p>휴지통이 비어 있습니다.</p>
@@ -467,42 +585,68 @@ export function Library() {
             </div>
           ) : (
             <section className={prefs.view === 'grid' ? 'doc-grid' : 'doc-list'} aria-label="문서">
-              {visible.map((d) => (
-                <article
-                  key={d.id}
-                  className="doc-card"
-                  data-doc-id={d.id}
-                  onClick={() => (section.kind === 'trash' ? setMenu({ doc: d, x: 0, y: 0 }) : open(d))}
-                >
-                  <div className="doc-thumb">
-                    {thumbs.get(d.id) ? (
-                      <img src={thumbs.get(d.id)} alt="" draggable={false} />
-                    ) : (
-                      <Icon name={d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
-                    )}
-                    <span className="doc-badge">{d.mode === 'infinite' ? '무한' : `${d.pageOrder.length}쪽`}</span>
-                    {d.category && <span className="doc-cat">{d.category}</span>}
-                  </div>
-                  <div className="doc-info">
-                    <h3 className="doc-title">{d.title}</h3>
-                    <p className="doc-date">
-                      {d.category && <span className="doc-cat-text">{d.category}</span>}
-                      {section.kind === 'trash' && d.deletedAt ? `삭제 ${formatDate(d.deletedAt)}` : formatDate(d.updatedAt)}
-                    </p>
-                  </div>
-                  <button
-                    className="doc-more"
-                    aria-label="더보기"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                      setMenu({ doc: d, x: r.right, y: r.bottom })
-                    }}
+              {items.map((i) =>
+                i.kind === 'app' ? (
+                  <article key={'app:' + i.a.id} className="doc-card app-card" onClick={() => navigate({ name: 'app', appId: i.a.id })}>
+                    <div className="doc-thumb">
+                      <Icon name="app" size={36} />
+                      <span className="doc-badge">HTML 앱</span>
+                      {i.a.category && <span className="doc-cat">{i.a.category}</span>}
+                      {i.a.pending && <span className="app-pending" title="클라우드 저장 대기" />}
+                    </div>
+                    <div className="doc-info">
+                      <h3 className="doc-title">{i.a.title}</h3>
+                      <p className="doc-date">{formatDate(i.a.updatedAt)}</p>
+                    </div>
+                    <button
+                      className="doc-more"
+                      aria-label="더보기"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        setAppMenu({ app: i.a, x: r.right, y: r.bottom })
+                      }}
+                    >
+                      <Icon name="more" size={20} />
+                    </button>
+                  </article>
+                ) : (
+                  <article
+                    key={i.d.id}
+                    className="doc-card"
+                    data-doc-id={i.d.id}
+                    onClick={() => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d))}
                   >
-                    <Icon name="more" size={20} />
-                  </button>
-                </article>
-              ))}
+                    <div className="doc-thumb">
+                      {thumbs.get(i.d.id) ? (
+                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
+                      ) : (
+                        <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
+                      )}
+                      <span className="doc-badge">{i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`}</span>
+                      {i.d.category && <span className="doc-cat">{i.d.category}</span>}
+                    </div>
+                    <div className="doc-info">
+                      <h3 className="doc-title">{i.d.title}</h3>
+                      <p className="doc-date">
+                        {i.d.category && <span className="doc-cat-text">{i.d.category}</span>}
+                        {section.kind === 'trash' && i.d.deletedAt ? `삭제 ${formatDate(i.d.deletedAt)}` : formatDate(i.d.updatedAt)}
+                      </p>
+                    </div>
+                    <button
+                      className="doc-more"
+                      aria-label="더보기"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        setMenu({ doc: i.d, x: r.right, y: r.bottom })
+                      }}
+                    >
+                      <Icon name="more" size={20} />
+                    </button>
+                  </article>
+                )
+              )}
             </section>
           )}
         </main>
@@ -528,6 +672,17 @@ export function Library() {
         </Menu>
       )}
 
+      {appMenu && (
+        <Menu x={appMenu.x} y={appMenu.y} onClose={() => setAppMenu(null)}>
+          <MenuItem icon="play" label="실행" onClick={() => appAction('run', appMenu.app)} />
+          <MenuItem icon="upload" label="업데이트 (새 HTML 올리기)" onClick={() => appAction('update', appMenu.app)} />
+          <MenuItem icon="edit" label="이름 바꾸기" onClick={() => appAction('rename', appMenu.app)} />
+          <MenuItem icon="tag" label="카테고리 지정" onClick={() => appAction('category', appMenu.app)} />
+          <MenuItem icon="download" label=".html로 내보내기" onClick={() => appAction('export', appMenu.app)} />
+          <MenuItem icon="trash" label="삭제" danger onClick={() => appAction('delete', appMenu.app)} />
+        </Menu>
+      )}
+
       {folderMenu && (
         <Menu x={folderMenu.x} y={folderMenu.y} onClose={() => setFolderMenu(null)}>
           <MenuItem icon="edit" label="이름 바꾸기" onClick={() => folderAction('rename', folderMenu.folder)} />
@@ -544,6 +699,19 @@ export function Library() {
           onPick={async (cat) => {
             await updateDocument(categorizing.id, { category: cat })
             setCategorizing(null)
+            await refresh()
+          }}
+        />
+      )}
+
+      {categorizingApp && (
+        <CategoryPicker
+          current={categorizingApp.category ?? null}
+          categories={allCategories}
+          onClose={() => setCategorizingApp(null)}
+          onPick={async (cat) => {
+            await updateAppMeta(categorizingApp.id, { category: cat })
+            setCategorizingApp(null)
             await refresh()
           }}
         />
@@ -566,6 +734,10 @@ export function Library() {
             setShowNew(false)
             void onImportInkpad()
           }}
+          onAddApp={() => {
+            setShowNew(false)
+            void onAddApp()
+          }}
         />
       )}
       {showSettings && <LibrarySettings onClose={() => setShowSettings(false)} onChanged={refresh} />}
@@ -580,6 +752,7 @@ function FolderTree(props: {
   depth: number
   activeId: ID | null
   docs: DocumentMeta[]
+  apps: HtmlApp[]
   onSelect: (id: ID) => void
   onMenu: (f: Folder, x: number, y: number) => void
 }) {
@@ -592,7 +765,10 @@ function FolderTree(props: {
           <div className={'tree-item folder' + (props.activeId === f.id ? ' is-active' : '')} style={{ paddingLeft: 12 + props.depth * 16 }}>
             <button className="tree-main" onClick={() => props.onSelect(f.id)}>
               <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
-              <span className="count">{props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length}</span>
+              <span className="count">
+                {props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length +
+                  props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length}
+              </span>
             </button>
             <button
               className="icon-mini"
