@@ -61,7 +61,7 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
     try {
       setBusy({ text: '백업 가져오는 중' })
       const r = await importInkpad(f, null, (d, t) => setBusy({ text: '백업 가져오는 중', progress: d / t }))
-      toast(`문서 ${r.documents.length}개를 가져왔습니다.`, 'success')
+      toast(`문서 ${r.documents.length}개를 가져왔습니다.${r.skippedBlocks ? ` 새 버전에서 만든 블록 ${r.skippedBlocks}개를 가져오지 못했습니다.` : ''}`, 'success')
       onChanged()
       load()
     } catch (e) {

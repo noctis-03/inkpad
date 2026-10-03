@@ -1,6 +1,7 @@
 // 노트 단위 3-way 머지 — base(마지막으로 맞춘 시점)·이 기기·원격 스냅샷을 합친다.
 // 서로 다른 페이지·청크(필기 영역)는 양쪽이 모두 살고, 같은 청크를 양쪽에서
 // 고쳤으면 원격을 우선한다(이 기기 편집은 Drive 리비전으로 남아 복구 가능).
+import type { Block } from '../shared/model'
 import type { DocFileV1 } from './pack'
 
 const j = (v: unknown) => JSON.stringify(v)
@@ -62,10 +63,42 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
     }
   }
 
+  // 블록: 청크와 같은 3-way. 한쪽 파일에 blocks 필드 자체가 없으면(블록 기능 이전 클라이언트가 올린 파일)
+  // 삭제로 해석하지 않고 반대쪽 블록을 유지한다. 머지 결과 페이지에 소속이 없는 블록은 버린다.
+  const pageIdSet = new Set<string>(pages.map((pg) => pg.id))
+  const blockMapOf = (list: Block[] | undefined) => new Map<string, Block>((list ?? []).map((b) => [b.id, b]))
+  const oBlocks = blockMapOf(ours.blocks)
+  const tBlocks = blockMapOf(theirs.blocks)
+  const bBlocks = blockMapOf(base?.blocks)
+  const blocks: Block[] = []
+  if (ours.blocks !== undefined || theirs.blocks !== undefined) {
+    for (const id of new Set<string>([...oBlocks.keys(), ...tBlocks.keys()])) {
+      const o = oBlocks.get(id)
+      const t = tBlocks.get(id)
+      const bb = bBlocks.get(id)
+      let chosen: Block | undefined
+      if (o && t) {
+        if (j(o) === j(t)) chosen = t
+        else if (!bb || j(o) === j(bb)) chosen = t // 이 기기만 바꿈
+        else if (j(t) === j(bb)) chosen = o // 원격만 바꿈
+        else {
+          chosen = t.updatedAt >= o.updatedAt ? t : o // 양쪽 다 다르면 updatedAt이 큰 쪽(같으면 theirs)
+          conflicts++
+        }
+      } else if (o) {
+        if (!bb) chosen = o // 이 기기의 새 블록
+        // base에 있었는데 원격에 없다 → 원격이 지움 (tombstone이므로 이미 반영된다)
+      } else if (t) {
+        if (!bb) chosen = t // 원격의 새 블록
+      }
+      if (chosen && pageIdSet.has(chosen.pageId)) blocks.push(chosen)
+    }
+  }
+
   // 에셋: 유니언
   const assetIds = new Set<string>([...ours.assets.map((a) => a.id), ...theirs.assets.map((a) => a.id)])
   const assets = [...assetIds].map((id) => theirs.assets.find((a) => a.id === id) ?? ours.assets.find((a) => a.id === id)!)
 
   doc.category = doc.category ?? null // category 없는 옛 파일과의 머지 대비
-  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, assets }, conflicts }
+  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, blocks, assets }, conflicts }
 }

@@ -161,3 +161,85 @@ export const BACKGROUND_LABELS: Record<BackgroundType, string> = {
 export function chunkKeyOf(pageId: ID, key: string) {
   return `${pageId}|${key}`
 }
+
+// ───────── 편집 블록 (PDF 내보내기 제외, Element와 별개) ─────────
+// 블록은 절대 Element 유니언이나 chunks 테이블에 넣지 않는다. 별도 타입·별도 테이블(blocks)로
+// 관리하면 기존 PDF 내보내기 경로(chunks의 stroke만 읽음)는 코드를 고치지 않아도 블록을 볼 수 없다.
+export const BLOCK_SCHEMA_VERSION = 1
+
+export type BlockType = 'memo' | 'link' | 'todo' | 'timer' | 'jump'
+export type MemoColor = 'yellow' | 'pink' | 'blue' | 'green'
+
+export interface BlockBase {
+  id: ID // ULID
+  documentId: ID
+  /** 기준 페이지. 블록 좌표는 이 페이지 원점에 대한 상대값이다. */
+  pageId: ID
+  schemaVersion: number
+  /**
+   * 기준 페이지 원점 기준 좌표(pt).
+   *  - paged: 원점 = 페이지 왼쪽 위. 페이지 밖이면 음수이거나 page.size보다 클 수 있다(여백, 페이지 사이).
+   *  - infinite: 원점 = 월드 (0,0), 즉 월드 좌표 그대로.
+   */
+  x: number
+  y: number
+  /** 폭(pt). 높이는 내용에 따라 자동으로 정해진다. */
+  w: number
+  /** 블록끼리의 쌓임 순서 */
+  z: number
+  createdAt: number
+  updatedAt: number
+  /** tombstone (동기화 머지용) */
+  deletedAt?: number
+}
+
+export interface MemoData {
+  text: string
+  color: MemoColor
+  collapsed: boolean
+}
+export interface LinkData {
+  url: string
+  label: string
+}
+export interface TodoItem {
+  id: ID
+  text: string
+  done: boolean
+}
+export interface TodoData {
+  items: TodoItem[]
+}
+export interface TimerData {
+  durationSec: number
+}
+export interface JumpData {
+  targetPageId: ID | null
+}
+
+export interface MemoBlock extends BlockBase {
+  type: 'memo'
+  data: MemoData
+}
+export interface LinkBlock extends BlockBase {
+  type: 'link'
+  data: LinkData
+}
+export interface TodoBlock extends BlockBase {
+  type: 'todo'
+  data: TodoData
+}
+export interface TimerBlock extends BlockBase {
+  type: 'timer'
+  data: TimerData
+}
+export interface JumpBlock extends BlockBase {
+  type: 'jump'
+  data: JumpData
+}
+
+export type Block = MemoBlock | LinkBlock | TodoBlock | TimerBlock | JumpBlock
+
+export const BLOCK_DEFAULT_W: Record<BlockType, number> = { memo: 200, link: 230, todo: 210, timer: 170, jump: 190 }
+/** 페이지 가장자리에서 블록이 벗어날 수 있는 최대 거리(pt). 블록 분실 방지용이며 paged 모드에만 적용한다. */
+export const BLOCK_MAX_OUTSIDE = 1600

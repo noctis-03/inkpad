@@ -186,7 +186,10 @@ export function Library() {
       try {
         setBusy({ text: `${f.name} 가져오는 중` })
         const r = await importInkpad(f, currentFolderId, (d, t) => setBusy({ text: `${f.name} 가져오는 중`, progress: d / t }))
-        toast(`문서 ${r.documents.length}개를 가져왔습니다${r.skipped ? ` (${r.skipped}개 건너뜀)` : ''}.`, 'success')
+        toast(
+          `문서 ${r.documents.length}개를 가져왔습니다${r.skipped ? ` (${r.skipped}개 건너뜀)` : ''}${r.skippedBlocks ? ` — 새 버전에서 만든 블록 ${r.skippedBlocks}개를 가져오지 못했습니다` : ''}.`,
+          'success'
+        )
       } catch (e) {
         toast(e instanceof Error ? e.message : '가져오기에 실패했습니다.', 'error')
       } finally {

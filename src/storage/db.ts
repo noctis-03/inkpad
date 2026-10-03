@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Asset, DocumentMeta, Folder, ID, Page } from '../shared/model'
+import type { Asset, Block, DocumentMeta, Folder, ID, Page } from '../shared/model'
 
 /** IndexedDB 레코드 (설계 8장) */
 export interface ChunkRow {
@@ -51,6 +51,7 @@ export class InkpadDB extends Dexie {
   outbox!: Table<OutboxRow, number>
   syncState!: Table<KV, string>
   settings!: Table<KV, string>
+  blocks!: Table<Block, ID>
   backups!: Table<{ id: string; createdAt: number; reason: string; data: Blob }, string>
 
   constructor(name = 'inkpad') {
@@ -69,6 +70,8 @@ export class InkpadDB extends Dexie {
     })
     // v2: 폴더 설정 백업 보존 관리용 reason 인덱스 (나머지 테이블은 v1을 상속한다)
     this.version(2).stores({ backups: 'id, createdAt, reason' })
+    // v3: 편집 블록 (PDF 내보내기 제외 — chunks와 절대 섞지 않는 별도 테이블)
+    this.version(3).stores({ blocks: 'id, documentId, pageId, deletedAt' })
   }
 }
 

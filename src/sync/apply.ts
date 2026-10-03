@@ -1,6 +1,7 @@
 // Drive 파일 → 로컬 적용. sync.ts(동기화 엔진)와 revisions.ts(버전 되돌리기)가 함께 쓴다.
 // 순환 import를 피하려고 분리했다.
-import { SCHEMA_VERSION } from '../shared/model'
+import { SCHEMA_VERSION, type Block } from '../shared/model'
+import { normalizeBlockUrl } from '../engine/blocks'
 import { gunzipJson, gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import type { DocFileV1 } from './pack'
@@ -15,7 +16,7 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
   const encoded: { c: DocFileV1['chunks'][number]; blob: Blob }[] = []
   for (const c of file.chunks) if (c.elements.length) encoded.push({ c, blob: await gzipJson(c.elements) })
   let applied = true
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.assets, db.outbox], async () => {
+  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.assets, db.outbox], async () => {
     if (!opts.force) {
       const pending = await db.outbox.where('[entity+entityId]').equals(['document', docId]).first()
       if (pending) {
@@ -48,6 +49,21 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
         localRev: 1,
         updatedAt: file.doc.updatedAt
       })
+    }
+    // 편집 블록 — 파일에 blocks 필드가 있을 때만 교체한다(없으면 블록 기능 이전 클라이언트이므로 유지).
+    // 원격에서 들어온 link URL도 직접 입력과 같은 검증을 거친다.
+    if (file.blocks) {
+      const pageIds = new Set(file.pages.map((pg) => pg.id))
+      const blocks: Block[] = []
+      for (const b of file.blocks) {
+        if (!pageIds.has(b.pageId)) continue
+        if (b.type === 'link') {
+          const u = normalizeBlockUrl(b.data.url)
+          blocks.push(u === null ? { ...b, data: { ...b.data, url: '' } } : { ...b, data: { ...b.data, url: u } })
+        } else blocks.push(b)
+      }
+      await db.blocks.where('documentId').equals(docId).delete()
+      if (blocks.length) await db.blocks.bulkPut(blocks)
     }
     for (const am of file.assets) {
       if (!(await db.assets.get(am.id))) await db.assets.put({ ...am, version: 0 }) // 원본 blob은 지연 로딩이 받는다

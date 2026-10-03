@@ -1,3 +1,4 @@
+import { BlockStore, anchorBlock } from './blocks'
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
@@ -17,7 +18,7 @@ import type {
   ToolStyle,
   ViewInfo
 } from './types'
-import type { Background, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
+import type { Background, Block, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
@@ -97,6 +98,8 @@ export class Engine {
   readonly layout: Layout
   readonly scene: Scene
   readonly cam = new Camera()
+  /** 편집 블록 저장소 — Element 청크와 별개(PDF 내보내기 제외) */
+  readonly blocks = new BlockStore()
   readonly pdf: PdfCache
   private renderer: Renderer
   private history = new History()
@@ -144,10 +147,16 @@ export class Engine {
   private dirtyGroups = new Set<string>()
   private dirtyPages = new Set<ID>()
   private deletedPages = new Set<ID>()
+  private dirtyBlocks = new Map<ID, Block>()
+  private deletedBlocks = new Set<ID>()
   private orderDirty = false
   private saveTimer = 0
   private saving: Promise<void> | null = null
   private saveState: SaveState = 'saved'
+
+  // 카메라 리스너 — React state가 아니라 DOM transform을 직접 갱신하는 UI(BlockLayer)용
+  private camListeners = new Set<(cam: { x: number; y: number; zoom: number }) => void>()
+  private lastCamNotified = { x: NaN, y: NaN, zoom: NaN }
 
   // 통계
   private stats: EngineStats
@@ -180,6 +189,7 @@ export class Engine {
     this.layout.setPages(o.doc.pages)
     this.scene = new Scene(this.layout)
     this.loadChunks(o.doc)
+    this.blocks.load(o.doc.blocks ?? [])
 
     this.renderer = new Renderer(root)
     this.pdf.onReady = () => {
@@ -297,6 +307,9 @@ export class Engine {
       const lb = this.layout.bounds
       b = { minX: lb.x, minY: lb.y, maxX: lb.x + lb.w, maxY: lb.y + lb.h }
     } else b = this.scene.bounds()
+    // 전체 보기에는 블록 bounds도 포함한다 (편집 화면 기능 — PDF bounds 계산과 무관)
+    const bb = this.blocks.bounds(this.layout)
+    if (bb) b = b ? unionBox(b, bb) : bb
     if (!b) return this.resetView()
     const pad = 32
     const w = Math.max(1, b.maxX - b.minX)
@@ -399,6 +412,109 @@ export class Engine {
     this.cb.onSelection?.(null)
   }
 
+  // ─────────────────────────── 외부 API: 블록 ───────────────────────────
+  // 블록은 Element 청크와 별개(PDF 내보내기 제외)지만 같은 Command 기반 히스토리와 저장 흐름을 쓴다.
+
+  addBlock(b: Block) {
+    if (this.readOnly) return
+    this.exec({ removed: [], added: [], blocks: [{ before: null, after: b }] })
+  }
+
+  /** 메모 입력처럼 값이 연속으로 바뀔 때는 history: false — 저장만 예약하고 히스토리에 넣지 않는다. 편집을 마치면 blur에서 한 번만 exec한다. */
+  updateBlock(id: ID, patch: Partial<Block>, opts: { history?: boolean } = {}) {
+    if (this.readOnly) return
+    const cur = this.blocks.get(id)
+    if (!cur) return
+    const next = { ...cur, ...patch, updatedAt: Date.now() } as Block
+    if (opts.history === false) {
+      this.blocks._put(next)
+      this.dirtyBlocks.set(next.id, next)
+      this.deletedBlocks.delete(next.id)
+      this.scheduleSave()
+      return
+    }
+    this.exec({ removed: [], added: [], blocks: [{ before: cur, after: next }] })
+  }
+
+  /** 연속 편집(메모 입력 등)을 마칠 때 호출 — 시작 시점 스냅샷과 현재 값으로 히스토리 1건을 만든다 */
+  commitBlockEdit(before: Block) {
+    if (this.readOnly) return
+    const cur = this.blocks.get(before.id)
+    if (!cur) return
+    if (JSON.stringify(before) === JSON.stringify(cur)) return
+    this.exec({ removed: [], added: [], blocks: [{ before, after: cur }] })
+  }
+
+  /** 월드 좌표로 옮긴다 — anchorBlock으로 소속 페이지를 다시 정한 뒤 exec */
+  moveBlockToWorld(id: ID, wx: number, wy: number, h: number) {
+    if (this.readOnly) return
+    const cur = this.blocks.get(id)
+    if (!cur) return
+    const a = anchorBlock(this.layout, wx, wy, cur.w, h)
+    if (!a) return
+    if (a.pageId === cur.pageId && a.x === cur.x && a.y === cur.y) return
+    this.exec({
+      removed: [],
+      added: [],
+      blocks: [{ before: cur, after: { ...cur, pageId: a.pageId, x: a.x, y: a.y, updatedAt: Date.now() } }]
+    })
+  }
+
+  deleteBlock(id: ID) {
+    if (this.readOnly) return
+    const cur = this.blocks.get(id)
+    if (!cur) return
+    this.exec({ removed: [], added: [], blocks: [{ before: cur, after: null }] })
+  }
+
+  duplicateBlock(id: ID): ID {
+    if (this.readOnly) return ''
+    const cur = this.blocks.get(id)
+    if (!cur) return ''
+    const now = Date.now()
+    const copy: Block = {
+      ...cur,
+      id: ulid(),
+      x: cur.x + 24,
+      y: cur.y + 24,
+      z: this.maxBlockZ() + 1,
+      createdAt: now,
+      updatedAt: now
+    }
+    this.exec({ removed: [], added: [], blocks: [{ before: null, after: copy }] })
+    return copy.id
+  }
+
+  private maxBlockZ() {
+    let m = 0
+    for (const b of this.blocks.list()) m = Math.max(m, b.z)
+    return m
+  }
+
+  /** 카메라가 실제로 바뀐 프레임마다 리스너를 호출한다. React state로 매 프레임 전달하지 말 것. */
+  onCamera(fn: (cam: { x: number; y: number; zoom: number }) => void): () => void {
+    this.camListeners.add(fn)
+    fn({ x: this.cam.x, y: this.cam.y, zoom: this.cam.zoom })
+    return () => {
+      this.camListeners.delete(fn)
+    }
+  }
+
+  /** 클라이언트 좌표 → 월드 좌표 (rectLeft/Top 보정 포함) */
+  worldOfClient(clientX: number, clientY: number): { x: number; y: number } {
+    return {
+      x: (clientX - this.rectLeft) / this.cam.zoom + this.cam.x,
+      y: (clientY - this.rectTop) / this.cam.zoom + this.cam.y
+    }
+  }
+
+  private notifyCamera() {
+    const c = this.cam
+    if (c.x === this.lastCamNotified.x && c.y === this.lastCamNotified.y && c.zoom === this.lastCamNotified.zoom) return
+    this.lastCamNotified = { x: c.x, y: c.y, zoom: c.zoom }
+    for (const fn of [...this.camListeners]) fn({ x: c.x, y: c.y, zoom: c.zoom })
+  }
+
   // ─────────────────────────── 외부 API: 페이지 ───────────────────────────
 
   private snapshot(changed: Page[]): PageSnapshot {
@@ -436,7 +552,17 @@ export class Engine {
     const removed = this.scene.entriesOfPage(page.id)
     const before = this.snapshot([page])
     const order = before.order.filter((id) => id !== page.id)
-    this.exec({ removed, added: [], pagesBefore: before, pagesAfter: { order, pages: [] }, label: '페이지 삭제' })
+    // 그 페이지에 소속된 블록(여백 블록 포함)도 같은 명령으로 지운다 — Undo하면 함께 복원된다.
+    // 이 페이지를 가리키던 jump 블록은 그대로 둔다. UI가 "삭제된 페이지"로 표시한다.
+    const pageBlocks = this.blocks.ofPage(page.id)
+    this.exec({
+      removed,
+      added: [],
+      pagesBefore: before,
+      pagesAfter: { order, pages: [] },
+      blocks: pageBlocks.map((b) => ({ before: b, after: null })),
+      label: '페이지 삭제'
+    })
   }
 
   duplicatePage(index: number) {
@@ -446,10 +572,20 @@ export class Engine {
     const now = Date.now()
     const page: Page = { ...src, id: ulid(), createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
     const added = this.scene.entriesOfPage(src.id).map((e) => ({ ...e, pageId: page.id, stroke: { ...e.stroke, id: ulid() } }))
+    const blockCopies = this.blocks
+      .ofPage(src.id)
+      .map((b) => ({ ...b, id: ulid(), pageId: page.id, createdAt: now, updatedAt: now }) as Block)
     const before = this.snapshot([])
     const order = [...before.order]
     order.splice(index + 1, 0, page.id)
-    this.exec({ removed: [], added, pagesBefore: before, pagesAfter: { order, pages: [page] }, label: '페이지 복제' })
+    this.exec({
+      removed: [],
+      added,
+      pagesBefore: before,
+      pagesAfter: { order, pages: [page] },
+      blocks: blockCopies.map((b) => ({ before: null, after: b })),
+      label: '페이지 복제'
+    })
   }
 
   movePage(from: number, to: number) {
@@ -524,6 +660,7 @@ export class Engine {
     this.scene.relayout()
     this.cb.onPagesChanged?.(next)
     this.pagesDirty = true
+    this.blocks._notify() // 블록 위치는 페이지 원점 기준 상대값 — UI가 다시 계산하게 한다
   }
 
   private applyCommand(cmd: Command, inverse: boolean) {
@@ -546,6 +683,20 @@ export class Engine {
       box = unionBox(box, rec.item)
       this.markDirty(e.pageId, e.key)
       touched.add(e.pageId)
+    }
+    // 블록: inverse면 before, 아니면 after를 적용한다 (Element 청크와는 별개 경로)
+    for (const ch of cmd.blocks ?? []) {
+      const next = inverse ? ch.before : ch.after
+      const gone = inverse ? ch.after : ch.before
+      if (next) {
+        this.blocks._put(next)
+        this.dirtyBlocks.set(next.id, next)
+        this.deletedBlocks.delete(next.id)
+      } else if (gone) {
+        this.blocks._remove(gone.id)
+        this.dirtyBlocks.delete(gone.id)
+        this.deletedBlocks.add(gone.id)
+      }
     }
     if (this.selection.length) this.clearSelection(false)
     if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
@@ -576,7 +727,7 @@ export class Engine {
   }
 
   get hasPendingChanges() {
-    return this.dirtyGroups.size > 0 || this.dirtyPages.size > 0 || this.deletedPages.size > 0 || this.orderDirty
+    return this.dirtyGroups.size > 0 || this.dirtyPages.size > 0 || this.deletedPages.size > 0 || this.orderDirty || this.dirtyBlocks.size > 0 || this.deletedBlocks.size > 0
   }
 
   private scheduleSave() {
@@ -600,10 +751,14 @@ export class Engine {
     const groups = [...this.dirtyGroups]
     const pagesUp = [...this.dirtyPages]
     const pagesDel = [...this.deletedPages]
+    const blocksUp = [...this.dirtyBlocks.values()]
+    const blocksDel = [...this.deletedBlocks]
     const order = this.orderDirty
     this.dirtyGroups.clear()
     this.dirtyPages.clear()
     this.deletedPages.clear()
+    this.dirtyBlocks.clear()
+    this.deletedBlocks.clear()
     this.orderDirty = false
     const liveIds = new Set(this.layout.pages.map((p) => p.id))
     const batch: SaveBatch = {
@@ -615,6 +770,8 @@ export class Engine {
       }),
       pagesUpsert: pagesUp.filter((id) => liveIds.has(id)).map((id) => this.allPages.get(id)!).filter(Boolean),
       pagesDelete: pagesDel,
+      blocksUpsert: blocksUp.length ? blocksUp : undefined,
+      blocksDelete: blocksDel.length ? blocksDel : undefined,
       doc: order ? { pageOrder: this.layout.pages.map((p) => p.id) } : undefined
     }
     if (order) this.doc = { ...this.doc, pageOrder: batch.doc!.pageOrder! }
@@ -628,6 +785,8 @@ export class Engine {
         groups.forEach((g) => this.dirtyGroups.add(g))
         pagesUp.forEach((p) => this.dirtyPages.add(p))
         pagesDel.forEach((p) => this.deletedPages.add(p))
+        blocksUp.forEach((b) => this.dirtyBlocks.set(b.id, b))
+        blocksDel.forEach((id) => this.deletedBlocks.add(id))
         if (order) this.orderDirty = true
         this.setSaveState('error', e)
         if (!this.destroyed) this.saveTimer = window.setTimeout(() => void this.flush(), 5000)
@@ -1266,6 +1425,7 @@ export class Engine {
     this.committedDirty = true
     this.pagesDirty = true
     this.liveDirty = true
+    this.notifyCamera()
   }
 
   private handleResize(force = false) {

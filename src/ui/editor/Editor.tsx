@@ -13,6 +13,7 @@ import { CONFLICT_EVENT, REMOTE_EVENT } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToolbar } from './FloatingToolbar'
+import { BlockLayer } from './BlockLayer'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
 import { PagePanel } from './PagePanel'
@@ -161,8 +162,15 @@ export function Editor({ docId }: { docId: ID }) {
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && useUI.getState().selection) {
         e.preventDefault()
         eng.deleteSelection()
-      } else if (e.key === 'Escape') eng.clearSelection()
-      else if (!mod) {
+      } else if ((e.key === 'Backspace' || e.key === 'Delete') && useUI.getState().selectedBlockId && !useUI.getState().selection) {
+        // 블록이 선택된 상태에서의 삭제 (엔진 획 선택이 없을 때만)
+        e.preventDefault()
+        eng.deleteBlock(useUI.getState().selectedBlockId!)
+        useUI.setState({ selectedBlockId: null })
+      } else if (e.key === 'Escape') {
+        eng.clearSelection()
+        useUI.setState({ selectedBlockId: null, placingBlock: null })
+      } else if (!mod) {
         const map: Record<string, 'pen' | 'highlighter' | 'eraser' | 'lasso'> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso' }
         const tl = map[e.key.toLowerCase()]
         if (tl) useUI.getState().setTool(tl)
@@ -232,6 +240,7 @@ export function Editor({ docId }: { docId: ID }) {
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
         <div className="editor-area">
           <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
+          {engine && <BlockLayer engine={engine} readOnly={readOnly} />}
           {!engine && <div className="loading">문서 여는 중…</div>}
           {fetching && (
             <div className="loading">

@@ -9,18 +9,20 @@ import {
   type ViewInfo
 } from '../engine/types'
 import type { SaveState } from '../engine/engine'
-import type { ID } from '../shared/model'
+import type { BlockType, ID } from '../shared/model'
 
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다 (설계 3장).
 const LS_SETTINGS = 'inkpad.settings.v2'
 const LS_STYLE = 'inkpad.style.v2'
 const LS_LIBRARY = 'inkpad.library.v1'
 const LS_TOOLBAR = 'inkpad.toolbar.v1'
+const LS_BLOCKS = 'inkpad.blocks.v1'
 
 export type ToolbarPos = 'top' | 'top-left' | 'top-right' | 'bottom' | 'bottom-left' | 'bottom-right' | 'left' | 'right'
 const TOOLBAR_POS: ToolbarPos[] = ['top', 'top-left', 'top-right', 'bottom', 'bottom-left', 'bottom-right', 'left', 'right']
 const tb = load<{ pos: ToolbarPos; collapsed: boolean }>(LS_TOOLBAR, { pos: 'top', collapsed: false })
 if (!TOOLBAR_POS.includes(tb.pos)) tb.pos = 'top'
+const blocksLs = load<{ visible: boolean }>(LS_BLOCKS, { visible: true })
 
 export const PEN_COLORS = ['#111827ff', '#2563ebff', '#dc2626ff', '#059669ff', '#7c3aedff', '#ea580cff', '#6b7280ff', '#db2777ff']
 export const HL_COLORS = ['#facc1566', '#4ade8066', '#60a5fa66', '#f472b666', '#fb923c66']
@@ -86,6 +88,9 @@ interface UIState {
   busy: { text: string; progress?: number } | null
   toolbarPos: ToolbarPos
   toolbarCollapsed: boolean
+  blocksVisible: boolean
+  placingBlock: BlockType | null
+  selectedBlockId: ID | null
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -101,6 +106,9 @@ interface UIState {
   setBusy: (b: UIState['busy']) => void
   setToolbarPos: (p: ToolbarPos) => void
   setToolbarCollapsed: (v: boolean) => void
+  setBlocksVisible: (v: boolean) => void
+  setPlacingBlock: (t: BlockType | null) => void
+  setSelectedBlockId: (id: ID | null) => void
 }
 
 let toastSeq = 0
@@ -127,6 +135,9 @@ export const useUI = create<UIState>((set, get) => ({
   busy: null,
   toolbarPos: tb.pos,
   toolbarCollapsed: tb.collapsed,
+  blocksVisible: blocksLs.visible,
+  placingBlock: null,
+  selectedBlockId: null,
 
   navigate: (route) => {
     const hash = route.name === 'editor' ? `#/doc/${route.docId}` : '#/'
@@ -178,7 +189,13 @@ export const useUI = create<UIState>((set, get) => ({
   setToolbarCollapsed: (toolbarCollapsed) => {
     save(LS_TOOLBAR, { pos: get().toolbarPos, collapsed: toolbarCollapsed })
     set({ toolbarCollapsed })
-  }
+  },
+  setBlocksVisible: (visible) => {
+    save(LS_BLOCKS, { visible })
+    set(visible ? { blocksVisible: visible } : { blocksVisible: visible, placingBlock: null, selectedBlockId: null })
+  },
+  setPlacingBlock: (placingBlock) => set({ placingBlock }),
+  setSelectedBlockId: (selectedBlockId) => set({ selectedBlockId })
 }))
 
 window.addEventListener('popstate', () => {

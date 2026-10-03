@@ -1,8 +1,10 @@
-// 자체 포맷 (FR-IO-06/07): .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, chunks/<pageId>/<key>.json}, assets/<id> }
+// 자체 포맷 (FR-IO-06/07): .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
 // 전체 백업도 같은 구조에 문서가 여러 개 들어간다.
+// blocks.json은 선택 파일이다(블록이 있을 때만 쓴다) — FORMAT_VERSION을 올리지 않고도 옛 버전 앱이 무시하고 가져올 수 있다.
 import { unzip, zip, strFromU8, strToU8, type Unzipped, type Zippable } from 'fflate'
-import { SCHEMA_VERSION, type Asset, type DocumentMeta, type Folder, type ID, type Page } from '../shared/model'
+import { BLOCK_SCHEMA_VERSION, SCHEMA_VERSION, type Asset, type Block, type DocumentMeta, type Folder, type ID, type Page } from '../shared/model'
 import { ulid } from '../shared/ulid'
+import { normalizeBlockUrl } from '../engine/blocks'
 import { db } from '../storage/db'
 import { assertNotTooNew } from '../storage/migrate'
 import { listFolders, loadDocument, putAsset, saveBatch, type ChunkData } from '../storage/repo'
@@ -15,6 +17,8 @@ interface Manifest {
   format: typeof FORMAT
   formatVersion: number
   schemaVersion: number
+  /** blocks.json의 스키마 버전 (BLOCK_SCHEMA_VERSION). 옛 파일엔 없다 */
+  blockSchemaVersion?: number
   kind: 'document' | 'backup'
   createdAt: number
   app: string
@@ -33,12 +37,14 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
   const assetIds = new Set<ID>()
   let i = 0
   for (const id of documentIds) {
-    const { doc, pages, chunks } = await loadDocument(id)
+    const { doc, pages, chunks, blocks } = await loadDocument(id)
     const base = `documents/${id}/`
     const { lastView: _lv, ...docOut } = doc
     void _lv
     files[base + 'document.json'] = json(docOut)
     files[base + 'pages.json'] = json(pages)
+    // 살아 있는 블록만 담는다 (tombstone 제외). 블록이 1개 이상일 때만 파일을 쓴다
+    if (blocks.length) files[base + 'blocks.json'] = json(blocks)
     for (const c of chunks) {
       if (!c.elements.length) continue
       files[`${base}chunks/${c.pageId}/${c.key}.json`] = json(c.elements)
@@ -64,6 +70,7 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
     format: FORMAT,
     formatVersion: FORMAT_VERSION,
     schemaVersion: SCHEMA_VERSION,
+    blockSchemaVersion: BLOCK_SCHEMA_VERSION,
     kind,
     createdAt: Date.now(),
     app: 'Inkpad web',
@@ -79,6 +86,8 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
 export interface ImportResult {
   documents: DocumentMeta[]
   skipped: number
+  /** 스키마가 새 버전이거나 매핑되지 않아 건너뛴 블록 수 */
+  skippedBlocks: number
 }
 
 /**
@@ -130,6 +139,7 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
 
   const out: DocumentMeta[] = []
   let skipped = 0
+  let skippedBlocks = 0
   let i = 0
   for (const oldId of manifest.documents) {
     const base = `documents/${oldId}/`
@@ -183,9 +193,46 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
       if (!pageId) continue
       chunks.push({ pageId, key: keyFile.replace(/\.json$/, ''), elements: JSON.parse(strFromU8(files[name])) })
     }
-    if (chunks.length) await saveBatch({ documentId: doc.id, chunks })
+    // 블록: blocks.json이 없으면(블록 기능 이전 파일) 블록 없이 정상 처리한다
+    const blocksFile = files[base + 'blocks.json']
+    const blocks: Block[] = []
+    if (blocksFile) {
+      const rawBlocks = JSON.parse(strFromU8(blocksFile)) as Block[]
+      if ((manifest.blockSchemaVersion ?? BLOCK_SCHEMA_VERSION) > BLOCK_SCHEMA_VERSION) {
+        // 새 버전에서 만든 블록 — 문서는 가져오고 블록만 건너뛴다
+        skippedBlocks += rawBlocks.filter((b) => !b.deletedAt).length
+      } else {
+        for (const b of rawBlocks) {
+          if (b.deletedAt) continue
+          const pageId = pageMap.get(b.pageId)
+          if (!pageId) {
+            skippedBlocks++
+            continue
+          }
+          const nb = {
+            ...b,
+            id: ulid(),
+            documentId: newId,
+            pageId,
+            schemaVersion: BLOCK_SCHEMA_VERSION,
+            deletedAt: undefined,
+            createdAt: b.createdAt ?? now,
+            updatedAt: now
+          } as Block
+          if (nb.type === 'jump') nb.data = { ...nb.data, targetPageId: nb.data.targetPageId ? pageMap.get(nb.data.targetPageId) ?? null : null }
+          if (nb.type === 'todo') nb.data = { items: nb.data.items.map((it) => ({ ...it, id: ulid() })) }
+          if (nb.type === 'link') {
+            const u = normalizeBlockUrl(nb.data.url)
+            nb.data = { ...nb.data, url: u ?? '' } // 검증 실패 시 URL만 비운다(블록은 유지)
+          }
+          blocks.push(nb)
+        }
+      }
+    }
+    // 청크가 없고 블록만 있는 문서도 저장되도록 호출 조건을 넓힌다
+    if (chunks.length || blocks.length) await saveBatch({ documentId: doc.id, chunks, blocksUpsert: blocks })
     out.push(doc)
     onProgress?.(++i, manifest.documents.length)
   }
-  return { documents: out, skipped }
+  return { documents: out, skipped, skippedBlocks }
 }

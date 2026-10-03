@@ -6,6 +6,7 @@ import {
   makeBackground,
   type Asset,
   type Background,
+  type Block,
   type DocumentMeta,
   type Element,
   type Folder,
@@ -172,10 +173,11 @@ export async function restoreDocument(id: ID) {
 
 /** 영구 삭제 (로컬). 어떤 문서도 참조하지 않는 에셋도 함께 지운다 */
 export async function purgeDocument(id: ID) {
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.thumbnails, db.outbox], async () => {
+  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.thumbnails, db.outbox], async () => {
     await db.documents.delete(id)
     await db.pages.where('documentId').equals(id).delete()
     await db.chunks.where('documentId').equals(id).delete()
+    await db.blocks.where('documentId').equals(id).delete()
     await db.thumbnails.delete(id)
     await enqueue('document', id, 'delete')
   })
@@ -186,6 +188,8 @@ export async function purgeExpiredTrash() {
   const limit = Date.now() - TRASH_RETENTION_DAYS * 86400_000
   const expired = (await db.documents.toArray()).filter((d) => d.deletedAt && d.deletedAt < limit)
   for (const d of expired) await purgeDocument(d.id)
+  // 오래된 블록 tombstone도 함께 정리한다 (tombstone은 동기화 머지에만 필요)
+  await db.blocks.where('deletedAt').below(limit).delete()
   return expired.length
 }
 
@@ -223,6 +227,8 @@ export interface LoadedDocument {
   doc: DocumentMeta
   pages: Page[] // pageOrder 순서, 삭제된 페이지 제외
   chunks: ChunkData[]
+  /** 편집 블록 (tombstone 제외, 살아 있는 페이지에 소속된 것만) — PDF 내보내기는 이 값을 절대 읽지 않는다 */
+  blocks: Block[]
 }
 
 export async function loadDocument(id: ID): Promise<LoadedDocument> {
@@ -243,7 +249,14 @@ export async function loadDocument(id: ID): Promise<LoadedDocument> {
   if (old.length) await backupRows(id, old)
   const chunks: ChunkData[] = []
   for (const r of rows) chunks.push({ pageId: r.pageId, key: r.key, elements: await decodeChunk(r) })
-  return { doc, pages, chunks }
+  const blocks = (await db.blocks.where('documentId').equals(id).toArray()).filter((b) => !b.deletedAt && live.has(b.pageId))
+  return { doc, pages, chunks, blocks }
+}
+
+/** 편집 블록 전체 (tombstone 포함). 동기화 pack 등 머지가 필요한 곳에서 쓴다 */
+export async function loadBlocks(documentId: ID, opts: { includeDeleted?: boolean } = {}): Promise<Block[]> {
+  const rows = await db.blocks.where('documentId').equals(documentId).toArray()
+  return opts.includeDeleted ? rows : rows.filter((b) => !b.deletedAt)
 }
 
 async function backupRows(documentId: ID, rows: ChunkRow[]) {
@@ -265,6 +278,8 @@ export interface SaveBatch {
   pagesUpsert?: Page[]
   pagesDelete?: ID[] // soft delete
   chunks?: ChunkData[] // 빈 elements = 청크 삭제
+  blocksUpsert?: Block[] // 편집 블록 (PDF 내보내기와 무관)
+  blocksDelete?: ID[] // soft delete (tombstone)
 }
 
 /** 문서 편집 결과를 한 트랜잭션으로 기록 (반쯤 쓰인 데이터가 남지 않는다, 16.4) */
@@ -273,7 +288,7 @@ export async function saveBatch(b: SaveBatch) {
   const encoded: { c: ChunkData; blob: Blob | null }[] = []
   for (const c of b.chunks ?? []) encoded.push({ c, blob: c.elements.length ? await gzipJson(c.elements) : null })
   const now = Date.now()
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.outbox], async () => {
+  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.outbox], async () => {
     if (b.pagesUpsert) {
       for (const p of b.pagesUpsert) {
         await db.pages.put({ ...p, deletedAt: undefined, updatedAt: now })
@@ -311,6 +326,11 @@ export async function saveBatch(b: SaveBatch) {
       await enqueue('chunk', entityId)
     }
     await db.documents.update(b.documentId, { ...(b.doc ?? {}), updatedAt: now })
+    if (b.blocksUpsert) for (const blk of b.blocksUpsert) await db.blocks.put(blk)
+    if (b.blocksDelete) {
+      for (const id of b.blocksDelete) await db.blocks.update(id, { deletedAt: now, updatedAt: now })
+    }
+    // 블록은 문서 파일 안에 동기화되므로(블록 전용 outbox 항목 없음) 문서만 다시 올리면 된다
     await enqueue('document', b.documentId)
   })
 }
@@ -392,7 +412,17 @@ export async function duplicateDocument(id: ID): Promise<DocumentMeta> {
     key: c.key,
     elements: c.elements.map((e) => ({ ...e, id: ulid() }))
   }))
-  await saveBatch({ documentId: doc.id, chunks })
+  // 블록도 새 ID로 복사한다. pageId와 jump 대상은 pageMap으로 다시 매핑.
+  const blocks: Block[] = []
+  for (const b of src.blocks) {
+    const pageId = pageMap.get(b.pageId)
+    if (!pageId) continue
+    const nb = { ...b, id: ulid(), documentId: doc.id, pageId, createdAt: now, updatedAt: now, deletedAt: undefined } as Block
+    if (nb.type === 'jump') nb.data = { ...nb.data, targetPageId: nb.data.targetPageId ? pageMap.get(nb.data.targetPageId) ?? null : null }
+    if (nb.type === 'todo') nb.data = { items: nb.data.items.map((it) => ({ ...it, id: ulid() })) }
+    blocks.push(nb)
+  }
+  await saveBatch({ documentId: doc.id, chunks, blocksUpsert: blocks })
   return doc
 }
 

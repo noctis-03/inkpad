@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { Engine } from '../../engine/engine'
 import { useUI } from '../../app/store'
 import { askPdfPassword } from '../../app/dialogs'
@@ -17,6 +17,8 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
   const [range, setRange] = useState<'all' | 'current' | 'custom'>('all')
   const [custom, setCustom] = useState('')
   const [pattern, setPattern] = useState(true)
+  // 살아 있는 블록 수 — 1개 이상이면 PDF 섹션에 제외 안내를 표시한다
+  const blockCount = useSyncExternalStore(engine.blocks.subscribe, () => engine.blocks.list().length)
   const paged = doc.mode === 'paged'
 
   const exportPdf = async () => {
@@ -74,6 +76,11 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
         <p className="hint">
           {paged ? '원본 PDF 위에 필기를 벡터로 합칩니다. 원본 PDF는 바뀌지 않습니다.' : '필기가 있는 영역 전체를 PDF 1페이지로 내보냅니다.'}
         </p>
+        {blockCount > 0 && (
+          <p className="hint block-export-note">
+            <Icon name="noPdf" size={14} /> 메모·링크 등 블록 {blockCount}개는 PDF에 포함되지 않습니다.
+          </p>
+        )}
         {paged && (
           <>
             <div className="seg full" style={{ marginTop: 10 }}>
@@ -102,7 +109,7 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
       </section>
       <section className="panel-section">
         <h3>Inkpad 파일</h3>
-        <p className="hint">필기 데이터와 PDF 원본을 그대로 담은 .inkpad 파일입니다. 다른 기기에서 가져와 이어서 편집할 수 있습니다.</p>
+        <p className="hint">필기 데이터와 PDF 원본을 그대로 담은 .inkpad 파일입니다. 다른 기기에서 가져와 이어서 편집할 수 있습니다. 메모·링크 등 블록도 함께 담깁니다.</p>
         <button className="text-btn full" onClick={exportOwn}>
           <Icon name="download" size={18} /> .inkpad로 내보내기
         </button>

@@ -4,7 +4,7 @@ import type { ToolbarPos } from '../../app/store'
 
 export type Orient = 'h' | 'v'
 export type Density = 'full' | 'medium' | 'compact' | 'dense' | 'tiny'
-export type OvKey = 'undo' | 'redo' | 'fit' | 'collapse'
+export type OvKey = 'undo' | 'redo' | 'fit' | 'collapse' | 'block'
 export interface Insets {
   l: number
   r: number
@@ -32,8 +32,8 @@ export const STEPS: [Density, OvKey[]][] = [
   ['dense', ['collapse']],
   ['dense', ['collapse', 'fit']],
   ['dense', ['collapse', 'fit', 'redo']],
-  ['tiny', ['collapse', 'fit', 'redo']],
-  ['tiny', ['collapse', 'fit', 'redo', 'undo']]
+  ['tiny', ['block', 'collapse', 'fit', 'redo']],
+  ['tiny', ['block', 'collapse', 'fit', 'redo', 'undo']]
 ]
 
 const clamp = (v: number, a: number, b: number) => Math.min(Math.max(v, a), Math.max(a, b))

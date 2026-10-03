@@ -1,3 +1,7 @@
+// [규칙] 편집 블록(메모·링크·할 일·타이머·페이지 이동)은 PDF 내보내기에 절대 포함되지 않는다.
+// 블록은 Element 청크(chunks)와 별개 테이블(blocks)에 저장되므로 이 파일의 경로는 애초에 블록을 볼 수 없다.
+// 회귀 방지: loadDocument 반환값에 blocks 필드가 새로 생겼지만, 아래 어떤 경로도 그 값을 읽지 않는다 —
+// 구조 분해도 { doc, pages, chunks }만 유지할 것. ExportJob은 청크의 stroke로만 만들어진다.
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'

@@ -11,6 +11,8 @@ import { createPortal } from 'react-dom'
 import type { Engine } from '../../engine/engine'
 import type { Tool } from '../../engine/types'
 import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, useUI, type ToolbarPos } from '../../app/store'
+import { BLOCK_META } from '../../engine/blocks'
+import type { BlockType } from '../../shared/model'
 import { Icon } from '../Icon'
 import {
   NARROW_BP,
@@ -55,7 +57,7 @@ function widthMarkOf(tool: Tool, color: string, w: number) {
   )
 }
 
-type PopKind = 'style' | 'more'
+export type PopKind = 'style' | 'more' | 'blocks'
 type Side = 'below' | 'above' | 'left' | 'right'
 const sideOf = (p: ToolbarPos): Side =>
   p.startsWith('top') ? 'below' : p.startsWith('bottom') ? 'above' : p === 'left' ? 'right' : 'left'
@@ -70,6 +72,9 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const setPos = useUI((s) => s.setToolbarPos)
   const collapsed = useUI((s) => s.toolbarCollapsed)
   const setCollapsed = useUI((s) => s.setToolbarCollapsed)
+  const blocksVisible = useUI((s) => s.blocksVisible)
+  const placingBlock = useUI((s) => s.placingBlock)
+  const setPlacingBlock = useUI((s) => s.setPlacingBlock)
 
   const barRef = useRef<HTMLDivElement>(null)
   const probeRef = useRef<HTMLDivElement>(null)
@@ -337,6 +342,21 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
           ))}
         </div>
 
+        <span className="ft-sep ft-hide ft-blocks-sep" />
+        <button
+          className={'ft-btn ft-k-block' + (placingBlock ? ' is-active' : '')}
+          data-hidden={blocksVisible ? undefined : ''}
+          aria-label="블록 추가"
+          aria-pressed={!!placingBlock}
+          onClick={(e) => {
+            // 배치 모드 중 다시 탭하면 취소
+            if (placingBlock) return setPlacingBlock(null)
+            togglePop('blocks', e.currentTarget)
+          }}
+        >
+          <Icon name="blocks" />
+        </button>
+
         <span className="ft-sep ft-hide ft-style" />
         <div className="ft-group ft-hide ft-style" aria-label="색상과 굵기">
           <div className="ft-swatches">
@@ -426,6 +446,8 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
               isHl={isHl}
               isEr={isEr}
             />
+          ) : pop.kind === 'blocks' ? (
+            <BlocksPalette engine={engine} onClose={() => setPop(null)} />
           ) : (
             <div className="ft-menu">
               {hide.includes('undo') && (
@@ -464,6 +486,15 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
                   {collapsed ? '메뉴 펼치기' : '메뉴 접기'}
                 </button>
               )}
+              {hide.includes('block') && (
+                <button
+                  className="menu-item"
+                  onClick={(e) => togglePop('blocks', e.currentTarget)}
+                >
+                  <Icon name="blocks" />
+                  블록 추가
+                </button>
+              )}
               <div className="ft-menu-sep" />
               <button
                 className="menu-item"
@@ -483,7 +514,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   )
 }
 
-function FtPopover(props: { anchor: HTMLElement; side: Side; kind: PopKind; onClose: () => void; children: ReactNode }) {
+export function FtPopover(props: { anchor: HTMLElement; side: Side; kind: PopKind; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -523,7 +554,7 @@ function FtPopover(props: { anchor: HTMLElement; side: Side; kind: PopKind; onCl
           props.onClose()
         }}
       />
-      <div ref={ref} className={'ft-pop' + (props.kind === 'more' ? ' is-menu' : '')} role="dialog">
+      <div ref={ref} className={'ft-pop' + (props.kind === 'style' ? '' : ' is-menu')} role="dialog">
         {props.children}
       </div>
     </>,
@@ -593,6 +624,47 @@ function StylePanel(props: {
             {widthMarkOf(tool, curColor, w)}
           </button>
         ))}
+      </div>
+    </>
+  )
+}
+
+/** 블록 팔레트 — 블록 버튼("블록 추가")을 누르면 열린다 (6.5) */
+function BlocksPalette({ engine, onClose }: { engine: Engine | null; onClose: () => void }) {
+  const paged = !!engine?.layout.paged
+  const blocksVisible = useUI((s) => s.blocksVisible)
+  const setBlocksVisible = useUI((s) => s.setBlocksVisible)
+  const setPlacingBlock = useUI((s) => s.setPlacingBlock)
+  const types = (Object.keys(BLOCK_META) as BlockType[]).filter((t) => paged || t !== 'jump') // infinite에서는 jump를 숨긴다
+  return (
+    <>
+      <div className="ft-pop-title">블록</div>
+      <div className="hint">PDF로 내보낼 때는 포함되지 않음</div>
+      <div className="ft-menu">
+        {types.map((t) => (
+          <button
+            key={t}
+            className="menu-item"
+            onClick={() => {
+              if (!blocksVisible) setBlocksVisible(true)
+              setPlacingBlock(t)
+              onClose()
+            }}
+          >
+            <span className="blk-pal-icon" style={{ background: BLOCK_META[t].color }}>
+              <Icon name={BLOCK_META[t].icon} size={16} />
+            </span>
+            <span className="blk-pal-text">
+              <b>{BLOCK_META[t].label}</b>
+              <small>{BLOCK_META[t].desc}</small>
+            </span>
+          </button>
+        ))}
+        <div className="ft-menu-sep" />
+        <button className="menu-item" onClick={() => setBlocksVisible(!blocksVisible)}>
+          <Icon name={blocksVisible ? 'eye' : 'eyeOff'} />
+          {blocksVisible ? '블록 숨기기' : '블록 보이기'}
+        </button>
       </div>
     </>
   )
