@@ -113,6 +113,9 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
   // ── 캔버스를 탭하면 블록 선택 해제 (엔진 올가미 선택과는 독립적) ──
   useEffect(() => {
     const fn = () => {
+      // 캔버스를 탭하면 열려 있던 입력 포커스를 풀어 메모 blur→commitBlockEdit가 확실히 일어나게 한다 (iPadOS 대비)
+      const active = document.activeElement as HTMLElement | null
+      if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) active.blur()
       if (useUI.getState().selectedBlockId) useUI.setState({ selectedBlockId: null })
     }
     const r = engine.root
