@@ -218,6 +218,7 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
     },
     [engine]
   )
+  const onFreshConsumed = useCallback(() => setFresh(null), [])
 
   return (
     <div className="block-layer" data-export-open={panel === 'export' ? '' : undefined} hidden={!blocksVisible}>
@@ -242,6 +243,7 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
             onDragEnd={() => setAttach(null)}
             timerRun={timerRun}
             ensureTick={ensureTick}
+            onFreshConsumed={onFreshConsumed}
           />
         ))}
         {attach && <div className="blk-attach" style={{ left: attach.x, top: attach.y, width: attach.w, height: attach.h }} />}
@@ -266,6 +268,7 @@ interface CardProps {
   onDragEnd: () => void
   timerRun: (id: ID, durationSec: number) => TimerRun
   ensureTick: () => void
+  onFreshConsumed: () => void
 }
 
 function BlockCard(p: CardProps) {
@@ -278,6 +281,12 @@ function BlockCard(p: CardProps) {
   const r = engine.layout.paged ? engine.layout.rects.get(block.pageId) : undefined
   const outside = !!r && (x + block.w <= r.x || x >= r.x + r.w || y + h <= r.y || y >= r.y + r.h)
   const meta = BLOCK_META[block.type]
+
+  // fresh는 최초 마운트에서 한 번만 소비한다 — Undo/Redo로 다시 마운트될 때 편집 폼이 다시 열리지 않게
+  useEffect(() => {
+    if (p.fresh) p.onFreshConsumed()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const label =
     block.type === 'memo'
