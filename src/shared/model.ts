@@ -261,3 +261,50 @@ export interface HtmlApp {
 }
 export const MAX_APP_BYTES = 20 * 1024 * 1024
 export const MAX_APP_TITLE_CHARS = 40
+
+// ───────── 일반 파일 (앱·노트와 별개 — 임의 형식을 저장하고 종류별 뷰어로 연다) ─────────
+// 편집기(노트)는 아직 텍스트·이미지 배치를 지원하지 않으므로(Phase 3), 파일은 노트로 변환하지
+// 않고 그대로 보관한 뒤 종류에 맞는 읽기 전용 뷰어로 연다.
+export type FileKind = 'text' | 'image' | 'other'
+
+export interface StoredFile {
+  id: ID // ULID
+  title: string
+  category: string | null
+  name: string // 원본 파일명 (확장자 포함)
+  mime: string
+  size: number
+  kind: FileKind
+  createdAt: number
+  updatedAt: number
+  fileId?: string // Drive 파일 id
+  /** 클라우드 반영 대기 (오프라인·로그인 전에 바꾼 경우) */
+  pending?: 'upsert' | 'delete'
+  deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
+}
+
+export const MAX_FILE_BYTES = 20 * 1024 * 1024
+export const MAX_FILE_TITLE_CHARS = 40
+
+/** 텍스트 뷰어로 열 확장자 */
+const TEXT_EXT = new Set([
+  'txt', 'text', 'md', 'markdown', 'mdx', 'csv', 'tsv', 'json', 'jsonc', 'xml', 'yaml', 'yml', 'toml',
+  'ini', 'conf', 'cfg', 'env', 'log', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs',
+  'java', 'kt', 'kts', 'swift', 'c', 'h', 'cc', 'cpp', 'hpp', 'cs', 'php', 'sh', 'bash', 'zsh', 'sql',
+  'css', 'scss', 'sass', 'less', 'vue', 'svelte', 'r', 'lua', 'pl', 'dart', 'gradle', 'properties', 'srt', 'vtt'
+])
+/** 이미지 뷰어로 열 확장자 */
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'avif', 'ico', 'heic', 'heif'])
+
+export function extOf(name: string): string {
+  const m = /\.([A-Za-z0-9]+)$/.exec(name)
+  return m ? m[1].toLowerCase() : ''
+}
+
+/** 파일을 어떻게 열지 판정한다 (확장자·MIME 기준) */
+export function fileKindOf(name: string, mime: string): FileKind {
+  const ext = extOf(name)
+  if (mime.startsWith('image/') || IMAGE_EXT.has(ext)) return 'image'
+  if (mime.startsWith('text/') || TEXT_EXT.has(ext) || mime === 'application/json' || mime === 'application/xml') return 'text'
+  return 'other'
+}

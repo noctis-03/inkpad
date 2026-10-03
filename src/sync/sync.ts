@@ -25,6 +25,7 @@ import { db } from '../storage/db'
 import { getHiddenCategories } from '../storage/repo'
 import { applyDocFile } from './apply'
 import { countPendingApps, flushPendingApps, pullApps } from './apps'
+import { countPendingFiles, flushPendingFiles, pullFiles } from './files'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
@@ -208,6 +209,8 @@ async function push(f: { docs: string; assets: string }) {
 
   // 대기 중인 HTML 앱(추가·업데이트·삭제)도 함께 반영한다
   await flushPendingApps()
+  // 대기 중인 일반 파일도 함께 반영한다
+  await flushPendingFiles()
 }
 
 async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }) {
@@ -349,6 +352,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
 export interface PullResult {
   docs: number
   apps: number
+  files: number
 }
 
 /** 받기. 허브에서 다른 기기가 올린 변경을 가져온다 */
@@ -365,7 +369,7 @@ export async function pullNow(): Promise<PullResult | null> {
       const r = await pull(f)
       await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
       setStatus('idle')
-      return { docs: r.docs, apps: r.apps }
+      return { docs: r.docs, apps: r.apps, files: r.files }
     } catch (e) {
       handleSyncError(e)
       return null
@@ -375,7 +379,7 @@ export async function pullNow(): Promise<PullResult | null> {
 }
 
 async function pull(f: { docs: string; assets: string }) {
-  const r = { docs: 0, apps: 0 }
+  const r = { docs: 0, apps: 0, files: 0 }
   const outboxRows = await db.outbox.toArray()
   const pendingDocs_ = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
   const changed = new Set<string>()
@@ -418,6 +422,8 @@ async function pull(f: { docs: string; assets: string }) {
 
   // HTML 앱: 다른 기기의 추가·업데이트·삭제를 반영한다
   r.apps = await pullApps()
+  // 일반 파일: 메타만 반영하고 원본은 열 때 지연 로딩한다
+  r.files = await pullFiles()
 
   if (changed.size) emitRemoteChanged(changed)
   return r
@@ -523,6 +529,8 @@ export interface PushPlan {
   assets: { count: number; bytes: number }
   /** 올리기 대기 중인 HTML 앱 수 */
   apps: number
+  /** 올리기 대기 중인 일반 파일 수 */
+  files: number
 }
 
 /** 올리기 전 미리보기: 이번 올리기에 뭐가 들어가는지 계산한다 (Drive 호출 없음) */
@@ -532,7 +540,8 @@ export async function planPush(): Promise<PushPlan> {
   const plan: PushPlan = {
     docs: [],
     assets: { count: 0, bytes: 0 },
-    apps: 0
+    apps: 0,
+    files: 0
   }
   for (const [docId] of pending) {
     const doc = await db.documents.get(docId)
@@ -548,6 +557,7 @@ export async function planPush(): Promise<PushPlan> {
     plan.assets.bytes += a.size
   }
   plan.apps = await countPendingApps()
+  plan.files = await countPendingFiles()
   return plan
 }
 

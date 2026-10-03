@@ -6,7 +6,7 @@ import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
-import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, normalizeCategory } from '../../shared/model'
+import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
 import { formatDate } from '../../shared/util'
 import {
   createFolder,
@@ -28,6 +28,8 @@ import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
 import { APPS_EVENT, addApp, deleteApp, listApps, updateAppHtml, updateAppMeta } from '../../sync/apps'
+import { FILES_EVENT, addFile, deleteFile, fileToBlob, getFile, listFiles, updateFileMeta } from '../../sync/files'
+import type { FileRow } from '../../storage/db'
 
 type Section =
   | { kind: 'all' }
@@ -36,7 +38,7 @@ type Section =
   | { kind: 'uncategorized' }
   | { kind: 'trash' }
 
-type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp }
+type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 
 export function Library() {
   const navigate = useUI((s) => s.navigate)
@@ -51,6 +53,7 @@ export function Library() {
   const [docs, setDocs] = useState<DocumentMeta[]>([])
   const [trash, setTrash] = useState<DocumentMeta[]>([])
   const [apps, setApps] = useState<HtmlApp[]>([])
+  const [files, setFiles] = useState<FileRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [query, setQuery] = useState('')
@@ -62,18 +65,21 @@ export function Library() {
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
   const [appMenu, setAppMenu] = useState<{ app: HtmlApp; x: number; y: number } | null>(null)
   const [categorizingApp, setCategorizingApp] = useState<HtmlApp | null>(null)
+  const [fileMenu, setFileMenu] = useState<{ file: FileRow; x: number; y: number } | null>(null)
+  const [categorizingFile, setCategorizingFile] = useState<FileRow | null>(null)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
 
   const refresh = useCallback(async () => {
-    const [d, t, f, th, hid, ap] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps()])
+    const [d, t, f, th, hid, ap, fls] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
     setHiddenCats(new Set(hid))
     setApps(ap)
+    setFiles(fls)
     setThumbs((old) => {
       old.forEach((url) => URL.revokeObjectURL(url))
       const m = new Map<ID, string>()
@@ -98,6 +104,13 @@ export function Library() {
     const onApps = () => void refresh()
     window.addEventListener(APPS_EVENT, onApps)
     return () => window.removeEventListener(APPS_EVENT, onApps)
+  }, [refresh])
+
+  // 일반 파일 변경 반영
+  useEffect(() => {
+    const onFiles = () => void refresh()
+    window.addEventListener(FILES_EVENT, onFiles)
+    return () => window.removeEventListener(FILES_EVENT, onFiles)
   }, [refresh])
 
   // 폴더가 사라졌으면 전체로
@@ -142,24 +155,43 @@ export function Library() {
     return list
   }, [apps, folders, hiddenCats, section, query])
 
-  /** 노트 + 앱을 한 목록으로 합쳐 정렬한다 (앱이 없으면 기존 노트 정렬을 그대로 쓴다) */
+  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통에는 표시하지 않는다) */
+  const visibleFiles = useMemo(() => {
+    if (section.kind === 'trash') return []
+    let list = files.filter((f) => !f.category || !hiddenCats.has(f.category))
+    if (section.kind === 'folder') {
+      const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
+      list = list.filter((f) => f.category != null && cats.has(f.category))
+    } else if (section.kind === 'category') list = list.filter((f) => f.category === section.name)
+    else if (section.kind === 'uncategorized') list = list.filter((f) => f.category == null)
+    const q = query.trim().toLowerCase()
+    if (q) list = list.filter((f) => f.title.toLowerCase().includes(q))
+    return list
+  }, [files, folders, hiddenCats, section, query])
+
+  /** 노트 + 앱 + 파일을 한 목록으로 합쳐 정렬한다 (노트만 있으면 기존 노트 정렬을 그대로 쓴다) */
   const items = useMemo<Item[]>(() => {
-    const list: Item[] = [...visible.map((d) => ({ kind: 'doc' as const, d })), ...visibleApps.map((a) => ({ kind: 'app' as const, a }))]
-    if (!visibleApps.length) return list
-    const m = (i: Item) => (i.kind === 'doc' ? i.d : i.a)
+    const list: Item[] = [
+      ...visible.map((d) => ({ kind: 'doc' as const, d })),
+      ...visibleApps.map((a) => ({ kind: 'app' as const, a })),
+      ...visibleFiles.map((f) => ({ kind: 'file' as const, f }))
+    ]
+    if (!visibleApps.length && !visibleFiles.length) return list
+    const m = (i: Item) => (i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f)
     if (prefs.sort === 'title') list.sort((x, y) => m(x).title.localeCompare(m(y).title, 'ko'))
     else if (prefs.sort === 'created') list.sort((x, y) => m(y).createdAt - m(x).createdAt)
     else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
     return list
-  }, [visible, visibleApps, prefs.sort])
+  }, [visible, visibleApps, visibleFiles, prefs.sort])
 
   const allCategories = useMemo(() => {
     const s = new Set<string>()
     for (const d of docs) if (d.category) s.add(d.category)
     for (const a of apps) if (a.category) s.add(a.category)
+    for (const f of files) if (f.category) s.add(f.category)
     for (const f of folders) for (const c of f.categories ?? []) s.add(c)
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [docs, apps, folders])
+  }, [docs, apps, files, folders])
 
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
@@ -246,8 +278,7 @@ export function Library() {
     const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf')
     const inks = files.filter((f) => /\.(inkpad|zip)$/i.test(f.name))
     const htmls = files.filter((f) => /\.html?$/i.test(f.name) || f.type === 'text/html')
-    const others = files.length - pdfs.length - inks.length - htmls.length
-    if (others) toast('지원 형식: PDF, .inkpad, .html. Office 파일은 PDF로 변환한 뒤 가져와 주세요.', 'error')
+    const rest = files.filter((f) => !pdfs.includes(f) && !inks.includes(f) && !htmls.includes(f))
     if (pdfs.length) await importPdfFiles(pdfs, currentFolderId)
     if (htmls.length) await addAppFiles(htmls)
     for (const f of inks) {
@@ -257,6 +288,7 @@ export function Library() {
         toast(err instanceof Error ? err.message : '가져오기 실패', 'error')
       }
     }
+    if (rest.length) await addFileItems(rest)
     if (inks.length) await refresh()
   }
 
@@ -338,6 +370,81 @@ export function Library() {
         if (!(await confirmDialog('앱 삭제', { message: `"${a.title}"을(를) 이 기기와 클라우드에서 삭제합니다.`, ok: '삭제', danger: true }))) return
         await deleteApp(a.id)
         toast(`"${a.title}"을(를) 삭제했습니다.`, 'info')
+        break
+    }
+    await refresh()
+  }
+
+  // ───────── 일반 파일 ─────────
+
+  /** "파일 추가"가 여는 파일 종류 — PDF·HTML은 기존 경로로, 나머지는 파일로 저장한다 */
+  const FILE_ACCEPT =
+    '.pdf,.html,.htm,image/*,text/*,.md,.markdown,.csv,.tsv,.json,.jsonc,.xml,.yaml,.yml,.toml,.ini,.log,.txt' +
+    ',.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.c,.h,.cpp,.cs,.php,.sh,.sql,.css,.scss,.vue,.svelte' +
+    ',.docx,.xlsx,.pptx,.zip'
+
+  const addFileItems = async (list: File[]) => {
+    let last: FileRow | null = null
+    let offline = false
+    for (const f of list) {
+      try {
+        setBusy({ text: `${f.name} 추가하는 중` })
+        const r = await addFile(f, defaultCategory())
+        last = (await getFile(r.file.id)) ?? null
+        if (!r.uploaded) offline = true
+      } catch (e) {
+        toast(e instanceof Error ? e.message : '파일을 추가하지 못했습니다.', 'error')
+      } finally {
+        setBusy(null)
+      }
+    }
+    await refresh()
+    const lastFile = last
+    if (!lastFile) return
+    toast(offline ? '파일을 추가했습니다. 클라우드에는 다음 올리기 때 저장됩니다.' : '파일을 추가하고 클라우드에 저장했습니다.', 'success')
+    if (list.length === 1) navigate({ name: 'file', fileId: lastFile.id })
+  }
+
+  /** 형식에 따라 PDF 노트 가져오기 / HTML 앱 / 일반 파일로 나눠 처리한다 */
+  const addAnyFiles = async (list: File[]) => {
+    const pdfs = list.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf')
+    const htmls = list.filter((f) => /\.html?$/i.test(f.name) || f.type === 'text/html')
+    const rest = list.filter((f) => !pdfs.includes(f) && !htmls.includes(f))
+    if (pdfs.length) await importPdfFiles(pdfs, currentFolderId)
+    if (htmls.length) await addAppFiles(htmls)
+    if (rest.length) await addFileItems(rest)
+  }
+
+  const onAddFile = async () => {
+    const list = await pickFiles(FILE_ACCEPT, true)
+    if (list.length) await addAnyFiles(list)
+  }
+
+  const fileAction = async (action: string, f: FileRow) => {
+    setFileMenu(null)
+    switch (action) {
+      case 'open':
+        navigate({ name: 'file', fileId: f.id })
+        return
+      case 'rename': {
+        const t = await promptDialog('이름 바꾸기', { value: f.title, ok: '저장' })
+        if (t?.trim()) await updateFileMeta(f.id, { title: t.trim() })
+        break
+      }
+      case 'category':
+        setCategorizingFile(f)
+        return
+      case 'export':
+        try {
+          await saveFile(await fileToBlob(f), f.name)
+        } catch (e) {
+          toast(e instanceof Error ? e.message : '내보내기 실패', 'error')
+        }
+        return
+      case 'delete':
+        if (!(await confirmDialog('파일 삭제', { message: `"${f.title}"을(를) 이 기기와 클라우드에서 삭제합니다.`, ok: '삭제', danger: true }))) return
+        await deleteFile(f.id)
+        toast(`"${f.title}"을(를) 삭제했습니다.`, 'info')
         break
     }
     await refresh()
@@ -489,7 +596,7 @@ export function Library() {
         {treeOpen && (
           <nav className="folder-tree" aria-label="폴더">
             <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>
-              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length + apps.length}</span>
+              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length + apps.length + files.length}</span>
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
@@ -499,7 +606,7 @@ export function Library() {
                 onClick={() => setSection({ kind: 'category', name: c })}
               >
                 <Icon name="tag" size={18} /> <span className="tree-name">{c}</span>
-                <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length}</span>
+                <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
               </button>
             ))}
             <button
@@ -507,7 +614,7 @@ export function Library() {
               onClick={() => setSection({ kind: 'uncategorized' })}
             >
               <Icon name="tag" size={18} /> <span className="tree-name">미분류</span>
-              <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length}</span>
+              <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
             </button>
             <div className="tree-label">
               폴더
@@ -522,6 +629,7 @@ export function Library() {
               activeId={currentFolderId}
               docs={docs}
               apps={apps}
+              files={files}
               onSelect={(id) => setSection({ kind: 'folder', id })}
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
             />
@@ -610,6 +718,30 @@ export function Library() {
                       <Icon name="more" size={20} />
                     </button>
                   </article>
+                ) : i.kind === 'file' ? (
+                  <article key={'file:' + i.f.id} className="doc-card file-card" onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
+                    <div className="doc-thumb">
+                      <Icon name="file" size={36} />
+                      <span className="doc-badge">{extOf(i.f.name).toUpperCase() || '파일'}</span>
+                      {i.f.category && <span className="doc-cat">{i.f.category}</span>}
+                      {i.f.pending && <span className="app-pending" title="클라우드 저장 대기" />}
+                    </div>
+                    <div className="doc-info">
+                      <h3 className="doc-title">{i.f.title}</h3>
+                      <p className="doc-date">{formatDate(i.f.updatedAt)}</p>
+                    </div>
+                    <button
+                      className="doc-more"
+                      aria-label="더보기"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        setFileMenu({ file: i.f, x: r.right, y: r.bottom })
+                      }}
+                    >
+                      <Icon name="more" size={20} />
+                    </button>
+                  </article>
                 ) : (
                   <article
                     key={i.d.id}
@@ -683,6 +815,16 @@ export function Library() {
         </Menu>
       )}
 
+      {fileMenu && (
+        <Menu x={fileMenu.x} y={fileMenu.y} onClose={() => setFileMenu(null)}>
+          <MenuItem icon="play" label="열기" onClick={() => fileAction('open', fileMenu.file)} />
+          <MenuItem icon="edit" label="이름 바꾸기" onClick={() => fileAction('rename', fileMenu.file)} />
+          <MenuItem icon="tag" label="카테고리 지정" onClick={() => fileAction('category', fileMenu.file)} />
+          <MenuItem icon="download" label="내보내기" onClick={() => fileAction('export', fileMenu.file)} />
+          <MenuItem icon="trash" label="삭제" danger onClick={() => fileAction('delete', fileMenu.file)} />
+        </Menu>
+      )}
+
       {folderMenu && (
         <Menu x={folderMenu.x} y={folderMenu.y} onClose={() => setFolderMenu(null)}>
           <MenuItem icon="edit" label="이름 바꾸기" onClick={() => folderAction('rename', folderMenu.folder)} />
@@ -717,6 +859,19 @@ export function Library() {
         />
       )}
 
+      {categorizingFile && (
+        <CategoryPicker
+          current={categorizingFile.category ?? null}
+          categories={allCategories}
+          onClose={() => setCategorizingFile(null)}
+          onPick={async (cat) => {
+            await updateFileMeta(categorizingFile.id, { category: cat })
+            setCategorizingFile(null)
+            await refresh()
+          }}
+        />
+      )}
+
       {showNew && (
         <NewDocumentSheet
           folderId={currentFolderId}
@@ -738,6 +893,10 @@ export function Library() {
             setShowNew(false)
             void onAddApp()
           }}
+          onAddFile={() => {
+            setShowNew(false)
+            void onAddFile()
+          }}
         />
       )}
       {showSettings && <LibrarySettings onClose={() => setShowSettings(false)} onChanged={refresh} />}
@@ -753,6 +912,7 @@ function FolderTree(props: {
   activeId: ID | null
   docs: DocumentMeta[]
   apps: HtmlApp[]
+  files: FileRow[]
   onSelect: (id: ID) => void
   onMenu: (f: Folder, x: number, y: number) => void
 }) {
@@ -767,7 +927,8 @@ function FolderTree(props: {
               <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
               <span className="count">
                 {props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length +
-                  props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length}
+                  props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length +
+                  props.files.filter((x) => x.category && (f.categories ?? []).includes(x.category)).length}
               </span>
             </button>
             <button

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Asset, Block, DocumentMeta, Folder, HtmlApp, ID, Page } from '../shared/model'
+import type { Asset, Block, DocumentMeta, Folder, HtmlApp, ID, Page, StoredFile } from '../shared/model'
 
 /** IndexedDB 레코드 (설계 8장) */
 export interface ChunkRow {
@@ -17,6 +17,13 @@ export interface ChunkRow {
 
 export interface AssetRow extends Asset {
   blob?: Blob // 없으면 아직 받지 않음(클라우드에만 있음)
+}
+
+/** 일반 파일 행. text 종류는 `text`에, 그 외는 `blob`에 내용을 담는다.
+ *  클라우드에서 메타만 받은 파일은 둘 다 비어 있고, 열 때 지연 로딩한다. */
+export interface FileRow extends StoredFile {
+  text?: string
+  blob?: Blob
 }
 
 export interface ThumbRow {
@@ -55,6 +62,7 @@ export class InkpadDB extends Dexie {
   backups!: Table<{ id: string; createdAt: number; reason: string; data: Blob }, string>
   apps!: Table<HtmlApp, ID>
   appStorage!: Table<{ appId: ID; data: Record<string, string> }, ID>
+  files!: Table<FileRow, ID>
 
   constructor(name = 'inkpad') {
     super(name)
@@ -76,6 +84,8 @@ export class InkpadDB extends Dexie {
     this.version(3).stores({ blocks: 'id, documentId, pageId, deletedAt' })
     // v4: HTML 앱 + 앱별 localStorage 대용 저장소(로컬 전용, 동기화하지 않음)
     this.version(4).stores({ apps: 'id, updatedAt', appStorage: 'appId' })
+    // v5: 일반 파일 (임의 형식 — 노트·앱과 별개 테이블)
+    this.version(5).stores({ files: 'id, updatedAt' })
   }
 }
 

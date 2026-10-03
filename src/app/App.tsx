@@ -4,6 +4,7 @@ import { DialogHost } from './dialogs'
 import { Library } from '../ui/library/Library'
 import { Editor } from '../ui/editor/Editor'
 import { AppRunner } from '../ui/app/AppRunner'
+import { FileRunner } from '../ui/app/FileRunner'
 import { Icon } from '../ui/Icon'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
@@ -20,6 +21,8 @@ export function App() {
         <Editor key={route.docId} docId={route.docId} />
       ) : route.name === 'app' ? (
         <AppRunner key={route.appId} appId={route.appId} />
+      ) : route.name === 'file' ? (
+        <FileRunner key={route.fileId} fileId={route.fileId} />
       ) : (
         <Library />
       )}

@@ -62,7 +62,7 @@ export interface LibraryPrefs {
   sort: 'updated' | 'created' | 'title'
 }
 
-export type Route = { name: 'library' } | { name: 'editor'; docId: ID } | { name: 'app'; appId: ID }
+export type Route = { name: 'library' } | { name: 'editor'; docId: ID } | { name: 'app'; appId: ID } | { name: 'file'; fileId: ID }
 
 export interface Toast {
   id: number
@@ -118,6 +118,8 @@ function initialRoute(): Route {
   if (m) return { name: 'editor', docId: m[1] }
   const a = /^#\/app\/([0-9A-Z]{26})$/.exec(location.hash)
   if (a) return { name: 'app', appId: a[1] }
+  const f = /^#\/file\/([0-9A-Z]{26})$/.exec(location.hash)
+  if (f) return { name: 'file', fileId: f[1] }
   return { name: 'library' }
 }
 
@@ -143,7 +145,7 @@ export const useUI = create<UIState>((set, get) => ({
   selectedBlockId: null,
 
   navigate: (route) => {
-    const hash = route.name === 'editor' ? `#/doc/${route.docId}` : route.name === 'app' ? `#/app/${route.appId}` : '#/'
+    const hash = route.name === 'editor' ? `#/doc/${route.docId}` : route.name === 'app' ? `#/app/${route.appId}` : route.name === 'file' ? `#/file/${route.fileId}` : '#/'
     if (location.hash !== hash) history.pushState(null, '', hash)
     set({ route, panel: 'none', selection: null })
   },
