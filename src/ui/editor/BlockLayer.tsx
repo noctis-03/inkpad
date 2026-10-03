@@ -414,6 +414,16 @@ function MemoBody(p: Omit<CardProps, 'block'> & { block: MemoBlock }) {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }
+  // Undo/Redo·동기화로 block.data.text가 바뀌어도 uncontrolled textarea의 DOM 값은 그대로다.
+  // 포커스 중이 아니면 DOM 값을 맞춰, 다음 입력이 취소된 내용을 되살리지 않게 한다.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (document.activeElement !== el && el.value !== block.data.text) {
+      el.value = block.data.text
+      grow(el)
+    }
+  }, [block.data.text])
   return (
     <div className="blk-body">
       {!block.data.collapsed && (
