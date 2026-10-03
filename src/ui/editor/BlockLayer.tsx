@@ -457,6 +457,12 @@ function LinkBody({ engine, block, fresh, readOnly, fire, editTick }: Omit<CardP
   useEffect(() => {
     if (editTick && !readOnly) setEditing(true)
   }, [editTick, readOnly])
+  // 편집 모드에 들어올 때마다 현재 블록 값으로 폼을 맞춘다 — Undo/동기화 후 낡은 값으로 덮어쓰지 않게
+  useEffect(() => {
+    if (!editing) return
+    setUrl(block.data.url)
+    setLabel(block.data.label)
+  }, [editing, block.data.url, block.data.label])
   const domain = safeDomain(block.data.url)
   const initial = (block.data.label || domain || block.data.url).trim()
   const open = () => {
