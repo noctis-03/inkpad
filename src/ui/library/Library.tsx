@@ -33,6 +33,8 @@ import type { FileRow } from '../../storage/db'
 
 type Section =
   | { kind: 'all' }
+  | { kind: 'notes' }
+  | { kind: 'apps' }
   | { kind: 'category'; name: string }
   | { kind: 'folder'; id: ID }
   | { kind: 'uncategorized' }
@@ -121,7 +123,7 @@ export function Library() {
   const currentFolderId = section.kind === 'folder' ? section.id : null
 
   const visible = useMemo(() => {
-    let list = section.kind === 'trash' ? trash : docs
+    let list: DocumentMeta[] = section.kind === 'apps' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱에서는 노트를 숨긴다
     if (section.kind !== 'trash') list = list.filter((d) => !d.category || !hiddenCats.has(d.category)) // 숨긴 카테고리는 이 기기에서 미사용
     if (section.kind === 'folder') {
       const f = folders.find((x) => x.id === section.id)
@@ -141,9 +143,9 @@ export function Library() {
     return sorted
   }, [docs, trash, folders, hiddenCats, section, query, prefs.sort])
 
-  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통에는 표시하지 않는다) */
+  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통과 모든 노트에는 표시하지 않는다) */
   const visibleApps = useMemo(() => {
-    if (section.kind === 'trash') return []
+    if (section.kind === 'trash' || section.kind === 'notes') return []
     let list = apps.filter((a) => !a.category || !hiddenCats.has(a.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -155,9 +157,9 @@ export function Library() {
     return list
   }, [apps, folders, hiddenCats, section, query])
 
-  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통에는 표시하지 않는다) */
+  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 앱에는 표시하지 않는다) */
   const visibleFiles = useMemo(() => {
-    if (section.kind === 'trash') return []
+    if (section.kind === 'trash' || section.kind === 'notes' || section.kind === 'apps') return []
     let list = files.filter((f) => !f.category || !hiddenCats.has(f.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -549,7 +551,11 @@ export function Library() {
           ? section.name
           : section.kind === 'folder'
             ? breadcrumb.at(-1)?.name ?? '폴더'
-            : '모든 노트'
+            : section.kind === 'notes'
+              ? '모든 노트'
+              : section.kind === 'apps'
+                ? '모든 앱'
+                : '전체'
 
   return (
     <div className="library" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -596,7 +602,13 @@ export function Library() {
         {treeOpen && (
           <nav className="folder-tree" aria-label="폴더">
             <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>
-              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length + apps.length + files.length}</span>
+              <Icon name="grid" size={18} /> 전체 <span className="count">{docs.length + apps.length + files.length}</span>
+            </button>
+            <button className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
+              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
+            </button>
+            <button className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
+              <Icon name="app" size={18} /> 모든 앱 <span className="count">{apps.length}</span>
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
@@ -642,7 +654,7 @@ export function Library() {
         <main className="library-main">
           {section.kind === 'folder' && (
             <nav className="breadcrumb" aria-label="경로">
-              <button onClick={() => setSection({ kind: 'all' })}>모든 노트</button>
+              <button onClick={() => setSection({ kind: 'all' })}>전체</button>
               {breadcrumb.map((f) => (
                 <span key={f.id}>
                   <Icon name="chevronRight" size={14} />
@@ -674,6 +686,16 @@ export function Library() {
             <div className="empty-state">
               {section.kind === 'trash' ? (
                 <p>휴지통이 비어 있습니다.</p>
+              ) : section.kind === 'apps' ? (
+                <>
+                  <Icon name="app" size={48} />
+                  <p>아직 앱이 없습니다.</p>
+                  <div className="btn-row center">
+                    <button className="text-btn" onClick={() => void onAddApp()}>
+                      <Icon name="plus" size={18} /> 앱 추가
+                    </button>
+                  </div>
+                </>
               ) : query ? (
                 <p>“{query}”와(과) 일치하는 문서가 없습니다.</p>
               ) : (
