@@ -699,7 +699,11 @@ export class Engine {
       }
     }
     if (this.selection.length) this.clearSelection(false)
-    if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
+    // 블록만 바뀐 Command는 DOM 오버레이만 갱신하면 된다 — 획 캔버스를 다시 그리지 않는다.
+    const blocksOnly = toRemove.length === 0 && toAdd.length === 0 && !snap
+    if (blocksOnly) {
+      // 캔버스에 그릴 변경 없음 — 블록은 BlockLayer가 렌더한다
+    } else if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
       this.committedDirty = true
     } else {
       this.renderer.redrawRegion(this.scene, this.cam, box)
