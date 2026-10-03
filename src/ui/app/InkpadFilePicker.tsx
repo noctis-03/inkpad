@@ -62,8 +62,9 @@ export function InkpadFilePicker({
 
   const groups = useMemo(
     () => [
-      { kind: 'app' as const, title: 'HTML 앱', items: items.filter((f) => f.kind === 'app') },
-      { kind: 'asset' as const, title: '원본 (PDF·이미지)', items: items.filter((f) => f.kind === 'asset') }
+      { kind: 'app' as const, icon: 'app', title: 'HTML 앱', items: items.filter((f) => f.kind === 'app') },
+      { kind: 'file' as const, icon: 'file', title: '파일', items: items.filter((f) => f.kind === 'file') },
+      { kind: 'asset' as const, icon: 'file', title: '노트 원본 (PDF·이미지)', items: items.filter((f) => f.kind === 'asset') }
     ].filter((g) => g.items.length > 0),
     [items]
   )
@@ -104,7 +105,7 @@ export function InkpadFilePicker({
       <div className="modal inkpad-pick-modal" role="dialog" aria-label="Inkpad에서 고르기">
         <h2 className="modal-title">Inkpad에서 고르기</h2>
         <p className="modal-message">
-          Inkpad에 저장된 앱·원본에서 고릅니다.
+          Inkpad에 저장된 앱·파일·원본에서 고릅니다.
           {accept ? ` (앱이 요청한 형식: ${accept})` : ''}
         </p>
 
@@ -124,7 +125,7 @@ export function InkpadFilePicker({
             {groups.map((g) => (
               <section key={g.kind} className="inkpad-pick-group">
                 <h3 className="inkpad-pick-group-title">
-                  <Icon name={g.kind === 'app' ? 'app' : 'file'} size={13} /> {g.title} <b>{g.items.length}</b>
+                  <Icon name={g.icon} size={13} /> {g.title} <b>{g.items.length}</b>
                 </h3>
                 {g.items.map((f) => (
                   <button key={f.key} className={'inkpad-pick-row' + (picked.has(f.key) ? ' is-picked' : '')} onClick={() => tap(f)}>
