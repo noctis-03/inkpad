@@ -5,6 +5,8 @@ import { Icon } from '../Icon'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
+import { AppsSheet } from '../AppsSheet'
+import { FilesSheet } from '../FilesSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
 import { formatDate } from '../../shared/util'
@@ -27,8 +29,8 @@ import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
-import { APPS_EVENT, addApp, deleteApp, listApps, updateAppHtml, updateAppMeta } from '../../sync/apps'
-import { FILES_EVENT, addFile, deleteFile, fileToBlob, getFile, listFiles, updateFileMeta } from '../../sync/files'
+import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
+import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import type { FileRow } from '../../storage/db'
 
 type Section =
@@ -63,6 +65,8 @@ export function Library() {
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showSync, setShowSync] = useState(false)
+  const [showApps, setShowApps] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
@@ -369,11 +373,13 @@ export function Library() {
       case 'export':
         await saveFile(new Blob([a.html], { type: 'text/html' }), `${a.title}.html`)
         return
-      case 'delete':
-        if (!(await confirmDialog('앱 삭제', { message: `"${a.title}"을(를) 이 기기와 클라우드에서 삭제합니다.`, ok: '삭제', danger: true }))) return
-        await deleteApp(a.id)
-        toast(`"${a.title}"을(를) 삭제했습니다.`, 'info')
+      case 'remove': {
+        const warn = a.pending ? '클라우드에 없는 변경이 사라집니다. ' : ''
+        if (!(await confirmDialog('이 기기에서 제거', { message: `${warn}"${a.title}"을(를) 이 기기에서만 제거합니다. 클라우드 사본은 남습니다.`, ok: '제거', danger: true }))) return
+        await uninstallApp(a.id)
+        toast(`"${a.title}"을(를) 이 기기에서 제거했습니다.`, 'info')
         break
+      }
     }
     await refresh()
   }
@@ -444,11 +450,13 @@ export function Library() {
           toast(e instanceof Error ? e.message : '내보내기 실패', 'error')
         }
         return
-      case 'delete':
-        if (!(await confirmDialog('파일 삭제', { message: `"${f.title}"을(를) 이 기기와 클라우드에서 삭제합니다.`, ok: '삭제', danger: true }))) return
-        await deleteFile(f.id)
-        toast(`"${f.title}"을(를) 삭제했습니다.`, 'info')
+      case 'remove': {
+        const warn = f.pending ? '클라우드에 없는 변경이 사라집니다. ' : ''
+        if (!(await confirmDialog('이 기기에서 제거', { message: `${warn}"${f.title}"을(를) 이 기기에서만 제거합니다. 클라우드 사본은 남습니다.`, ok: '제거', danger: true }))) return
+        await removeFileLocal(f.id)
+        toast(`"${f.title}"을(를) 이 기기에서 제거했습니다.`, 'info')
         break
+      }
     }
     await refresh()
   }
@@ -594,6 +602,12 @@ export function Library() {
         <button className="tb-btn sync-btn" onClick={() => setShowSync(true)} aria-label="동기화" title="동기화">
           <Icon name="cloud" />
         </button>
+        <button className="tb-btn" onClick={() => setShowApps(true)} aria-label="앱" title="앱">
+          <Icon name="apps" />
+        </button>
+        <button className="tb-btn" onClick={() => setShowFiles(true)} aria-label="기타 파일" title="기타 파일">
+          <Icon name="files" />
+        </button>
         {section.kind !== 'trash' && (
           <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
             <Icon name="plus" size={18} /> 새로 만들기
@@ -697,6 +711,9 @@ export function Library() {
                   <Icon name="app" size={48} />
                   <p>아직 앱이 없습니다.</p>
                   <div className="btn-row center">
+                    <button className="text-btn" onClick={() => setShowApps(true)}>
+                      <Icon name="apps" size={18} /> 앱 메뉴에서 설치하기
+                    </button>
                     <button className="text-btn" onClick={() => void onAddApp()}>
                       <Icon name="plus" size={18} /> 앱 추가
                     </button>
@@ -849,7 +866,7 @@ export function Library() {
           <MenuItem icon="edit" label="이름 바꾸기" onClick={() => appAction('rename', appMenu.app)} />
           <MenuItem icon="tag" label="카테고리 지정" onClick={() => appAction('category', appMenu.app)} />
           <MenuItem icon="download" label=".html로 내보내기" onClick={() => appAction('export', appMenu.app)} />
-          <MenuItem icon="trash" label="삭제" danger onClick={() => appAction('delete', appMenu.app)} />
+          <MenuItem icon="trash" label="이 기기에서 제거" danger onClick={() => appAction('remove', appMenu.app)} />
         </Menu>
       )}
 
@@ -859,7 +876,7 @@ export function Library() {
           <MenuItem icon="edit" label="이름 바꾸기" onClick={() => fileAction('rename', fileMenu.file)} />
           <MenuItem icon="tag" label="카테고리 지정" onClick={() => fileAction('category', fileMenu.file)} />
           <MenuItem icon="download" label="내보내기" onClick={() => fileAction('export', fileMenu.file)} />
-          <MenuItem icon="trash" label="삭제" danger onClick={() => fileAction('delete', fileMenu.file)} />
+          <MenuItem icon="trash" label="이 기기에서 제거" danger onClick={() => fileAction('remove', fileMenu.file)} />
         </Menu>
       )}
 
@@ -939,6 +956,8 @@ export function Library() {
       )}
       {showSettings && <LibrarySettings onClose={() => setShowSettings(false)} onChanged={refresh} />}
       {showSync && <SyncSheet onClose={() => setShowSync(false)} />}
+      {showApps && <AppsSheet onClose={() => setShowApps(false)} />}
+      {showFiles && <FilesSheet onClose={() => setShowFiles(false)} />}
     </div>
   )
 }

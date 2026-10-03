@@ -78,10 +78,17 @@ export async function updateAppMeta(id: ID, patch: { title?: string; category?: 
   return tryFlush(id)
 }
 
-/** 삭제 = 이 기기 + 클라우드 */
-export async function deleteApp(id: ID): Promise<boolean> {
+/** 클라우드 삭제 = 이 기기 + Drive(휴지통). 앱 메뉴의 "클라우드에서 삭제"에서 부른다 */
+export async function deleteAppFromCloud(id: ID): Promise<boolean> {
   const a = await db.apps.get(id)
-  if (!a) return true
+  if (!a) {
+    // 설치하지 않은(클라우드 전용) 앱 — Drive에서만 지운다
+    const folder = await appsFolder()
+    const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.appId === id)
+    if (r) await drive.trash(r.id)
+    emit()
+    return true
+  }
   if (!a.fileId) {
     await purgeLocal(id) // 클라우드에 올라간 적 없음
     emit()
@@ -185,45 +192,164 @@ export async function countPendingApps() {
   return (await db.apps.toArray()).filter((a) => a.pending).length
 }
 
-/** 받기에서 호출: 다른 기기의 추가·업데이트·삭제 반영 */
-export async function pullApps(): Promise<number> {
+// ───────── 앱 전용 클라우드 관리 (앱 메뉴) ─────────
+// 노트 동기화와 분리한다: Drive의 Inkpad/apps/ = 스토어(카탈로그), 각 기기는 원하는 앱만 설치/업데이트/제거.
+// "설치됨" = 로컬 db.apps에 행이 있는가. 원격에 없다고 로컬을 자동으로 지우지 않는다.
+
+export type CloudAppState =
+  | 'installed' // 설치됨, 최신
+  | 'update' // 설치됨, 원격 updatedAt이 더 새로움
+  | 'available' // 클라우드에만 있음
+  | 'pending' // 이 기기에서 바뀌어 올릴 것이 있음 (pending 존재)
+  | 'cloud-missing' // 설치돼 있고 fileId도 있는데 클라우드에서 사라짐
+  | 'local-only' // 클라우드에 올라간 적 없음 (fileId 없음, 업로드 실패)
+
+export interface CloudAppInfo {
+  appId: ID
+  title: string
+  category: string | null
+  remoteUpdatedAt?: number
+  localUpdatedAt?: number
+  driveFileId?: string
+  state: CloudAppState
+}
+
+/** 이 기기 설치 목록만으로 만든다 (오프라인에서 열 때) */
+async function localCloudApps(): Promise<CloudAppInfo[]> {
+  return (await db.apps.toArray())
+    .filter((a) => !a.deletedAt)
+    .map((a) => ({
+      appId: a.id,
+      title: a.title,
+      category: a.category,
+      localUpdatedAt: a.updatedAt,
+      driveFileId: a.fileId,
+      state: (a.pending || !a.fileId ? (a.fileId ? 'pending' : 'local-only') : 'installed') as CloudAppState
+    }))
+}
+
+/**
+ * Drive에 올라가 있는 앱 목록 — 메타(appProperties)만으로 만든다(HTML 본문 내려받지 않음).
+ * 로컬 db.apps와 합쳐 상태를 계산한다. 원격에 없다고 로컬을 자동 삭제하지 않는다.
+ */
+export async function listCloudApps(): Promise<CloudAppInfo[]> {
+  if (!navigator.onLine) return localCloudApps()
   const folder = await appsFolder()
   const remotes = await drive.listFiles(folder)
-  const seen = new Set<string>()
-  let n = 0
+  const cloud = new Map<string, drive.RemoteFile>()
   for (const r of remotes) {
     const appId = r.appProperties?.appId
-    if (!appId) continue
-    seen.add(r.id)
+    if (appId) cloud.set(appId, r)
+  }
+  const out: CloudAppInfo[] = []
+  for (const [appId, r] of cloud) {
     const local = await db.apps.get(appId)
-    if (local?.pending) continue // 이 기기의 변경이 우선
-    const remoteAt = Number(r.appProperties?.updatedAt) || 0
-    if (local && local.updatedAt >= remoteAt) {
-      if (local.fileId !== r.id) await db.apps.update(appId, { fileId: r.id })
-      continue
-    }
-    const html = await (await drive.downloadBlob(r.id)).text()
-    await db.apps.put({
-      id: appId,
+    const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || 0
+    const state: CloudAppState =
+      local?.pending
+        ? 'pending'
+        : !local
+          ? 'available'
+          : !local.fileId
+            ? 'local-only'
+            : remoteAt > local.updatedAt
+              ? 'update'
+              : 'installed'
+    out.push({
+      appId,
       title: r.appProperties?.title || local?.title || 'HTML 앱',
       category: r.appProperties?.category ?? local?.category ?? null,
-      html,
-      size: new Blob([html]).size,
-      createdAt: local?.createdAt ?? (Date.parse(r.modifiedTime) || Date.now()),
-      updatedAt: remoteAt || Date.now(),
-      fileId: r.id
+      remoteUpdatedAt: remoteAt || undefined,
+      localUpdatedAt: local?.updatedAt,
+      driveFileId: r.id,
+      state
     })
-    n++
   }
-  // 다른 기기에서 삭제한 앱. listFiles 인덱스 지연 대비로 getMeta 재확인
+  // 클라우드 목록에 없는 이 기기 앱 — listFiles 인덱스 지연 대비 getMeta로 재확인한다
   for (const a of await db.apps.toArray()) {
-    if (!a.fileId || a.pending || seen.has(a.fileId)) continue
-    const m = await drive.getMeta(a.fileId).catch(() => undefined)
-    if (m === null || m?.trashed) {
-      await purgeLocal(a.id)
+    if (a.deletedAt || cloud.has(a.id)) continue
+    let state: CloudAppState
+    if (!a.fileId) state = 'local-only'
+    else if (a.pending) state = 'pending'
+    else {
+      const m = await drive.getMeta(a.fileId).catch(() => undefined)
+      state = m === null || m?.trashed ? 'cloud-missing' : 'installed'
+    }
+    out.push({
+      appId: a.id,
+      title: a.title,
+      category: a.category,
+      localUpdatedAt: a.updatedAt,
+      driveFileId: a.fileId,
+      state
+    })
+  }
+  return out.sort((a, b) => (b.remoteUpdatedAt ?? b.localUpdatedAt ?? 0) - (a.remoteUpdatedAt ?? a.localUpdatedAt ?? 0))
+}
+
+/** 클라우드 앱 하나를 이 기기로 내려받는다 (기존 pullApps의 단건 다운로드 로직) */
+async function downloadAppFromCloud(appId: ID): Promise<void> {
+  const local = await db.apps.get(appId)
+  if (local?.pending) throw new Error('이 기기의 변경을 먼저 올려 주세요.')
+  const folder = await appsFolder()
+  const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.appId === appId)
+  if (!r) throw new Error('클라우드에서 앱을 찾지 못했습니다.')
+  const html = await (await drive.downloadBlob(r.id)).text()
+  const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || Date.now()
+  await db.apps.put({
+    id: appId,
+    title: r.appProperties?.title || local?.title || 'HTML 앱',
+    category: r.appProperties?.category ?? local?.category ?? null,
+    html,
+    size: new Blob([html]).size,
+    createdAt: local?.createdAt ?? remoteAt,
+    updatedAt: remoteAt,
+    fileId: r.id
+  })
+  emit()
+}
+
+/** 설치 — 클라우드에만 있는 앱을 이 기기로 받는다 */
+export async function installApp(appId: ID): Promise<void> {
+  await downloadAppFromCloud(appId)
+}
+
+/** 업데이트 — 설치된 앱을 최신 원격 내용으로 덮어쓴다 */
+export async function updateInstalledApp(appId: ID): Promise<void> {
+  await downloadAppFromCloud(appId)
+}
+
+/** update 상태인 앱만 순서대로 받는다 */
+export async function updateAllApps(): Promise<number> {
+  const ids = (await listCloudApps()).filter((a) => a.state === 'update').map((a) => a.appId)
+  let n = 0
+  for (const id of ids) {
+    try {
+      await downloadAppFromCloud(id)
       n++
+    } catch (e) {
+      console.warn('[apps] 업데이트 실패', id, e)
     }
   }
-  if (n) emit()
   return n
+}
+
+/** 이 기기에서 제거 — 로컬 db.apps 행만 지운다. clearData일 때만 db.appStorage도 지운다 */
+export async function uninstallApp(appId: ID, opts?: { clearData?: boolean }): Promise<void> {
+  if (opts?.clearData) {
+    await db.transaction('rw', db.apps, db.appStorage, async () => {
+      await db.apps.delete(appId)
+      await db.appStorage.delete(appId)
+    })
+  } else {
+    await db.apps.delete(appId)
+  }
+  emit()
+}
+
+/** cloud-missing / local-only / pending 앱을 다시 올린다 (fileId를 지우고 pending upsert) */
+export async function reuploadApp(appId: ID): Promise<boolean> {
+  await db.apps.update(appId, { fileId: undefined, deletedAt: undefined, pending: 'upsert' })
+  emit()
+  return tryFlush(appId)
 }

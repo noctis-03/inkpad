@@ -25,6 +25,7 @@
   "devDependencies": {
     "@hono/vite-build": "^1.11.1",
     "@hono/vite-dev-server": "^0.26.1",
+    "@types/node": "^26.6.4",
     "@types/rbush": "^4.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
