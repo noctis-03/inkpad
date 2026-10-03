@@ -7,6 +7,7 @@ import {
   MAX_FILE_TITLE_CHARS,
   extOf,
   fileKindOf,
+  type FileKind,
   type ID,
   type StoredFile
 } from '../shared/model'
@@ -187,6 +188,84 @@ export async function flushPendingFiles(): Promise<number> {
 
 export async function countPendingFiles() {
   return (await db.files.toArray()).filter((f) => f.pending).length
+}
+
+// ───────── 파일 전용 클라우드 관리 (기타 파일 메뉴) ─────────
+
+export type CloudFileState = 'same' | 'remote-new' | 'pending' | 'deleted-local'
+
+export interface CloudFileInfo {
+  /** 로컬 행 id (appProperties.fileId) */
+  id: ID
+  driveFileId: string
+  title: string
+  category: string | null
+  name: string
+  mime: string
+  size: number
+  kind: FileKind
+  updatedAt: number
+  state: CloudFileState
+}
+
+/** Drive에 올라가 있는 파일 목록 — 메타만으로 만든다(원본 내려받지 않음) */
+export async function listCloudFiles(): Promise<CloudFileInfo[]> {
+  const folder = await filesFolder()
+  const remotes = await drive.listFiles(folder)
+  const out: CloudFileInfo[] = []
+  for (const r of remotes) {
+    const fid = r.appProperties?.fileId
+    if (!fid) continue
+    const local = await db.files.get(fid)
+    const remoteAt = Number(r.appProperties?.updatedAt) || 0
+    const state: CloudFileState =
+      local?.pending === 'delete' ? 'deleted-local'
+      : local?.pending === 'upsert' ? 'pending'
+      : !local || remoteAt > local.updatedAt ? 'remote-new'
+      : 'same'
+    out.push({
+      id: fid,
+      driveFileId: r.id,
+      title: r.appProperties?.title || local?.title || '파일',
+      category: r.appProperties?.category ?? local?.category ?? null,
+      name: r.appProperties?.name || r.name || '파일',
+      mime: r.appProperties?.mime || local?.mime || 'application/octet-stream',
+      size: Number(r.appProperties?.size) || local?.size || 0,
+      kind: (r.appProperties?.kind as FileKind) || fileKindOf(r.name || '', r.appProperties?.mime || ''),
+      updatedAt: remoteAt || Date.parse(r.modifiedTime) || Date.now(),
+      state
+    })
+  }
+  return out.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** 클라우드 파일 하나의 메타를 이 기기로 받는다. 원본은 열 때 지연 로딩한다 (이 기기의 변경이 우선) */
+export async function downloadCloudFile(info: CloudFileInfo): Promise<'applied' | 'skipped'> {
+  const local = await db.files.get(info.id)
+  if (local?.pending) return 'skipped'
+  await db.files.put({
+    id: info.id,
+    title: info.title,
+    category: info.category,
+    name: info.name,
+    mime: info.mime,
+    size: info.size,
+    kind: info.kind,
+    createdAt: local?.createdAt ?? Date.now(),
+    updatedAt: info.updatedAt || Date.now(),
+    fileId: info.driveFileId,
+    text: local?.text,
+    blob: local?.blob
+  })
+  emit()
+  return 'applied'
+}
+
+/** 클라우드에서 파일을 지운다. 파일도 앱과 같이 사본을 함께 지운다(다른 기기도 받기 때 지워짐) */
+export async function deleteCloudFile(info: Pick<CloudFileInfo, 'id' | 'driveFileId'>): Promise<void> {
+  await drive.trash(info.driveFileId)
+  await db.files.delete(info.id)
+  emit()
 }
 
 /** 받기에서 호출: 다른 기기의 추가·업데이트·삭제 반영 (원본 바이트는 받지 않는다) */

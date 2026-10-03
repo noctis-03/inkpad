@@ -185,6 +185,72 @@ export async function countPendingApps() {
   return (await db.apps.toArray()).filter((a) => a.pending).length
 }
 
+// ───────── 앱 전용 클라우드 관리 (앱 메뉴) ─────────
+
+export type CloudAppState = 'same' | 'remote-new' | 'pending' | 'deleted-local'
+
+export interface CloudAppInfo {
+  appId: ID
+  driveFileId: string
+  title: string
+  category: string | null
+  updatedAt: number
+  state: CloudAppState
+}
+
+/** Drive에 올라가 있는 앱 목록 — 메타만으로 만든다(본문 내려받지 않음) */
+export async function listCloudApps(): Promise<CloudAppInfo[]> {
+  const folder = await appsFolder()
+  const remotes = await drive.listFiles(folder)
+  const out: CloudAppInfo[] = []
+  for (const r of remotes) {
+    const appId = r.appProperties?.appId
+    if (!appId) continue
+    const local = await db.apps.get(appId)
+    const remoteAt = Number(r.appProperties?.updatedAt) || 0
+    const state: CloudAppState =
+      local?.pending === 'delete' ? 'deleted-local'
+      : local?.pending === 'upsert' ? 'pending'
+      : !local || remoteAt > local.updatedAt ? 'remote-new'
+      : 'same'
+    out.push({
+      appId,
+      driveFileId: r.id,
+      title: r.appProperties?.title || local?.title || 'HTML 앱',
+      category: r.appProperties?.category ?? local?.category ?? null,
+      updatedAt: remoteAt || Date.parse(r.modifiedTime) || Date.now(),
+      state
+    })
+  }
+  return out.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** 클라우드 앱 하나를 이 기기로 내려받는다 (이 기기의 변경이 우선) */
+export async function downloadCloudApp(info: CloudAppInfo): Promise<'applied' | 'skipped'> {
+  const local = await db.apps.get(info.appId)
+  if (local?.pending) return 'skipped'
+  const html = await (await drive.downloadBlob(info.driveFileId)).text()
+  await db.apps.put({
+    id: info.appId,
+    title: info.title,
+    category: info.category,
+    html,
+    size: new Blob([html]).size,
+    createdAt: local?.createdAt ?? Date.now(),
+    updatedAt: info.updatedAt || Date.now(),
+    fileId: info.driveFileId
+  })
+  emit()
+  return 'applied'
+}
+
+/** 클라우드에서 앱을 지운다. 앱은 노트와 달리 표식이 없어 사본도 함께 지운다(다른 기기도 받기 때 지워짐) */
+export async function deleteCloudApp(info: Pick<CloudAppInfo, 'appId' | 'driveFileId'>): Promise<void> {
+  await drive.trash(info.driveFileId)
+  if (await db.apps.get(info.appId)) await purgeLocal(info.appId)
+  emit()
+}
+
 /** 받기에서 호출: 다른 기기의 추가·업데이트·삭제 반영 */
 export async function pullApps(): Promise<number> {
   const folder = await appsFolder()
