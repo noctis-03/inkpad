@@ -19,6 +19,7 @@ import type {
   ViewInfo
 } from './types'
 import type { Background, Block, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
+import { BLOCK_MAX_OUTSIDE } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
@@ -92,6 +93,9 @@ interface Gesture {
 
 const LAT_SAMPLES = 120
 const SAVE_DEBOUNCE_MS = 500
+
+/** 페이지 기준 상대 좌표를 허용 범위(페이지 밖 BLOCK_MAX_OUTSIDE까지)로 clamp한다 */
+const clampBlockRel = (v: number, max: number) => Math.min(Math.max(v, -BLOCK_MAX_OUTSIDE), Math.max(-BLOCK_MAX_OUTSIDE, max))
 
 export class Engine {
   readonly root: HTMLElement
@@ -626,7 +630,19 @@ export class Engine {
     if (!targets.length) return
     const before = this.snapshot(targets)
     const after = this.snapshot(targets.map((p) => ({ ...p, size: { ...size } })))
-    this.exec({ removed: [], added: [], pagesBefore: before, pagesAfter: after, label: '페이지 크기' })
+    // 페이지가 작아지면 기존 블록이 허용 범위를 벗어날 수 있다 — 같은 Command에서 상대좌표를 clamp해 함께 Undo되게 한다
+    const targetIds = new Set(targets.map((p) => p.id))
+    const blockChanges = this.blocks
+      .list()
+      .filter((b) => targetIds.has(b.pageId))
+      .map((b) => {
+        const h = this.blocks.measuredHeight(b.id) || 72
+        const x = clampBlockRel(b.x, size.w + BLOCK_MAX_OUTSIDE - b.w)
+        const y = clampBlockRel(b.y, size.h + BLOCK_MAX_OUTSIDE - h)
+        return x === b.x && y === b.y ? null : { before: b, after: { ...b, x, y, updatedAt: Date.now() } as Block }
+      })
+      .filter((c): c is { before: Block; after: Block } => c !== null)
+    this.exec({ removed: [], added: [], pagesBefore: before, pagesAfter: after, blocks: blockChanges, label: '페이지 크기' })
   }
 
   /** 다른 문서/PDF에서 가져온 페이지를 index 뒤에 삽입 (FR-IO-01) */
