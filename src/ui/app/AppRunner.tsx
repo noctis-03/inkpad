@@ -5,6 +5,7 @@ import { pickFiles } from '../../io/download'
 import type { HtmlApp, ID } from '../../shared/model'
 import { getApp, loadAppStorage, saveAppStorage } from '../../sync/apps'
 import { buildSrcDoc } from './bridge'
+import { InkpadFilePicker } from './InkpadFilePicker'
 
 // allow-same-origin은 절대 넣지 않는다 — 넣으면 앱이 Inkpad의 IndexedDB(노트)와 Drive 토큰에 접근할 수 있다
 const SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads'
@@ -18,6 +19,7 @@ export function AppRunner({ appId }: { appId: ID }) {
   const [srcDoc, setSrcDoc] = useState('')
   const [run, setRun] = useState(0)
   const [fileReq, setFileReq] = useState<FileReq | null>(null)
+  const [inkpadPicker, setInkpadPicker] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -88,7 +90,21 @@ export function AppRunner({ appId }: { appId: ID }) {
         )
       )}
 
-      {fileReq && (
+      {/* Inkpad가 만든 클라우드 파일(앱·원본)에서 고르기 */}
+      {fileReq && inkpadPicker && (
+        <InkpadFilePicker
+          accept={fileReq.accept}
+          multiple={fileReq.multiple}
+          onBack={() => setInkpadPicker(false)}
+          onPick={(files) => {
+            reply({ type: 'picked', id: fileReq.id, files })
+            setInkpadPicker(false)
+            setFileReq(null)
+          }}
+        />
+      )}
+
+      {fileReq && !inkpadPicker && (
         <div className="modal-backdrop">
           <div className="modal">
             <h2 className="modal-title">파일 불러오기</h2>
@@ -103,8 +119,11 @@ export function AppRunner({ appId }: { appId: ID }) {
               >
                 취소
               </button>
+              <button className="text-btn" onClick={() => setInkpadPicker(true)}>
+                <Icon name="app" size={18} /> Inkpad에서 고르기
+              </button>
               <button className="primary-btn" onClick={() => choose(fileReq)}>
-                <Icon name="file" size={18} /> 파일 선택
+                <Icon name="file" size={18} /> 기기에서 고르기
               </button>
             </div>
           </div>

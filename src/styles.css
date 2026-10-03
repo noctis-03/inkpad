@@ -2622,3 +2622,18 @@ textarea {
 /* 클라우드 저장 대기 표시 (카드 왼쪽 위 주황 점) */
 .app-pending { position: absolute; top: 8px; left: 8px; width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; }
 .app-card .doc-thumb { color: #4f46e5; }
+
+/* ───────── Inkpad에서 고르기 (앱 실행 중 파일 선택) ───────── */
+.inkpad-pick-modal { max-width: 460px; }
+.inkpad-pick-search { display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--muted); }
+.inkpad-pick-search input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 14px; color: inherit; }
+.inkpad-pick-list { max-height: 46vh; overflow: auto; margin: 4px 0; }
+.inkpad-pick-group-title { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.inkpad-pick-group-title b { font-weight: 700; }
+.inkpad-pick-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: inherit; }
+.inkpad-pick-row:active { background: #f1f5f9; }
+.inkpad-pick-row.is-picked { background: #eef4ff; }
+.inkpad-pick-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.inkpad-pick-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.inkpad-pick-sub { color: var(--muted); font-size: 11px; }
+.inkpad-pick-empty { padding: 24px 4px; text-align: center; color: var(--muted); font-size: 13px; }
