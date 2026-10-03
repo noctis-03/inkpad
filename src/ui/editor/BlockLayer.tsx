@@ -430,6 +430,7 @@ function MemoBody(p: Omit<CardProps, 'block'> & { block: MemoBlock }) {
         <textarea
           ref={ref}
           rows={1}
+          readOnly={p.readOnly}
           defaultValue={block.data.text}
           placeholder="메모 입력"
           onFocus={() => (startText.current = block.data.text)}
@@ -448,19 +449,22 @@ function MemoBody(p: Omit<CardProps, 'block'> & { block: MemoBlock }) {
   )
 }
 
-function LinkBody({ engine, block, fresh, fire, editTick }: Omit<CardProps, 'block'> & { block: LinkBlock; fire: () => void; editTick: number }) {
-  const [editing, setEditing] = useState(fresh)
+function LinkBody({ engine, block, fresh, readOnly, fire, editTick }: Omit<CardProps, 'block'> & { block: LinkBlock; fire: () => void; editTick: number }) {
+  const [editing, setEditing] = useState(fresh && !readOnly)
   const [url, setUrl] = useState(block.data.url)
   const [label, setLabel] = useState(block.data.label)
   const toast = useUI((s) => s.toast)
   useEffect(() => {
-    if (editTick) setEditing(true)
-  }, [editTick])
+    if (editTick && !readOnly) setEditing(true)
+  }, [editTick, readOnly])
   const domain = safeDomain(block.data.url)
   const initial = (block.data.label || domain || block.data.url).trim()
   const open = () => {
     if (editing) return
-    if (!block.data.url) return setEditing(true)
+    if (!block.data.url) {
+      if (readOnly) return // 읽기 전용에서는 편집 폼을 열지 않는다
+      return setEditing(true)
+    }
     if (!isSafeBlockUrl(block.data.url)) return toast('허용되지 않는 링크입니다.', 'error')
     fire()
     window.open(block.data.url, '_blank', 'noopener,noreferrer')
