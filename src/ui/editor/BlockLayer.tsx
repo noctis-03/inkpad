@@ -565,6 +565,15 @@ function TimerBody({ engine, block, readOnly, fire, timerRun, editTick, ensureTi
     }
     force((n) => n + 1)
   }
+  /** 직접 입력한 초를 적용한다. 잘못된 값이면 편집 모드를 닫지 않는다. */
+  const applyDirect = () => {
+    const n = Math.round(Number(direct))
+    if (!Number.isFinite(n) || n <= 0) return
+    run.endAt = null
+    run.remainSec = n
+    engine.updateBlock(block.id, { data: { durationSec: n } })
+    setEditing(false)
+  }
   if (editing)
     return (
       <div className="blk-body">
@@ -590,19 +599,11 @@ function TimerBody({ engine, block, readOnly, fire, timerRun, editTick, ensureTi
             placeholder="초 단위 (예: 90)"
             value={direct}
             onChange={(e) => setDirect(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && setEditing(false)}
-          />
-          <button
-            className="primary-btn"
-            onClick={() => {
-              const n = Math.round(Number(direct))
-              if (!Number.isFinite(n) || n <= 0) return
-              run.endAt = null
-              run.remainSec = n
-              engine.updateBlock(block.id, { data: { durationSec: n } })
-              setEditing(false)
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applyDirect()
             }}
-          >
+          />
+          <button className="primary-btn" onClick={applyDirect}>
             완료
           </button>
         </div>
