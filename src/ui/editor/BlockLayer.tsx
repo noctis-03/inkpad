@@ -145,18 +145,24 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
     if (tickRef.current) return
     tickRef.current = window.setInterval(() => {
       const now = Date.now()
-      let ringing: ID | null = null
+      const ringing: ID[] = []
       for (const [id, t] of timers.current) {
+        // 삭제된 블록의 실행 상태는 정리한다 — 유령 토스트·되살아난 실행 방지
+        if (!engine.blocks.get(id)) {
+          timers.current.delete(id)
+          continue
+        }
         if (t.endAt != null && t.endAt <= now) {
           t.endAt = null
           t.remainSec = 0
-          ringing = id
+          ringing.push(id)
         }
       }
-      if (ringing) {
+      if (ringing.length) {
         useUI.getState().toast('타이머가 끝났습니다', 'info')
-        const el = els.current.get(ringing)
-        if (el) {
+        for (const id of ringing) {
+          const el = els.current.get(id)
+          if (!el) continue
           el.setAttribute('data-ringing', '')
           setTimeout(() => el.removeAttribute('data-ringing'), 2200)
         }
@@ -167,7 +173,7 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
       }
       forceTick((n) => n + 1)
     }, 250)
-  }, [])
+  }, [engine])
   useEffect(
     () => () => {
       if (tickRef.current) clearInterval(tickRef.current)
