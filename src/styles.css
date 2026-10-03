@@ -8,7 +8,7 @@
   --accent: #2563eb;
   --accent-soft: #dbeafe;
   --danger: #dc2626;
-  --toolbar-h: 56px;
+  --toolbar-h: 104px;
   --safe-top: env(safe-area-inset-top, 0px);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
   color: var(--ink);
@@ -52,22 +52,15 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: var(--toolbar-h);
   padding: 4px 10px;
   background: #fffffff2;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
   z-index: 10;
-  touch-action: pan-x;
-}
-.toolbar::-webkit-scrollbar {
-  display: none;
 }
 .toolbar-group {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   padding: 0 6px;
   border-right: 1px solid var(--line);
 }
@@ -1353,15 +1346,6 @@ textarea {
   white-space: nowrap;
   cursor: text;
 }
-.ro-badge {
-  margin-left: 6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 11px;
-  font-weight: 500;
-}
 .title-input {
   width: 200px;
   height: 36px;
@@ -1369,32 +1353,6 @@ textarea {
   border: 1px solid var(--accent);
   border-radius: 8px;
   font-size: 15px;
-}
-.preset-btn {
-  width: 40px;
-  height: 44px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-touch-callout: none;
-}
-.preset-btn.is-active {
-  background: var(--accent-soft);
-}
-.preset-dot {
-  display: block;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px #0000001f;
-}
-.preset-dot.hl {
-  border-radius: 3px;
-  aspect-ratio: 1 / 1.4;
 }
 .color-pop-anchor {
   position: relative;
@@ -1686,7 +1644,7 @@ textarea {
 .install-hint {
   position: fixed;
   left: 50%;
-  top: calc(var(--safe-top) + 70px);
+  top: calc(var(--safe-top) + var(--toolbar-h) + 14px);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -1714,12 +1672,8 @@ textarea {
   .library-body {
     position: relative;
   }
-  .preset-group {
-    display: none;
-  }
 }
 @media (max-width: 700px) {
-  .style-group .width-btn,
   .save-label,
   .sort-select {
     display: none;
@@ -1750,7 +1704,7 @@ textarea {
     display: none;
   }
   .doc-title-btn {
-    max-width: 120px;
+    max-width: 170px;
   }
 }
 
@@ -2362,4 +2316,104 @@ textarea {
 .tb-btn.sync-btn:active,
 .tb-btn.sync-btn.is-active {
   background: #dcfce7;
+}
+
+/* ───────── 툴바 A안: 2단 분리형 ───────── */
+.toolbar-stack {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 20;
+}
+.toolbar-doc {
+  min-height: 44px;
+  background: #fbfaf7;
+}
+.toolbar-tools {
+  min-height: 60px;
+}
+.tool-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.tool-seg .tb-btn {
+  width: 40px;
+  height: 38px;
+}
+.style-sep {
+  width: 1px;
+  height: 26px;
+  background: var(--line);
+  margin: 0 5px;
+  flex: none;
+}
+.color-inline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.color-inline .color-swatch.is-active::before {
+  inset: 4px;
+}
+.doc-title-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+}
+.doc-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-title-edit {
+  color: var(--muted);
+  flex: none;
+}
+.width-inline {
+  display: flex;
+  align-items: center;
+}
+.width-compact {
+  display: none;
+}
+/* 팝오버는 앵커 기준으로 열고, 화면 밖으로 나가지 않게 정렬한다 */
+.color-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  margin-top: 0;
+}
+.width-pop {
+  left: auto;
+  right: 0;
+}
+@media (max-width: 820px) {
+  .color-inline,
+  .width-inline,
+  .style-sep {
+    display: none;
+  }
+  .width-compact {
+    display: inline-flex;
+  }
+  .doc-title-btn {
+    max-width: 170px;
+  }
+}
+@media (max-width: 640px) {
+  .toolbar-doc,
+  .toolbar-tools {
+    padding: 4px 6px;
+  }
+  .toolbar-group {
+    padding: 0 4px;
+  }
 }

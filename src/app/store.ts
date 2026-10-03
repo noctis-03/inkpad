@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
   type EngineStats,
-  type Preset,
   type SelectionInfo,
   type Settings,
   type Tool,
@@ -15,7 +14,6 @@ import type { ID } from '../shared/model'
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다 (설계 3장).
 const LS_SETTINGS = 'inkpad.settings.v2'
 const LS_STYLE = 'inkpad.style.v2'
-const LS_PRESETS = 'inkpad.presets.v1'
 const LS_LIBRARY = 'inkpad.library.v1'
 
 export const PEN_COLORS = ['#111827ff', '#2563ebff', '#dc2626ff', '#059669ff', '#7c3aedff', '#ea580cff', '#6b7280ff', '#db2777ff']
@@ -29,15 +27,6 @@ const DEFAULT_STYLE: ToolStyle = {
   highlighter: { color: HL_COLORS[0], width: HL_WIDTHS[1] },
   eraserSize: ERASER_SIZES[1]
 }
-
-// FR-TL-01: 프리셋 5개
-const DEFAULT_PRESETS: Preset[] = [
-  { tool: 'pen', color: '#111827ff', width: 2.5 },
-  { tool: 'pen', color: '#2563ebff', width: 2.5 },
-  { tool: 'pen', color: '#dc2626ff', width: 2.5 },
-  { tool: 'pen', color: '#111827ff', width: 6 },
-  { tool: 'highlighter', color: '#facc1566', width: 16 }
-]
 
 function load<T>(key: string, def: T): T {
   try {
@@ -80,8 +69,6 @@ interface UIState {
   prevTool: Tool
   settings: Settings
   style: ToolStyle
-  presets: Preset[]
-  activePreset: number | null
   library: LibraryPrefs
   stats: EngineStats | null
   view: ViewInfo
@@ -98,8 +85,6 @@ interface UIState {
   setSettings: (p: Partial<Settings>) => void
   resetSettings: () => void
   setStyle: (s: ToolStyle) => void
-  applyPreset: (i: number) => void
-  savePreset: (i: number) => void
   setLibrary: (p: Partial<LibraryPrefs>) => void
   setPanel: (p: UIState['panel']) => void
   setSidebar: (v: boolean) => void
@@ -121,8 +106,6 @@ export const useUI = create<UIState>((set, get) => ({
   prevTool: 'eraser',
   settings: load(LS_SETTINGS, DEFAULT_SETTINGS),
   style: load(LS_STYLE, DEFAULT_STYLE),
-  presets: load(LS_PRESETS, DEFAULT_PRESETS),
-  activePreset: null,
   library: load<LibraryPrefs>(LS_LIBRARY, { view: 'grid', sort: 'updated' }),
   stats: null,
   view: { canUndo: false, canRedo: false, zoom: 1, currentPage: 0, pageCount: 1 },
@@ -141,12 +124,11 @@ export const useUI = create<UIState>((set, get) => ({
   setTool: (t) => {
     const cur = get().tool
     if (t !== cur) set({ tool: t, prevTool: cur })
-    set({ activePreset: null })
   },
   toggleQuick: () => {
     const { tool, prevTool } = get()
     const next: Tool = tool === 'eraser' ? (prevTool === 'eraser' ? 'pen' : prevTool) : 'eraser'
-    set({ tool: next, prevTool: tool, activePreset: null })
+    set({ tool: next, prevTool: tool })
   },
   setSettings: (p) => {
     const settings = { ...get().settings, ...p }
@@ -161,23 +143,7 @@ export const useUI = create<UIState>((set, get) => ({
   },
   setStyle: (style) => {
     save(LS_STYLE, style)
-    set({ style, activePreset: null })
-  },
-  applyPreset: (i) => {
-    const p = get().presets[i]
-    if (!p) return
-    const style = { ...get().style, [p.tool]: { color: p.color, width: p.width } }
-    save(LS_STYLE, style)
-    const cur = get().tool
-    set({ style, tool: p.tool, prevTool: cur === p.tool ? get().prevTool : cur, activePreset: i })
-  },
-  savePreset: (i) => {
-    const { tool, style } = get()
-    if (tool !== 'pen' && tool !== 'highlighter') return
-    const presets = [...get().presets]
-    presets[i] = { tool, color: style[tool].color, width: style[tool].width }
-    save(LS_PRESETS, presets)
-    set({ presets, activePreset: i })
+    set({ style })
   },
   setLibrary: (p) => {
     const library = { ...get().library, ...p }
