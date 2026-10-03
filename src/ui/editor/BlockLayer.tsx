@@ -568,6 +568,8 @@ function TodoBody({ engine, block, fresh, readOnly }: Omit<CardProps, 'block'> &
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          // 한글 IME 조합 중 Enter(keyCode 229 / isComposing)는 조합 확정용이므로 항목 추가로 처리하지 않는다
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return
           if (e.key !== 'Enter' || !draft.trim()) return
           e.preventDefault()
           patch([...items, { id: ulid(), text: draft.trim(), done: false }])
