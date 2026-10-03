@@ -37,7 +37,8 @@ export function anchorBlock(layout: Layout, wx: number, wy: number, w: number, h
   const maxY = r.y + r.h + BLOCK_MAX_OUTSIDE - h
   const x = Math.min(Math.max(wx, Math.min(minX, maxX)), Math.max(minX, maxX))
   const y = Math.min(Math.max(wy, Math.min(minY, maxY)), Math.max(minY, maxY))
-  return { pageId: page.id, x, y }
+  // Block.x/y는 소속 페이지 원점 기준 상대 좌표다 — clamp한 월드 좌표에서 페이지 원점을 빼서 돌려준다.
+  return { pageId: page.id, x: x - r.x, y: y - r.y }
 }
 
 // ───────── 링크 URL 보안 (6.4) ─────────
