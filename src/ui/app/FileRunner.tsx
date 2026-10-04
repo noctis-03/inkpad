@@ -5,6 +5,7 @@ import { saveFile } from '../../io/download'
 import type { ID } from '../../shared/model'
 import type { FileRow } from '../../storage/db'
 import { ensureFileLocal, fileToBlob, getFile } from '../../sync/files'
+import { confirmTransfer } from '../../sync/transfer'
 
 /** 일반 파일 뷰어 — 종류별로 읽기 전용 표시 (텍스트 / 이미지 / 그 외 다운로드) */
 export function FileRunner({ fileId }: { fileId: ID }) {
@@ -27,6 +28,7 @@ export function FileRunner({ fileId }: { fileId: ID }) {
       if (!f || f.deletedAt) return setRow(null)
       setRow(f)
       try {
+        if (!(await confirmTransfer('down', f.size))) throw new Error('다운로드를 취소했습니다.')
         const full = await ensureFileLocal(fileId)
         if (!alive) return
         setRow(full)

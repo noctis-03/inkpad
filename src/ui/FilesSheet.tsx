@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
+import { extOf } from '../shared/model'
 import { formatBytes, formatDate } from '../shared/util'
+import { confirmTransfer } from '../sync/transfer'
 import { AuthRequiredError, login } from '../sync/token'
 import { onSyncStatus, type SyncStatus } from '../sync/sync'
 import {
@@ -10,60 +12,56 @@ import {
   deleteFileFromCloud,
   dropFileOriginal,
   ensureFileLocal,
-  flushPendingFiles,
   listCloudFiles,
   removeFileLocal,
   reuploadFile,
-  updateFileFromCloud,
   type CloudFileInfo,
   type CloudFileState
 } from '../sync/files'
 import { Icon } from './Icon'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetHeader, useOnline } from './sheetParts'
 
-// 기타 파일 메뉴: Drive의 Inkpad/files/ = 스토어. 메타만 받아 두고 원본은 열 때 지연 로딩한다.
-const STATE_META: Record<CloudFileState, { label: string; tone: 'recv' | 'push' | 'fresh' | 'gone' }> = {
-  update: { label: '업데이트', tone: 'recv' },
-  pending: { label: '올릴 것', tone: 'push' },
-  'local-only': { label: '올릴 것', tone: 'push' },
-  local: { label: '이 기기에 있음', tone: 'fresh' },
-  'meta-only': { label: '메타만', tone: 'fresh' },
-  available: { label: '클라우드에만', tone: 'recv' },
-  'cloud-missing': { label: '사라짐', tone: 'gone' }
+// 기타 파일 시트 (명세 4장). 그룹 없이 리스트 하나, 정렬 탭과 저장 공간 카드.
+type Tone = 'push' | 'recv' | 'gone' | 'gray'
+type Primary = 'download' | 'reupload' | 'upload'
+type FilterKey = 'all' | 'downloaded' | 'cloud' | 'confirm'
+type Sort = 'recent' | 'size' | 'name'
+
+const FILE_STATE: Record<CloudFileState, { chip?: string; tone: Tone; primary?: Primary; rail: boolean }> = {
+  local: { tone: 'gray', rail: false },
+  'meta-only': { tone: 'gray', primary: 'download', rail: false },
+  available: { tone: 'gray', primary: 'download', rail: false },
+  pending: { chip: '업로드 안 됨', tone: 'push', primary: 'reupload', rail: true },
+  'local-only': { chip: '업로드 안 됨', tone: 'push', primary: 'reupload', rail: true },
+  'cloud-missing': { chip: '클라우드에서 삭제됨', tone: 'gone', primary: 'reupload', rail: true },
+  detached: { chip: '이 기기에만 있음', tone: 'gray', primary: 'upload', rail: false },
+  update: { tone: 'gray', rail: false } // 없앤 상태 (4.6-1) — UI에서 쓰지 않는다
 }
+const PRIMARY_LABEL: Record<Primary, string> = { download: '다운로드', reupload: '재업로드', upload: '업로드' }
 
-const GROUPS: { key: 'update' | 'push' | 'local' | 'meta' | 'available' | 'missing'; title: string; tone: 'recv' | 'push' | 'fresh' | 'gone' }[] = [
-  { key: 'update', title: '업데이트 있음', tone: 'recv' },
-  { key: 'push', title: '올릴 것', tone: 'push' },
-  { key: 'local', title: '이 기기에 있음', tone: 'fresh' },
-  { key: 'meta', title: '메타만 있음', tone: 'fresh' },
-  { key: 'available', title: '클라우드에만 있음', tone: 'recv' },
-  { key: 'missing', title: '클라우드에서 사라짐', tone: 'gone' }
-]
-
-function groupOf(state: CloudFileState) {
-  if (state === 'update') return 'update'
-  if (state === 'pending' || state === 'local-only') return 'push'
-  if (state === 'local') return 'local'
-  if (state === 'meta-only') return 'meta'
-  if (state === 'available') return 'available'
-  return 'missing'
-}
-
-type Filter = 'all' | 'installed' | 'update' | 'available'
-const matchFilter = (state: CloudFileState, f: Filter) =>
+const matchFilter = (s: CloudFileState, f: FilterKey) =>
   f === 'all' ||
-  (f === 'installed' && (state === 'local' || state === 'meta-only')) ||
-  (f === 'update' && state === 'update') ||
-  (f === 'available' && state === 'available')
+  (f === 'downloaded' && (s === 'local' || s === 'detached')) ||
+  (f === 'cloud' && (s === 'available' || s === 'meta-only')) ||
+  (f === 'confirm' && (s === 'pending' || s === 'local-only' || s === 'cloud-missing'))
+
+function extLabel(f: CloudFileInfo) {
+  const e = extOf(f.name)
+  if (e) return e.slice(0, 4).toUpperCase()
+  return f.kind === 'image' ? 'IMG' : f.kind === 'text' ? 'TXT' : 'FILE'
+}
 
 export function FilesSheet({ onClose }: { onClose: () => void }) {
   const toast = useUI((s) => s.toast)
+  const confirmMode = useUI((s) => s.settings.largeFileConfirm)
+  const online = useOnline()
   const [status, setStatus] = useState<SyncStatus>('idle')
   const [items, setItems] = useState<CloudFileInfo[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [filter, setFilter] = useState<FilterKey>('all')
+  const [sort, setSort] = useState<Sort>('recent')
+  const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null)
 
   useEffect(() => onSyncStatus(setStatus), [])
 
@@ -100,211 +98,323 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const updateCount = useMemo(() => (items ?? []).filter((f) => f.state === 'update').length, [items])
-  const pendingCount = useMemo(() => (items ?? []).filter((f) => f.state === 'pending' || f.state === 'local-only').length, [items])
-  const localBytes = useMemo(() => (items ?? []).reduce((n, f) => n + (f.hasOriginal ? f.size : 0), 0), [items])
+  const all = items ?? []
+  const threshold = confirmMode === 'off' ? 0 : confirmMode === '10' ? 10 * 1024 * 1024 : 50 * 1024 * 1024
 
-  const addMeta = (f: CloudFileInfo) => run(() => addFileFromCloud(f.id), `"${f.title}" 메타를 받았습니다.`)
-  const addFull = (f: CloudFileInfo) => run(() => addFileFromCloud(f.id, { withOriginal: true }), `"${f.title}"을(를) 받았습니다.`)
-  const download = (f: CloudFileInfo) => run(() => ensureFileLocal(f.id), `"${f.title}" 원본을 받았습니다.`)
+  const counts = useMemo(
+    () => ({
+      downloaded: all.filter((f) => matchFilter(f.state, 'downloaded')).length,
+      cloud: all.filter((f) => matchFilter(f.state, 'cloud')).length,
+      confirm: all.filter((f) => matchFilter(f.state, 'confirm')).length
+    }),
+    [all]
+  )
+
+  const localBytes = useMemo(() => all.reduce((n, f) => n + (f.hasOriginal ? f.size : 0), 0), [all])
+  const totalBytes = useMemo(() => all.reduce((n, f) => n + f.size, 0), [all])
 
   const removeLocal = async (f: CloudFileInfo) => {
-    const warn = f.state === 'pending' || f.state === 'local-only' ? '클라우드에 없는 변경이 사라집니다. ' : ''
-    if (!(await confirmDialog('이 기기에서 제거', { message: `${warn}"${f.title}"을(를) 이 기기에서만 제거합니다. 클라우드 사본은 남습니다.`, ok: '제거', danger: true }))) return
-    await run(() => removeFileLocal(f.id), `"${f.title}"을(를) 이 기기에서 제거했습니다.`)
+    const ok = await confirmDialog('이 기기에서 삭제', {
+      message: `"${f.title}"은(는) 클라우드에 사본이 없습니다. 삭제하면 복구할 수 없습니다.`,
+      ok: '삭제',
+      danger: true
+    })
+    if (!ok) return
+    await run(() => removeFileLocal(f.id), `"${f.title}"을(를) 이 기기에서 삭제했습니다.`)
   }
 
   const removeCloud = async (f: CloudFileInfo) => {
-    if (!(await confirmDialog('클라우드에서 삭제', { message: `"${f.title}"을(를) 클라우드에서 지웁니다. 모든 기기의 스토어에서 사라집니다. 이미 받은 기기에는 남아 있습니다.`, ok: '삭제', danger: true }))) return
-    await run(() => deleteFileFromCloud(f.id), '클라우드에서 지웠습니다.')
+    const downloaded = f.hasOriginal
+    const ok = await confirmDialog('클라우드에서 삭제', {
+      message: downloaded
+        ? `"${f.title}"을(를) 클라우드에서 삭제합니다. 다른 기기의 목록에서 사라지며, 이 기기의 파일은 그대로 남습니다.`
+        : `"${f.title}"을(를) 클라우드에서 삭제합니다. 이 기기에는 사본이 없어서, 다른 기기에 다운로드되어 있지 않다면 Inkpad에서 다시 받을 수 없습니다.`,
+      note: 'Google Drive 휴지통에서 30일 동안 되살릴 수 있습니다.',
+      ok: '삭제',
+      danger: true
+    })
+    if (!ok) return
+    await run(
+      () => deleteFileFromCloud(f.id),
+      downloaded ? '클라우드에서 삭제했습니다. 이 기기의 파일은 남아 있습니다.' : '클라우드에서 삭제했습니다.'
+    )
   }
 
-  const dropOriginal = async (f: CloudFileInfo) => {
-    if (!(await confirmDialog('원본 지우기', { message: `"${f.title}"의 원본을 이 기기에서 지웁니다(메타는 남습니다). 열 때 다시 받습니다.`, ok: '지우기', danger: true }))) return
-    await run(() => dropFileOriginal(f.id), '원본을 지웠습니다. 열 때 다시 받습니다.')
-  }
+  const download = (f: CloudFileInfo) =>
+    run(async () => {
+      if (!(await confirmTransfer('down', f.size))) return
+      if (f.state === 'available') await addFileFromCloud(f.id, { withOriginal: true })
+      else await ensureFileLocal(f.id)
+      toast(`"${f.title}" 원본을 다운로드했습니다.`)
+    })
+
+  const reupload = (f: CloudFileInfo) =>
+    run(async () => {
+      if (!(await confirmTransfer('up', f.size))) return
+      const ok = await reuploadFile(f.id)
+      if (!ok) throw new Error('오프라인이라 업로드하지 못했습니다. 연결된 뒤 다시 시도해 주세요.')
+      toast(`"${f.title}"을(를) 클라우드에 업로드했습니다.`)
+    })
+
+  const dropOriginal = (f: CloudFileInfo) =>
+    run(async () => {
+      await dropFileOriginal(f.id)
+      toast(`${formatBytes(f.size)}를 확보했습니다. 열 때 다시 다운로드합니다.`)
+    })
+
+  const doReuploadAll = () =>
+    run(async () => {
+      const targets = all.filter((f) => matchFilter(f.state, 'confirm'))
+      if (!targets.length) return
+      const total = targets.reduce((n, f) => n + f.size, 0)
+      if (!(await confirmTransfer('up', total, targets.length))) return
+      let n = 0
+      for (const f of targets) {
+        try {
+          if (await reuploadFile(f.id)) n++
+        } catch (e) {
+          console.warn('[files] 재업로드 실패', f.id, e)
+        }
+      }
+      toast(n ? `${n}개를 업로드했습니다.` : '업로드할 파일이 없습니다.', n ? 'success' : 'info')
+    })
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return (items ?? []).filter((f) => {
+    const arr = all.filter((f) => {
       if (!matchFilter(f.state, filter)) return false
       if (!q) return true
       return `${f.title} ${f.name} ${f.category ?? ''}`.toLowerCase().includes(q)
     })
-  }, [items, filter, query])
+    arr.sort((a, b) => {
+      if (sort === 'size') return b.size - a.size
+      if (sort === 'name') return a.title.localeCompare(b.title, 'ko')
+      return (b.remoteUpdatedAt ?? b.localUpdatedAt ?? 0) - (a.remoteUpdatedAt ?? a.localUpdatedAt ?? 0)
+    })
+    return arr
+  }, [all, filter, query, sort])
 
-  const groups = GROUPS.map((g) => ({ ...g, items: filtered.filter((f) => groupOf(f.state) === g.key) })).filter((g) => g.items.length > 0)
-  const offline = !navigator.onLine
+  const menuFile = menu ? all.find((f) => f.id === menu.id) : undefined
+  const pct = totalBytes ? Math.round((localBytes / totalBytes) * 100) : 0
+
+  const renderMenu = (f: CloudFileInfo) => {
+    const close = () => setMenu(null)
+    const act = (fn: () => void) => () => {
+      close()
+      fn()
+    }
+    const size = formatBytes(f.size)
+    const removeItem = (desc: string) => (
+      <MenuItem icon="trash" label="이 기기에서 삭제" desc={desc} danger disabled={busy} onClick={act(() => void removeLocal(f))} />
+    )
+    switch (f.state) {
+      case 'local':
+        return (
+          <>
+            <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} disabled={busy} onClick={act(() => void dropOriginal(f))} />
+            <MenuSep />
+            <MenuItem icon="cloud" label="클라우드에서 삭제" desc="다른 기기의 목록에서 사라집니다 · 이 기기 사본은 남습니다" danger disabled={busy || !online} onClick={act(() => void removeCloud(f))} />
+          </>
+        )
+      case 'meta-only':
+      case 'available':
+        return (
+          <>
+            <MenuItem icon="download" label="다운로드" desc={size} disabled={busy || !online} onClick={act(() => void download(f))} />
+            <MenuSep />
+            <MenuItem icon="cloud" label="클라우드에서 삭제" desc="이 기기에는 사본이 없습니다" danger disabled={busy || !online} onClick={act(() => void removeCloud(f))} />
+          </>
+        )
+      case 'pending':
+      case 'local-only':
+      case 'cloud-missing':
+        return (
+          <>
+            <MenuItem icon="upload" label="재업로드" desc={size} disabled={busy || !online} onClick={act(() => void reupload(f))} />
+            <MenuSep />
+            {removeItem('클라우드에 사본이 없어 복구할 수 없습니다')}
+          </>
+        )
+      case 'detached':
+        return (
+          <>
+            <MenuItem icon="upload" label="업로드" desc={size} disabled={busy || !online} onClick={act(() => void reupload(f))} />
+            <MenuSep />
+            {removeItem('클라우드에 사본이 없어 복구할 수 없습니다')}
+          </>
+        )
+      case 'update':
+        return null
+    }
+  }
 
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet" role="dialog" aria-label="기타 파일">
-        <header className="sheet-header">
-          <h2>기타 파일</h2>
-          <button className="tb-btn" onClick={onClose} aria-label="닫기">
-            <Icon name="close" />
-          </button>
-        </header>
-        <div className="sheet-scroll">
+      <div className="store-sheet" role="dialog" aria-label="기타 파일">
+        <SheetHeader icon="folder" title="기타 파일" subtitle="Google Drive · Inkpad/files" offline={!online} onClose={onClose} />
+        <div className="store-body">
           {status === 'auth-required' ? (
-            <div className="cloud-empty">
-              <p>파일 스토어를 보려면 Google 로그인이 필요합니다.</p>
-              <div className="btn-row center">
+            <SheetEmpty
+              icon="lock"
+              title="로그인이 필요합니다"
+              desc="파일 스토어를 보려면 Google 로그인을 해 주세요."
+              action={
                 <button className="primary-btn" onClick={() => login()}>
                   <Icon name="upload" size={18} /> Google로 로그인
                 </button>
-              </div>
-            </div>
+              }
+            />
           ) : (
             <>
-              {offline && <p className="hint warn">오프라인입니다. 이 기기에 있는 파일만 보입니다.</p>}
-              <p className="hint">
-                이 기기에 저장된 원본 합계: <b>{formatBytes(localBytes)}</b>
-              </p>
-              <div className="btn-row">
-                {pendingCount > 0 && (
-                  <button className="text-btn" onClick={() => void run(() => flushPendingFiles(), '올렸습니다.')} disabled={busy}>
-                    <Icon name="upload" size={16} /> 올리기 ({pendingCount})
+              {!online ? (
+                <SheetBanner tone="offline">오프라인입니다. 다운로드된 파일만 열 수 있습니다. 새로 추가한 파일은 연결된 뒤 재업로드를 눌러 주세요.</SheetBanner>
+              ) : counts.confirm > 0 ? (
+                <SheetBanner
+                  tone="warn"
+                  actions={
+                    <>
+                      <button className="store-banner-btn" disabled={busy} onClick={() => setFilter('confirm')}>
+                        보기
+                      </button>
+                      <button className="store-banner-btn" disabled={busy} onClick={() => void doReuploadAll()}>
+                        모두 재업로드
+                      </button>
+                    </>
+                  }
+                >
+                  클라우드에 업로드되지 않은 파일이 {counts.confirm}개 있습니다. 다른 기기에서는 보이지 않습니다.
+                </SheetBanner>
+              ) : null}
+
+              <div className="store-storage">
+                <div className="store-storage-top">
+                  <span>
+                    이 기기에 저장된 파일 <b>{formatBytes(localBytes)}</b>
+                  </span>
+                  <span className="store-storage-total">전체 {formatBytes(totalBytes)}</span>
+                </div>
+                <div className="store-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                  <div className="store-bar-fill" style={{ width: pct + '%' }} />
+                </div>
+                <div className="store-legend">
+                  <span>
+                    <Icon name="checkCircle" size={13} /> 다운로드됨
+                  </span>
+                  <span>
+                    <Icon name="cloudDown" size={13} /> 클라우드에만
+                  </span>
+                  <button className="store-legend-btn" disabled={!counts.downloaded} onClick={() => { setFilter('downloaded'); setSort('size') }}>
+                    큰 파일부터 보기
                   </button>
-                )}
+                </div>
               </div>
 
-              <div className="cloud-panel">
-                <div className="cloud-toolbar">
-                  <span className="cloud-search">
-                    <Icon name="search" size={16} />
-                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="파일 검색" aria-label="파일 검색" />
-                    {query && (
-                      <button className="cloud-clear" onClick={() => setQuery('')} aria-label="검색 지우기">
-                        <Icon name="close" size={13} />
-                      </button>
-                    )}
-                  </span>
-                </div>
-                <div className="cloud-summary" role="group" aria-label="상태 필터">
-                  {(
-                    [
-                      ['all', '전체'],
-                      ['installed', '이 기기에 있음'],
-                      ['update', '업데이트'],
-                      ['available', '클라우드에만']
-                    ] as [Filter, string][]
-                  ).map(([k, label]) => {
-                    const on = filter === k
+              <div className="store-toolbar">
+                <SearchBox value={query} onChange={setQuery} placeholder="파일 검색" />
+                <FilterTabs<FilterKey>
+                  value={filter}
+                  onChange={setFilter}
+                  tabs={[
+                    { key: 'all', label: '전체', count: all.filter((f) => matchFilter(f.state, 'all')).length },
+                    { key: 'downloaded', label: '다운로드됨', count: counts.downloaded },
+                    { key: 'cloud', label: '클라우드에만', count: counts.cloud },
+                    ...(counts.confirm ? [{ key: 'confirm' as FilterKey, label: '확인 필요', count: counts.confirm, warn: true }] : [])
+                  ]}
+                />
+              </div>
+
+              {items === null ? (
+                <p className="store-hint">파일 목록을 불러오는 중…</p>
+              ) : filtered.length === 0 ? (
+                <SheetEmpty
+                  icon="folder"
+                  title={all.length === 0 ? '아직 파일이 없습니다' : '조건에 맞는 파일이 없습니다'}
+                  desc={all.length === 0 ? '추가한 파일은 클라우드에 업로드되고, 다른 기기의 목록에도 나타납니다.' : undefined}
+                />
+              ) : (
+                <div className="store-list">
+                  <div className="store-list-head">
+                    <h3>
+                      파일 <b>{filtered.length}</b>
+                    </h3>
+                    <div className="store-sort" role="group" aria-label="정렬">
+                      {(
+                        [
+                          ['recent', '최근순'],
+                          ['size', '크기순'],
+                          ['name', '이름순']
+                        ] as [Sort, string][]
+                      ).map(([k, label]) => (
+                        <button key={k} className={'store-sort-btn' + (sort === k ? ' is-active' : '')} aria-pressed={sort === k} onClick={() => setSort(k)}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {filtered.map((f) => {
+                    const m = FILE_STATE[f.state]
+                    const at = f.remoteUpdatedAt ?? f.localUpdatedAt
+                    const primary = m.primary
+                    const dim = !online && (f.state === 'available' || f.state === 'meta-only')
+                    const onPrimary = () => {
+                      if (primary === 'download') void download(f)
+                      else void reupload(f)
+                    }
+                    const statusIcon =
+                      f.state === 'local' || f.state === 'detached' ? 'checkCircle' : f.state === 'meta-only' || f.state === 'available' ? 'cloudDown' : null
                     return (
-                      <button key={k} className={'cloud-sum fresh' + (on ? ' is-active' : '')} aria-pressed={on} onClick={() => setFilter(on && k !== 'all' ? 'all' : k)}>
-                        <b>{(items ?? []).filter((f) => matchFilter(f.state, k)).length}</b>
-                        <span>{label}</span>
-                      </button>
+                      <div key={f.id} className={'store-row tone-' + m.tone + (m.rail ? ' is-confirm' : '') + (dim ? ' is-dim' : '')}>
+                        <span className="store-file-icon" data-kind={f.kind}>
+                          {extLabel(f)}
+                        </span>
+                        <div className="store-row-main">
+                          <div className="store-row-title" title={f.title}>
+                            {f.title}
+                          </div>
+                          <div className="store-row-sub">
+                            <span className="store-row-name">{f.name}</span>
+                            <span className={threshold && f.size >= threshold ? 'store-size big' : 'store-size'}>{formatBytes(f.size)}</span>
+                            {f.category && <span>{f.category}</span>}
+                            {at ? <span>{formatDate(at)}</span> : null}
+                          </div>
+                        </div>
+                        {m.chip && <span className={'store-chip ' + m.tone}>{m.chip}</span>}
+                        {statusIcon && (
+                          <span className={'store-status-icon ' + (statusIcon === 'checkCircle' ? 'ok' : 'cloud')} aria-hidden="true">
+                            <Icon name={statusIcon} size={16} />
+                          </span>
+                        )}
+                        {primary && (
+                          <button className="store-btn" disabled={busy || !online} onClick={onPrimary}>
+                            {PRIMARY_LABEL[primary]}
+                          </button>
+                        )}
+                        <button
+                          className="store-more"
+                          aria-label={`${f.title} 더보기`}
+                          aria-expanded={menu?.id === f.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setMenu((p) => (p?.id === f.id ? null : { id: f.id, rect: e.currentTarget.getBoundingClientRect() }))
+                          }}
+                        >
+                          <Icon name="more" size={16} />
+                        </button>
+                      </div>
                     )
                   })}
                 </div>
-
-                {groups.length === 0 && <p className="cloud-empty">{items === null ? '파일 목록을 불러오는 중…' : '조건에 맞는 파일이 없습니다.'}</p>}
-
-                {groups.map((g) => (
-                  <section className="cloud-group" key={g.key}>
-                    <div className={'cloud-group-head ' + g.tone}>
-                      <Icon name="chevronDown" size={13} />
-                      <span>{g.title}</span>
-                      <b>{g.items.length}</b>
-                    </div>
-                    <div className="cloud-items">
-                      {g.items.map((f) => {
-                        const m = STATE_META[f.state]
-                        const at = f.remoteUpdatedAt ?? f.localUpdatedAt
-                        const tappable = f.state === 'available'
-                        const get = () => addFull(f)
-                        return (
-                          <div key={f.id} className="cloud-item-wrap">
-                            <div
-                              className={'cloud-item ' + m.tone + (tappable ? ' is-tappable' : '')}
-                              role={tappable ? 'button' : undefined}
-                              tabIndex={tappable ? 0 : undefined}
-                              aria-label={tappable ? `${f.title} — 받기` : undefined}
-                              onClick={tappable ? get : undefined}
-                              onKeyDown={
-                                tappable
-                                  ? (e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault()
-                                        get()
-                                      }
-                                    }
-                                  : undefined
-                              }
-                            >
-                              <div className="cloud-body">
-                                <div className="cloud-name">{f.title}</div>
-                                <div className="cloud-sub">
-                                  <span>{formatBytes(f.size)}</span>
-                                  {f.category && <span>{f.category}</span>}
-                                  {at ? <span>{formatDate(at)}</span> : null}
-                                </div>
-                              </div>
-                              {f.state === 'available' ? <span className="cloud-badge recv">받기</span> : <span className={'cloud-badge ' + m.tone}>{m.label}</span>}
-                              {f.state !== 'available' && (
-                                <button
-                                  className="cloud-more"
-                                  aria-label="더보기"
-                                  aria-expanded={openMenu === f.id}
-                                  disabled={busy}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setOpenMenu((p) => (p === f.id ? null : f.id))
-                                  }}
-                                >
-                                  <Icon name="more" size={16} />
-                                </button>
-                              )}
-                            </div>
-
-                            {openMenu === f.id && (
-                              <div className="cloud-actions">
-                                {f.state === 'update' && (
-                                  <button className="cloud-act" disabled={busy} onClick={() => { setOpenMenu(null); void run(() => updateFileFromCloud(f.id), `"${f.title}"을(를) 업데이트했습니다.`) }}>
-                                    <Icon name="download" size={14} /> 업데이트
-                                  </button>
-                                )}
-                                {f.state === 'meta-only' && (
-                                  <button className="cloud-act" disabled={busy} onClick={() => { setOpenMenu(null); void download(f) }}>
-                                    <Icon name="download" size={14} /> 원본 받기
-                                  </button>
-                                )}
-                                {f.state === 'local' && (
-                                  <button className="cloud-act" disabled={busy} onClick={() => { setOpenMenu(null); void dropOriginal(f) }}>
-                                    <Icon name="eraser" size={14} /> 원본 지우기
-                                  </button>
-                                )}
-                                {(f.state === 'pending' || f.state === 'local-only') && (
-                                  <button className="cloud-act" disabled={busy} onClick={() => { setOpenMenu(null); void run(() => flushPendingFiles(), '올렸습니다.') }}>
-                                    <Icon name="upload" size={14} /> 지금 올리기
-                                  </button>
-                                )}
-                                {f.state === 'cloud-missing' && (
-                                  <button className="cloud-act" disabled={busy} onClick={() => { setOpenMenu(null); void run(() => reuploadFile(f.id), '다시 올렸습니다.') }}>
-                                    <Icon name="upload" size={14} /> 다시 올리기
-                                  </button>
-                                )}
-                                <button className="cloud-act danger" disabled={busy} onClick={() => { setOpenMenu(null); void removeLocal(f) }}>
-                                  <Icon name="trash" size={14} /> 이 기기에서 제거
-                                </button>
-                                <button className="cloud-act danger" disabled={busy} onClick={() => { setOpenMenu(null); void removeCloud(f) }}>
-                                  <Icon name="trash" size={14} /> 클라우드에서 삭제
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </section>
-                ))}
-              </div>
+              )}
             </>
           )}
         </div>
       </div>
+      {menu && menuFile && (
+        <Popover anchor={menu.rect} onClose={() => setMenu(null)}>
+          <MenuTitle>{menuFile.title}</MenuTitle>
+          {renderMenu(menuFile)}
+        </Popover>
+      )}
     </div>
   )
 }

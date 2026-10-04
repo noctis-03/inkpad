@@ -85,13 +85,24 @@ export async function deleteFileFromCloud(id: ID): Promise<boolean> {
     return true
   }
   if (!f.fileId) {
-    await purgeLocal(id) // 클라우드에 올라간 적 없음
-    emit()
+    // 로컬에만 있는 파일 — 클라우드에 지울 것이 없다. 원본이 있으면 그대로 남긴다
+    if (!hasOriginalOf(f)) {
+      await purgeLocal(id)
+      emit()
+    }
     return true
   }
-  await db.files.update(id, { deletedAt: Date.now(), pending: 'delete' })
+  if (!navigator.onLine) throw new Error('오프라인에서는 클라우드에서 삭제할 수 없습니다.')
+  await drive.trash(f.fileId) // Drive 휴지통 (복구 가능)
+  if (hasOriginalOf(f)) {
+    // 원본은 남긴다 — 이 기기에만 있는 파일이 된다
+    await db.files.update(id, { fileId: undefined, pending: undefined, cloudDetachedAt: Date.now() })
+  } else {
+    // 메타만 있던 행은 남길 것이 없으므로 로컬 행도 지운다
+    await purgeLocal(id)
+  }
   emit()
-  return tryFlush(id)
+  return true
 }
 
 /** 뷰어가 원본을 확보한다 (이 기기에 없으면 클라우드에서 받아 저장) */
@@ -99,7 +110,7 @@ export async function ensureFileLocal(id: ID): Promise<FileRow> {
   const row = await db.files.get(id)
   if (!row) throw new Error('파일을 찾을 수 없습니다.')
   if (row.text !== undefined || row.blob) return row
-  if (!row.fileId) throw new Error('이 파일은 아직 클라우드에 없습니다. 원본이 있는 기기에서 "올리기"를 먼저 실행해 주세요.')
+  if (!row.fileId) throw new Error('이 파일은 아직 클라우드에 없습니다. 원본이 있는 기기에서 "업로드"를 먼저 실행해 주세요.')
   if (!navigator.onLine) throw new Error('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 열어 주세요.')
   const blob = await drive.downloadBlob(row.fileId)
   await db.files.update(id, row.kind === 'text' ? { text: await blob.text() } : { blob })
@@ -127,6 +138,7 @@ async function filesFolder(): Promise<string> {
   if (saved && saved !== id) {
     // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
     await db.files.toCollection().modify((f) => {
+      if (f.cloudDetachedAt) return // 이 기기에서 직접 클라우드 삭제한 항목은 건드리지 않는다
       delete f.fileId
       if (f.pending !== 'delete') f.pending = 'upsert'
     })
@@ -179,7 +191,7 @@ async function tryFlush(id: ID): Promise<boolean> {
     emit()
     return true
   } catch (e) {
-    console.warn('[files] 클라우드 반영 실패 — 다음 올리기에서 재시도', e)
+    console.warn('[files] 클라우드 반영 실패 — 사용자가 재업로드해야 함', e)
     return false
   }
 }
@@ -209,6 +221,7 @@ export type CloudFileState =
   | 'pending'
   | 'cloud-missing'
   | 'local-only'
+  | 'detached' // 이 기기에서 직접 클라우드 삭제 — 이 기기에만 남아 있음 (cloudDetachedAt)
 
 export interface CloudFileInfo {
   id: ID
@@ -244,6 +257,7 @@ function baseInfo(f: FileRow): Omit<CloudFileInfo, 'state'> {
 
 /** 로컬 행만으로 상태를 판정한다 (오프라인) */
 function localStateOf(f: FileRow): CloudFileState {
+  if (f.cloudDetachedAt && !f.fileId) return 'detached'
   if (f.pending) return f.fileId ? 'pending' : 'local-only'
   if (!f.fileId) return 'local-only'
   return hasOriginalOf(f) ? 'local' : 'meta-only'
@@ -295,20 +309,29 @@ export async function listCloudFiles(): Promise<CloudFileInfo[]> {
     if (fid) cloud.set(fid, r)
   }
   for (const [fid, r] of cloud) {
-    const local = locals.find((x) => x.id === fid)
+    let local = locals.find((x) => x.id === fid)
     const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || 0
-    const state: CloudFileState =
-      local?.pending
+    // 원격이 더 새로우면 제목·카테고리 같은 메타만 조용히 반영한다 (4.6-1).
+    // 기타 파일은 내용을 고칠 수 없으므로 원본(text/blob)은 절대 버리지 않는다 — 'update' 상태도 만들지 않는다.
+    if (local && !local.pending && remoteAt > local.updatedAt) {
+      const patch = {
+        title: r.appProperties?.title || local.title,
+        category: r.appProperties?.category ?? local.category,
+        updatedAt: remoteAt,
+        fileId: r.id
+      }
+      await db.files.update(fid, patch)
+      local = { ...local, ...patch }
+    }
+    const state: CloudFileState = !local
+      ? 'available'
+      : local.pending
         ? 'pending'
-        : !local
-          ? 'available'
-          : !local.fileId
-            ? 'local-only'
-            : remoteAt > local.updatedAt
-              ? 'update'
-              : hasOriginalOf(local)
-                ? 'local'
-                : 'meta-only'
+        : !local.fileId
+          ? 'local-only'
+          : hasOriginalOf(local)
+            ? 'local'
+            : 'meta-only'
     out.push({
       id: fid,
       title: r.appProperties?.title || local?.title || (r.name || '파일'),
@@ -328,7 +351,8 @@ export async function listCloudFiles(): Promise<CloudFileInfo[]> {
   for (const f of locals) {
     if (f.deletedAt || cloud.has(f.id)) continue
     let state: CloudFileState
-    if (!f.fileId) state = 'local-only'
+    if (f.cloudDetachedAt && !f.fileId) state = 'detached'
+    else if (!f.fileId) state = 'local-only'
     else if (f.pending) state = 'pending'
     else {
       const m = await drive.getMeta(f.fileId).catch(() => undefined)
@@ -351,18 +375,22 @@ export async function addFileFromCloud(id: ID, opts?: { withOriginal?: boolean }
   if (opts?.withOriginal) await ensureFileLocal(id)
 }
 
-/** updateFileFromCloud: 메타를 갱신한다. 원본은 원격이 더 새로우면 버리고 다음에 열 때 다시 받는다 */
+/** updateFileFromCloud: 메타만 갱신한다. 원본(text/blob)은 절대 버리지 않는다 (4.6-1) */
 export async function updateFileFromCloud(id: ID): Promise<void> {
   const local = await db.files.get(id)
   const r = await findRemoteFile(id)
   if (!r) throw new Error('클라우드에서 파일을 찾지 못했습니다.')
   const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || 0
-  const row = rowFromRemote(r, local)
-  if (local && remoteAt > local.updatedAt) {
-    row.text = undefined
-    row.blob = undefined
+  if (local) {
+    await db.files.update(id, {
+      title: r.appProperties?.title || local.title,
+      category: r.appProperties?.category ?? local.category,
+      updatedAt: remoteAt,
+      fileId: r.id
+    })
+  } else {
+    await db.files.put(rowFromRemote(r))
   }
-  await db.files.put(row)
   emit()
 }
 
@@ -381,9 +409,9 @@ export async function removeFileLocal(id: ID): Promise<void> {
   emit()
 }
 
-/** reuploadFile: cloud-missing / local-only / pending 파일을 다시 올린다 */
+/** reuploadFile: cloud-missing / local-only / detached / pending 파일을 다시 올린다 */
 export async function reuploadFile(id: ID): Promise<boolean> {
-  await db.files.update(id, { fileId: undefined, deletedAt: undefined, pending: 'upsert' })
+  await db.files.update(id, { fileId: undefined, deletedAt: undefined, pending: 'upsert', cloudDetachedAt: undefined })
   emit()
   return tryFlush(id)
 }

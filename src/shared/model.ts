@@ -258,6 +258,8 @@ export interface HtmlApp {
   /** 클라우드 반영 대기 (오프라인·로그인 전에 바꾼 경우) */
   pending?: 'upsert' | 'delete'
   deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
+  /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 (명세 3.1·4.1) */
+  cloudDetachedAt?: number
 }
 export const MAX_APP_BYTES = 20 * 1024 * 1024
 export const MAX_APP_TITLE_CHARS = 40
@@ -281,6 +283,8 @@ export interface StoredFile {
   /** 클라우드 반영 대기 (오프라인·로그인 전에 바꾼 경우) */
   pending?: 'upsert' | 'delete'
   deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
+  /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 (명세 3.1·4.1) */
+  cloudDetachedAt?: number
 }
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024

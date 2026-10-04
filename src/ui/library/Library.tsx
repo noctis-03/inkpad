@@ -31,6 +31,7 @@ import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
+import { confirmTransfer } from '../../sync/transfer'
 import type { FileRow } from '../../storage/db'
 
 type Section =
@@ -393,6 +394,8 @@ export function Library() {
     ',.docx,.xlsx,.pptx,.zip'
 
   const addFileItems = async (list: File[]) => {
+    const total = list.reduce((n, f) => n + f.size, 0)
+    if (!(await confirmTransfer('up', total, list.length))) return
     let last: FileRow | null = null
     let offline = false
     for (const f of list) {
