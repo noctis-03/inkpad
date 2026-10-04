@@ -152,21 +152,25 @@ export async function saveLastView(id: ID, view: DocumentMeta['lastView']) {
 }
 
 export async function trashDocument(id: ID) {
-  await db.transaction('rw', db.documents, db.outbox, async () => {
+  await db.transaction('rw', [db.documents, db.outbox, db.syncState], async () => {
     const now = Date.now()
     await db.documents.update(id, { deletedAt: now, updatedAt: now })
-    await enqueue('document', id, 'delete')
+    // tombstone을 outbox에 넣지 않고 gone 표식을 바로 남긴다 (지시서 4번 권장안) —
+    // Drive 사본은 그대로 남고(삭제는 이 기기의 일), 올리기 미리보기에 "삭제한 노트"가 잡히지 않는다.
+    // sync/folders.ts의 putSync와 같은 테이블을 import 순환을 피하려고 직접 쓴다
+    await db.syncState.put({ key: `gone:${id}`, value: now })
   })
 }
 
 export async function restoreDocument(id: ID) {
   const folders = new Set((await listFolders()).map((f) => f.id))
-  await db.transaction('rw', db.documents, db.outbox, async () => {
+  await db.transaction('rw', [db.documents, db.outbox, db.syncState], async () => {
     const d = await db.documents.get(id)
     if (!d) return
     // 원래 폴더가 없어졌으면 최상위로
     const folderId = d.folderId && folders.has(d.folderId) ? d.folderId : null
     await db.documents.update(id, { deletedAt: undefined, folderId, updatedAt: Date.now() })
+    await db.syncState.delete(`gone:${id}`) // 휴지통 표식을 지운다 — 안 지우면 받기에서 계속 제외된다 (지시서 4번)
     await enqueue('document', id)
   })
 }

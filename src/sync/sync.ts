@@ -198,6 +198,8 @@ async function push(f: { docs: string; assets: string }) {
     n++
     const doc = await db.documents.get(docId)
     if (!doc || doc.deletedAt) await pushTombstone(docId, info)
+    // 클라우드에서 삭제된 노트는 일괄 올리기에서 뺀다 — 목록의 행을 직접 눌렀을 때만 다시 올린다 (지시서 3번)
+    else if (await getSync(`clouddel:${docId}`)) continue
     else await pushDoc(docId, info, f)
   }
 
@@ -256,6 +258,7 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     await putDocRecord(docId, remote.id, remote.version) // 앞으로만 (규칙 10)
     await putSync(`base:${docId}`, { blob: base })
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
+    await db.syncState.delete(`clouddel:${docId}`) // 클라우드에서 삭제됐던 노트를 다시 올렸다 (지시서 3번)
     await db.syncState.delete(`curRev:${docId}`) // 되돌림 표식 해제 — 이제 헤드가 곧 이 기기의 현재
     await db.syncState.delete(`revKind:${docId}`)
     if (cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(seqs)
@@ -419,7 +422,7 @@ async function pull(f: { docs: string; assets: string }) {
 
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
-export type CloudNoteState = 'same' | 'remote-new' | 'pending' | 'deleted-local'
+export type CloudNoteState = 'same' | 'remote-new' | 'new' | 'pending' | 'cloud-deleted' | 'deleted-local'
 
 export interface CloudNoteInfo {
   docId: ID
@@ -427,6 +430,7 @@ export interface CloudNoteInfo {
   device?: string
   category?: string | null
   updatedAt: number
+  /** Drive 파일 위치. 아직 올리지 않았거나 클라우드에서 사라진 노트('new'·'cloud-deleted')는 빈 문자열 */
   fileId: string
   version: string
   enc?: string
@@ -434,14 +438,31 @@ export interface CloudNoteInfo {
 }
 
 /**
- * Drive에 올라가 있는 노트 목록 — 메타만으로 만든다(본문 내려받지 않음).
+ * 클라우드 노트 목록 — Drive 메타와 이 기기의 로컬 전용 상태를 합쳐 그린다(본문 내려받지 않음).
  * 상태: same(최신) / remote-new(받을 업데이트·새 노트, 파란 점) /
- *       pending(이 기기 변경이 올리기 대기) / deleted-local(이 기기에서 지운 노트, 빨간 점)
+ *       new(한 번도 올리지 않은 새 노트, 올릴 것) / pending(이 기기 변경이 올리기 대기) /
+ *       cloud-deleted(클라우드에서만 삭제됨 — 행을 눌러 다시 올린다) /
+ *       deleted-local(이 기기에서 지운 노트, 빨간 점)
  */
 export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   const f = await ensureFolders()
   const remotes = await drive.listFiles(f.docs)
+
+  // 오판 방지 (지시서 3번): 방금 올린 파일은 listFiles 인덱스에 늦게 반영될 수 있다 (규칙 10).
+  // 위치 기록이 있는데 목록에 없는 파일은 getMeta로 그 파일만 한 번 더 확인하고,
+  // 실제로 살아 있으면(=trashed가 아니면) 목록에 끼워 넣어 "클라우드에서 삭제됨" 오분류를 막는다.
+  const listed = new Set(remotes.map((r) => r.id))
+  for (const kv of await db.syncState.toArray()) {
+    if (!kv.key.startsWith('doc:')) continue
+    const rec = kv.value as FileRecord
+    if (listed.has(rec.fileId)) continue
+    const m = await drive.getMeta(rec.fileId).catch(() => null)
+    if (m && !m.trashed) remotes.push(m)
+  }
+
   const pending = await pendingDocs()
+  const hidden = new Set(await getHiddenCategories())
+  const byDoc = new Set(remotes.flatMap((r) => (r.appProperties?.docId ? [r.appProperties.docId] : [])))
   const out: CloudNoteInfo[] = []
   for (const remote of remotes) {
     const docId = remote.appProperties?.docId
@@ -470,6 +491,22 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       enc: remote.appProperties?.enc,
       state: gone ? 'deleted-local' : pending.has(docId) ? 'pending' : same ? 'same' : 'remote-new'
     })
+  }
+
+  // 로컬에만 있는 노트 — Drive 목록만으로는 보이지 않는다 (지시서 2·3번)
+  for (const doc of await db.documents.toArray()) {
+    if (byDoc.has(doc.id)) continue // Drive에 있다 — 위에서 판정했다
+    if (doc.deletedAt) continue // 휴지통에 있는 노트는 목록에 내지 않는다
+    if (doc.category && hidden.has(doc.category)) continue // 숨긴 카테고리 — 받기 규칙과 같게 (규칙 9)
+    const rec = await getSync<FileRecord>(`doc:${doc.id}`)
+    if (!rec && !(await getSync(`clouddel:${doc.id}`))) {
+      // 한 번도 올린 적 없는 새 노트 → 올릴 것("새 파일"). outbox에 이미 들어 있어 올리기에 함께 올라간다
+      out.push({ docId: doc.id, title: doc.title, category: doc.category ?? null, updatedAt: doc.updatedAt, fileId: '', version: '', state: 'new' })
+    } else {
+      // 올린 적이 있는데 Drive 목록에 없다 → 클라우드에서 삭제됨. 위치 기록이 살아 있으면
+      // 위에서 getMeta로 실제 부재를 확인했으므로(지시서 3번 오판 방지) 여기서는 목록만 본다
+      out.push({ docId: doc.id, title: doc.title, category: doc.category ?? null, updatedAt: doc.updatedAt, fileId: '', version: '', state: 'cloud-deleted' })
+    }
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
 }
@@ -501,6 +538,9 @@ export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileI
   await db.syncState.delete(`doc:${info.docId}`)
   await db.syncState.delete(`base:${info.docId}`)
   await db.syncState.delete(`gone:${info.docId}`)
+  // "클라우드에서 삭제함" 표식 — 위치 기록이 지워져도 이 기기는 노트를 'cloud-deleted'로
+  // 분류하고 일괄 올리기에서 뺀다 (지시서 3번). 행을 눌러 다시 올리면 지운다.
+  await putSync(`clouddel:${info.docId}`, Date.now())
 }
 
 // ───────────────── 올리기 계획 (미리보기) ─────────────────
@@ -508,7 +548,7 @@ export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileI
 export interface PushDoc {
   docId: ID
   title: string
-  change: 'add' | 'modify' | 'delete'
+  change: 'add' | 'modify'
 }
 
 export interface PushPlan {
@@ -526,10 +566,11 @@ export async function planPush(): Promise<PushPlan> {
     assets: { count: 0, bytes: 0 }
   }
   for (const [docId] of pending) {
+    if (await getSync(`clouddel:${docId}`)) continue // 클라우드에서 삭제됨 — 일괄 올리기에서 제외 (지시서 3번)
     const doc = await db.documents.get(docId)
-    if (!doc) plan.docs.push({ docId, title: docId, change: 'delete' })
-    else if (doc.deletedAt) plan.docs.push({ docId, title: doc.title, change: 'delete' })
-    else plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add' })
+    // 삭제(휴지통·영구)는 Drive에 올라가는 게 없다 — 미리보기에 세지 않고 pushTombstone이 조용히 처리한다 (지시서 4번)
+    if (!doc || doc.deletedAt) continue
+    plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add' })
   }
   for (const r of rows.filter((x) => x.entity === 'asset')) {
     const a = await db.assets.get(r.entityId)

@@ -2619,8 +2619,8 @@ textarea {
 .app-runner-bar { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 6px) 10px 6px; border-bottom: 1px solid #e5e7eb; }
 .app-runner-title { flex: 1; margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-runner-frame { flex: 1; width: 100%; border: 0; background: #fff; }
-/* 클라우드 저장 대기 표시 (카드 왼쪽 위 주황 점) */
-.app-pending { position: absolute; top: 8px; left: 8px; width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; }
+/* 클라우드 저장 대기 표시 (카드 썸네일 오른쪽 위 주황 점) */
+.app-pending { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; }
 .app-card .doc-thumb { color: #4f46e5; }
 
 /* ───────── Inkpad에서 고르기 (앱 실행 중 파일 선택) ───────── */
