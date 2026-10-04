@@ -179,6 +179,19 @@ export async function upload(
   )
 }
 
+/** 본문 없이 appProperties(·name)만 바꾼다 — 전송량 수 KB (이름·카테고리 변경용) */
+export async function updateMeta(fileId: string, patch: { name?: string; appProperties: Record<string, string> }): Promise<RemoteFile> {
+  const body: Record<string, unknown> = { appProperties: patch.appProperties }
+  if (patch.name) body.name = patch.name
+  return ok<RemoteFile>(
+    await driveFetch(`${API}/files/${fileId}?fields=${FIELDS}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+  )
+}
+
 /** 완전 삭제 대신 휴지통으로 이동 (실수로 지워도 복구 가능) */
 export async function trash(fileId: string): Promise<void> {
   const res = await driveFetch(`${API}/files/${fileId}`, {

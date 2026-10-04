@@ -21,7 +21,7 @@ import {
   type CloudAppState
 } from '../sync/apps'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetHeader, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
 
 // 앱 시트 (명세 3장). 모든 항목에 ⋯ 메뉴가 있고, 상태에 맞는 대표 버튼 하나를 바로 보여 준다.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
@@ -317,6 +317,7 @@ export function AppsSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <SheetErrorBoundary onClose={onClose}>
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="store-sheet" role="dialog" aria-label="앱">
         <SheetHeader
@@ -422,11 +423,15 @@ export function AppsSheet({ onClose }: { onClose: () => void }) {
                               </div>
                               <button
                                 className="store-more"
+                                data-pop-anchor=""
                                 aria-label={`${a.title} 더보기`}
                                 aria-expanded={menu?.appId === a.appId}
+                                onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setMenu((p) => (p?.appId === a.appId ? null : { appId: a.appId, rect: e.currentTarget.getBoundingClientRect() }))
+                                  // rect 를 지금 계산해 둔다 — e.currentTarget 은 핸들러가 끝나면 null 이 된다
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  setMenu((p) => (p?.appId === a.appId ? null : { appId: a.appId, rect }))
                                 }}
                               >
                                 <Icon name="more" size={16} />
@@ -458,5 +463,6 @@ export function AppsSheet({ onClose }: { onClose: () => void }) {
         </Popover>
       )}
     </div>
+    </SheetErrorBoundary>
   )
 }

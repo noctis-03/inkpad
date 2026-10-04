@@ -31,7 +31,7 @@ import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
-import { confirmTransfer } from '../../sync/transfer'
+import { confirmTransfer, uploadChoice } from '../../sync/transfer'
 import type { FileRow } from '../../storage/db'
 
 type Section =
@@ -395,15 +395,18 @@ export function Library() {
 
   const addFileItems = async (list: File[]) => {
     const total = list.reduce((n, f) => n + f.size, 0)
-    if (!(await confirmTransfer('up', total, list.length))) return
+    // 추가하기 전에 3버튼 확인 (명세 11.4) — 이 기기에만 추가 / 업로드 / 취소
+    const choice = await uploadChoice(total, list.length)
+    if (choice === 'cancel') return
+    const upload = choice === 'upload'
     let last: FileRow | null = null
     let offline = false
     for (const f of list) {
       try {
         setBusy({ text: `${f.name} 추가하는 중` })
-        const r = await addFile(f, defaultCategory())
+        const r = await addFile(f, defaultCategory(), { upload })
         last = (await getFile(r.file.id)) ?? null
-        if (!r.uploaded) offline = true
+        if (upload && !r.uploaded) offline = true
       } catch (e) {
         toast(e instanceof Error ? e.message : '파일을 추가하지 못했습니다.', 'error')
       } finally {
@@ -413,7 +416,12 @@ export function Library() {
     await refresh()
     const lastFile = last
     if (!lastFile) return
-    toast(offline ? '파일을 추가했습니다. 클라우드에는 다음 올리기 때 저장됩니다.' : '파일을 추가하고 클라우드에 저장했습니다.', 'success')
+    if (!upload) toast('이 기기에 추가했습니다. 업로드하려면 목록에서 재업로드를 눌러 주세요.', 'info')
+    else
+      toast(
+        offline ? '오프라인이라 업로드하지 못했습니다. 연결된 뒤 목록에서 재업로드를 눌러 주세요.' : '파일을 추가하고 클라우드에 업로드했습니다.',
+        offline ? 'error' : 'success'
+      )
     if (list.length === 1) navigate({ name: 'file', fileId: lastFile.id })
   }
 
@@ -448,6 +456,9 @@ export function Library() {
         return
       case 'export':
         try {
+          // 원본이 이 기기에 없으면 내보내기가 다운로드를 일으킨다 — 기준 이상이면 먼저 묻는다 (11.3)
+          const hasOrig = f.text !== undefined || !!f.blob
+          if (!hasOrig && !(await confirmTransfer('down', f.size))) return
           await saveFile(await fileToBlob(f), f.name)
         } catch (e) {
           toast(e instanceof Error ? e.message : '내보내기 실패', 'error')

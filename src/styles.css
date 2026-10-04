@@ -2761,3 +2761,5 @@ textarea {
   .store-row-name{display:none;}
   .store-card-bottom{gap:6px;}
 }
+.modal-actions.wrap{flex-wrap:wrap;}
+.modal-actions.equal.wrap .text-btn{flex:1 1 40%;}

@@ -41,7 +41,7 @@ async function purgeLocal(id: ID) {
 }
 
 /** uploaded: 클라우드까지 저장됐으면 true */
-export async function addFile(file: File, category: string | null): Promise<{ file: StoredFile; uploaded: boolean }> {
+export async function addFile(file: File, category: string | null, opts?: { upload?: boolean }): Promise<{ file: StoredFile; uploaded: boolean }> {
   if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name}: ${MAX_FILE_BYTES / 1024 / 1024}MB를 넘는 파일은 추가할 수 없습니다.`)
   const mime = file.type || 'application/octet-stream'
   const kind = fileKindOf(file.name, mime)
@@ -56,19 +56,25 @@ export async function addFile(file: File, category: string | null): Promise<{ fi
     kind,
     createdAt: now,
     updatedAt: now,
-    pending: 'upsert'
+    pending: 'upsert',
+    pendingKind: 'content'
   }
   if (kind === 'text') row.text = await file.text()
   else row.blob = file
   await db.files.add(row)
   emit()
+  // "이 기기에만 추가"는 업로드하지 않는다 — 사용자가 목록에서 재업로드를 누를 때만 보낸다
+  if (opts?.upload === false) return { file: row, uploaded: false }
   return { file: row, uploaded: await tryFlush(row.id) }
 }
 
 export async function updateFileMeta(id: ID, patch: { title?: string; category?: string | null }): Promise<boolean> {
   const p = { ...patch }
   if (p.title) p.title = p.title.slice(0, MAX_FILE_TITLE_CHARS)
-  await db.files.update(id, { ...p, updatedAt: Date.now(), pending: 'upsert' })
+  const cur = await db.files.get(id)
+  // 이미 본문 업로드가 예약돼 있으면 그대로 둔다 (본문에 새 메타가 함께 실린다)
+  const pendingKind = cur?.pendingKind === 'content' ? 'content' : 'meta'
+  await db.files.update(id, { ...p, updatedAt: Date.now(), pending: 'upsert', pendingKind })
   emit()
   return tryFlush(id)
 }
@@ -140,7 +146,10 @@ async function filesFolder(): Promise<string> {
     await db.files.toCollection().modify((f) => {
       if (f.cloudDetachedAt) return // 이 기기에서 직접 클라우드 삭제한 항목은 건드리지 않는다
       delete f.fileId
-      if (f.pending !== 'delete') f.pending = 'upsert'
+      if (f.pending !== 'delete') {
+        f.pending = 'upsert'
+        f.pendingKind = 'content'
+      }
     })
   }
   await putSync('filesFolderId', id)
@@ -169,6 +178,18 @@ async function flushOne(id: ID, folderId: string) {
     await purgeLocal(id)
     return
   }
+  // 이름·카테고리만 바뀐 경우: 본문 없이 appProperties 만 갱신한다 (전송량 수 KB, 원본 다운로드 없음)
+  if (f.pendingKind === 'meta' && f.fileId) {
+    const m = await drive.getMeta(f.fileId)
+    if (!m || m.trashed) {
+      // 원격이 사라졌다 — 업로드하지 않고 pending 만 풀어 cloud-missing 으로 보이게 둔다
+      await db.files.update(id, { pending: undefined, pendingKind: undefined })
+      return
+    }
+    await drive.updateMeta(f.fileId, { appProperties: propsOf(f) })
+    await db.files.update(id, { pending: undefined, pendingKind: undefined })
+    return
+  }
   let fileId = f.fileId
   if (fileId) {
     const m = await drive.getMeta(fileId)
@@ -180,7 +201,10 @@ async function flushOne(id: ID, folderId: string) {
     const cur = await db.files.get(id)
     if (!cur) return
     // 업로드 중에 또 바뀌었으면 pending을 남겨 다음에 다시 올린다
-    await db.files.update(id, cur.updatedAt === f.updatedAt ? { fileId: res.id, pending: undefined } : { fileId: res.id })
+    await db.files.update(
+      id,
+      cur.updatedAt === f.updatedAt ? { fileId: res.id, pending: undefined, pendingKind: undefined } : { fileId: res.id }
+    )
   })
 }
 
@@ -196,7 +220,7 @@ async function tryFlush(id: ID): Promise<boolean> {
   }
 }
 
-/** 올리기에서 호출 */
+/** 시트의 "모두 재업로드" 버튼에서 호출 */
 export async function flushPendingFiles(): Promise<number> {
   const rows = (await db.files.toArray()).filter((f) => f.pending)
   if (!rows.length) return 0
@@ -235,6 +259,7 @@ export interface CloudFileInfo {
   localUpdatedAt?: number
   driveFileId?: string
   hasOriginal: boolean
+  pendingKind?: 'meta' | 'content'
   state: CloudFileState
 }
 
@@ -251,7 +276,8 @@ function baseInfo(f: FileRow): Omit<CloudFileInfo, 'state'> {
     kind: f.kind,
     localUpdatedAt: f.updatedAt,
     driveFileId: f.fileId,
-    hasOriginal: hasOriginalOf(f)
+    hasOriginal: hasOriginalOf(f),
+    pendingKind: f.pendingKind
   }
 }
 
@@ -344,6 +370,7 @@ export async function listCloudFiles(): Promise<CloudFileInfo[]> {
       localUpdatedAt: local?.updatedAt,
       driveFileId: r.id,
       hasOriginal: !!local && hasOriginalOf(local),
+      pendingKind: local?.pendingKind,
       state
     })
   }
@@ -409,9 +436,15 @@ export async function removeFileLocal(id: ID): Promise<void> {
   emit()
 }
 
-/** reuploadFile: cloud-missing / local-only / detached / pending 파일을 다시 올린다 */
+/** reuploadFile: 메타만 실패한 경우 fileId 를 지우지 않고 메타만 다시 시도한다 (중복 파일 방지) */
 export async function reuploadFile(id: ID): Promise<boolean> {
-  await db.files.update(id, { fileId: undefined, deletedAt: undefined, pending: 'upsert', cloudDetachedAt: undefined })
+  const f = await db.files.get(id)
+  if (!f) return false
+  // 이름·카테고리 변경이 실패한 경우 — 새 파일을 만들지 않고 메타만 다시 보낸다
+  if (f.pending && f.fileId && f.pendingKind === 'meta') return tryFlush(id)
+  // 새로 업로드해야 하는 경우 — 원본이 없으면 다운로드하지 않고 오류를 낸다
+  if (!hasOriginalOf(f)) throw new Error('이 기기에 원본이 없어 업로드할 수 없습니다.')
+  await db.files.update(id, { fileId: undefined, deletedAt: undefined, pending: 'upsert', pendingKind: 'content', cloudDetachedAt: undefined })
   emit()
   return tryFlush(id)
 }

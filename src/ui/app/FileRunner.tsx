@@ -52,6 +52,9 @@ export function FileRunner({ fileId }: { fileId: ID }) {
   const download = async () => {
     if (!row) return
     try {
+      // 원본이 이 기기에 없으면 내보내기가 다운로드를 일으킨다 — 기준 이상이면 먼저 묻는다 (11.3)
+      const hasOrig = row.text !== undefined || !!row.blob
+      if (!hasOrig && !(await confirmTransfer('down', row.size))) return
       await saveFile(await fileToBlob(row), row.name)
     } catch (e) {
       setError(e instanceof Error ? e.message : '내보내기 실패')
