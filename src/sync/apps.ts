@@ -90,13 +90,15 @@ export async function deleteAppFromCloud(id: ID): Promise<boolean> {
     return true
   }
   if (!a.fileId) {
-    await purgeLocal(id) // 클라우드에 올라간 적 없음
-    emit()
+    // 클라우드에 지울 것이 없다 — 메뉴에서도 이 동작을 보여 주지 않는다
     return true
   }
-  await db.apps.update(id, { deletedAt: Date.now(), pending: 'delete' })
+  // 이 기기의 사본은 남긴다: Drive만 휴지통으로 보내고 로컬 행은 "이 기기에만 있음"으로 표시한다
+  if (!navigator.onLine) throw new Error('오프라인에서는 클라우드에서 삭제할 수 없습니다.')
+  await drive.trash(a.fileId)
+  await db.apps.update(id, { fileId: undefined, pending: undefined, cloudDetachedAt: Date.now() })
   emit()
-  return tryFlush(id)
+  return true
 }
 
 // 앱의 localStorage 대용 (로컬 전용, 동기화 안 함)
@@ -122,6 +124,7 @@ async function appsFolder(): Promise<string> {
   if (saved && saved !== id) {
     // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
     await db.apps.toCollection().modify((a) => {
+      if (a.cloudDetachedAt) return // 이 기기에서 직접 클라우드 삭제한 항목은 건드리지 않는다
       delete a.fileId
       if (a.pending !== 'delete') a.pending = 'upsert'
     })
@@ -173,7 +176,7 @@ async function tryFlush(id: ID): Promise<boolean> {
     emit()
     return true
   } catch (e) {
-    console.warn('[apps] 클라우드 반영 실패 — 다음 올리기에서 재시도', e)
+    console.warn('[apps] 클라우드 반영 실패 — 사용자가 재업로드해야 함', e)
     return false
   }
 }
@@ -203,6 +206,7 @@ export type CloudAppState =
   | 'pending' // 이 기기에서 바뀌어 올릴 것이 있음 (pending 존재)
   | 'cloud-missing' // 설치돼 있고 fileId도 있는데 클라우드에서 사라짐
   | 'local-only' // 클라우드에 올라간 적 없음 (fileId 없음, 업로드 실패)
+  | 'detached' // 이 기기에서 직접 클라우드 삭제 — 이 기기에만 남아 있음 (cloudDetachedAt)
 
 export interface CloudAppInfo {
   appId: ID
@@ -224,7 +228,13 @@ async function localCloudApps(): Promise<CloudAppInfo[]> {
       category: a.category,
       localUpdatedAt: a.updatedAt,
       driveFileId: a.fileId,
-      state: (a.pending || !a.fileId ? (a.fileId ? 'pending' : 'local-only') : 'installed') as CloudAppState
+      state: (a.cloudDetachedAt && !a.fileId
+        ? 'detached'
+        : a.pending || !a.fileId
+          ? a.fileId
+            ? 'pending'
+            : 'local-only'
+          : 'installed') as CloudAppState
     }))
 }
 
@@ -269,7 +279,8 @@ export async function listCloudApps(): Promise<CloudAppInfo[]> {
   for (const a of await db.apps.toArray()) {
     if (a.deletedAt || cloud.has(a.id)) continue
     let state: CloudAppState
-    if (!a.fileId) state = 'local-only'
+    if (a.cloudDetachedAt && !a.fileId) state = 'detached'
+    else if (!a.fileId) state = 'local-only'
     else if (a.pending) state = 'pending'
     else {
       const m = await drive.getMeta(a.fileId).catch(() => undefined)
@@ -290,7 +301,7 @@ export async function listCloudApps(): Promise<CloudAppInfo[]> {
 /** 클라우드 앱 하나를 이 기기로 내려받는다 (기존 pullApps의 단건 다운로드 로직) */
 async function downloadAppFromCloud(appId: ID): Promise<void> {
   const local = await db.apps.get(appId)
-  if (local?.pending) throw new Error('이 기기의 변경을 먼저 올려 주세요.')
+  if (local?.pending) throw new Error('이 기기의 변경을 먼저 업로드해 주세요.')
   const folder = await appsFolder()
   const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.appId === appId)
   if (!r) throw new Error('클라우드에서 앱을 찾지 못했습니다.')
@@ -347,9 +358,38 @@ export async function uninstallApp(appId: ID, opts?: { clearData?: boolean }): P
   emit()
 }
 
-/** cloud-missing / local-only / pending 앱을 다시 올린다 (fileId를 지우고 pending upsert) */
+/** cloud-missing / local-only / detached / pending 앱을 다시 올린다 (fileId를 지우고 pending upsert) */
 export async function reuploadApp(appId: ID): Promise<boolean> {
-  await db.apps.update(appId, { fileId: undefined, deletedAt: undefined, pending: 'upsert' })
+  await db.apps.update(appId, { fileId: undefined, deletedAt: undefined, pending: 'upsert', cloudDetachedAt: undefined })
   emit()
   return tryFlush(appId)
+}
+
+/**
+ * available 앱(이 기기에 설치되지 않음)의 새 버전 업로드 — 클라우드 사본만 바꾼다.
+ * 로컬 db는 건드리지 않는다(자동 설치 금지). 원격 title·category는 유지하고 updatedAt만 갱신한다.
+ */
+export async function uploadAppVersionToCloud(appId: ID, file: File): Promise<void> {
+  const html = await readHtml(file)
+  const folder = await appsFolder()
+  const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.appId === appId)
+  if (!r) throw new Error('클라우드에서 앱을 찾지 못했습니다.')
+  const title = r.appProperties?.title || titleFromHtml(html, file.name.replace(/\.html?$/i, ''))
+  const category = r.appProperties?.category
+  await drive.upload(
+    new Blob([html], { type: 'text/html' }),
+    {
+      name: `${appId}.html`,
+      mimeType: 'text/html',
+      appProperties: {
+        appId,
+        updatedAt: String(Date.now()),
+        title: fitProp('title', title),
+        ...(category && bytes('category') + bytes(category) <= PROP_MAX ? { category } : {})
+      }
+    },
+    folder,
+    r.id
+  )
+  emit()
 }

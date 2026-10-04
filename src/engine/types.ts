@@ -38,6 +38,8 @@ export interface Settings {
   resolution: number
   showHud: boolean
   momentum: boolean // 한 손가락 스크롤 관성
+  // 기타 파일 전송 전 확인 (iPad Safari는 셀룰러 여부를 알 수 없어 크기로 묻는다)
+  largeFileConfirm: 'off' | '10' | '50'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -59,7 +61,8 @@ export const DEFAULT_SETTINGS: Settings = {
   gestureRender: 'auto',
   resolution: 1,
   showHud: false,
-  momentum: true
+  momentum: true,
+  largeFileConfirm: '10'
 }
 
 export interface PenStyle {
