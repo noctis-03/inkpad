@@ -367,7 +367,7 @@ export async function listCloudFiles(): Promise<CloudFileInfo[]> {
 /** addFileFromCloud: 클라우드 파일의 메타 행을 만든다. withOriginal이면 원본까지 받는다 */
 export async function addFileFromCloud(id: ID, opts?: { withOriginal?: boolean }): Promise<void> {
   const local = await db.files.get(id)
-  if (local?.pending) throw new Error('이 기기의 변경을 먼저 올려 주세요.')
+  if (local?.pending) throw new Error('이 기기의 변경을 먼저 업로드해 주세요.')
   const r = await findRemoteFile(id)
   if (!r) throw new Error('클라우드에서 파일을 찾지 못했습니다.')
   await db.files.put(rowFromRemote(r, local))
@@ -398,7 +398,7 @@ export async function updateFileFromCloud(id: ID): Promise<void> {
 export async function dropFileOriginal(id: ID): Promise<void> {
   const f = await db.files.get(id)
   if (!f) return
-  if (!f.fileId) throw new Error('클라우드에 없는 파일은 원본을 지울 수 없습니다. 먼저 올려 주세요.')
+  if (!f.fileId) throw new Error('클라우드에 없는 파일은 원본을 지울 수 없습니다. 먼저 업로드해 주세요.')
   await db.files.update(id, { text: undefined, blob: undefined })
   emit()
 }
