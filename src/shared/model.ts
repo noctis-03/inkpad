@@ -285,6 +285,8 @@ export interface StoredFile {
   deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
   /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 (명세 3.1·4.1) */
   cloudDetachedAt?: number
+  /** 'upsert' 대기 중 무엇을 보내야 하는지 — 'meta'는 본문 없이 메타만 (이름·카테고리 변경) */
+  pendingKind?: 'meta' | 'content'
 }
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024

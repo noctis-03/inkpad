@@ -1,6 +1,38 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
+
+/** 시트에서 난 오류가 화면 전체를 지우지 않도록 막는다 */
+export class SheetErrorBoundary extends Component<{ children: ReactNode; onClose: () => void }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[sheet] 렌더 오류', error, info)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && this.props.onClose()}>
+          <div className="store-sheet" role="alertdialog" aria-label="오류">
+            <SheetEmpty
+              icon="alert"
+              title="화면을 표시하지 못했습니다"
+              desc={this.state.error.message}
+              action={
+                <button className="primary-btn" onClick={this.props.onClose}>
+                  닫기
+                </button>
+              }
+            />
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 /** 온라인/오프라인 상태 (online·offline 이벤트 구독) */
 export function useOnline() {
@@ -123,6 +155,9 @@ export function Popover({ anchor, onClose, children }: { anchor: DOMRect | null;
   }, [anchor])
   useEffect(() => {
     const onDoc = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null
+      // ⋯ 버튼 자체를 누른 경우는 버튼의 onClick 토글이 처리하게 둔다
+      if (t?.closest?.('[data-pop-anchor]')) return
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     const t = window.setTimeout(() => document.addEventListener('pointerdown', onDoc), 0)

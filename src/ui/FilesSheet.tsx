@@ -19,7 +19,7 @@ import {
   type CloudFileState
 } from '../sync/files'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetHeader, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
 
 // 기타 파일 시트 (명세 4장). 그룹 없이 리스트 하나, 정렬 탭과 저장 공간 카드.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
@@ -150,7 +150,9 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
 
   const reupload = (f: CloudFileInfo) =>
     run(async () => {
-      if (!(await confirmTransfer('up', f.size))) return
+      // 이름·카테고리 변경(pending + 메타만)은 본문을 보내지 않으므로 확인 창을 띄우지 않는다
+      const bodyless = f.state === 'pending' && f.pendingKind === 'meta'
+      if (!bodyless && !(await confirmTransfer('up', f.size))) return
       const ok = await reuploadFile(f.id)
       if (!ok) throw new Error('오프라인이라 업로드하지 못했습니다. 연결된 뒤 다시 시도해 주세요.')
       toast(`"${f.title}"을(를) 클라우드에 업로드했습니다.`)
@@ -165,9 +167,10 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
   const doReuploadAll = () =>
     run(async () => {
       const targets = all.filter((f) => matchFilter(f.state, 'confirm'))
-      if (!targets.length) return
-      const total = targets.reduce((n, f) => n + f.size, 0)
-      if (!(await confirmTransfer('up', total, targets.length))) return
+      // 본문을 보내는 대상만 합계에 더한다 (이름 변경은 메타만 보낸다)
+      const bodyTargets = targets.filter((f) => !(f.state === 'pending' && f.pendingKind === 'meta'))
+      const total = bodyTargets.reduce((n, f) => n + f.size, 0)
+      if (bodyTargets.length && !(await confirmTransfer('up', total, bodyTargets.length))) return
       let n = 0
       for (const f of targets) {
         try {
@@ -249,6 +252,7 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <SheetErrorBoundary onClose={onClose}>
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="store-sheet" role="dialog" aria-label="기타 파일">
         <SheetHeader icon="folder" title="기타 파일" subtitle="Google Drive · Inkpad/files" offline={!online} onClose={onClose} />
@@ -391,11 +395,15 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
                         )}
                         <button
                           className="store-more"
+                          data-pop-anchor=""
                           aria-label={`${f.title} 더보기`}
                           aria-expanded={menu?.id === f.id}
+                          onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation()
-                            setMenu((p) => (p?.id === f.id ? null : { id: f.id, rect: e.currentTarget.getBoundingClientRect() }))
+                            // rect 를 지금 계산해 둔다 — e.currentTarget 은 핸들러가 끝나면 null 이 된다
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            setMenu((p) => (p?.id === f.id ? null : { id: f.id, rect }))
                           }}
                         >
                           <Icon name="more" size={16} />
@@ -416,5 +424,6 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
         </Popover>
       )}
     </div>
+    </SheetErrorBoundary>
   )
 }

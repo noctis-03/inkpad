@@ -181,7 +181,7 @@ async function tryFlush(id: ID): Promise<boolean> {
   }
 }
 
-/** 올리기에서 호출 */
+/** 시트의 "모두 업로드" 버튼에서 호출 */
 export async function flushPendingApps(): Promise<number> {
   const rows = (await db.apps.toArray()).filter((a) => a.pending)
   if (!rows.length) return 0

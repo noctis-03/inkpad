@@ -20,7 +20,16 @@ type PromptDialog = {
   password?: boolean
   resolve: (v: string | null) => void
 }
-type Dialog = ConfirmDialog | PromptDialog
+/** 버튼 2~3개짜리 선택 창 (파일 추가 시 "이 기기에만 추가" 등) */
+type ChoiceDialog = {
+  kind: 'choice'
+  title: string
+  message?: string
+  note?: string
+  options: { key: string; label: string; primary?: boolean }[]
+  resolve: (v: string | null) => void
+}
+type Dialog = ConfirmDialog | PromptDialog | ChoiceDialog
 
 const useDialog = create<{ d: Dialog | null }>(() => ({ d: null }))
 
@@ -40,6 +49,15 @@ export function promptDialog(title: string, opts: { message?: string; value?: st
   )
 }
 
+export function choiceDialog(
+  title: string,
+  opts: { message?: string; note?: string; options: { key: string; label: string; primary?: boolean }[] }
+) {
+  return new Promise<string | null>((resolve) =>
+    useDialog.setState({ d: { kind: 'choice', title, message: opts.message, note: opts.note, options: opts.options, resolve } })
+  )
+}
+
 export function askPdfPassword(incorrect: boolean) {
   return promptDialog(incorrect ? '비밀번호가 틀렸습니다' : '암호가 걸린 PDF', {
     message: '이 PDF를 열려면 비밀번호가 필요합니다. 비밀번호는 저장하지 않습니다.',
@@ -54,7 +72,6 @@ export function DialogHost() {
   const inputRef = useRef<HTMLInputElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
 
-  // 기본 포커스: 확인 창은 취소, 입력 창은 입력칸 (명세 2.4)
   useEffect(() => {
     if (d?.kind === 'prompt') {
       setValue(d.value)
@@ -64,7 +81,7 @@ export function DialogHost() {
       }, 50)
       return () => clearTimeout(t)
     }
-    if (d?.kind === 'confirm') {
+    if (d) {
       const t = setTimeout(() => cancelRef.current?.focus(), 50)
       return () => clearTimeout(t)
     }
@@ -85,25 +102,26 @@ export function DialogHost() {
   }, [d])
 
   if (!d) return null
-  const close = (v: boolean) => {
+  const finish = (v: string | null, ok: boolean) => {
     useDialog.setState({ d: null })
-    if (d.kind === 'confirm') d.resolve(v)
-    else d.resolve(v ? value : null)
+    if (d.kind === 'confirm') d.resolve(ok)
+    else if (d.kind === 'prompt') d.resolve(ok ? value : null)
+    else d.resolve(v)
   }
   return (
-    <div className="modal-backdrop dialog-host" onPointerDown={(e) => e.target === e.currentTarget && close(false)}>
+    <div className="modal-backdrop dialog-host" onPointerDown={(e) => e.target === e.currentTarget && finish(null, false)}>
       <form
         className="modal"
-        role={d.kind === 'confirm' ? 'alertdialog' : 'dialog'}
+        role={d.kind === 'choice' ? 'alertdialog' : d.kind === 'confirm' ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         onSubmit={(e) => {
           e.preventDefault()
-          close(true)
+          if (d.kind !== 'choice') finish(null, true)
         }}
       >
         <h2 className="modal-title">{d.title}</h2>
         {d.message && <p className="modal-message">{d.message}</p>}
-        {d.kind === 'confirm' && d.note && <p className="modal-note">{d.note}</p>}
+        {(d.kind === 'confirm' || d.kind === 'choice') && d.note && <p className="modal-note">{d.note}</p>}
         {d.kind === 'prompt' && (
           <input
             ref={inputRef}
@@ -114,14 +132,30 @@ export function DialogHost() {
             autoComplete="off"
           />
         )}
-        <div className="modal-actions equal">
-          <button ref={cancelRef} type="button" className="text-btn" onClick={() => close(false)}>
-            취소
-          </button>
-          <button type="submit" className={'text-btn primary' + (d.kind === 'confirm' && d.danger ? ' danger-fill' : '')}>
-            {d.ok}
-          </button>
-        </div>
+        {d.kind === 'choice' ? (
+          <div className="modal-actions equal wrap">
+            {d.options.map((o, i) => (
+              <button
+                key={o.key}
+                ref={i === 0 ? cancelRef : undefined}
+                type="button"
+                className={'text-btn' + (o.primary ? ' primary' : '')}
+                onClick={() => finish(o.key, o.key !== 'cancel')}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="modal-actions equal">
+            <button ref={cancelRef} type="button" className="text-btn" onClick={() => finish(null, false)}>
+              취소
+            </button>
+            <button type="submit" className={'text-btn primary' + (d.kind === 'confirm' && d.danger ? ' danger-fill' : '')}>
+              {d.ok}
+            </button>
+          </div>
+        )}
       </form>
     </div>
   )
