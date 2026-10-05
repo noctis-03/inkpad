@@ -507,8 +507,10 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
     const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
     const same = sameByVersion || sameByContent
-    const localGone = !local || !!local.deletedAt
-    const gone = localGone || !!(await getSync(`gone:${docId}`))
+    // 이 기기에서 지운 노트인지는 표식으로 판정한다 — 휴지통(deletedAt), gone 표식,
+    // 영구 삭제(위치 기록은 남고 로컬 행만 없음). 로컬 행이 없다는 이유만으로 삭제됨으로
+    // 보면 다른 기기에서 새로 만들어 아직 받지 않은 노트가 "이 기기에서 삭제됨"으로 오판된다
+    const gone = !!local?.deletedAt || !!(await getSync(`gone:${docId}`)) || (!local && !!rec)
     out.push({
       docId,
       title: remote.appProperties?.title || local?.title || docId,
@@ -570,6 +572,16 @@ export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileI
   // "클라우드에서 삭제함" 표식 — 위치 기록이 지워져도 이 기기는 노트를 'cloud-deleted'로
   // 분류하고 일괄 올리기에서 뺀다 (지시서 3번). 행을 눌러 다시 올리면 지운다.
   await putSync(`clouddel:${info.docId}`, Date.now())
+}
+
+/**
+ * 새 노트를 일괄 올리기에서 뺀다 — clouddel 표식만 남기고 Drive 호출은 없다.
+ * 제외된 노트는 목록에서 "클라우드에 없음"(일괄 올리기에서 제외)으로 보이고,
+ * 행의 "다시 올리기"(pushOneNote)로 다시 올리면 표식이 지워진다.
+ * 클라우드에 올라간 적 없는 노트(new)만 이렇게 뺀다 — 이미 올라간 노트는 deleteCloudNote를 쓴다.
+ */
+export async function excludeFromPush(docId: ID): Promise<void> {
+  await putSync(`clouddel:${docId}`, Date.now())
 }
 
 // ───────────────── 올리기 계획 (미리보기) ─────────────────

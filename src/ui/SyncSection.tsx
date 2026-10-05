@@ -4,6 +4,7 @@ import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
   downloadCloudNote,
   deleteCloudNote,
+  excludeFromPush,
   listCloudNotes,
   onSyncProgress,
   onSyncStatus,
@@ -119,20 +120,46 @@ function CloudRow({
   busy,
   busyId,
   onPrimary,
-  onDelete
+  onDelete,
+  onExclude
 }: {
   c: CloudNoteInfo
   busy: boolean
   busyId: string | null
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
+  onExclude: (info: CloudNoteInfo) => void
 }) {
   const [openMenu, setOpenMenu] = useState(false)
   const m = STATE_META[c.state]
   const rowBusy = busyId === c.docId
   const act = m.action ? ACTION_UI[m.action] : null
-  // ⋯ 메뉴에는 보조 동작만 남긴다 (개선 5) — 클라우드에 올라갈 파일이 없는 노트(new·cloud-deleted)는 삭제 메뉴도 없다
-  const hasMenu = c.state !== 'new' && c.state !== 'cloud-deleted'
+  // 모든 행에 ⋯ 메뉴를 두어 행 모양을 통일한다. 메뉴 항목은 클라우드에 실제 파일이 있는지로 정한다 —
+  // new(한 번도 안 올림)는 일괄 올리기에서 뺄 수 있고, cloud-deleted는 클라우드에 지울 파일 자체가 없다
+  const menuItem =
+    c.state === 'new' ? (
+      <button
+        className="warn"
+        onClick={() => {
+          setOpenMenu(false)
+          onExclude(c)
+        }}
+      >
+        <Icon name="minus" size={16} /> 일괄 올리기에서 제외
+      </button>
+    ) : c.state === 'cloud-deleted' ? (
+      <div className="cloud-menu-note">클라우드에 올라가 있지 않아 삭제할 것이 없습니다</div>
+    ) : (
+      <button
+        className="danger"
+        onClick={() => {
+          setOpenMenu(false)
+          onDelete(c)
+        }}
+      >
+        <Icon name="trash" size={16} /> 클라우드에서 삭제
+      </button>
+    )
   return (
     <div className={'cloud-row g-' + m.group}>
       <span className="cloud-ico" aria-hidden="true">
@@ -156,24 +183,14 @@ function CloudRow({
         </button>
       )}
 
-      {hasMenu && (
-        <button className="cloud-more" aria-label="더보기" aria-expanded={openMenu} disabled={busy} onClick={() => setOpenMenu((v) => !v)}>
-          <Icon name="more" size={16} />
-        </button>
-      )}
+      <button className="cloud-more" aria-label="더보기" aria-expanded={openMenu} disabled={busy} onClick={() => setOpenMenu((v) => !v)}>
+        <Icon name="more" size={16} />
+      </button>
       {openMenu && (
         <>
           <button className="cloud-menu-bg" aria-label="메뉴 닫기" onClick={() => setOpenMenu(false)} />
           <div className="cloud-menu" role="menu">
-            <button
-              className="danger"
-              onClick={() => {
-                setOpenMenu(false)
-                onDelete(c)
-              }}
-            >
-              <Icon name="trash" size={16} /> 클라우드에서 삭제
-            </button>
+            {menuItem}
           </div>
         </>
       )}
@@ -188,6 +205,7 @@ function CloudList({
   busyId,
   onPrimary,
   onDelete,
+  onExclude,
   onPullAll,
   onPushPreview
 }: {
@@ -197,6 +215,7 @@ function CloudList({
   busyId: string | null
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
+  onExclude: (info: CloudNoteInfo) => void
   onPullAll: () => void
   onPushPreview: () => void
 }) {
@@ -315,7 +334,7 @@ function CloudList({
             {isOpen && (
               <div className="cloud-items">
                 {g.items.map((c) => (
-                  <CloudRow key={c.docId} c={c} busy={busy} busyId={busyId} onPrimary={onPrimary} onDelete={onDelete} />
+                  <CloudRow key={c.docId} c={c} busy={busy} busyId={busyId} onPrimary={onPrimary} onDelete={onDelete} onExclude={onExclude} />
                 ))}
               </div>
             )}
@@ -410,6 +429,17 @@ export function SyncSection() {
     setPreview(null)
     await pushNow()
     void loadCloud()
+  }
+
+  /** 새 노트를 일괄 올리기에서 뺀다 — 새 파일 행 메뉴의 "일괄 올리기에서 제외" */
+  const excludeOne = async (info: CloudNoteInfo) => {
+    try {
+      await excludeFromPush(info.docId)
+      toast(`"${info.title}"을(를) 일괄 올리기에서 제외했습니다.`)
+      await loadCloud()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '제외하지 못했습니다.', 'error')
+    }
   }
 
   /** 행의 주 동작 — 상태가 정한 하나의 동작을 실행한다 (개선 5) */
@@ -595,6 +625,7 @@ export function SyncSection() {
         busyId={busyId}
         onPrimary={onPrimary}
         onDelete={(c) => void deleteOne(c)}
+        onExclude={(c) => void excludeOne(c)}
         onPullAll={() => void doPull()}
         onPushPreview={() => void doPush()}
       />

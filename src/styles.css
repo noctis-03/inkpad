@@ -2318,6 +2318,18 @@ textarea {
 .cloud-menu .danger {
   color: var(--danger);
 }
+.cloud-menu .warn {
+  color: #b45309;
+}
+.cloud-menu-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
 
 /* 로딩 스켈레톤 */
 .cloud-skel {
