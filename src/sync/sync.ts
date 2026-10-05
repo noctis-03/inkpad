@@ -156,8 +156,7 @@ function verNum(v: string | undefined): bigint {
  */
 async function putDocRecord(docId: ID, fileId: string, version: string): Promise<void> {
   const rec = await getSync<FileRecord>(`doc:${docId}`)
-  // 같은 파일이면 앞으로만 — 파일이 갈렸다면(클라우드 삭제 뒤 다시 올림) 새 파일의 낮은 version이라도 받는다
-  if (rec && rec.fileId === fileId && verNum(rec.version) >= verNum(version)) return
+  if (rec && verNum(rec.version) >= verNum(version)) return
   await putSync(`doc:${docId}`, { fileId, version })
 }
 
@@ -426,9 +425,7 @@ async function pull(f: { docs: string; assets: string }) {
     // 이미 맞춰진 노트는 건너뛴다. Drive version은 실제보다 뒤처져 보일 수 있으므로
     // '같거나 내 기록이 더 새로우면'(>=) 최신으로 본다. 그렇지 않으면 방금 올린 노트를
     // 남의 변경으로 오판해 되받고, 기록까지 뒤로 밀린다 (규칙 10)
-    // 단 기록이 가리키는 파일이 갈렸으면(클라우드 삭제 뒤 다시 올림 — 새 파일의 version은 1부터)
-    // 숫자 비교가 무의미하니 파일이 같을 때만 건너뛴다
-    if (rec && rec.fileId === remote.id && verNum(rec.version) >= verNum(remote.version)) continue
+    if (rec && verNum(rec.version) >= verNum(remote.version)) continue
     eligible.push(remote)
   }
 
@@ -504,9 +501,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
     // 1) 위치 기록의 version으로 판정 — 받기(pull)와 같은 규칙. 내 기록이 '같거나 새로우면' 최신 (규칙 10)
-    //    기록이 가리키는 파일이 갈렸으면(삭제 뒤 다시 올림) version 리셋 때문에 숫자 비교가 무의미하다 —
-    //    파일이 같을 때만 최신으로 본다
-    const sameByVersion = !!rec && rec.fileId === remote.id && verNum(rec.version) >= verNum(remote.version)
+    const sameByVersion = !!rec && verNum(rec.version) >= verNum(remote.version)
     // 2) 내용 표식으로도 판정. Drive version은 뒤처져 보일 수 있고, 기록이 한 번 낡으면
     //    목록은 읽기만 하므로 스스로 못 고쳐 방금 올린 노트가 영영 "받을 것"으로 남는다.
     //    appProperties.updatedAt은 이 앱이 올릴 때 직접 쓴 값이라 그런 지연·불일치에 흔들리지
