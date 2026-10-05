@@ -177,8 +177,12 @@ export async function restoreDocument(id: ID) {
 
 /** 영구 삭제 (로컬). 어떤 문서도 참조하지 않는 에셋도 함께 지운다 */
 export async function purgeDocument(id: ID) {
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.thumbnails, db.outbox], async () => {
+  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.thumbnails, db.outbox, db.syncState], async () => {
     await db.documents.delete(id)
+    // gone 표식을 남겨 받기가 이 노트를 되살리지 않게 한다 — 푸시 전에 영구 삭제하면
+    // pushTombstone(푸시 시점) 기회가 없어 표식이 없다. 표식 없이 로컬 행만 없으면
+    // 다른 기기에서 새로 만든 노트로 착각해 받기가 클라우드 사본을 되살린다
+    await db.syncState.put({ key: `gone:${id}`, value: Date.now() })
     await db.pages.where('documentId').equals(id).delete()
     await db.chunks.where('documentId').equals(id).delete()
     await db.blocks.where('documentId').equals(id).delete()

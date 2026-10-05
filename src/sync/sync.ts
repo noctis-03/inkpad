@@ -507,8 +507,10 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
     const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
     const same = sameByVersion || sameByContent
-    const localGone = !local || !!local.deletedAt
-    const gone = localGone || !!(await getSync(`gone:${docId}`))
+    // 이 기기에서 지운 노트인지는 표식으로 판정한다 — 휴지통(deletedAt), gone 표식,
+    // 영구 삭제(위치 기록은 남고 로컬 행만 없음). 로컬 행이 없다는 이유만으로 삭제됨으로
+    // 보면 다른 기기에서 새로 만들어 아직 받지 않은 노트가 "이 기기에서 삭제됨"으로 오판된다
+    const gone = !!local?.deletedAt || !!(await getSync(`gone:${docId}`)) || (!local && !!rec)
     out.push({
       docId,
       title: remote.appProperties?.title || local?.title || docId,
