@@ -2676,6 +2676,88 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* ───────── 디버그: 네트워크 사용 로그 ───────── */
+.net-log {
+  margin-top: 12px;
+}
+.net-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.net-log-head-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.net-log-title {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.net-dest-list,
+.net-entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.net-entry-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.net-dest-list > li,
+.net-entry-list > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+.net-dest-list > li:first-child,
+.net-entry-list > li:first-child {
+  border-top: 0;
+}
+.net-entry-list > li:nth-child(even) {
+  background: rgb(0 0 0 / 2%);
+}
+.net-dest-label,
+.net-entry-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.net-dest-bytes,
+.net-entry-bytes,
+.net-dest-req,
+.net-entry-time {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.net-entry-method {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.net-entry-status {
+  flex: none;
+  min-width: 34px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.net-entry-status.is-bad {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 /* ───────── 동기화 버튼 (설정 버튼 오른쪽, 초록 계열) ───────── */
 .tb-btn.sync-btn {
   color: #15803d;
