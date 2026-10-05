@@ -88,6 +88,27 @@ function handleSyncError(e: unknown) {
   }
 }
 
+// ───────────────── 진행 표시 ─────────────────
+
+/** 받기·올리기의 노트 단위 진행 — 상태 카드의 "노트 2/5 올리는 중" 문구용 (구현 메모 ④) */
+export interface SyncProgress {
+  phase: 'push' | 'pull'
+  done: number
+  total: number
+}
+const progressListeners = new Set<(p: SyncProgress) => void>()
+export const onSyncProgress = (fn: (p: SyncProgress) => void) => {
+  progressListeners.add(fn)
+  return () => {
+    progressListeners.delete(fn)
+  }
+}
+const emitProgress = (phase: SyncProgress['phase'], done: number, total: number) => {
+  if (total <= 0 || progressListeners.size === 0) return
+  const p: SyncProgress = { phase, done, total }
+  progressListeners.forEach((f) => f(p))
+}
+
 // ───────────────── 원격 변경 알림 ─────────────────
 
 export const REMOTE_EVENT = 'inkpad-remote-changed'
@@ -195,7 +216,7 @@ async function push(f: { docs: string; assets: string }) {
 
   let n = 0
   for (const [docId, info] of docs) {
-    n++
+    emitProgress('push', ++n, docs.size) // 쓰이지 않던 카운터로 진행을 내보낸다 (구현 메모 ④)
     const doc = await db.documents.get(docId)
     if (!doc || doc.deletedAt) await pushTombstone(docId, info)
     // 클라우드에서 삭제된 노트는 일괄 올리기에서 뺀다 — 목록의 행을 직접 눌렀을 때만 다시 올린다 (지시서 3번)
@@ -387,7 +408,8 @@ async function pull(f: { docs: string; assets: string }) {
   for (const kv of await db.syncState.toArray()) {
     if (kv.key.startsWith('doc:')) recs.set(kv.key.slice(4), kv.value as FileRecord)
   }
-  let n = 0
+  // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용 (구현 메모 ④)
+  const eligible: typeof remotes = []
   for (const remote of remotes) {
     const docId = remote.appProperties?.docId
     if (!docId) continue
@@ -402,7 +424,14 @@ async function pull(f: { docs: string; assets: string }) {
     // '같거나 내 기록이 더 새로우면'(>=) 최신으로 본다. 그렇지 않으면 방금 올린 노트를
     // 남의 변경으로 오판해 되받고, 기록까지 뒤로 밀린다 (규칙 10)
     if (rec && verNum(rec.version) >= verNum(remote.version)) continue
-    n++
+    eligible.push(remote)
+  }
+
+  let n = 0
+  for (const remote of eligible) {
+    emitProgress('pull', ++n, eligible.length)
+    const docId = remote.appProperties?.docId
+    if (!docId) continue
     const file = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
     if (file?.kind !== 'inkpad-doc') continue
     if (await applyDocFile(file)) {

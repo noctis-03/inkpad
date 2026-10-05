@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useUI } from '../app/store'
-import { login, logout } from '../sync/token'
+import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
   downloadCloudNote,
   deleteCloudNote,
   listCloudNotes,
+  onSyncProgress,
   onSyncStatus,
   planPush,
   pullNow,
@@ -14,6 +15,7 @@ import {
   type CloudNoteInfo,
   type CloudNoteState,
   type PushPlan,
+  type SyncProgress,
   type SyncStatus
 } from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
@@ -22,109 +24,185 @@ import { formatDate } from '../shared/util'
 import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
 
-const STATUS_LABEL: Record<SyncStatus, string> = {
-  idle: '동기화됨',
-  syncing: '작업 중…',
-  offline: '오프라인',
-  'auth-required': '로그인 필요',
-  error: '오류',
-  disabled: '서버 미설정'
-}
-
-/** 이 기기 이름 정하기 — 클라우드 목록에 표시된다 */
-function DeviceNameRow() {
-  const [name, setName] = useState('')
-  const [saved, setSaved] = useState('')
-  useEffect(() => {
-    void import('../sync/token').then(({ getDeviceName }) => void getDeviceName().then(setSaved))
-  }, [])
-  const save = async () => {
-    const { setDeviceName } = await import('../sync/token')
-    await setDeviceName(name)
-    setSaved(name.trim())
-    setName('')
-    toast(`기기 이름을 "${saved}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
-  }
-  return (
-    <div className="setting-row">
-      <span className="setting-label">
-        이 기기 이름
-        <small>클라우드 목록에 표시됩니다</small>
-      </span>
-      <span className="setting-control">
-        <span className="device-name">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={saved || '기기 이름'}
-            aria-label="기기 이름"
-            onKeyDown={(e) => e.key === 'Enter' && name.trim() && void save()}
-          />
-          <button className="text-btn small" disabled={!name.trim()} onClick={() => void save()}>
-            저장
-          </button>
-        </span>
-      </span>
-    </div>
-  )
-}
-
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
+}
+
+/**
+ * 상태 표시의 단일 출처 — 문구·톤·아이콘을 한곳에 모았다 (개선 1·구현 메모 ②).
+ * 오프라인은 회색, 오류만 빨강으로 나눠 단순 오프라인이 오류처럼 보이지 않게 한다.
+ */
+type StatusTone = 'idle' | 'syncing' | 'offline' | 'error'
+const STATUS_META: Record<SyncStatus, { label: string; tone: StatusTone; icon: string }> = {
+  idle: { label: '동기화됨', tone: 'idle', icon: 'checkCircle' },
+  syncing: { label: '동기화 중…', tone: 'syncing', icon: '' }, // 스피너
+  offline: { label: '오프라인', tone: 'offline', icon: 'wifiOff' },
+  'auth-required': { label: '로그인 필요', tone: 'error', icon: 'lock' },
+  error: { label: '동기화 오류', tone: 'error', icon: 'alert' },
+  disabled: { label: '서버 미설정', tone: 'offline', icon: 'cloud' }
 }
 
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
 type GroupKey = 'recv' | 'push' | 'fresh' | 'gone'
+type RowAction = 'download' | 'pushOne' | 'repush' | 'restore' | null
 
 /**
- * 문구의 단일 출처 — 요약 칸·그룹 제목은 GROUPS.title을, 행 배지는 STATE_META.badge를 쓴다.
- * 각 상태가 어느 그룹(요약 칸·그룹 제목·색을 정함)에 속하는지도 여기서 정한다 (지시서 1번)
+ * 행 표시의 단일 출처 — 배지·아이콘·그룹과 행의 주 동작까지 데이터로 둔다 (개선 7·구현 메모 ③).
+ * action이 있는 행만 오른쪽에 주 동작 버튼을 렌더한다 — 숨은 "행 탭 = 즉시 실행"은 없다 (개선 5).
+ * pending/new의 올리기는 onPush()(전체 미리보기)가 아니라 pushOneNote로 그 노트만 올린다 (개선 6).
  */
-const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string }> = {
-  'remote-new': { group: 'recv', badge: '새 버전' },
-  new: { group: 'push', badge: '새 파일' },
-  pending: { group: 'push', badge: '변경됨' },
-  'cloud-deleted': { group: 'push', badge: '클라우드에서 삭제됨' },
-  same: { group: 'fresh', badge: '최신' },
-  'deleted-local': { group: 'gone', badge: '삭제됨' }
+const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; icon: string; action: RowAction }> = {
+  'remote-new': { group: 'recv', badge: '새 버전', icon: 'cloudDown', action: 'download' },
+  new: { group: 'push', badge: '새 파일', icon: 'plus', action: 'pushOne' },
+  pending: { group: 'push', badge: '변경됨', icon: 'edit', action: 'pushOne' },
+  'cloud-deleted': { group: 'push', badge: '클라우드에 없음', icon: 'alert', action: 'repush' },
+  same: { group: 'fresh', badge: '최신', icon: 'check', action: null },
+  'deleted-local': { group: 'gone', badge: '이 기기에서 삭제', icon: 'trash', action: 'restore' }
+}
+
+/** 행 주 동작 버튼의 문구·아이콘 */
+const ACTION_UI: Record<Exclude<RowAction, null>, { label: string; icon: string }> = {
+  download: { label: '받기', icon: 'download' },
+  pushOne: { label: '올리기', icon: 'upload' },
+  repush: { label: '다시 올리기', icon: 'upload' },
+  restore: { label: '되살리기', icon: 'restore' }
 }
 
 /** 목록 그룹 — 받을 것 → 올릴 것(새 파일·변경·클라우드 삭제 포함) → 최신(접힘) → 이 기기에서 삭제됨(접힘) */
-const GROUPS: { key: GroupKey; title: string; states: CloudNoteState[]; startCollapsed: boolean }[] = [
-  { key: 'recv', title: '받을 것', states: ['remote-new'], startCollapsed: false },
-  { key: 'push', title: '올릴 것', states: ['new', 'pending', 'cloud-deleted'], startCollapsed: false },
-  { key: 'fresh', title: '최신', states: ['same'], startCollapsed: true },
-  { key: 'gone', title: '이 기기에서 삭제됨', states: ['deleted-local'], startCollapsed: true }
+const GROUPS: { key: GroupKey; title: string; chip: string; states: CloudNoteState[]; startCollapsed: boolean }[] = [
+  { key: 'recv', title: '받을 것', chip: '받을 것', states: ['remote-new'], startCollapsed: false },
+  { key: 'push', title: '올릴 것', chip: '올릴 것', states: ['new', 'pending', 'cloud-deleted'], startCollapsed: false },
+  { key: 'fresh', title: '최신', chip: '최신', states: ['same'], startCollapsed: true },
+  { key: 'gone', title: '이 기기에서 삭제됨', chip: '삭제됨', states: ['deleted-local'], startCollapsed: true }
 ]
 
-const groupOf = (state: CloudNoteState) => GROUPS.find((g) => g.key === STATE_META[state].group)!
+/** 요약 칸과 그룹 헤더가 같은 숫자를 두 번 보여 주던 것을 정리 — 건수는 한 곳에서 계산해 버튼·칩·헤더가 나눠 쓴다 (개선 2·4) */
+interface CloudCounts extends Record<GroupKey, number> {
+  pending: number
+  new: number
+  cdel: number
+  bulkPush: number
+}
+
+function countCloud(cloud: CloudNoteInfo[]): CloudCounts {
+  const c: CloudCounts = { recv: 0, push: 0, fresh: 0, gone: 0, pending: 0, new: 0, cdel: 0, bulkPush: 0 }
+  for (const n of cloud) {
+    c[STATE_META[n.state].group]++
+    if (n.state === 'pending') c.pending++
+    else if (n.state === 'new') c.new++
+    else if (n.state === 'cloud-deleted') c.cdel++
+  }
+  c.bulkPush = c.pending + c.new // 클라우드에서 삭제된 노트는 일괄 올리기에서 제외 (clouddel 규칙)
+  return c
+}
+
+/** 목록 로딩 중 — 같은 골격의 스켈레톤 */
+function CloudSkeleton() {
+  return (
+    <div className="cloud-panel">
+      <div className="cloud-items">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="cloud-skel">
+            <span className="bar t" />
+            <span className="bar m" />
+            <span className="bar s" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CloudRow({
+  c,
+  busy,
+  busyId,
+  onPrimary,
+  onDelete
+}: {
+  c: CloudNoteInfo
+  busy: boolean
+  busyId: string | null
+  onPrimary: (info: CloudNoteInfo) => void
+  onDelete: (info: CloudNoteInfo) => void
+}) {
+  const [openMenu, setOpenMenu] = useState(false)
+  const m = STATE_META[c.state]
+  const rowBusy = busyId === c.docId
+  const act = m.action ? ACTION_UI[m.action] : null
+  // ⋯ 메뉴에는 보조 동작만 남긴다 (개선 5) — 클라우드에 올라갈 파일이 없는 노트(new·cloud-deleted)는 삭제 메뉴도 없다
+  const hasMenu = c.state !== 'new' && c.state !== 'cloud-deleted'
+  return (
+    <div className={'cloud-row g-' + m.group}>
+      <span className="cloud-ico" aria-hidden="true">
+        <Icon name={m.icon} size={15} />
+      </span>
+      <div className="cloud-body">
+        <div className="cloud-name">{c.title}</div>
+        <div className="cloud-meta">
+          <span className="bdg">{m.badge}</span>
+          {c.category && <span>{c.category}</span>}
+          {c.device && <span>{c.device}</span>}
+          <span>{formatDate(c.updatedAt)}</span>
+          {c.state === 'cloud-deleted' && <span className="note">일괄 올리기에서 제외</span>}
+        </div>
+      </div>
+
+      {act && (
+        <button className="cloud-act-main" disabled={busy || rowBusy} onClick={() => onPrimary(c)}>
+          {rowBusy ? <span className="spinner sm" /> : <Icon name={act.icon} size={14} />}
+          <span>{rowBusy ? '처리 중' : act.label}</span>
+        </button>
+      )}
+
+      {hasMenu && (
+        <button className="cloud-more" aria-label="더보기" aria-expanded={openMenu} disabled={busy} onClick={() => setOpenMenu((v) => !v)}>
+          <Icon name="more" size={16} />
+        </button>
+      )}
+      {openMenu && (
+        <>
+          <button className="cloud-menu-bg" aria-label="메뉴 닫기" onClick={() => setOpenMenu(false)} />
+          <div className="cloud-menu" role="menu">
+            <button
+              className="danger"
+              onClick={() => {
+                setOpenMenu(false)
+                onDelete(c)
+              }}
+            >
+              <Icon name="trash" size={16} /> 클라우드에서 삭제
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 function CloudList({
   cloud,
+  counts,
   busy,
-  onDownload,
+  busyId,
+  onPrimary,
   onDelete,
-  onPush,
-  onPushOne
+  onPullAll,
+  onPushPreview
 }: {
   cloud: CloudNoteInfo[] | null
+  counts: CloudCounts
   busy: boolean
-  onDownload: (info: CloudNoteInfo) => void
+  busyId: string | null
+  onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
-  onPush: () => void
-  onPushOne: (info: CloudNoteInfo) => void
+  onPullAll: () => void
+  onPushPreview: () => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<GroupKey | 'all'>('all')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ fresh: true, gone: true })
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
-
-  const counts = useMemo(() => {
-    const c: Record<GroupKey, number> = { recv: 0, push: 0, fresh: 0, gone: 0 }
-    for (const n of cloud ?? []) c[STATE_META[n.state].group]++
-    return c
-  }, [cloud])
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -134,8 +212,6 @@ function CloudList({
       return `${n.title} ${n.category ?? ''} ${n.device ?? ''}`.toLowerCase().includes(q)
     })
   }, [cloud, filter, query])
-
-  const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => STATE_META[n.state].group === g.key) })).filter((g) => g.items.length > 0)
 
   // 아직 못 받아 온 상태 — 빈 공간 대신 같은 골격의 스켈레톤
   if (cloud === null) {
@@ -147,193 +223,100 @@ function CloudList({
             <input value="" placeholder="노트 검색" aria-label="클라우드 노트 검색" disabled readOnly />
           </span>
         </div>
-        <div className="cloud-items">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="cloud-skel">
-              <span className="bar t" />
-              <span className="bar m" />
-              <span className="bar s" />
-            </div>
-          ))}
-        </div>
+        <CloudSkeleton />
       </div>
     )
   }
 
   if (!cloud.length) {
     return (
-      <p className="cloud-empty">
-        클라우드에 노트가 없습니다.
-        <br />
-        노트를 만든 뒤 <b>올리기</b>를 눌러 주세요.
-      </p>
+      <div className="cloud-empty">
+        <span className="big">
+          <Icon name="cloud" size={24} />
+        </span>
+        <b>클라우드에 노트가 없습니다</b>
+        <span>
+          노트를 만든 뒤 위의 <b>올리기</b>를 눌러 주세요.
+        </span>
+      </div>
     )
   }
 
+  const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => STATE_META[n.state].group === g.key) })).filter((g) => g.items.length > 0)
+
   return (
     <div className="cloud-panel">
-      <div className="cloud-toolbar">
-        <span className="cloud-search">
-          <Icon name="search" size={16} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="제목 · 카테고리 · 기기 검색"
-            aria-label="클라우드 노트 검색"
-          />
-          {query && (
-            <button className="cloud-clear" onClick={() => setQuery('')} aria-label="검색 지우기">
-              <Icon name="close" size={13} />
-            </button>
-          )}
-        </span>
-        {filter !== 'all' && (
-          <button className="text-btn small" onClick={() => setFilter('all')}>
-            전체
-          </button>
-        )}
-      </div>
-
-      <div className="cloud-summary" role="group" aria-label="상태별 필터">
+      {/* 가로 스크롤 칩 한 줄로 필터 — 요약 칸 + 접히는 헤더의 이중 체계를 정리했다 (개선 4) */}
+      <div className="cloud-chips" role="group" aria-label="상태별 필터">
+        <button className={'cloud-chip' + (filter === 'all' ? ' on' : '')} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+          전체<span>{cloud.length}</span>
+        </button>
         {GROUPS.map((g) => {
           const on = filter === g.key
           return (
             <button
               key={g.key}
-              className={'cloud-sum ' + g.key + (on ? ' is-active' : '')}
+              className={'cloud-chip g-' + g.key + (on ? ' on' : '')}
               aria-pressed={on}
               title={on ? '필터 해제' : `${g.title}만 보기`}
+              disabled={counts[g.key] === 0 && !on}
               onClick={() => setFilter(on ? 'all' : g.key)}
             >
-              <b>{counts[g.key]}</b>
-              <span>{g.title}</span>
+              <i className="dot" />
+              {g.chip}
+              <span>{counts[g.key]}</span>
             </button>
           )
         })}
       </div>
 
-      {groups.length === 0 && <p className="cloud-empty">조건에 맞는 노트가 없습니다.</p>}
+      {groups.length === 0 && (
+        <div className="cloud-empty">
+          <span className="big">
+            <Icon name="search" size={22} />
+          </span>
+          <span>조건에 맞는 노트가 없습니다.</span>
+          <button
+            className="sync-link"
+            onClick={() => {
+              setFilter('all')
+              setQuery('')
+            }}
+          >
+            필터·검색 지우기
+          </button>
+        </div>
+      )}
 
       {groups.map((g) => {
-        const isOpen = !collapsed[g.key]
+        // 칩을 골랐거나 검색 중이면 접힌 그룹도 자동으로 펼친다 (개선 4)
+        const isOpen = filter !== 'all' || !!query.trim() || !collapsed[g.key]
         return (
-          <section className="cloud-group" key={g.key}>
-            <button
-              className={'cloud-group-head ' + g.key}
-              onClick={() => setCollapsed((m) => ({ ...m, [g.key]: !m[g.key] }))}
-              aria-expanded={isOpen}
-            >
-              <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={13} />
-              <span>{g.title}</span>
-              <b>{g.items.length}</b>
-            </button>
+          <section className={'cloud-group g-' + g.key} key={g.key}>
+            <div className="cloud-ghead">
+              <button className="cloud-gtoggle" onClick={() => setCollapsed((m) => ({ ...m, [g.key]: !m[g.key] }))} aria-expanded={isOpen}>
+                <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} />
+                <span>{g.title}</span>
+                <b>{g.items.length}</b>
+              </button>
+              {/* 그룹 자리에서 바로 처리하는 일괄 동작 (개선 9) */}
+              {g.key === 'recv' && (
+                <button className="cloud-bulk" disabled={busy} onClick={onPullAll}>
+                  <Icon name="download" size={13} /> 모두 받기
+                </button>
+              )}
+              {g.key === 'push' && counts.bulkPush > 0 && (
+                <button className="cloud-bulk" disabled={busy} onClick={onPushPreview}>
+                  <Icon name="upload" size={13} /> 미리보기
+                </button>
+              )}
+            </div>
 
             {isOpen && (
               <div className="cloud-items">
-                {g.items.map((c) => {
-                  const m = STATE_META[c.state]
-                  const tone = groupOf(c.state).key
-                  // 받을 것 · 클라우드에서 삭제됨 · 이 기기에서 삭제됨 행은 행 전체를 눌러 바로 처리한다
-                  const tappable = c.state === 'remote-new' || c.state === 'deleted-local' || c.state === 'cloud-deleted'
-                  const act = c.state === 'deleted-local' ? '이 기기로 되살리기' : c.state === 'cloud-deleted' ? '다시 올리기' : '이 기기로 받기'
-                  const tap = () => (c.state === 'cloud-deleted' ? onPushOne(c) : onDownload(c))
-                  return (
-                    <div key={c.docId} className="cloud-item-wrap">
-                      <div
-                        className={'cloud-item ' + tone + (tappable ? ' is-tappable' : '')}
-                        role={tappable ? 'button' : undefined}
-                        tabIndex={tappable ? 0 : undefined}
-                        aria-label={tappable ? `${c.title} — ${act}` : undefined}
-                        onClick={tappable ? tap : undefined}
-                        onKeyDown={
-                          tappable
-                            ? (e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  tap()
-                                }
-                              }
-                            : undefined
-                        }
-                      >
-                        <div className="cloud-body">
-                          <div className="cloud-name">{c.title}</div>
-                          <div className="cloud-sub">
-                            {c.category && <span>{c.category}</span>}
-                            {c.device && <span>{c.device}</span>}
-                            <span>{formatDate(c.updatedAt)}</span>
-                          </div>
-                        </div>
-
-                        <span className={'cloud-badge ' + tone}>{m.badge}</span>
-
-                        <button
-                          className="cloud-more"
-                          aria-label="더보기"
-                          aria-expanded={openMenu === c.docId}
-                          disabled={busy}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setOpenMenu((prev) => (prev === c.docId ? null : c.docId))
-                          }}
-                        >
-                          <Icon name="more" size={16} />
-                        </button>
-                      </div>
-
-                      {openMenu === c.docId && (
-                        <div className="cloud-actions">
-                          {c.state === 'pending' || c.state === 'new' ? (
-                            <button
-                              className="cloud-act"
-                              disabled={busy}
-                              onClick={() => {
-                                setOpenMenu(null)
-                                onPush()
-                              }}
-                            >
-                              <Icon name="upload" size={14} /> 지금 올리기
-                            </button>
-                          ) : c.state === 'cloud-deleted' ? (
-                            <button
-                              className="cloud-act"
-                              disabled={busy}
-                              onClick={() => {
-                                setOpenMenu(null)
-                                onPushOne(c)
-                              }}
-                            >
-                              <Icon name="upload" size={14} /> 다시 올리기
-                            </button>
-                          ) : (
-                            <button
-                              className="cloud-act"
-                              disabled={busy}
-                              onClick={() => {
-                                setOpenMenu(null)
-                                onDownload(c)
-                              }}
-                            >
-                              <Icon name={c.state === 'deleted-local' ? 'restore' : 'download'} size={14} /> {act}
-                            </button>
-                          )}
-                          {c.state !== 'new' && c.state !== 'cloud-deleted' && (
-                            <button
-                              className="cloud-act danger"
-                              disabled={busy}
-                              onClick={() => {
-                                setOpenMenu(null)
-                                onDelete(c)
-                              }}
-                            >
-                              <Icon name="trash" size={14} /> 클라우드에서 삭제
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+                {g.items.map((c) => (
+                  <CloudRow key={c.docId} c={c} busy={busy} busyId={busyId} onPrimary={onPrimary} onDelete={onDelete} />
+                ))}
               </div>
             )}
           </section>
@@ -343,19 +326,34 @@ function CloudList({
   )
 }
 
+// ───────────────── 섹션 ─────────────────
+
 export function SyncSection() {
   const [status, setStatus] = useState<SyncStatus>('idle')
   const [last, setLast] = useState<number | null>(null)
   const [cloud, setCloud] = useState<CloudNoteInfo[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
+  const [prog, setProg] = useState<SyncProgress | null>(null)
+  const [checked, setChecked] = useState<string | null>(null)
+  const [device, setDevice] = useState('')
   const [preview, setPreview] = useState<PushPlan | null>(null)
 
   useEffect(() => {
-    const un = onSyncStatus(setStatus)
+    const un = onSyncStatus((s) => {
+      setStatus(s)
+      if (s !== 'syncing') setProg(null)
+    })
+    const off = onSyncProgress(setProg)
     return () => {
       un()
+      off()
     }
+  }, [])
+
+  useEffect(() => {
+    void getDeviceName().then(setDevice)
   }, [])
 
   // 원본(PDF·이미지) 받는 중 표시
@@ -372,6 +370,7 @@ export function SyncSection() {
     try {
       // 이 기기의 대기 변경이 방금 올려졌다면 먼저 비워 버전 판정이 정확해진다
       setCloud(await listCloudNotes())
+      setChecked('방금 확인')
     } catch (e) {
       toast(e instanceof Error ? e.message : '클라우드 목록을 가져오지 못했습니다.', 'error')
     } finally {
@@ -383,6 +382,8 @@ export function SyncSection() {
     void db.syncState.get('lastPushAt').then((v) => setLast((v?.value as number) ?? null))
     if (status !== 'auth-required' && status !== 'disabled') void loadCloud()
   }, [status, loadCloud])
+
+  const counts = useMemo(() => countCloud(cloud ?? []), [cloud])
 
   const doPull = async () => {
     const r = await pullNow()
@@ -411,8 +412,15 @@ export function SyncSection() {
     void loadCloud()
   }
 
+  /** 행의 주 동작 — 상태가 정한 하나의 동작을 실행한다 (개선 5) */
+  const onPrimary = (info: CloudNoteInfo) => {
+    const a = STATE_META[info.state].action
+    if (a === 'pushOne' || a === 'repush') void pushOneRow(info)
+    else void downloadOne(info)
+  }
+
   const downloadOne = async (info: CloudNoteInfo) => {
-    setLoading(true)
+    setBusyId(info.docId)
     try {
       const r = await downloadCloudNote(info)
       if (r === 'applied') toast(`"${info.title}"을(를) 받았습니다.`)
@@ -421,7 +429,8 @@ export function SyncSection() {
       await loadCloud()
     } catch (e) {
       toast(e instanceof Error ? e.message : '받기 실패', 'error')
-      setLoading(false)
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -434,34 +443,41 @@ export function SyncSection() {
       }))
     )
       return
-    setLoading(true)
+    setBusyId(info.docId)
     try {
       await deleteCloudNote(info)
       toast('클라우드에서 지웠습니다.')
       await loadCloud()
     } catch (e) {
       toast(e instanceof Error ? e.message : '삭제 실패', 'error')
-      setLoading(false)
+    } finally {
+      setBusyId(null)
     }
   }
 
-  /** 클라우드에서 삭제된 노트를 이 기기의 사본으로 다시 올린다 (지시서 3번) */
-  const pushOne = async (info: CloudNoteInfo) => {
+  /**
+   * 그 노트만 올린다 — 행 버튼은 이미 있는 pushOneNote(docId)를 쓴다 (개선 6).
+   * 클라우드에서 삭제된 노트는 확인하고 다시 올린다.
+   */
+  const pushOneRow = async (info: CloudNoteInfo) => {
+    const repush = info.state === 'cloud-deleted'
     if (
+      repush &&
       !(await confirmDialog('다시 올리기', {
         message: '클라우드에서 삭제된 노트입니다. 이 기기의 사본을 다시 올릴까요?',
         ok: '올리기'
       }))
     )
       return
-    setLoading(true)
+    setBusyId(info.docId)
     try {
       await pushOneNote(info.docId)
-      toast(`"${info.title}"을(를) 다시 올렸습니다.`)
+      toast(repush ? `"${info.title}"을(를) 다시 올렸습니다.` : `"${info.title}"을(를) 올렸습니다.`)
       await loadCloud()
     } catch (e) {
       toast(e instanceof Error ? e.message : '올리기 실패', 'error')
-      setLoading(false)
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -482,68 +498,182 @@ export function SyncSection() {
     )
   }
 
+  const m = STATUS_META[status]
+  // 받기·올리기 중에는 "노트 2/5 올리는 중" 같은 진행 문구를 보여 준다 (개선 8·구현 메모 ④)
+  const syncMsg = prog ? (prog.phase === 'push' ? `노트 ${prog.done}/${prog.total} 올리는 중` : `노트 ${prog.done}/${prog.total} 받는 중`) : ''
+  const pushSub =
+    [counts.pending ? `변경 ${counts.pending}` : '', counts.new ? `새 파일 ${counts.new}` : ''].filter(Boolean).join(' · ') || '올릴 것 없음'
+
   return (
     <section className="panel-section" id="sync-settings">
       <h3>동기화 · Google Drive</h3>
-      <div className="setting-row">
-        <span className="setting-label">
-          상태
-          <small>{last ? `마지막 동기화 ${formatDate(last)}` : '아직 동기화 전'}</small>
+
+      {/* 상태 카드 — 색만으로 전달하지 않게 톤·아이콘·설명을 갖춘다 (개선 1) */}
+      <div className={'sync-status tone-' + m.tone} role="status" aria-live="polite">
+        <span className="sync-status-ic" aria-hidden="true">
+          {status === 'syncing' ? <span className="spinner" /> : <Icon name={m.icon} size={18} />}
         </span>
-        <span className="setting-control">
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: status === 'idle' ? '#16a34a' : status === 'syncing' ? '#2563eb' : '#dc2626', flexShrink: 0 }} />
-            {STATUS_LABEL[status]}
-          </span>
-          <button className="text-btn small" onClick={() => void logout().then(() => void syncNow())}>
-            로그아웃
+        <span className="sync-status-txt">
+          <b>{m.label}</b>
+          <small>
+            {status === 'idle' && (last ? `마지막 동기화 ${formatDate(last)}${device ? ` · ${device}` : ''}` : '아직 동기화 전')}
+            {status === 'syncing' && (syncMsg || 'Drive와 맞추는 중')}
+            {status === 'offline' && '연결되면 받기·올리기를 할 수 있어요. 필기는 이 기기에 계속 저장됩니다.'}
+            {status === 'error' && 'Drive 응답을 받지 못했습니다'}
+          </small>
+        </span>
+        {status === 'error' && (
+          <button className="sync-mini" onClick={() => void syncNow()}>
+            다시 시도
           </button>
-        </span>
+        )}
       </div>
 
+      {/* 받기·올리기 — 건수 배지와 내용을 버튼 안으로 옮겨 눌러 보기 전에 알게 한다 (개선 2) */}
+      <div className="sync-actions">
+        <button className={'sync-big g-recv' + (counts.recv ? ' hot' : '')} onClick={() => void doPull()} disabled={status === 'syncing' || status === 'offline'}>
+          <span className="sync-big-ic" aria-hidden="true">
+            <Icon name="download" size={18} />
+          </span>
+          <span className="sync-big-txt">
+            <b>받기</b>
+            <small>{counts.recv ? `새 버전 ${counts.recv}개` : '받을 것 없음'}</small>
+          </span>
+          {counts.recv > 0 && <span className="cnt">{counts.recv}</span>}
+        </button>
+        <button className={'sync-big g-push' + (counts.bulkPush ? ' hot' : '')} onClick={() => void doPush()} disabled={status === 'syncing' || status === 'offline'}>
+          <span className="sync-big-ic" aria-hidden="true">
+            <Icon name="upload" size={18} />
+          </span>
+          <span className="sync-big-txt">
+            <b>올리기</b>
+            <small>{pushSub}</small>
+          </span>
+          {counts.bulkPush > 0 && <span className="cnt">{counts.bulkPush}</span>}
+        </button>
+      </div>
+      <p className="hint">앱과 기타 파일은 각 메뉴에서 관리합니다.</p>
+
+      {/* 원본(PDF·이미지) 받기 진행 바 (개선 8) */}
       {fetching && (
-        <p className="hint">
-          원본 받는 중… {Math.round(fetching.loaded / 1024)}KB{fetching.total ? ` / ${Math.round(fetching.total / 1024)}KB` : ''}
-        </p>
+        <div className="sync-prog">
+          <div className="sync-prog-top">
+            <span>
+              <Icon name="file" size={14} /> 원본 받는 중
+            </span>
+            <span>
+              {Math.round(fetching.loaded / 1024).toLocaleString()}KB
+              {fetching.total ? ` / ${Math.round(fetching.total / 1024).toLocaleString()}KB` : ''}
+            </span>
+          </div>
+          <div className="bar">
+            {fetching.total ? <i style={{ width: `${Math.min(100, (fetching.loaded / fetching.total) * 100)}%` }} /> : <i className="indet" />}
+          </div>
+        </div>
       )}
 
-      <div className="btn-row">
-        <button className="text-btn" onClick={() => void doPull()} disabled={status === 'syncing'}>
-          <Icon name="download" size={16} /> 받기
-        </button>
-        <button className="text-btn" onClick={() => void doPush()} disabled={status === 'syncing'}>
-          <Icon name="upload" size={16} /> 올리기
-        </button>
-      </div>
-      <p className="hint">
-        앱과 기타 파일은 각 메뉴에서 관리합니다.
-      </p>
-
-      <DeviceNameRow />
-
-      <div className="setting-row" style={{ marginTop: 10 }}>
-        <span className="setting-label">
-          클라우드 노트
-          <small>Drive에 저장된 노트 — 받을 것을 먼저 보여줍니다</small>
+      {/* 목록 머리 — 새로 고침이 눌리는 동안 회전과 "확인 중…"으로 반응을 보여 준다 (개선 8) */}
+      <div className="cloud-lhead">
+        <span className="tt">
+          클라우드 노트<span>{cloud?.length ?? 0}</span>
         </span>
-        <span className="setting-control">
-          <button className="text-btn small" onClick={() => void loadCloud()} disabled={loading || status === 'syncing'}>
-            새로 고침
-          </button>
-        </span>
+        <small>{loading ? '확인 중…' : (checked ?? '')}</small>
+        <button
+          className={'cloud-icon-btn' + (loading ? ' spinning' : '')}
+          onClick={() => void loadCloud()}
+          disabled={loading || status === 'syncing'}
+          aria-label="새로 고침"
+        >
+          <Icon name="replace" size={16} />
+        </button>
       </div>
 
       <CloudList
         cloud={cloud}
+        counts={counts}
         busy={loading || status === 'syncing'}
-        onDownload={(c) => void downloadOne(c)}
+        busyId={busyId}
+        onPrimary={onPrimary}
         onDelete={(c) => void deleteOne(c)}
-        onPush={() => void doPush()}
-        onPushOne={(c) => void pushOne(c)}
+        onPullAll={() => void doPull()}
+        onPushPreview={() => void doPush()}
+      />
+
+      {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 (개선 3) */}
+      <DeviceFoot
+        device={device}
+        onSave={async (next) => {
+          await setDeviceName(next)
+          setDevice(next)
+          // setDeviceName이 반영된 값을 바로 보여 준다 — 옛날 상태를 보여 주던 버그 (구현 메모 ①)
+          toast(`기기 이름을 "${next}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
+        }}
+        onLogout={() => void logout().then(() => void syncNow())}
       />
 
       {preview && <PushPreview plan={preview} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
     </section>
+  )
+}
+
+/** 이 기기 · 계정 정보 블록 — 「변경」을 눌러 이름을 고친다 (개선 3) */
+function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (next: string) => Promise<void>; onLogout: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
+  const save = async () => {
+    const next = name.trim()
+    if (!next) return
+    await onSave(next)
+    setEditing(false)
+    setName('')
+  }
+  return (
+    <div className="sync-foot">
+      <div className="sync-foot-row">
+        <span className="k">이 기기</span>
+        {editing ? (
+          <>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={device || '기기 이름'}
+              aria-label="기기 이름"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void save()
+                else if (e.key === 'Escape') setEditing(false)
+              }}
+            />
+            <button className="sync-link" disabled={!name.trim()} onClick={() => void save()}>
+              저장
+            </button>
+            <button className="sync-link muted" onClick={() => setEditing(false)}>
+              취소
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="v">{device || '이름 없음'}</span>
+            <button
+              className="sync-link"
+              onClick={() => {
+                setName('')
+                setEditing(true)
+              }}
+            >
+              변경
+            </button>
+          </>
+        )}
+      </div>
+      <div className="sync-foot-row">
+        <span className="k">계정</span>
+        <span className="v">Google Drive</span>
+        <button className="sync-link muted" onClick={onLogout}>
+          로그아웃
+        </button>
+      </div>
+    </div>
   )
 }
 
