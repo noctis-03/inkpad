@@ -572,6 +572,16 @@ export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileI
   await putSync(`clouddel:${info.docId}`, Date.now())
 }
 
+/**
+ * 새 노트를 일괄 올리기에서 뺀다 — clouddel 표식만 남기고 Drive 호출은 없다.
+ * 제외된 노트는 목록에서 "클라우드에 없음"(일괄 올리기에서 제외)으로 보이고,
+ * 행의 "다시 올리기"(pushOneNote)로 다시 올리면 표식이 지워진다.
+ * 클라우드에 올라간 적 없는 노트(new)만 이렇게 뺀다 — 이미 올라간 노트는 deleteCloudNote를 쓴다.
+ */
+export async function excludeFromPush(docId: ID): Promise<void> {
+  await putSync(`clouddel:${docId}`, Date.now())
+}
+
 // ───────────────── 올리기 계획 (미리보기) ─────────────────
 
 export interface PushDoc {
