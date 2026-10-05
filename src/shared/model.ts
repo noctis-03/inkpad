@@ -109,8 +109,6 @@ export interface Asset {
   size: number
   sha256: string
   name?: string
-  /** 이 원본을 소유한 노트 — 클라우드 원본이 노트별 파일로 올라가므로 (에셋 소유제) */
-  docId?: ID
   createdAt: number
   version: number
 }

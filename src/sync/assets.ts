@@ -9,13 +9,12 @@ import type { ID } from '../shared/model'
 import { db, type AssetRow } from '../storage/db'
 import * as drive from './drive'
 import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
-import { assetFileName, ownedAssetName } from './pack'
+import { assetFileName } from './pack'
 
 /** 이 기기에 원본이 없고, 지금 받아올 수도 없을 때 */
 export class AssetUnavailableError extends Error {}
 
-/** 위치 기록 키 — 노트 소유 에셋은 노트별로, 옛날 공유 에셋은 내용 주소로 (에셋 소유제) */
-const keyFor = (row: Pick<AssetRow, 'docId' | 'sha256'>) => (row.docId ? `asset:${row.docId}:${row.sha256}` : `asset:${row.sha256}`)
+const KEY = (sha256: string) => `asset:${sha256}`
 
 // ───────────────── 진행률 알림(UI용) ─────────────────
 
@@ -138,7 +137,7 @@ export async function downloadAllMissing(onProgress?: (done: number, total: numb
 }
 
 async function downloadAsset(row: AssetRow): Promise<Blob> {
-  const key = keyFor(row)
+  const key = KEY(row.sha256)
   let rec: FileRecord | null | undefined = await getSync<FileRecord>(key)
 
   if (!rec?.fileId) {
@@ -165,9 +164,7 @@ async function downloadAsset(row: AssetRow): Promise<Blob> {
 
 async function locateRemote(row: AssetRow): Promise<FileRecord | null> {
   const folder = await assetsFolder()
-  // 노트 소유 에셋은 노트별 파일명으로, 옛날 공유 에셋은 내용 주소 파일명으로 찾는다
-  const name = row.docId ? ownedAssetName(row.docId, row.sha256, row.mime) : assetFileName(row.sha256, row.mime)
-  const found = await drive.findByName(name, folder)
+  const found = await drive.findByName(assetFileName(row.sha256, row.mime), folder)
   return found ? { fileId: found.id, version: found.version } : null
 }
 
@@ -183,29 +180,22 @@ export async function indexAssets(assetsFolderId: string): Promise<number> {
 
   const unknown: AssetRow[] = []
   for (const a of missing) {
-    if (!(await getSync<FileRecord>(keyFor(a)))) unknown.push(a)
+    if (!(await getSync<FileRecord>(KEY(a.sha256)))) unknown.push(a)
   }
   if (!unknown.length) return 0
 
   const files = await drive.listFiles(assetsFolderId)
-  // 노트 소유 에셋(docId+sha256)과 옛날 공유 에셋(sha256만)을 나눠 기록한다
-  const byDocSha = new Map<string, drive.RemoteFile>()
   const bySha = new Map<string, drive.RemoteFile>()
   for (const f of files) {
-    const sha = f.appProperties?.sha256 ?? f.name.slice('assets/'.length).replace(/\..*$/, '').split('__').pop() ?? ''
-    if (!sha) continue
-    bySha.set(sha, f)
-    const docId = f.appProperties?.docId
-    if (docId) byDocSha.set(`${docId}:${sha}`, f)
+    const sha = f.appProperties?.sha256 ?? f.name.slice('assets/'.length).replace(/\..*$/, '')
+    if (sha && !bySha.has(sha)) bySha.set(sha, f)
   }
 
   let n = 0
   for (const a of unknown) {
-    // 내 노트 소유 파일을 먼저 보고, 없으면 옛날 공유 파일로 폴백한다
-    const owned = a.docId ? byDocSha.get(`${a.docId}:${a.sha256}`) : undefined
-    const f = owned ?? bySha.get(a.sha256)
+    const f = bySha.get(a.sha256)
     if (!f) continue
-    await putSync(keyFor(a), { fileId: f.id, version: f.version })
+    await putSync(KEY(a.sha256), { fileId: f.id, version: f.version })
     n++
   }
   return n

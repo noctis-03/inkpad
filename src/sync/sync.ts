@@ -28,7 +28,7 @@ import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
-import { ownedAssetName, packDocument, type DocFileV1, type RevMarker } from './pack'
+import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { mergeDocs } from './merge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
@@ -224,9 +224,11 @@ async function push(f: { docs: string; assets: string }) {
     else await pushDoc(docId, info, f)
   }
 
-  // 원본 바이트는 문서 푸시가 노트 소유로 올린다 (pushDoc → ensureAssetUploaded) —
-  // outbox의 asset 행은 초기 동기화·가져오기 시점의 유산이라 위치 기록만 치운다
-  for (const r of rows.filter((r) => r.entity === 'asset')) await db.outbox.delete(r.seq!)
+  for (const r of rows.filter((r) => r.entity === 'asset')) {
+    await ensureAssetUploaded(r.entityId, f.assets)
+    await db.outbox.delete(r.seq!)
+  }
+
 }
 
 async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }) {
@@ -245,7 +247,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   }
 
   const file = await packDocument(docId)
-  for (const am of file.assets) await ensureAssetUploaded(docId, am.id, f.assets) // 참조 원본을 먼저 올린다 (노트 소유로)
+  for (const am of file.assets) await ensureAssetUploaded(am.id, f.assets) // 참조 원본을 먼저 올린다
   const device = await getDeviceName()
   // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
   const restored = (await getSync<string>(`revKind:${docId}`)) === 'restore'
@@ -298,23 +300,19 @@ async function pushTombstone(docId: ID, info: PendingDoc) {
   await db.outbox.bulkDelete(info.seqs)
 }
 
-/**
- * 에셋 원본(PDF·이미지)을 노트 소유로 올린다 — 파일명·위치 기록 모두 노트별로 갈라 관리한다.
- * 같은 내용을 여러 노트가 참조해도 원본 파일은 노트마다 하나씩 존재해 (중복은 허용),
- * 노트가 클라우드에서 지워질 때 그 노트의 원본을 캐스케이드로 같이 치울 수 있다.
- */
-async function ensureAssetUploaded(docId: ID, assetId: ID, assetsFolderId: string) {
+/** 에셋(PDF·이미지 원본)은 sha256 내용 주소로 올린다 — 같은 내용이면 어느 기기에서든 파일 1개 */
+async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
   const row = await db.assets.get(assetId)
   if (!row?.blob) return // 원본이 아직 없다(다른 기기에서 받아와야 함)
-  const key = `asset:${docId}:${row.sha256}`
+  const key = `asset:${row.sha256}`
   if (await getSync(key)) return
-  const name = ownedAssetName(docId, row.sha256, row.mime)
+  const name = assetFileName(row.sha256, row.mime)
   const found = await drive.findByName(name, assetsFolderId)
   if (found) {
     await putSync(key, { fileId: found.id, version: found.version })
     return
   }
-  const res = await drive.upload(row.blob, { name, mimeType: row.mime, appProperties: { sha256: row.sha256, docId } }, assetsFolderId)
+  const res = await drive.upload(row.blob, { name, mimeType: row.mime, appProperties: { sha256: row.sha256 } }, assetsFolderId)
   await putSync(key, { fileId: res.id, version: res.version })
 }
 
@@ -562,33 +560,11 @@ export async function downloadCloudNote(
 }
 
 /**
- * 클라우드 노트 삭제 — 노트 파일과 그 노트가 소유한 원본(PDF·이미지)을 같이 휴지통으로 옮긴다.
- * 원본은 노트 소유로 올라가므로(에셋 소유제) 캐스케이드가 안전하다 — 공유로 올린 옛날
- * 원본(asset:<sha256> 기록)은 다른 노트가 참조할 수 있어 건드리지 않는다.
- * 공용 보관소에서 치우는 것일 뿐 각 기기의 로컬 사본은 그대로다.
- * 이후 이 기기에서 그 노트를 다시 고쳐 올리면(다시 올리기) 원본도 새로 올라간다.
+ * 클라우드 노트 삭제 — Drive 파일을 휴지통으로 옮긴다(30일 보관, 복구 가능).
+ * 공용 보관소에서 치우는 것일 뿐이라 각 기기의 로컬 사본은 그대로다.
+ * 이후 이 기기에서 그 노트를 다시 고쳐 올리면 새 파일로 올라간다.
  */
-export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'enc'>): Promise<void> {
-  // 노트가 참조하는 원본을 같이 치운다 — 본문에서 참조 목록을 읽는다 (메타에는 없다)
-  try {
-    const file = await drive.downloadJson<DocFileV1>(info.fileId, info.enc)
-    if (file?.kind === 'inkpad-doc') {
-      const assetsFolderId = (await ensureFolders()).assets
-      for (const am of file.assets) {
-        try {
-          const key = `asset:${info.docId}:${am.sha256}`
-          const rec = await getSync<FileRecord>(key)
-          const assetFileId = rec?.fileId ?? (await drive.findByName(ownedAssetName(info.docId, am.sha256, am.mime), assetsFolderId))?.id
-          if (assetFileId) await drive.trash(assetFileId)
-          await db.syncState.delete(key) // 위치 기록도 지운다 — 다시 올리기 때 새로 올려진다
-        } catch (e) {
-          console.warn('[sync] 원본 정리 실패 — 노트 삭제는 계속한다:', e)
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[sync] 노트 본문을 읽지 못해 원본 정리는 건너뛴다:', e)
-  }
+export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId'>): Promise<void> {
   await drive.trash(info.fileId)
   await db.syncState.delete(`doc:${info.docId}`)
   await db.syncState.delete(`base:${info.docId}`)

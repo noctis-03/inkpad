@@ -91,10 +91,3 @@ const EXT: Record<string, string> = {
 }
 
 export const assetFileName = (sha256: string, mime: string) => `assets/${sha256}.${EXT[mime] ?? 'bin'}`
-
-/**
- * 노트 소유 에셋 파일명 — 노트별로 원본을 따로 올려 (공유 재사용 없음), 노트가 클라우드에서
- * 지워질 때 그 노트의 원본을 같이 치울 수 있게 한다 (캐스케이드 삭제). sha256은 내용 주소라
- * 같은 내용 재업로드가 있어도 노트당 한 번뿐이다.
- */
-export const ownedAssetName = (docId: ID, sha256: string, mime: string) => `assets/${docId}__${sha256}.${EXT[mime] ?? 'bin'}`
