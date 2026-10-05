@@ -90,3 +90,18 @@ export class InkpadDB extends Dexie {
 }
 
 export const db = new InkpadDB()
+
+/** 로컬 초기화 — 이 기기의 모든 데이터(노트·앱·파일·설정·동기화 상태·백업)를 지운다. 클라우드는 건드리지 않는다 */
+export async function wipeLocalData(): Promise<void> {
+  await db.delete()
+  try {
+    localStorage.clear()
+  } catch {
+    /* 저장소 차단 환경 — DB 삭제만으로도 초기화다 */
+  }
+  try {
+    sessionStorage.clear()
+  } catch {
+    /* 저장소 차단 환경 */
+  }
+}

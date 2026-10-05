@@ -18,6 +18,7 @@ import {
 } from '../../storage/repo'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { pickFiles, saveFile } from '../../io/download'
+import { wipeLocalData } from '../../storage/db'
 
 type Stats = Awaited<ReturnType<typeof storageStats>>
 
@@ -82,6 +83,29 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
     toast(n ? `오래된 휴지통 문서 ${n}개를 정리했습니다.` : '정리할 문서가 없습니다.')
     onChanged()
     load()
+  }
+
+  /** 앱 초기화 (로컬 초기화) — 이 기기의 데이터만 지우고, 클라우드는 건드리지 않는다 (받기로 복구) */
+  const resetLocal = async () => {
+    const ok = await confirmDialog('앱 초기화 (로컬 초기화)', {
+      message: '이 기기의 노트·앱·파일·설정을 모두 지우고 처음부터 다시 시작합니다. 클라우드에 저장된 노트는 남아 있고, 동기화 창의 받기로 다시 내려받을 수 있습니다.',
+      note: '클라우드에 아직 올리지 못한 변경은 지우면 되살릴 수 없습니다. 전체 백업을 받아 두면 안전합니다.',
+      ok: '다음',
+      danger: true
+    })
+    if (!ok) return
+    const ok2 = await confirmDialog('정말 초기화할까요?', {
+      message: '이 기기의 모든 데이터를 지웁니다. 되돌릴 수 없습니다.',
+      ok: '모두 지우고 초기화',
+      danger: true
+    })
+    if (!ok2) return
+    setBusy({ text: '로컬 데이터를 지우는 중' })
+    try {
+      await wipeLocalData()
+    } finally {
+      location.reload() // DB를 닫았으니 새로 열어 빈 상태로 시작한다
+    }
   }
 
   return (
@@ -172,6 +196,9 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
                   )}
                   <button className="text-btn" onClick={cleanTrash}>
                     오래된 휴지통 정리
+                  </button>
+                  <button className="text-btn danger" onClick={resetLocal}>
+                    앱 초기화 (로컬 초기화)
                   </button>
                 </div>
               </section>
