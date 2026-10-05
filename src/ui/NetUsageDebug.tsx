@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
-import { getNetStats, resetNetStats, subscribeNetStats, type NetStats } from '../shared/netMeter'
+import {
+  getNetDestinations,
+  getNetLog,
+  getNetStats,
+  resetNetStats,
+  subscribeNetStats,
+  type NetDest,
+  type NetEntry,
+  type NetStats
+} from '../shared/netMeter'
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -14,17 +23,89 @@ function fmtElapsed(ms: number): string {
   return `${Math.floor(m / 60)}시간 ${m % 60}분`
 }
 
+function fmtTime(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+function statusText(e: NetEntry): string {
+  if (e.status === null) return '…'
+  if (e.status === 0) return '실패'
+  return String(e.status)
+}
+
+/** 목적지별 사용량 — 어디에 얼마나 썼는지 */
+function DestinationList({ dests }: { dests: NetDest[] }) {
+  return (
+    <>
+      <div className="net-log-title">어디에 썼나 (목적지별, {dests.length}곳)</div>
+      <ul className="net-dest-list">
+        {dests.map((d) => (
+          <li key={d.label}>
+            <span className="net-dest-label" title={d.label}>
+              {d.label}
+            </span>
+            <span className="net-dest-bytes">
+              ↓{fmtBytes(d.down)} · ↑{fmtBytes(d.up)}
+            </span>
+            <span className="net-dest-req">{d.requests}건</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+/** 최근 요청 기록 — 언제 무엇으로 얼마나 오갔는지 */
+function RequestLog({ log }: { log: NetEntry[] }) {
+  return (
+    <>
+      <div className="net-log-title">최근 요청 (최신순 · {log.length}건 기록됨)</div>
+      <ul className="net-entry-list">
+        {log.map((e) => (
+          <li key={e.id}>
+            <span className="net-entry-time">{fmtTime(e.at)}</span>
+            <span className="net-entry-method">{e.method}</span>
+            <span className="net-entry-label" title={e.url}>
+              {e.label}
+            </span>
+            <span className="net-entry-bytes">
+              ↓{fmtBytes(e.down)}
+              {e.up ? ` ↑${fmtBytes(e.up)}` : ''}
+            </span>
+            <span className={'net-entry-status' + (e.status === 0 || (e.status !== null && e.status >= 400) ? ' is-bad' : '')}>
+              {statusText(e)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 /**
- * 디버그용: 앱을 켠 뒤(새로고침 전까지) 쓴 인터넷 사용량.
+ * 디버그용: 앱을 켠 뒤(새로고침 전까지) 쓴 인터넷 사용량과 사용 로그.
  * 누적 저장하지 않고, 브라우저가 Wi-Fi/셀룰러를 구분하지 못하므로 합계만 보여준다.
  */
 export function NetUsageSection() {
   const [s, setS] = useState<NetStats>(getNetStats)
   const [conn, setConn] = useState('')
+  const [showLog, setShowLog] = useState(true)
 
-  useEffect(() => subscribeNetStats(() => setS(getNetStats())), [])
+  // 통계가 갱신될 때마다 로그/목적지도 함께 다시 읽는다.
+  const [log, setLog] = useState<NetEntry[]>(getNetLog)
+  const [dests, setDests] = useState<NetDest[]>(getNetDestinations)
+
+  const sync = () => {
+    setS(getNetStats())
+    setLog(getNetLog())
+    setDests(getNetDestinations())
+  }
+
+  useEffect(() => subscribeNetStats(sync), [])
   useEffect(() => {
-    const t = window.setInterval(() => setS(getNetStats()), 1000)
+    const t = window.setInterval(sync, 1000)
     const c = (navigator as unknown as { connection?: { effectiveType?: string; downlink?: number; saveData?: boolean } }).connection
     if (c) {
       setConn(
@@ -58,9 +139,30 @@ export function NetUsageSection() {
         브라우저가 Wi-Fi와 셀룰러를 구분하지 못해 합계만 표시합니다.
         {conn ? ` 참고: ${conn}` : ''}
       </p>
+
+      {log.length > 0 && (
+        <div className="net-log">
+          <div className="net-log-head">
+            <span className="net-log-head-title">사용 로그</span>
+            <button className="text-btn small" onClick={() => setShowLog((v) => !v)}>
+              {showLog ? '접기' : '펼치기'}
+            </button>
+          </div>
+          {showLog && (
+            <>
+              <DestinationList dests={dests} />
+              <RequestLog log={log} />
+              <p className="hint">
+                목적지별로 내려받기(↓)·올리기(↑) 바이트를 합산합니다. 로그는 최근 200건까지만 남고 새로고침하면 사라집니다.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="btn-row">
         <button className="text-btn" onClick={resetNetStats}>
-          사용량 초기화
+          사용량 · 로그 초기화
         </button>
       </div>
     </section>
