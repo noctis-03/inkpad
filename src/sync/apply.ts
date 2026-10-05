@@ -66,7 +66,7 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
       if (blocks.length) await db.blocks.bulkPut(blocks)
     }
     for (const am of file.assets) {
-      if (!(await db.assets.get(am.id))) await db.assets.put({ ...am, version: 0 }) // 원본 blob은 지연 로딩이 받는다
+      if (!(await db.assets.get(am.id))) await db.assets.put({ ...am, docId, version: 0 }) // 원본 blob은 지연 로딩이 받는다 — 소유 노트를 알아야 노트별 파일을 찾는다
     }
   })
   // 되돌리기로 덮어쓴 뒤에는 참조가 사라진 에셋을 정리한다
