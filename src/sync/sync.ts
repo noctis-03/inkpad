@@ -184,6 +184,56 @@ async function pendingDocs(): Promise<Map<ID, PendingDoc>> {
   return docs
 }
 
+// ───────────────── 라이브러리 카드 동기화 상태 점 ─────────────────
+
+export const CLOUD_STATES_EVENT = 'inkpad-cloud-states-changed'
+const cloudStatesChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-cloud-states') : null
+if (cloudStatesChannel) cloudStatesChannel.onmessage = () => window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
+
+/** 라이브러리 카드 점의 상태 — cloud-deleted·deleted-local은 'new'(회색)로 뭉갠다 */
+export type CardSyncState = 'new' | 'pending' | 'same' | 'remote-new'
+
+/** 동기화창이 클라우드 노트 목록을 새로고침하면 그 판정을 캐시해 둔다 — 라이브러리 점이 함께 읽는다 */
+async function cacheCloudStates(infos: CloudNoteInfo[]): Promise<void> {
+  const states: Record<string, CloudNoteState> = {}
+  const versions: Record<string, string> = {}
+  for (const i of infos) {
+    states[i.docId] = i.state
+    if (i.version) versions[i.docId] = i.version
+  }
+  await putSync('cloudStates', { at: Date.now(), states, versions })
+  window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
+  cloudStatesChannel?.postMessage(Date.now())
+}
+
+/**
+ * 라이브러리 카드의 점 상태 — 네트워크 없이 DB만 읽는다.
+ * remote-new는 동기화창에서 클라우드 목록을 새로고침했을 때만 알 수 있고(자동 통신 없음),
+ * 캐시가 낡았어도 위치 기록(doc:)의 version이 캐시 이상으로 올라갔으면(받기·올리기 완료) 파란 점을 푼다
+ */
+export async function cardSyncStates(): Promise<Map<ID, CardSyncState>> {
+  const [docs, pending, cache] = await Promise.all([
+    db.documents.toArray(),
+    pendingDocs(),
+    getSync<{ at: number; states: Record<string, CloudNoteState>; versions: Record<string, string> }>('cloudStates')
+  ])
+  const out = new Map<ID, CardSyncState>()
+  for (const d of docs) {
+    if (d.deletedAt) continue // 휴지통 노트는 점을 달지 않는다
+    let s: CardSyncState
+    if (pending.has(d.id)) s = 'pending' // 이 기기 변경이 올리기 대기
+    else {
+      const rec = await getSync<FileRecord>(`doc:${d.id}`)
+      const cached = cache?.states[d.id]
+      if (cached === 'remote-new' && (!rec || verNum(rec.version) < verNum(cache?.versions?.[d.id]))) s = 'remote-new'
+      else if (!rec || cached === 'cloud-deleted') s = 'new' // 클라우드에 없음
+      else s = 'same' // 위치 기록이 있고 대기도 없음 — 최신
+    }
+    out.set(d.id, s)
+  }
+  return out
+}
+
 // ───────────────── push ─────────────────
 
 /** 올리기. 이 기기의 변경을 노트 단위로 올리고, 이어서 다른 기기의 변경을 받아온다. */
@@ -539,6 +589,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       out.push({ docId: doc.id, title: doc.title, category: doc.category ?? null, updatedAt: doc.updatedAt, fileId: '', version: '', state: 'cloud-deleted' })
     }
   }
+  await cacheCloudStates(out) // 동기화창 새로고침의 판정을 라이브러리 점이 함께 쓴다
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 

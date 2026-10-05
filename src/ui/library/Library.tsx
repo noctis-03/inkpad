@@ -28,7 +28,7 @@ import {
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
-import { REMOTE_EVENT, pushOneNote } from '../../sync/sync'
+import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, pushOneNote, type CardSyncState } from '../../sync/sync'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { confirmTransfer, uploadChoice } from '../../sync/transfer'
@@ -46,6 +46,23 @@ type Section =
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 
+/** 카드 썸네일 오른쪽 위 동기화 상태 점 — 회:클라우드에 없음 / 노랑:변경 있음 / 초록:최신 / 파랑:클라우드에 새 버전 */
+const SYNC_DOT: Record<CardSyncState, { cls: string; title: string }> = {
+  new: { cls: 'is-new', title: '클라우드에 없음' },
+  pending: { cls: 'is-pending', title: '클라우드에 있음 · 변경사항 있음' },
+  same: { cls: 'is-same', title: '최신 상태' },
+  'remote-new': { cls: 'is-remote-new', title: '클라우드에 새 버전 있음 — 동기화 창에서 받기' }
+}
+
+/** 앱·파일 행의 점 상태 — 행의 pending·fileId 표식만으로 판정한다 (노트와 같은 색 체계) */
+const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
+  r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
+
+function SyncDot({ state }: { state: CardSyncState }) {
+  const d = SYNC_DOT[state]
+  return <span className={'doc-sync-dot ' + d.cls} title={d.title} aria-label={d.title} />
+}
+
 export function Library() {
   const navigate = useUI((s) => s.navigate)
   const prefs = useUI((s) => s.library)
@@ -62,6 +79,7 @@ export function Library() {
   const [files, setFiles] = useState<FileRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
+  const [syncStates, setSyncStates] = useState<Map<ID, CardSyncState>>(new Map())
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -81,13 +99,14 @@ export function Library() {
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
 
   const refresh = useCallback(async () => {
-    const [d, t, f, th, hid, ap, fls] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles()])
+    const [d, t, f, th, hid, ap, fls, st] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
     setHiddenCats(new Set(hid))
     setApps(ap)
     setFiles(fls)
+    setSyncStates(st)
     setThumbs((old) => {
       old.forEach((url) => URL.revokeObjectURL(url))
       const m = new Map<ID, string>()
@@ -104,8 +123,18 @@ export function Library() {
   useEffect(() => {
     const onRemote = () => void refresh()
     window.addEventListener(REMOTE_EVENT, onRemote)
-    return () => window.removeEventListener(REMOTE_EVENT, onRemote)
+    window.addEventListener(CLOUD_STATES_EVENT, onRemote) // 동기화창에서 클라우드 목록을 새로고침하면 점도 다시 계산
+    return () => {
+      window.removeEventListener(REMOTE_EVENT, onRemote)
+      window.removeEventListener(CLOUD_STATES_EVENT, onRemote)
+    }
   }, [refresh])
+
+  /** 노트 카드의 점 — 로컬 DB 기준 판정 (동기화창 새로고침 캐시 포함) */
+  const syncDotFor = (id: ID) => {
+    const s = syncStates.get(id)
+    return s ? <SyncDot state={s} /> : null
+  }
 
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
   useEffect(() => {
@@ -509,6 +538,7 @@ export function Library() {
         setBusy({ text: `"${d.title}" 올리는 중` })
         try {
           await pushOneNote(d.id)
+          void refresh() // 올리기가 끝나면 카드의 동기화 상태 점을 다시 계산한다
           toast(`"${d.title}"을(를) 클라우드에 올렸습니다.`, 'success')
         } catch (e) {
           toast(e instanceof Error ? e.message : '올리지 못했습니다.', 'error')
@@ -769,7 +799,7 @@ export function Library() {
                       <Icon name="app" size={36} />
                       <span className="doc-badge">HTML 앱</span>
                       {i.a.category && <span className="doc-cat">{i.a.category}</span>}
-                      {i.a.pending && <span className="app-pending" title="클라우드 저장 대기" />}
+                      <SyncDot state={rowSyncState(i.a)} />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
@@ -793,7 +823,7 @@ export function Library() {
                       <Icon name="file" size={36} />
                       <span className="doc-badge">{extOf(i.f.name).toUpperCase() || '파일'}</span>
                       {i.f.category && <span className="doc-cat">{i.f.category}</span>}
-                      {i.f.pending && <span className="app-pending" title="클라우드 저장 대기" />}
+                      <SyncDot state={rowSyncState(i.f)} />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.f.title}</h3>
@@ -826,6 +856,7 @@ export function Library() {
                       )}
                       <span className="doc-badge">{i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`}</span>
                       {i.d.category && <span className="doc-cat">{i.d.category}</span>}
+                      {syncDotFor(i.d.id)}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
