@@ -139,7 +139,7 @@ function bodyBytes(body: unknown): number {
 }
 
 /** URL을 사람이 읽는 목적지 라벨로 바꾼다 */
-function labelFor(rawUrl: string): { label: string; url: string } {
+function labelFor(rawUrl: string, method: string): { label: string; url: string } {
   let u: URL
   try {
     u = new URL(rawUrl, typeof location !== 'undefined' ? location.href : 'http://localhost')
@@ -159,8 +159,23 @@ function labelFor(rawUrl: string): { label: string; url: string } {
   }
 
   if (u.hostname === 'www.googleapis.com') {
+    // 업로드는 별도 호스트 경로(/upload/drive/v3)로 나간다
     if (path.startsWith('/upload/drive')) return { label: 'Google Drive · 업로드', url: `${u.origin}${path}` }
-    if (path.startsWith('/drive')) return { label: 'Google Drive · 메타데이터', url: `${u.origin}${path}` }
+    if (path.startsWith('/drive/v3')) {
+      // alt=media는 메타데이터가 아니라 실제 파일 바이트를 받는 다운로드다
+      if (u.searchParams.get('alt') === 'media') return { label: 'Google Drive · 다운로드', url: `${u.origin}${path}` }
+      if (path.includes('/revisions')) return { label: 'Google Drive · 리비전', url: `${u.origin}${path}` }
+      // /drive/v3/files/{id} → 파일 하나의 메타데이터 (getMeta·updateMeta·trash)
+      if (/^\/drive\/v3\/files\/[^/]+$/.test(path)) return { label: 'Google Drive · 개별 메타 (파일별)', url: `${u.origin}${path}` }
+      // /drive/v3/files (GET=목록 조회(listFiles·findFolder·findByName), POST=생성)
+      if (path === '/drive/v3/files') {
+        return {
+          label: method === 'GET' ? 'Google Drive · 목록 조회 (1000개 단위)' : 'Google Drive · 생성',
+          url: `${u.origin}${path}`
+        }
+      }
+      return { label: `Google Drive · 기타 (${path})`, url: `${u.origin}${path}` }
+    }
     return { label: `Google API · ${path}`, url: `${u.origin}${path}` }
   }
   if (u.hostname === 'oauth2.googleapis.com') return { label: 'Google 인증 · 토큰 해지', url: `${u.origin}${path}` }
@@ -217,7 +232,7 @@ export function installNetMeter() {
       }
     }
 
-    const { label, url } = labelFor(rawUrl)
+    const { label, url } = labelFor(rawUrl, method)
     const entry: NetEntry = { id: ++seq, at: t0, method, label, url, up: 0, down: 0, status: null, ms: null, unknown: false }
     stats.requests++
     destOf(label).requests++
