@@ -35,19 +35,8 @@ export async function resetRemoteRecords() {
   await db.transaction('rw', db.syncState, async () => {
     const keys = (await db.syncState.toArray()).map((k) => k.key)
     await db.syncState.bulkDelete(
-      keys.filter(
-        (k) =>
-          k.startsWith('doc:') ||
-          k.startsWith('asset:') ||
-          k.startsWith('base:') ||
-          k.startsWith('gcDocRefs:') || // 클라우드 노트 참조 캐시 (sync/gcRun.ts)
-          k.startsWith('gcRevRefs:') || // 고정 리비전 참조 캐시 (sync/gcRun.ts)
-          k === 'gcFolders' ||
-          k === 'gcReportFile' ||
-          k === 'gcReportHash'
-      )
+      keys.filter((k) => k.startsWith('doc:') || k.startsWith('asset:') || k.startsWith('base:'))
     )
-    // deviceId는 지우지 않는다 — 기기 ID는 로컬 초기화와 무관하게 유지된다 (sync/gc.ts)
   })
   await enqueueEverything()
 }
