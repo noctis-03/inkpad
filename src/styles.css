@@ -809,7 +809,7 @@ textarea {
 }
 /* ───────── 변경안 A · 책등 있는 노트 ─────────
    미리보기 위 오버레이(배지·카테고리 칩·동기화 점)를 걷어내고
-   정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 왼쪽 책등 색으로. */
+   정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 미리보기 위 좌측 상단 태그로. */
 .doc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -832,16 +832,31 @@ textarea {
   justify-content: center;
   color: #cbd5e1;
 }
-/* 책등 — 노트 카드 전용. 앱·파일 카드에는 쓰지 않는다(.app-card·.file-card).
-   카테고리 색은 캡션 태그 .doc-cat-text 와 사이드바 .tree-cat-dot 이 맡는다. */
-.doc-spine {
+/* 카테고리 태그 — 카드(미리보기) 좌측 상단에 얹는다.
+   글자색·테두리는 카테고리 색을 인라인으로 주입하고( categoryTag ), 바탕은
+   필기 위에서도 읽히도록 흰색으로 둔다. 이름 텍스트가 항상 함께 있으므로
+   색만으로 뜻을 전달하지 않는다. */
+.doc-tag {
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  z-index: 2;
-  background: #cbd5e1;
+  left: 6px;
+  top: 6px;
+  z-index: 3;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px;
+  border: 1px solid #11182726;
+  border-radius: 999px;
+  background: #ffffffe6;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px #0000000f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 리스트 보기의 48x60 미리보기에는 얹지 않는다 — 캡션의 .doc-cat-text 로 내려간다 */
+.doc-list .doc-tag {
+  display: none;
 }
 /* 페이지 결 — 오른쪽 종이 단면 2겹 */
 .doc-edge {
@@ -861,11 +876,9 @@ textarea {
   object-fit: cover;
   object-position: top;
 }
-/* 변경안 A · 미리보기 위 쪽수 배지(.doc-badge)와 카테고리 칩(.doc-cat)은
-   제거했다 — 정보는 캡션(.doc-foot)의 .doc-meta-date · .doc-cat-text로 이동. */
-/* 변경안 A · 그리드에서도 카테고리 이름을 캡션에 표시한다 (색만으로 전달하지 않기) */
+/* 캡션의 카테고리 — 리스트 보기 전용 (그리드는 미리보기 위 .doc-tag 로 표시) */
 .doc-cat-text {
-  display: inline-block;
+  display: none;
   flex: 0 1 auto;
   min-width: 0;
   padding: 1px 6px;
@@ -879,17 +892,20 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.doc-info {
-  padding: 8px 0 0 2px; /* 변경안 A · 더보기 자리 32px 비움 제거 — 제목이 온전히 보인다 */
+.doc-list .doc-cat-text {
+  display: inline-block;
 }
-/* 캡션(그리드): 1행 = 카테고리·쪽수·날짜 / 2행 = 동기화 라벨 + 더보기(오른쪽).
-   폭 180px 안에서 네 요소가 한 줄에 못 들어가 ⋯가 홀로 떨어지는 것을 막는다. */
+/* 캡션 한 줄 — 왼쪽 날짜, 오른쪽 더보기. align-items:center 로 더보기 버튼
+   가운데가 날짜 줄과 같은 높이에 온다. */
 .doc-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 3px 6px;
   margin-top: 3px;
+}
+.doc-info {
+  padding: 8px 0 0 2px; /* 더보기 자리 32px 비움 없음 — 제목이 온전히 보인다 */
 }
 .doc-title {
   margin: 0;
@@ -900,7 +916,7 @@ textarea {
   white-space: nowrap;
 }
 .doc-meta {
-  flex: 1 1 100%;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -914,7 +930,8 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 동기화 상태 — 8px 색 점 대신 말 라벨 (색만으로 전달하지 않는다) */
+/* 동기화 상태 — 8px 색 점 대신 말 라벨 (색만으로 전달하지 않는다).
+   그리드: 카드(미리보기) 좌측 하단에 얹는다 / 리스트: 캡션 안에 인라인으로. */
 .doc-state {
   flex: 0 0 auto;
   padding: 1px 7px;
@@ -925,6 +942,24 @@ textarea {
   background: #f3f4f6;
   color: #6b7280;
   box-shadow: inset 0 0 0 1px #e5e7eb;
+}
+.doc-state.is-overlay {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 3;
+  box-shadow: 0 1px 2px #0000001a, inset 0 0 0 1px #e5e7eb;
+}
+/* 캡션 쪽 라벨은 리스트에서만 (그리드는 미리보기 위 .is-overlay) */
+.doc-state:not(.is-overlay) {
+  display: none;
+}
+.doc-list .doc-state:not(.is-overlay) {
+  display: inline-block;
+  margin-left: auto;
+}
+.doc-list .doc-state.is-overlay {
+  display: none;
 }
 .doc-state.s-same {
   background: #f0fdf4;
@@ -986,7 +1021,6 @@ textarea {
   color: #cbd5e1;
 }
 /* 리스트 보기: 캡션을 한 줄로 눕히고 책등·페이지 결은 숨긴다 */
-.doc-list .doc-spine,
 .doc-list .doc-edge {
   display: none;
 }
@@ -1756,6 +1790,15 @@ textarea {
     background: #11182733;
   }
 }
+/* 좁은 화면: 최소 폭을 낮춰 한 줄에 2장이 들어가게 한다.
+   180px 기준으로는 390px 폭에서 180*2+18 > 366 이라 한 줄에 1장만 들어간다. */
+@media (max-width: 560px) {
+  .doc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+  }
+}
+
 /* 상단 바: 좁은 화면에서 버튼이 넘쳐 오른쪽이 잘리던 문제 — 2줄로 재배치.
    아이콘 버튼 6개(44px) + '새로 만들기'가 390px 폭을 넘겨 잘려 나갔다. */
 @media (max-width: 760px) {
