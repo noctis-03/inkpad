@@ -5,6 +5,7 @@ import { normalizeBlockUrl } from '../engine/blocks'
 import { gunzipJson, gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import type { DocFileV1 } from './pack'
+import { collectLocalAssetIds } from './refs'
 
 /**
  * Drive 파일을 로컬에 적용한다.
@@ -75,10 +76,10 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
 }
 
 async function gcUnusedAssets() {
-  const used = new Set<string>()
-  await db.pages.each((p) => {
-    if (p.pdf) used.add(p.pdf.assetId)
-  })
+  // collectLocalAssetIds가 packDocument와 같은 기준(페이지 PDF + 이미지 요소)으로 모은다 (sync/refs.ts).
+  // image 요소만 참조하는 에셋도 남는다 — 옛 구현은 page.pdf만 봐서 버전 되돌리기 뒤에
+  // 이미지 에셋의 로컬 행이 지워질 수 있었다. outbox 대기 에셋과 최근 생성 에셋(7일)도 보호한다
+  const used = await collectLocalAssetIds()
   const all = await db.assets.toCollection().primaryKeys()
   const orphan = all.filter((id) => !used.has(id))
   if (orphan.length) await db.assets.bulkDelete(orphan)

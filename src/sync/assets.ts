@@ -9,6 +9,7 @@ import type { ID } from '../shared/model'
 import { db, type AssetRow } from '../storage/db'
 import * as drive from './drive'
 import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
+import { ensureGcFolders, rescueFromGarbage } from './gc'
 import { assetFileName } from './pack'
 
 /** 이 기기에 원본이 없고, 지금 받아올 수도 없을 때 */
@@ -164,8 +165,16 @@ async function downloadAsset(row: AssetRow): Promise<Blob> {
 
 async function locateRemote(row: AssetRow): Promise<FileRecord | null> {
   const folder = await assetsFolder()
-  const found = await drive.findByName(assetFileName(row.sha256, row.mime), folder)
-  return found ? { fileId: found.id, version: found.version } : null
+  const name = assetFileName(row.sha256, row.mime)
+  const found = await drive.findByName(name, folder)
+  if (found) return { fileId: found.id, version: found.version }
+  // assets에 없으면 garbage 폴더를 확인한다 — 참조 중인 에셋이 격리돼 있으면 즉시 되돌린다 (sync/gc.ts)
+  try {
+    return await rescueFromGarbage(name)
+  } catch (e) {
+    console.warn('[sync] garbage 복구 확인 실패:', e)
+    return null
+  }
 }
 
 // ───────────────── pull 시 인덱싱 (바이트 없음) ─────────────────
@@ -197,6 +206,30 @@ export async function indexAssets(assetsFolderId: string): Promise<number> {
     if (!f) continue
     await putSync(KEY(a.sha256), { fileId: f.id, version: f.version })
     n++
+  }
+
+  // assets 목록으로 못 찾은 에셋이 남으면 garbage 폴더를 한 번 훑는다 (sync/gc.ts).
+  // 이 기기가 그 에셋 행을 가진 것 자체가 참조 중이라는 뜻이다 — 찾으면 즉시 assets로 되돌린다
+  const leftover = unknown.filter((a) => !bySha.get(a.sha256))
+  if (leftover.length) {
+    try {
+      const g = await ensureGcFolders()
+      const gBySha = new Map<string, drive.RemoteFile>()
+      for (const f of await drive.listFiles(g.garbage)) {
+        const sha = f.appProperties?.sha256 ?? f.name.slice('assets/'.length).replace(/\..*$/, '')
+        if (sha && !gBySha.has(sha)) gBySha.set(sha, f)
+      }
+      for (const a of leftover) {
+        const f = gBySha.get(a.sha256)
+        if (!f) continue
+        const rec = await rescueFromGarbage(f.name)
+        if (!rec) continue
+        await putSync(KEY(a.sha256), rec)
+        n++
+      }
+    } catch (e) {
+      console.warn('[sync] garbage 폴더 확인 실패 — 인덱싱은 계속됩니다:', e)
+    }
   }
   return n
 }
