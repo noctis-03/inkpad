@@ -2764,6 +2764,20 @@ textarea {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+/* 올리기 미리보기의 받아올 변경 용량 — 목록 맨 위 안내 줄 */
+.pull-estimate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.pull-estimate b {
+  color: var(--ink);
+}
 
 /* ── 폴더 · 카테고리 설정 (LibrarySettings) ── */
 .folder-map-list {

@@ -593,6 +593,30 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/**
+ * 받아올(풀에서 내려받을) 변경의 예상 용량 — 클라우드 목록만 읽고 본문은 받지 않는다.
+ * 올리기 미리보기에서 "올린 뒤 다른 기기의 변경도 받아옵니다"의 받을 용량을 보여 주는 데 쓴다.
+ * 판정 규칙은 listCloudNotes·받기와 같다 (위치 기록 version + 내용 표식, 규칙 10).
+ */
+export async function planPull(): Promise<{ count: number; bytes: number }> {
+  const f = await ensureFolders()
+  const remotes = await drive.listFiles(f.docs)
+  let count = 0
+  let bytes = 0
+  for (const remote of remotes) {
+    const docId = remote.appProperties?.docId
+    if (!docId) continue
+    const [local, rec] = await Promise.all([db.documents.get(docId), getSync<FileRecord>(`doc:${docId}`)])
+    const sameByVersion = !!rec && verNum(rec.version) >= verNum(remote.version)
+    const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
+    const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
+    if (sameByVersion || sameByContent) continue // 이미 맞춰진 노트 — 풀에서 내려받지 않는다
+    count++
+    bytes += Math.max(0, Number(remote.size ?? 0) || 0)
+  }
+  return { count, bytes }
+}
+
 /** 클라우드 노트 한 개를 이 기기로 내려받는다. 삭제 대기 중이던 노트면 대기를 지우고 되살린다 */
 export async function downloadCloudNote(
   info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>

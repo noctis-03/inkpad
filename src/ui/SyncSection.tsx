@@ -8,6 +8,7 @@ import {
   listCloudNotes,
   onSyncProgress,
   onSyncStatus,
+  planPull,
   planPush,
   pullNow,
   pushNow,
@@ -358,6 +359,7 @@ export function SyncSection() {
   const [checked, setChecked] = useState<string | null>(null)
   const [device, setDevice] = useState('')
   const [preview, setPreview] = useState<PushPlan | null>(null)
+  const [pullPlan, setPullPlan] = useState<{ count: number; bytes: number } | null>(null)
 
   useEffect(() => {
     const un = onSyncStatus((s) => {
@@ -420,6 +422,11 @@ export function SyncSection() {
         return
       }
       setPreview(plan)
+      setPullPlan(null)
+      // 받아올 변경의 예상 용량 — 클라우드 목록만 읽고 본문은 받지 않는다. 실패하면 줄을 생략한다
+      planPull()
+        .then(setPullPlan)
+        .catch(() => setPullPlan(null))
     } catch (e) {
       toast(e instanceof Error ? e.message : '상태를 확인하지 못했습니다.', 'error')
     }
@@ -642,7 +649,7 @@ export function SyncSection() {
         onLogout={() => void logout().then(() => void syncNow())}
       />
 
-      {preview && <PushPreview plan={preview} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
+      {preview && <PushPreview plan={preview} pull={pullPlan} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
     </section>
   )
 }
@@ -709,7 +716,7 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
 }
 
 /** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경 목록 */
-function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan; pull: { count: number; bytes: number } | null; busy: boolean; onConfirm: () => void; onClose: () => void }) {
   // 삭제한 노트는 Drive에 올라가는 게 없어 미리보기에 세지 않는다 (지시서 4번)
   const groups = [
     { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
@@ -732,6 +739,14 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
         </header>
 
         <div className="push-list">
+          {pull && (
+            <div className="pull-estimate">
+              <Icon name="download" size={13} />
+              <span>
+                올린 뒤 다른 기기의 변경 <b>{pull.count}개</b>를 받아옵니다{pull.count ? ` · 약 ${formatBytes(pull.bytes)}` : ''}
+              </span>
+            </div>
+          )}
           {groups.map((g) => (
             <section key={g.key} className="push-group">
               <h4 className="push-group-label">
