@@ -828,8 +828,8 @@ textarea {
   justify-content: center;
   color: #cbd5e1;
 }
-/* 책등 — 카드마다 같은 색으로 통일한 노트 제본 (색으로 카테고리를 구분하지 않는다.
-   카테고리 색은 캡션 태그 .doc-cat-text 와 사이드바 .tree-cat-dot 이 맡는다) */
+/* 책등 — 노트 카드 전용. 앱·파일 카드에는 쓰지 않는다(.app-card·.file-card).
+   카테고리 색은 캡션 태그 .doc-cat-text 와 사이드바 .tree-cat-dot 이 맡는다. */
 .doc-spine {
   position: absolute;
   left: 0;
@@ -837,7 +837,7 @@ textarea {
   bottom: 0;
   width: 5px;
   z-index: 2;
-  background: var(--ink);
+  background: #cbd5e1;
 }
 /* 페이지 결 — 오른쪽 종이 단면 2겹 */
 .doc-edge {
