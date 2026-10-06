@@ -62,7 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   resolution: 1,
   showHud: false,
   momentum: true,
-  largeFileConfirm: '10'
+  largeFileConfirm: 'always'
 }
 
 export interface PenStyle {

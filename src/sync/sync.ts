@@ -641,6 +641,8 @@ export interface PushDoc {
   docId: ID
   title: string
   change: 'add' | 'modify'
+  /** 이 노트 업로드 예상 용량 — 저장된 gzip 청크 합계 (미리보기 표시용) */
+  bytes: number
 }
 
 export interface PushPlan {
@@ -662,7 +664,10 @@ export async function planPush(): Promise<PushPlan> {
     const doc = await db.documents.get(docId)
     // 삭제(휴지통·영구)는 Drive에 올라가는 게 없다 — 미리보기에 세지 않고 pushTombstone이 조용히 처리한다 (지시서 4번)
     if (!doc || doc.deletedAt) continue
-    plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add' })
+    // 예상 용량: 이 노트의 gzip 청크 합계 — 올릴 때 gzipJson으로 다시 압축하지만 크기는 이와 거의 같다
+    const chunks = await db.chunks.where('documentId').equals(docId).toArray()
+    const bytes = chunks.filter((c) => !c.deletedAt).reduce((n, c) => n + c.data.size, 0)
+    plan.docs.push({ docId, title: doc.title, change: (await getSync(`base:${docId}`)) ? 'modify' : 'add', bytes })
   }
   for (const r of rows.filter((x) => x.entity === 'asset')) {
     const a = await db.assets.get(r.entityId)

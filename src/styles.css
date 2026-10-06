@@ -2747,6 +2747,23 @@ textarea {
   flex-shrink: 0;
   color: var(--muted);
 }
+/* 올리기 미리보기의 용량 표시 — 행 오른쪽, 하단 합계 */
+.push-size {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.push-row .push-ico {
+  margin-left: 0;
+}
+.push-total {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── 폴더 · 카테고리 설정 (LibrarySettings) ── */
 .folder-map-list {

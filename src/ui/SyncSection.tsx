@@ -21,7 +21,7 @@ import {
 } from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
 import { db } from '../storage/db'
-import { formatDate } from '../shared/util'
+import { formatDate, formatBytes } from '../shared/util'
 import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
 
@@ -716,6 +716,8 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
     { key: 'modify' as const, label: '수정한 노트', icon: 'edit', items: plan.docs.filter((d) => d.change === 'modify') }
   ].filter((g) => g.items.length > 0)
   const total = plan.docs.length + plan.assets.count
+  // 이번 올리기 전체 예상 용량 — 노트(gzip 청크 기준) + 새로 올릴 원본
+  const totalBytes = plan.docs.reduce((n, d) => n + d.bytes, 0) + plan.assets.bytes
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="올리기 미리보기">
@@ -723,7 +725,9 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
           <span className="push-count">{total}</span>
           <div>
             <h2 className="modal-title">올리기 미리보기</h2>
-            <p className="push-sub">클라우드에 이렇게 올라갑니다 · 올린 뒤 다른 기기의 변경도 받아옵니다</p>
+            <p className="push-sub">
+              클라우드에 이렇게 올라갑니다{totalBytes > 0 ? ` · 약 ${formatBytes(totalBytes)}` : ''} · 올린 뒤 다른 기기의 변경도 받아옵니다
+            </p>
           </div>
         </header>
 
@@ -737,6 +741,7 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
                 <div key={d.docId} className="push-row">
                   <span className={'push-stripe ' + g.key} />
                   <span className="push-name">{d.title}</span>
+                  <span className="push-size">{formatBytes(d.bytes)}</span>
                   <Icon name={g.key === 'add' ? 'upload' : 'edit'} size={14} className="push-ico" />
                 </div>
               ))}
@@ -749,7 +754,8 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
               </h4>
               <div className="push-row">
                 <span className="push-stripe add" />
-                <span className="push-name">{Math.round(plan.assets.bytes / 1024)}KB</span>
+                <span className="push-name">새로 올릴 원본 {plan.assets.count}개</span>
+                <span className="push-size">{formatBytes(plan.assets.bytes)}</span>
                 <Icon name="upload" size={14} className="push-ico" />
               </div>
             </section>
@@ -757,6 +763,7 @@ function PushPreview({ plan, busy, onConfirm, onClose }: { plan: PushPlan; busy:
         </div>
 
         <div className="modal-actions">
+          <span className="push-total">예상 용량 {totalBytes > 0 ? `약 ${formatBytes(totalBytes)}` : '0 B'}</span>
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
