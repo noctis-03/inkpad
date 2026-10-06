@@ -7,6 +7,7 @@ import { db, type AssetRow } from '../storage/db'
 import { confirmTransfer } from '../sync/transfer'
 import * as drive from '../sync/drive'
 import { ensureFolders } from '../sync/folders'
+import { assetFileName } from '../sync/pack'
 import { AuthRequiredError, login } from '../sync/token'
 import { AssetUnavailableError, ensureAssetLocal, downloadAllMissing, onAssetProgress, uploadAssetLocal } from '../sync/assets'
 import { saveFile } from '../io/download'
@@ -261,16 +262,20 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     await load()
   }
 
-  /** 이 기기에 참조가 없는 클라우드 전용 원본 — 앱 저장소가 아니라 기기(다운로드)로 내려받는다 */
+  /** 원본 파일을 앱 저장소가 아니라 기기(다운로드)로 내보낸다.
+   *  이 기기에 받아 둔 원본은 그대로 쓰고, 없으면 클라우드에서 바로 받아 저장한다(앱에는 안 남는다). */
   const saveToDevice = async (a: AssetInfo) => {
-    if (!a.fileId) return
-    if (!(await confirmTransfer('down', a.size))) return
     try {
-      const blob = await drive.downloadBlob(a.fileId)
-      await saveFile(blob, a.name || `${a.sha256}.pdf`)
+      let blob = a.blob
+      if (!blob) {
+        if (!a.fileId) return
+        if (!(await confirmTransfer('down', a.size))) return
+        blob = await drive.downloadBlob(a.fileId)
+      }
+      await saveFile(blob, a.name || baseName(assetFileName(a.sha256, a.mime)))
       toast(`"${titleOf(a)}" 원본을 기기에 저장했습니다.`)
     } catch (e) {
-      toast(e instanceof Error ? e.message : '내려받지 못했습니다.', 'error')
+      toast(e instanceof Error ? e.message : '저장하지 못했습니다.', 'error')
     }
   }
 
@@ -380,6 +385,16 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     const driveLink = a.fileId ? (
       <MenuItem icon="external" label="Drive에서 열기" desc="새 탭에서 Google Drive로 열립니다" onClick={act(() => openInDrive(a))} />
     ) : null
+    /** 원본 파일을 기기로 내보내기 — 원본 바이트가 있거나 클라우드 사본이 있으면 어느 행에서든 가능하다 */
+    const saveItem = (
+      <MenuItem
+        icon="download"
+        label="기기에 저장"
+        desc={a.blob ? `${size} · 원본 파일로 내보냅니다` : `${size} · 클라우드에서 받아 기기로 저장합니다`}
+        disabled={!a.blob && !online}
+        onClick={act(() => void saveToDevice(a))}
+      />
+    )
     const cloudDelete = (
       <MenuItem
         icon="cloud"
