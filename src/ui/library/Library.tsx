@@ -7,6 +7,7 @@ import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
 import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
+import { AssetsSheet } from '../AssetsSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
 import { categoryColor, categoryTag, formatDate } from '../../shared/util'
@@ -89,6 +90,7 @@ export function Library() {
   const [showSync, setShowSync] = useState(false)
   const [showApps, setShowApps] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
+  const [showAssets, setShowAssets] = useState(false)
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
@@ -659,6 +661,9 @@ export function Library() {
         <button className="tb-btn sync-btn" onClick={() => setShowSync(true)} aria-label="동기화" title="동기화">
           <Icon name="cloud" />
         </button>
+        <button className="tb-btn" onClick={() => setShowAssets(true)} aria-label="에셋 원본" title="에셋 원본 (PDF·이미지)">
+          <Icon name="filePdf" />
+        </button>
         <button className="tb-btn" onClick={() => setShowApps(true)} aria-label="앱" title="앱">
           <Icon name="apps" />
         </button>
@@ -1045,6 +1050,7 @@ export function Library() {
       {showSync && <SyncSheet onClose={() => setShowSync(false)} />}
       {showApps && <AppsSheet onClose={() => setShowApps(false)} />}
       {showFiles && <FilesSheet onClose={() => setShowFiles(false)} />}
+      {showAssets && <AssetsSheet onClose={() => setShowAssets(false)} />}
     </div>
   )
 }

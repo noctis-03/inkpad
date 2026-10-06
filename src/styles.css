@@ -3326,6 +3326,7 @@ textarea {
 .store-row{position:relative;display:flex;align-items:center;gap:11px;padding:11px 10px;border:1px solid var(--line);border-radius:13px;background:#fff;margin-bottom:8px;overflow:hidden;}
 .store-row.is-dim{opacity:.5;}
 .store-file-icon{width:40px;height:46px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:800;letter-spacing:.02em;flex:0 0 auto;background:#eef2f7;color:#475569;border:1px solid #00000010;}
+.store-file-icon[data-kind='pdf']{background:#fee2e2;color:#b91c1c;}
 .store-file-icon[data-kind='image']{background:#fce7f3;color:#9d174d;}
 .store-file-icon[data-kind='text']{background:#dbeafe;color:#1d4ed8;}
 .store-file-icon[data-kind='other']{background:#ede9fe;color:#5b21b6;}
