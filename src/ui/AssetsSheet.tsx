@@ -3,7 +3,7 @@ import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { formatBytes, formatDate } from '../shared/util'
 import type { ID } from '../shared/model'
-import { db } from '../storage/db'
+import { db, type AssetRow } from '../storage/db'
 import { confirmTransfer } from '../sync/transfer'
 import * as drive from '../sync/drive'
 import { ensureFolders } from '../sync/folders'
@@ -213,7 +213,10 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
 
   /** 원본 바이트를 이 기기에서만 지운다 (노트·필기는 그대로) */
   const dropOriginal = async (a: AssetInfo) => {
-    if (!a.assetId) return
+    if (!a.assetId) {
+      toast('이 원본은 이 기기의 참조 정보가 없어 여기서 지울 수 없습니다.', 'info')
+      return
+    }
     const cloudNote = a.pending
       ? '업로드 대기 중이라 클라우드 사본이 없을 수 있습니다. 지우면 되살릴 수 없습니다.'
       : '클라우드에 사본이 있으면 나중에 다시 받을 수 있습니다.'
@@ -226,7 +229,14 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     )
       return
     try {
-      await db.assets.update(a.assetId, { blob: undefined })
+      // blob 프로퍼티를 아예 빼고 다시 기록한다 — update(id, {blob: undefined})와 결과는 같지만,
+      // 기록 형태가 Dexie·브라우저 버전과 무관하게 "원본 없음"으로 확정된다
+      await db.transaction('rw', db.assets, async () => {
+        const row = await db.assets.get(a.assetId!)
+        if (!row) return
+        const { blob, ...rest } = row
+        await db.assets.put(rest as AssetRow)
+      })
       toast(`${formatBytes(a.size)}를 확보했습니다. 필요하면 클라우드에서 다시 받습니다.`)
     } catch (e) {
       toast(e instanceof Error ? e.message : '제거하지 못했습니다.', 'error')
@@ -449,12 +459,13 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const chipOf = (s: RowState): { chip?: string; tone: Tone } => {
+  const chipOf = (s: RowState, hasBlob: boolean): { chip?: string; tone: Tone } => {
     switch (s) {
       case 'pending':
         return { chip: '업로드 안 됨', tone: 'push' }
       case 'cloud-missing':
-        return { chip: '클라우드에 없음', tone: 'gone' }
+        // 클라우드 사본이 없는 행 — 원본 바이트가 남아 있을 때와 완전히 없을 때를 다르게 보인다
+        return hasBlob ? { chip: '클라우드에 없음', tone: 'gone' } : { chip: '원본이 어디에도 없음', tone: 'gone' }
       default:
         return { tone: 'gray' }
     }
@@ -612,7 +623,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                 </div>
                 {filtered.map((a) => {
                   const s = stateOf(a)
-                  const { chip, tone } = chipOf(s)
+                  const { chip, tone } = chipOf(s, !!a.blob)
                   const isDown = a.assetId != null && downloading.has(a.assetId)
                   const dim = !online && (s === 'meta-only' || s === 'cloud-only')
                   const statusIcon = s === 'local' ? 'checkCircle' : s === 'meta-only' || s === 'cloud-only' ? 'cloudDown' : null
