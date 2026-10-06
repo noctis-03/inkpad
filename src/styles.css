@@ -1783,7 +1783,8 @@ textarea {
   }
   .library-header .search-box {
     order: 5;
-    flex: 1 1 100%;
+    flex: 1 1 150px;
+    min-width: 150px;
     max-width: none;
   }
   .library-header [aria-label='리스트 보기'],
