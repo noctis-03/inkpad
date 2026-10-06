@@ -420,6 +420,8 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       case 'local':
         return (
           <>
+            {saveItem}
+            <MenuSep />
             <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} onClick={act(() => void dropOriginal(a))} />
             {driveLink}
             <MenuSep />
@@ -431,6 +433,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
+            {saveItem}
             {driveLink}
             <MenuSep />
             {cloudDelete}
@@ -441,6 +444,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             <MenuItem icon="download" label="원본 받기" desc={`${size} · 클라우드에서 받습니다`} disabled={!online} onClick={act(() => void download(a))} />
+            {saveItem}
             {driveLink}
             <MenuSep />
             {cloudDelete}
@@ -450,7 +454,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       case 'cloud-only':
         return (
           <>
-            <MenuItem icon="download" label="기기에 저장" desc={`${size} · 이 앱 말고 기기 저장소로`} disabled={!online} onClick={act(() => void saveToDevice(a))} />
+            {saveItem}
             {driveLink}
             <MenuSep />
             {cloudDelete}
@@ -462,6 +466,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
             {a.blob ? (
               <>
                 <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 다시 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
+                {saveItem}
                 <MenuSep />
                 <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} onClick={act(() => void dropOriginal(a))} />
               </>
