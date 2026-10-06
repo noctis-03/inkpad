@@ -9,7 +9,7 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
-import { categoryColor, categoryTint, formatDate } from '../../shared/util'
+import { categoryColor, categoryTag, formatDate } from '../../shared/util'
 import {
   createFolder,
   deleteFolder,
@@ -62,8 +62,8 @@ const SYNC_LABEL: Record<CardSyncState, string> = {
 const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
   r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
 
-function SyncPill({ state }: { state: CardSyncState }) {
-  return <span className={'doc-state s-' + state}>{SYNC_LABEL[state]}</span>
+function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
+  return <span className={'doc-state s-' + state + (overlay ? ' is-overlay' : '')}>{SYNC_LABEL[state]}</span>
 }
 
 export function Library() {
@@ -138,8 +138,13 @@ export function Library() {
     if (window.innerWidth < 900) setTreeOpen(false)
   }, [section])
 
-  /** 노트 카드의 동기화 라벨 — 로컬 DB 기준 판정 (동기화창 새로고침 캐시 포함) */
+  /** 노트 카드 좌측 하단에 얹는 동기화 라벨 (그리드 전용) */
   const syncPillFor = (id: ID) => {
+    const s = syncStates.get(id)
+    return s ? <SyncPill state={s} overlay /> : null
+  }
+  /** 캡션 안에 들어가는 동기화 라벨 (리스트 전용) */
+  const syncLabelFor = (id: ID) => {
     const s = syncStates.get(id)
     return s ? <SyncPill state={s} /> : null
   }
@@ -808,13 +813,17 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article key={'app:' + i.a.id} className="doc-card app-card" onClick={() => navigate({ name: 'app', appId: i.a.id })}>
                     <div className="doc-thumb">
+                      {i.a.category && (
+                        <span className="doc-tag" style={categoryTag(i.a.category)}>{i.a.category}</span>
+                      )}
                       <Icon name="app" size={36} />
+                      <SyncPill state={rowSyncState(i.a)} overlay />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.a.category && <span className="doc-cat-text" style={categoryTint(i.a.category)}>{i.a.category}</span>}
+                          {i.a.category && <span className="doc-cat-text" style={categoryTag(i.a.category)}>{i.a.category}</span>}
                           <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
                         </p>
                         <SyncPill state={rowSyncState(i.a)} />
@@ -835,13 +844,17 @@ export function Library() {
                 ) : i.kind === 'file' ? (
                   <article key={'file:' + i.f.id} className="doc-card file-card" onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
                     <div className="doc-thumb">
+                      {i.f.category && (
+                        <span className="doc-tag" style={categoryTag(i.f.category)}>{i.f.category}</span>
+                      )}
                       <Icon name="file" size={36} />
+                      <SyncPill state={rowSyncState(i.f)} overlay />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.f.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.f.category && <span className="doc-cat-text" style={categoryTint(i.f.category)}>{i.f.category}</span>}
+                          {i.f.category && <span className="doc-cat-text" style={categoryTag(i.f.category)}>{i.f.category}</span>}
                           <span className="doc-meta-date">
                             {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
                           </span>
@@ -869,19 +882,22 @@ export function Library() {
                     onClick={() => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d))}
                   >
                     <div className="doc-thumb">
-                      <span className="doc-spine" aria-hidden="true" />
+                      {i.d.category && (
+                        <span className="doc-tag" style={categoryTag(i.d.category)}>{i.d.category}</span>
+                      )}
                       {thumbs.get(i.d.id) ? (
                         <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
                       <span className="doc-edge" aria-hidden="true" />
+                      {syncPillFor(i.d.id)}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.d.category && <span className="doc-cat-text" style={categoryTint(i.d.category)}>{i.d.category}</span>}
+                          {i.d.category && <span className="doc-cat-text" style={categoryTag(i.d.category)}>{i.d.category}</span>}
                           <span className="doc-meta-date">
                             {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
                             {section.kind === 'trash' && i.d.deletedAt
@@ -889,7 +905,7 @@ export function Library() {
                               : formatDate(i.d.updatedAt)}
                           </span>
                         </p>
-                        {syncPillFor(i.d.id)}
+                        {syncLabelFor(i.d.id)}
                         <button
                           className="doc-more"
                           aria-label="더보기"
