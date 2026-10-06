@@ -605,6 +605,33 @@ textarea {
   min-height: 60px;
   background: #fffffff2;
   border-bottom: 1px solid var(--line);
+  /* 한 줄을 유지하고, 좁은 화면에서는 가로로 스크롤한다.
+     (줄바꿈으로 재배치하지 않는다 — 버튼이 잘려 나가지 않고 전부 닿는다) */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.library-header::-webkit-scrollbar {
+  height: 4px;
+}
+.library-header::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: #cbd5e1;
+}
+.library-header::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 스크롤 영역 안에서는 항목이 줄어들면 안 된다 (눌리면 터치 영역이 사라진다) */
+.library-header > * {
+  flex-shrink: 0;
+}
+.library-header .search-box {
+  flex-basis: 220px;
+  min-width: 160px;
 }
 /* 환경설정·새로 만들기 버튼은 상단 바 오른쪽 끝에 붙는다 */
 .library-header [aria-label='설정'] {
@@ -1799,60 +1826,6 @@ textarea {
   }
 }
 
-/* 상단 바: 좁은 화면에서 버튼이 넘쳐 오른쪽이 잘리던 문제 — 2줄로 재배치.
-   아이콘 버튼 6개(44px) + '새로 만들기'가 390px 폭을 넘겨 잘려 나갔다. */
-@media (max-width: 760px) {
-  .library-header {
-    flex-wrap: wrap;
-    gap: 6px;
-    row-gap: 8px;
-    padding: 6px 10px;
-  }
-  .library-header > .tb-btn[aria-label='폴더 목록'] {
-    order: 1;
-  }
-  .library-header .library-title {
-    order: 2;
-    flex: 1 1 auto;
-    min-width: 0;
-    max-width: none;
-  }
-  .library-header [aria-label='설정'] {
-    order: 3;
-    margin-left: auto;
-  }
-  .library-header .sync-btn {
-    order: 4;
-  }
-  .library-header .search-box {
-    order: 5;
-    flex: 1 1 150px;
-    min-width: 150px;
-    max-width: none;
-  }
-  .library-header [aria-label='리스트 보기'],
-  .library-header [aria-label='그리드 보기'] {
-    order: 6;
-  }
-  .library-header [aria-label='앱'] {
-    order: 7;
-  }
-  .library-header [aria-label='기타 파일'] {
-    order: 8;
-  }
-  .library-header .sort-select {
-    display: none;
-  }
-  .library-header #new-doc-btn {
-    order: 9;
-    margin-left: auto;
-    padding: 0 10px;
-  }
-  /* 좁은 화면에서는 '새로 만들기' 글자를 접어 아이콘만 남긴다 */
-  .library-header .new-doc-label {
-    display: none;
-  }
-}
 @media (max-width: 700px) {
   .save-label,
   .sort-select {
