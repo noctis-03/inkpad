@@ -338,6 +338,12 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
 
   const menuAsset = menu ? all.find((a) => a.key === menu.key) : undefined
 
+  /** 클라우드에 있는 원본을 Google Drive 웹사이트로 연다 (새 탭) */
+  const openInDrive = (a: AssetInfo) => {
+    if (!a.fileId) return
+    window.open(`https://drive.google.com/file/d/${a.fileId}/view`, '_blank', 'noopener')
+  }
+
   const renderMenu = (a: AssetInfo) => {
     const close = () => setMenu(null)
     const act = (fn: () => void) => () => {
@@ -346,6 +352,9 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     }
     const size = formatBytes(a.size)
     const s = stateOf(a)
+    const driveLink = a.fileId ? (
+      <MenuItem icon="external" label="Drive에서 열기" desc="새 탭에서 Google Drive로 열립니다" onClick={act(() => openInDrive(a))} />
+    ) : null
     const cloudDelete = (
       <MenuItem
         icon="cloud"
@@ -372,6 +381,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} onClick={act(() => void dropOriginal(a))} />
+            {driveLink}
             <MenuSep />
             {cloudDelete}
             {usedByDocs}
@@ -381,6 +391,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
+            {driveLink}
             <MenuSep />
             {cloudDelete}
             {usedByDocs}
@@ -390,6 +401,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             <MenuItem icon="download" label="원본 받기" desc={`${size} · 클라우드에서 받습니다`} disabled={!online} onClick={act(() => void download(a))} />
+            {driveLink}
             <MenuSep />
             {cloudDelete}
             {usedByDocs}
@@ -399,6 +411,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             <MenuItem icon="download" label="기기에 저장" desc={`${size} · 이 앱 말고 기기 저장소로`} disabled={!online} onClick={act(() => void saveToDevice(a))} />
+            {driveLink}
             <MenuSep />
             {cloudDelete}
           </>
