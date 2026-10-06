@@ -268,20 +268,34 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     try {
       let blob = a.blob
       if (!blob) {
-        if (!a.fileId) return
+        if (!a.fileId) {
+          toast('클라우드에 사본이 없어 내려받을 수 없습니다. 먼저 업로드해 주세요.', 'info')
+          return
+        }
+        if (!navigator.onLine) {
+          toast('오프라인이라 내려받을 수 없습니다. 연결된 뒤 다시 시도해 주세요.', 'error')
+          return
+        }
         if (!(await confirmTransfer('down', a.size))) return
         blob = await drive.downloadBlob(a.fileId)
       }
       await saveFile(blob, a.name || baseName(assetFileName(a.sha256, a.mime)))
-      toast(`"${titleOf(a)}" 원본을 기기에 저장했습니다.`)
+      toast(`"${titleOf(a)}" 원본을 기기에 저장했습니다.`, 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : '저장하지 못했습니다.', 'error')
+      toast(e instanceof Error && e.message ? e.message : '저장하지 못했습니다.', 'error')
     }
   }
 
   /** 클라우드 사본을 Drive 휴지통으로 옮긴다 (30일 동안 되살릴 수 있다) */
   const deleteFromCloud = async (a: AssetInfo) => {
-    if (!a.fileId) return
+    if (!a.fileId) {
+      toast('클라우드에 올라가 있지 않아 삭제할 것이 없습니다. 동기화의 올리기를 먼저 실행해 주세요.', 'info')
+      return
+    }
+    if (!navigator.onLine) {
+      toast('오프라인에서는 클라우드에서 삭제할 수 없습니다. 연결된 뒤 다시 시도해 주세요.', 'error')
+      return
+    }
     const hasLocal = !!a.blob
     const ok = await confirmDialog('클라우드에서 삭제', {
       message: hasLocal
@@ -330,14 +344,26 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
 
   /** 이 기기의 원본을 클라우드에 (다시) 올린다 — 업로드 대기·클라우드 사본 없음 상태의 해소 */
   const upload = async (a: AssetInfo) => {
-    if (!a.assetId) return
+    if (!a.assetId) {
+      toast('이 원본은 이 기기의 참조 정보가 없어 여기서 올릴 수 없습니다. 동기화의 올리기를 이용해 주세요.', 'info')
+      return
+    }
+    if (!navigator.onLine) {
+      toast('오프라인에서는 업로드할 수 없습니다. 연결된 뒤 다시 시도해 주세요.', 'error')
+      return
+    }
     if (!(await confirmTransfer('up', a.size))) return
     try {
       const ok = await uploadAssetLocal(a.assetId)
       if (!ok) throw new Error('이 기기에 원본이 없어 업로드할 수 없습니다.')
-      toast(`"${titleOf(a)}"을(를) 클라우드에 업로드했습니다.`)
+      toast(`"${titleOf(a)}"을(를) 클라우드에 업로드했습니다.`, 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : '업로드하지 못했습니다.', 'error')
+      if (e instanceof AuthRequiredError) {
+        setCloudAuth(true)
+        toast('Google 로그인이 필요합니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
+      } else {
+        toast(e instanceof Error && e.message ? e.message : '업로드하지 못했습니다. 네트워크 상태를 확인해 주세요.', 'error')
+      }
     }
     await load()
   }
@@ -391,7 +417,6 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         icon="download"
         label="기기에 저장"
         desc={a.blob ? `${size} · 원본 파일로 내보냅니다` : `${size} · 클라우드에서 받아 기기로 저장합니다`}
-        disabled={!a.blob && !online}
         onClick={act(() => void saveToDevice(a))}
       />
     )
@@ -401,7 +426,6 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         label="클라우드에서 삭제"
         desc={a.blob ? '이 기기 원본은 남습니다 · 다른 기기에서 사라집니다' : '이 기기에 사본이 없어 복구할 수 없습니다'}
         danger
-        disabled={!online}
         onClick={act(() => void deleteFromCloud(a))}
       />
     )
@@ -432,7 +456,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       case 'pending':
         return (
           <>
-            <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
+            <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 올립니다`} onClick={act(() => void upload(a))} />
             {saveItem}
             {driveLink}
             <MenuSep />
@@ -443,7 +467,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       case 'meta-only':
         return (
           <>
-            <MenuItem icon="download" label="원본 받기" desc={`${size} · 클라우드에서 받습니다`} disabled={!online} onClick={act(() => void download(a))} />
+            <MenuItem icon="download" label="원본 받기" desc={`${size} · 클라우드에서 받습니다`} onClick={act(() => void download(a))} />
             {saveItem}
             {driveLink}
             <MenuSep />
@@ -465,7 +489,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
           <>
             {a.blob ? (
               <>
-                <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 다시 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
+                <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 다시 올립니다`} onClick={act(() => void upload(a))} />
                 {saveItem}
                 <MenuSep />
                 <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} onClick={act(() => void dropOriginal(a))} />

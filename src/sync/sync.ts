@@ -297,7 +297,14 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   }
 
   const file = await packDocument(docId)
-  for (const am of file.assets) await ensureAssetUploaded(am.id, f.assets) // 참조 원본을 먼저 올린다
+  // 참조 원본을 먼저 올린다 — 노트 하나만 올릴 때도(올리기 버튼) 그 노트의 에셋 대기 항목을 치운다.
+  // 바이트가 없는 원본(다른 기기에서 받아올 것)은 건드리지 않고 대기를 남긴다.
+  for (const am of file.assets) {
+    const arow = await db.assets.get(am.id)
+    if (!arow?.blob) continue
+    await ensureAssetUploaded(am.id, f.assets)
+    await db.outbox.where('[entity+entityId]').equals(['asset', am.id]).delete()
+  }
   const device = await getDeviceName()
   // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
   const restored = (await getSync<string>(`revKind:${docId}`)) === 'restore'
