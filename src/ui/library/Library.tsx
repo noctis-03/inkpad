@@ -666,9 +666,8 @@ export function Library() {
           <Icon name="files" />
         </button>
         {section.kind !== 'trash' && (
-          <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)} aria-label="새로 만들기">
-            <Icon name="plus" size={18} />
-            <span className="new-doc-label">새로 만들기</span>
+          <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
+            <Icon name="plus" size={18} /> 새로 만들기
           </button>
         )}
       </header>
