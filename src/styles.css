@@ -712,6 +712,15 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 사이드바 카테고리 점 — 태그(.doc-cat-text)와 같은 색으로 맞춘다 */
+.tree-cat-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin: 0 5px 0 4px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px #00000014;
+}
 .tree-item .count {
   margin-left: auto;
   font-size: 12px;
@@ -819,7 +828,8 @@ textarea {
   justify-content: center;
   color: #cbd5e1;
 }
-/* 책등 — 카테고리 색 스트립 (색은 카드마다 인라인 background로 주입) */
+/* 책등 — 카드마다 같은 색으로 통일한 노트 제본 (색으로 카테고리를 구분하지 않는다.
+   카테고리 색은 캡션 태그 .doc-cat-text 와 사이드바 .tree-cat-dot 이 맡는다) */
 .doc-spine {
   position: absolute;
   left: 0;
@@ -827,7 +837,7 @@ textarea {
   bottom: 0;
   width: 5px;
   z-index: 2;
-  background: #cbd5e1;
+  background: var(--ink);
 }
 /* 페이지 결 — 오른쪽 종이 단면 2겹 */
 .doc-edge {

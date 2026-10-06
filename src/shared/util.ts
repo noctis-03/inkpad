@@ -12,10 +12,27 @@ const CATEGORY_COLORS = ['#2563eb', '#b45309', '#15803d', '#7c3aed', '#0e7490', 
  */
 export function categoryColor(name: string | null | undefined): string {
   const label = name?.trim()
-  if (!label) return '#cbd5e1'
+  if (!label) return '#64748b'
   let h = 0
   for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) % 100000007
   return CATEGORY_COLORS[h % CATEGORY_COLORS.length]
+}
+
+/**
+ * 카테고리 태그용 색 조합 — 글자색 + 옅은 배경 + 테두리.
+ * 색만으로 구분하지 않도록 이름 텍스트와 항상 함께 쓴다.
+ */
+export function categoryTint(name: string | null | undefined) {
+  const hex = categoryColor(name)
+  const n = parseInt(hex.slice(1), 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return {
+    color: hex,
+    background: `rgba(${r}, ${g}, ${b}, .12)`,
+    borderColor: `rgba(${r}, ${g}, ${b}, .3)`
+  }
 }
 
 export function formatBytes(n: number) {

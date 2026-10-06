@@ -9,7 +9,7 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
-import { categoryColor, formatDate } from '../../shared/util'
+import { categoryColor, categoryTint, formatDate } from '../../shared/util'
 import {
   createFolder,
   deleteFolder,
@@ -684,7 +684,8 @@ export function Library() {
                 className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
                 onClick={() => setSection({ kind: 'category', name: c })}
               >
-                <Icon name="tag" size={18} /> <span className="tree-name">{c}</span>
+                <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+                <span className="tree-name">{c}</span>
                 <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
               </button>
             ))}
@@ -692,7 +693,8 @@ export function Library() {
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
               onClick={() => setSection({ kind: 'uncategorized' })}
             >
-              <Icon name="tag" size={18} /> <span className="tree-name">미분류</span>
+              <span className="tree-cat-dot" style={{ background: categoryColor(null) }} aria-hidden="true" />
+              <span className="tree-name">미분류</span>
               <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
             </button>
             <div className="tree-label">
@@ -799,7 +801,7 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article key={'app:' + i.a.id} className="doc-card app-card" onClick={() => navigate({ name: 'app', appId: i.a.id })}>
                     <div className="doc-thumb">
-                      <span className="doc-spine" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
+                      <span className="doc-spine" aria-hidden="true" />
                       <Icon name="app" size={36} />
                       <span className="doc-edge" aria-hidden="true" />
                     </div>
@@ -807,7 +809,7 @@ export function Library() {
                       <h3 className="doc-title">{i.a.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.a.category && <span className="doc-cat-text">{i.a.category}</span>}
+                          {i.a.category && <span className="doc-cat-text" style={categoryTint(i.a.category)}>{i.a.category}</span>}
                           <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
                         </p>
                         <SyncPill state={rowSyncState(i.a)} />
@@ -828,7 +830,7 @@ export function Library() {
                 ) : i.kind === 'file' ? (
                   <article key={'file:' + i.f.id} className="doc-card file-card" onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
                     <div className="doc-thumb">
-                      <span className="doc-spine" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
+                      <span className="doc-spine" aria-hidden="true" />
                       <Icon name="file" size={36} />
                       <span className="doc-edge" aria-hidden="true" />
                     </div>
@@ -836,7 +838,7 @@ export function Library() {
                       <h3 className="doc-title">{i.f.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.f.category && <span className="doc-cat-text">{i.f.category}</span>}
+                          {i.f.category && <span className="doc-cat-text" style={categoryTint(i.f.category)}>{i.f.category}</span>}
                           <span className="doc-meta-date">
                             {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
                           </span>
@@ -864,7 +866,7 @@ export function Library() {
                     onClick={() => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d))}
                   >
                     <div className="doc-thumb">
-                      <span className="doc-spine" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
+                      <span className="doc-spine" aria-hidden="true" />
                       {thumbs.get(i.d.id) ? (
                         <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
                       ) : (
@@ -876,7 +878,7 @@ export function Library() {
                       <h3 className="doc-title">{i.d.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.d.category && <span className="doc-cat-text">{i.d.category}</span>}
+                          {i.d.category && <span className="doc-cat-text" style={categoryTint(i.d.category)}>{i.d.category}</span>}
                           <span className="doc-meta-date">
                             {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
                             {section.kind === 'trash' && i.d.deletedAt
