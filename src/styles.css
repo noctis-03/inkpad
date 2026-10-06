@@ -612,18 +612,12 @@ textarea {
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  /* 스크롤바는 완전히 숨긴다 — 스크롤 동작은 그대로 살아 있다 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* 구형 Edge/IE */
 }
 .library-header::-webkit-scrollbar {
-  height: 4px;
-}
-.library-header::-webkit-scrollbar-thumb {
-  border-radius: 2px;
-  background: #cbd5e1;
-}
-.library-header::-webkit-scrollbar-track {
-  background: transparent;
+  display: none; /* Chrome/Safari — 폭을 0으로 잡아 레이아웃에도 영향이 없다 */
 }
 /* 스크롤 영역 안에서는 항목이 줄어들면 안 된다 (눌리면 터치 영역이 사라진다) */
 .library-header > * {
