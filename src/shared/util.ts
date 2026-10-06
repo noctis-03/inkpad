@@ -2,6 +2,22 @@ export function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms))
 }
 
+/** 카드 책등 색 팔레트 — 상태 색(파랑·호박·초록)과 어울리는 순서로 둔다 */
+const CATEGORY_COLORS = ['#2563eb', '#b45309', '#15803d', '#7c3aed', '#0e7490', '#be123c', '#4d7c0f', '#a16207']
+
+/**
+ * 카테고리 이름 → 책등 색. 사용자가 임의로 짓는 이름이므로 고정 표가 아니라
+ * 이름을 해시해 팔레트에서 고른다 — 같은 이름은 언제나 같은 색이 나온다.
+ * 이름이 없으면(미분류) 중립 회색.
+ */
+export function categoryColor(name: string | null | undefined): string {
+  const label = name?.trim()
+  if (!label) return '#cbd5e1'
+  let h = 0
+  for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) % 100000007
+  return CATEGORY_COLORS[h % CATEGORY_COLORS.length]
+}
+
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
