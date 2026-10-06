@@ -209,6 +209,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
 
   /** 원본 바이트를 이 기기에서만 지운다 (노트·필기는 그대로) */
   const dropOriginal = async (a: AssetInfo) => {
+    if (!a.assetId) return
     const cloudNote = a.pending
       ? '업로드 대기 중이라 클라우드 사본이 없을 수 있습니다. 지우면 되살릴 수 없습니다.'
       : '클라우드에 사본이 있으면 나중에 다시 받을 수 있습니다.'
@@ -221,7 +222,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     )
       return
     try {
-      await db.assets.update(a.id, { blob: undefined })
+      await db.assets.update(a.assetId, { blob: undefined })
       toast(`${formatBytes(a.size)}를 확보했습니다. 필요하면 클라우드에서 다시 받습니다.`)
     } catch (e) {
       toast(e instanceof Error ? e.message : '제거하지 못했습니다.', 'error')
@@ -231,9 +232,10 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
 
   /** 이 기기에 참조가 있는 원본을 클라우드에서 받는다 (지연 로딩 캐시에 들어간다) */
   const download = async (a: AssetInfo) => {
+    if (!a.assetId) return
     if (!(await confirmTransfer('down', a.size))) return
     try {
-      await ensureAssetLocal(a.id)
+      await ensureAssetLocal(a.assetId)
       toast(`"${titleOf(a)}" 원본을 받았습니다.`)
     } catch (e) {
       toast(e instanceof AssetUnavailableError ? e.message : '원본을 받지 못했습니다. 네트워크 상태를 확인해 주세요.', 'error')
@@ -513,7 +515,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                 {filtered.map((a) => {
                   const s = stateOf(a)
                   const { chip, tone } = chipOf(s)
-                  const isDown = downloading.has(a.id)
+                  const isDown = a.assetId != null && downloading.has(a.assetId)
                   const dim = !online && (s === 'meta-only' || s === 'cloud-only')
                   const statusIcon = s === 'local' ? 'checkCircle' : s === 'meta-only' || s === 'cloud-only' ? 'cloudDown' : null
                   return (
