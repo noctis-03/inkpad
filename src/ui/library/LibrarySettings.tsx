@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useUI } from '../../app/store'
 import { confirmDialog, promptDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
@@ -19,8 +19,6 @@ import {
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { pickFiles, saveFile } from '../../io/download'
 import { wipeLocalData } from '../../storage/db'
-import { onSyncStatus, type SyncStatus } from '../../sync/sync'
-import { analyzeGc, onGcProgress, runGc, type GcAnalysis } from '../../sync/gcRun'
 
 type Stats = Awaited<ReturnType<typeof storageStats>>
 
@@ -216,7 +214,6 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
                   </button>
                 </div>
               </section>
-              <GcSection />
             </>
           )}
         </div>
@@ -372,204 +369,5 @@ function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
         )}
       </section>
     </>
-  )
-}
-
-// ───────────────── 클라우드 에셋 정리 (에셋 GC) ─────────────────
-
-/** 기기 보고서의 상대 시각 — "방금", "3시간 전", "94일 전" */
-function relTime(ms: number): string {
-  const s = Date.now() - ms
-  if (s < 60_000) return '방금'
-  const m = Math.floor(s / 60_000)
-  if (m < 60) return `${m}분 전`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}시간 전`
-  return `${Math.floor(h / 24)}일 전`
-}
-
-/** 바이트를 사람이 읽는 크기로 — "정리 대상: 원본 23개 · 148 MB" 문구에 쓴다 */
-function fmtSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024)).toLocaleString()} MB`
-  return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString()}KB`
-}
-
-/** GC 보고서가 오래됐다고 본 기준 — 오래된 기기는 분석 정확도가 떨어진다 (sync/gcRun.ts) */
-const GC_STALE_MS = 7 * 24 * 60 * 60 * 1000
-
-/**
- * "클라우드 에셋 정리" 섹션 — 분석 → 확인 → garbage로 옮기기 (구현.md 8장).
- * 앱은 절대 삭제하지 않는다: 후보는 Drive의 Inkpad/garbage 폴더로 격리만 하고,
- * 참조가 살아나면 앱이 garbage에서 즉시 되돌린다. 최종 삭제는 사용자가 Drive에서 직접 한다.
- */
-function GcSection() {
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
-  const [gcBusy, setGcBusy] = useState(false) // 분석·실행 중 — SYNC_LOCK을 잡으므로 버튼을 막는다
-  const [analysis, setAnalysis] = useState<GcAnalysis | null>(null)
-  const [excluded, setExcluded] = useState<string[]>([])
-  const [progress, setProgress] = useState('')
-  const [result, setResult] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => onSyncStatus(setSyncStatus), [])
-
-  useEffect(() => {
-    const off = onGcProgress((p) => {
-      if (p.phase === 'sync') setProgress('이 기기 동기화 중')
-      else if (p.phase === 'docs') setProgress(`클라우드 노트 확인 중 ${p.done}/${p.total}`)
-      else if (p.phase === 'revisions') setProgress('버전 기록 확인 중')
-      else if (p.phase === 'devices') setProgress('기기 보고 확인 중')
-      else if (p.phase === 'run') setProgress(`원본 옮기는 중 ${p.done}/${p.total}`)
-    })
-    return () => {
-      off()
-      setProgress('')
-    }
-  }, [])
-
-  const analyze = useCallback(
-    async (ids: string[]) => {
-      setGcBusy(true)
-      setResult(null)
-      setError(null)
-      try {
-        setAnalysis(await analyzeGc(ids))
-      } catch (e) {
-        setAnalysis(null)
-        setError(e instanceof Error ? e.message : '분석에 실패했습니다.')
-      } finally {
-        setProgress('')
-        setGcBusy(false)
-      }
-    },
-    [setGcBusy]
-  )
-
-  /** 제외 토글 — 제외한 기기의 보고는 이번 분석의 보호 집합에서 뺀다 (구현.md 7.3). 다시 계산한다 — 캐시 덕에 저렴하다 */
-  const toggleExcluded = (d: GcAnalysis['devices'][number]) => {
-    if (d.isSelf) return // 이 기기 자신은 제외할 수 없다
-    const next = excluded.includes(d.deviceId) ? excluded.filter((x) => x !== d.deviceId) : [...excluded, d.deviceId]
-    setExcluded(next)
-    if (analysis) void analyze(next)
-  }
-
-  const doRun = async () => {
-    if (!analysis?.candidates.length) return
-    if (
-      !(await confirmDialog('클라우드 에셋 정리', {
-        message: `정리 대상 원본 ${analysis.candidates.length}개(${fmtSize(analysis.candidateBytes)})를 Drive의 Inkpad/garbage 폴더로 옮깁니다. 앱이 직접 삭제하지는 않습니다.`,
-        ok: '옮기기'
-      }))
-    )
-      return
-    setGcBusy(true)
-    setError(null)
-    try {
-      const r = await runGc(analysis, excluded)
-      setAnalysis(null)
-      setResult(
-        r.planned
-          ? `원본 ${r.moved.length}개를 Inkpad/garbage로 옮겼습니다. Google Drive에서 garbage 폴더 내용을 확인한 뒤 직접 휴지통에 넣으면 저장 공간이 확보됩니다. 혹시 열리지 않는 노트가 생기면 앱이 garbage에서 자동으로 찾아 되돌립니다. garbage를 비운 뒤에는 되돌릴 수 없습니다.`
-          : '정리할 원본이 없습니다. 분석 후에 다른 기기에서 변경이 있었는지 다시 확인해 주세요.'
-      )
-      if (r.failed.length) setError(`일부 원본(${r.failed.length}개)을 옮기지 못했습니다 — 다시 분석해 확인해 주세요.`)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '실행에 실패했습니다.')
-    } finally {
-      setProgress('')
-      setGcBusy(false)
-    }
-  }
-
-  const disabled = syncStatus === 'offline' || syncStatus === 'auth-required' || syncStatus === 'disabled' || syncStatus === 'syncing' || gcBusy
-  const unconfigured = syncStatus === 'auth-required' || syncStatus === 'disabled'
-  const stale = (reportedAt: number) => Date.now() - reportedAt > GC_STALE_MS
-
-  return (
-    <section className="panel-section" role="group" aria-label="클라우드 에셋 정리">
-      <h3>클라우드 에셋 정리</h3>
-      <p className="hint">
-        사용하지 않는 PDF·이미지 원본을 Drive의 <b>Inkpad/garbage</b> 폴더로 옮겨 정리합니다. 앱이 직접 삭제하지는 않습니다.
-        정확하게 정리하려면 <b>이 앱을 쓰는 모든 기기에서 먼저 동기화를 한 번씩 실행해 주세요.</b>
-        동기화 기록이 없는 기기(이 기능 이전 버전의 앱 포함)에만 있는 노트는 보호되지 않습니다.
-      </p>
-      {unconfigured && <p className="hint warn">동기화를 설정한 뒤 사용할 수 있습니다. (동기화 창의 "동기화 · Google Drive")</p>}
-
-      {progress ? (
-        <p className="hint" role="status">
-          <span className="spinner sm" /> {progress}
-        </p>
-      ) : (
-        !analysis && (
-          <div className="btn-row">
-            <button className="text-btn" disabled={disabled} onClick={() => void analyze(excluded)}>
-              <Icon name="search" size={16} /> 분석하기
-            </button>
-          </div>
-        )
-      )}
-
-      {error && <p className="hint warn">{error}</p>}
-      {result && <p className="hint">{result}</p>}
-
-      {analysis && (
-        <>
-          {analysis.devices.map((d) => (
-            <div className="sync-foot-row" key={d.deviceId}>
-              <span className="k">
-                {d.deviceName}
-                {d.isSelf && ' (이 기기)'}
-              </span>
-              <span className="v">
-                {relTime(d.reportedAt)}
-                {stale(d.reportedAt) && (
-                  <span className="note" title="이 기기에서 동기화하면 더 정확해집니다">
-                    {' '}⚠
-                  </span>
-                )}
-                {!d.isSelf && (
-                  <button className="sync-link" disabled={disabled} onClick={() => toggleExcluded(d)}>
-                    {excluded.includes(d.deviceId) ? '제외 해제' : '제외'}
-                  </button>
-                )}
-              </span>
-            </div>
-          ))}
-          {analysis.devices.some((d) => stale(d.reportedAt) && !d.isSelf) && (
-            <p className="hint warn">7일이 넘은 기기가 있습니다 — 이 기기에서 동기화하면 더 정확해집니다.</p>
-          )}
-          {excluded.length > 0 && (
-            <p className="hint warn">제외한 기기에만 있는 노트의 원본이 정리될 수 있습니다. garbage 폴더에서 복구는 가능합니다.</p>
-          )}
-          <div className="sync-foot-row">
-            <span className="k">정리 대상</span>
-            <span className="v">
-              {analysis.candidates.length
-                ? `원본 ${analysis.candidates.length}개 · ${fmtSize(analysis.candidateBytes)}`
-                : '정리할 원본이 없습니다'}
-            </span>
-          </div>
-          {analysis.toRescue.length > 0 && (
-            <div className="sync-foot-row">
-              <span className="k">되돌리기</span>
-              <span className="v">사용 중인 원본 {analysis.toRescue.length}개를 garbage에서 되돌립니다</span>
-            </div>
-          )}
-          <div className="btn-row">
-            <button className="primary-btn" disabled={disabled || !analysis.candidates.length} onClick={() => void doRun()}>
-              <Icon name="trash" size={16} /> garbage로 옮기기
-            </button>
-            <button className="text-btn" disabled={disabled} onClick={() => void analyze(excluded)}>
-              다시 분석
-            </button>
-          </div>
-          {analysis.warnings.map((w, i) => (
-            <p key={i} className="hint warn">
-              {w}
-            </p>
-          ))}
-        </>
-      )}
-    </section>
   )
 }
