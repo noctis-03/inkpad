@@ -10,6 +10,7 @@ import { db, type AssetRow } from '../storage/db'
 import * as drive from './drive'
 import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName } from './pack'
+import { AuthRequiredError } from './token'
 
 /** 이 기기에 원본이 없고, 지금 받아올 수도 없을 때 */
 export class AssetUnavailableError extends Error {}
@@ -120,20 +121,23 @@ export async function tryEnsureAssetLocal(assetId: ID): Promise<Blob | null> {
 }
 
 /** 이 기기에 없는 원본을 순서대로 모두 받는다 (사용자가 명시적으로 요청할 때만) */
-export async function downloadAllMissing(onProgress?: (done: number, total: number) => void): Promise<{ ok: number; failed: number }> {
+export async function downloadAllMissing(onProgress?: (done: number, total: number) => void): Promise<{ ok: number; failed: number; authFailed: boolean }> {
   const missing = await listMissingAssets()
   let ok = 0
   let failed = 0
+  let authFailed = false
   for (let i = 0; i < missing.length; i++) {
     try {
       await ensureAssetLocal(missing[i].id)
       ok++
-    } catch {
+    } catch (e) {
       failed++
+      // 로그인이 만료된 케이스는 알려야 한다 — 실패 숫자만으로는 사용자가 대처할 수 없다
+      if (e instanceof AuthRequiredError) authFailed = true
     }
     onProgress?.(i + 1, missing.length)
   }
-  return { ok, failed }
+  return { ok, failed, authFailed }
 }
 
 async function downloadAsset(row: AssetRow): Promise<Blob> {

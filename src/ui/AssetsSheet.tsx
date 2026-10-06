@@ -140,7 +140,8 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     void load()
   }, [load])
 
-  // 원본 다운로드 진행률 — 받는 중 표시, 끝나면 목록을 다시 읽는다
+  // 원본 다운로드 진행률 — "받는 중" 표시만 한다. 목록 재조회는 각 동작이 끝난 뒤 한 번 한다
+  // (원본 하나를 받을 때마다 Drive 목록을 다시 읽으면 API 호출이 원본 수만큼 나가 대량 받기가 막힌다)
   useEffect(
     () =>
       onAssetProgress((e) => {
@@ -150,9 +151,8 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
           else next.add(e.assetId)
           return next
         })
-        if (e.done) void load()
       }),
-    [load]
+    []
   )
 
   const stateOf = (a: AssetInfo): RowState => {
@@ -172,6 +172,10 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       local: all.filter((a) => st.get(a.key) === 'local').length,
       cloud: all.filter((a) => st.get(a.key) === 'meta-only' || st.get(a.key) === 'cloud-only').length,
       confirm: all.filter((a) => st.get(a.key) === 'pending' || st.get(a.key) === 'cloud-missing').length,
+      /** 앱으로 받을 수 있는 대상 — 이 기기에 참조가 있고 바이트가 없는 원본 */
+      dl: all.filter((a) => a.assetId && !a.blob).length,
+      /** 이 기기에 참조가 아예 없는 클라우드 전용 원본 */
+      cloudOnly: all.filter((a) => st.get(a.key) === 'cloud-only').length,
       st
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,7 +242,11 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       await ensureAssetLocal(a.assetId)
       toast(`"${titleOf(a)}" 원본을 받았습니다.`)
     } catch (e) {
-      toast(e instanceof AssetUnavailableError ? e.message : '원본을 받지 못했습니다. 네트워크 상태를 확인해 주세요.', 'error')
+      if (e instanceof AuthRequiredError) {
+        setCloudAuth(true)
+        toast('Google 로그인이 필요합니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
+      } else if (e instanceof AssetUnavailableError) toast(e.message, 'error')
+      else toast('원본을 받지 못했습니다. 네트워크 상태를 확인해 주세요.', 'error')
     }
     await load()
   }
@@ -281,17 +289,24 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
 
   /** 클라우드에만 있는(이 기기에 참조가 있는) 원본을 모두 받는다 */
   const downloadAll = async () => {
-    const missing = all.filter((a) => a.assetId && !a.blob && a.fileId)
-    if (!missing.length) return
+    const missing = all.filter((a) => a.assetId && !a.blob)
+    if (!missing.length) {
+      toast('이 기기의 노트가 쓰는 원본 중 받을 것이 없습니다. 클라우드 전용 원본은 각 행의 "기기에 저장"을 이용해 주세요.', 'info')
+      return
+    }
     const total = missing.reduce((n, a) => n + a.size, 0)
     if (!(await confirmTransfer('down', total, missing.length))) return
     setBusy({ text: `원본 받는 중 (0/${missing.length})`, progress: 0 })
     try {
       const r = await downloadAllMissing((done, tot) => setBusy({ text: `원본 받는 중 (${done}/${tot})`, progress: done / tot }))
-      toast(
-        r.failed ? `원본 ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.` : `원본 ${r.ok}개를 모두 받았습니다.`,
-        r.failed ? 'error' : 'success'
-      )
+      if (r.authFailed) {
+        setCloudAuth(true)
+        toast('Google 로그인이 만료되었습니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
+      } else if (r.failed) {
+        toast(`원본 ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
+      } else {
+        toast(`원본 ${r.ok}개를 모두 받았습니다.`, 'success')
+      }
     } finally {
       setBusy(null)
       await load()
@@ -501,18 +516,25 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                     클라우드에 없는 원본이 {counts.confirm}개 있습니다. 다른 기기에서는 받을 수 없으니 올려 주세요.
                   </SheetBanner>
                 )}
-                {counts.cloud > 0 && (
-                  <SheetBanner
-                    tone="warn"
-                    actions={
-                      <button className="store-banner-btn" disabled={!all.some((a) => a.assetId && !a.blob && a.fileId)} onClick={() => void downloadAll()}>
-                        모두 받기
-                      </button>
-                    }
-                  >
-                    클라우드에만 있는 원본이 {counts.cloud}개 있습니다. 노트가 쓰는 원본은 열 때 자동으로 받으며, 여기서 미리 받을 수도 있습니다.
-                  </SheetBanner>
-                )}
+                {counts.cloud > 0 &&
+                  (counts.dl > 0 ? (
+                    <SheetBanner
+                      tone="warn"
+                      actions={
+                        <button className="store-banner-btn" onClick={() => void downloadAll()}>
+                          모두 받기
+                        </button>
+                      }
+                    >
+                      클라우드에만 있는 원본이 {counts.cloud}개 있습니다. 노트가 쓰는 원본은 열 때 자동으로 받으며, 여기서 미리 받을 수도 있습니다.
+                      {counts.cloudOnly > 0 && ` 노트가 쓰지 않는 원본 ${counts.cloudOnly}개는 각 행의 "기기에 저장"으로 내려받습니다.`}
+                    </SheetBanner>
+                  ) : (
+                    <SheetBanner tone="warn">
+                      클라우드에만 있는 원본이 {counts.cloud}개 있습니다. 이 기기의 노트가 이 원본들을 쓰지 않아 앱으로 받아 두지는 않으며, 각 행의
+                      "기기에 저장"으로 내려받을 수 있습니다.
+                    </SheetBanner>
+                  ))}
               </>
             )}
 
