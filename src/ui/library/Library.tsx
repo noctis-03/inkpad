@@ -133,6 +133,11 @@ export function Library() {
     }
   }, [refresh])
 
+  // 모바일: 사이드바에서 항목을 고르면 서랍을 닫아 결과를 가리지 않게 한다
+  useEffect(() => {
+    if (window.innerWidth < 900) setTreeOpen(false)
+  }, [section])
+
   /** 노트 카드의 동기화 라벨 — 로컬 DB 기준 판정 (동기화창 새로고침 캐시 포함) */
   const syncPillFor = (id: ID) => {
     const s = syncStates.get(id)
@@ -656,13 +661,15 @@ export function Library() {
           <Icon name="files" />
         </button>
         {section.kind !== 'trash' && (
-          <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
-            <Icon name="plus" size={18} /> 새로 만들기
+          <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)} aria-label="새로 만들기">
+            <Icon name="plus" size={18} />
+            <span className="new-doc-label">새로 만들기</span>
           </button>
         )}
       </header>
 
       <div className="library-body">
+        {treeOpen && <div className="tree-backdrop" role="presentation" onClick={() => setTreeOpen(false)} />}
         {treeOpen && (
           <nav className="folder-tree" aria-label="폴더">
             <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>

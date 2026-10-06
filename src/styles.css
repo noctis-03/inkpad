@@ -672,6 +672,10 @@ textarea {
   overflow-y: auto;
   background: #faf9f6;
 }
+/* 모바일 서랍을 닫는 배경막 — 넓은 화면에서는 쓰지 않는다 */
+.tree-backdrop {
+  display: none;
+}
 .tree-item {
   display: flex;
   align-items: center;
@@ -1727,16 +1731,83 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .library-body {
+    position: relative;
+  }
+  /* 모바일 사이드바: 헤더 바로 아래에서 화면 끝까지 내려오는 서랍.
+     예전 top:60px 는 헤더 높이를 가정한 값인데 .library-body 는 이미 헤더
+     아래에서 시작하므로 서랍이 60px 밀려 내려가고 위쪽이 비어 있었다. */
   .folder-tree {
     position: absolute;
     z-index: 20;
-    top: 60px;
+    top: 0;
     bottom: 0;
     left: 0;
+    width: 240px;
+    max-width: 84vw;
     box-shadow: 4px 0 20px #0000001f;
+    overscroll-behavior: contain;
   }
-  .library-body {
-    position: relative;
+  .tree-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    background: #11182733;
+  }
+}
+/* 상단 바: 좁은 화면에서 버튼이 넘쳐 오른쪽이 잘리던 문제 — 2줄로 재배치.
+   아이콘 버튼 6개(44px) + '새로 만들기'가 390px 폭을 넘겨 잘려 나갔다. */
+@media (max-width: 760px) {
+  .library-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    row-gap: 8px;
+    padding: 6px 10px;
+  }
+  .library-header > .tb-btn[aria-label='폴더 목록'] {
+    order: 1;
+  }
+  .library-header .library-title {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .library-header [aria-label='설정'] {
+    order: 3;
+    margin-left: auto;
+  }
+  .library-header .sync-btn {
+    order: 4;
+  }
+  .library-header .search-box {
+    order: 5;
+    flex: 1 1 150px;
+    min-width: 150px;
+    max-width: none;
+  }
+  .library-header [aria-label='리스트 보기'],
+  .library-header [aria-label='그리드 보기'] {
+    order: 6;
+  }
+  .library-header [aria-label='앱'] {
+    order: 7;
+  }
+  .library-header [aria-label='기타 파일'] {
+    order: 8;
+  }
+  .library-header .sort-select {
+    display: none;
+  }
+  .library-header #new-doc-btn {
+    order: 9;
+    margin-left: auto;
+    padding: 0 10px;
+  }
+  /* 좁은 화면에서는 '새로 만들기' 글자를 접어 아이콘만 남긴다 */
+  .library-header .new-doc-label {
+    display: none;
   }
 }
 @media (max-width: 700px) {
