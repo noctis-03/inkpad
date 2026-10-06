@@ -91,6 +91,8 @@ interface UIState {
   blocksVisible: boolean
   placingBlock: BlockType | null
   selectedBlockId: ID | null
+  /** 노트 열기 애니메이션용 — 누른 카드의 화면 위치 (편집 화면 마운트 시 1회 읽고 지운다) */
+  docCardRect: DOMRect | null
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -143,6 +145,7 @@ export const useUI = create<UIState>((set, get) => ({
   blocksVisible: blocksLs.visible,
   placingBlock: null,
   selectedBlockId: null,
+  docCardRect: null,
 
   navigate: (route) => {
     const hash = route.name === 'editor' ? `#/doc/${route.docId}` : route.name === 'app' ? `#/app/${route.appId}` : route.name === 'file' ? `#/file/${route.fileId}` : '#/'

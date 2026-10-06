@@ -1437,6 +1437,39 @@ textarea {
   flex-direction: column;
   height: 100%;
 }
+/* 노트 열림 애니메이션 — 카드에서 넘어올 때는 JS가 FLIP 변환(확대)을 걸고, 그 외 진입은 페이드업 */
+.editor.doc-enter {
+  animation: doc-in 0.22s ease-out both;
+}
+@keyframes doc-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.library {
+  animation: lib-in 0.2s ease-out both;
+}
+@keyframes lib-in {
+  from {
+    opacity: 0;
+    transform: scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor.doc-enter,
+  .library {
+    animation: none;
+  }
+}
 .editor-body {
   flex: 1;
   display: flex;

@@ -272,7 +272,11 @@ export function Library() {
 
   // ───────── 작업 ─────────
 
-  const open = (d: DocumentMeta) => navigate({ name: 'editor', docId: d.id })
+  /** 노트 열기 — 누른 카드의 화면 위치를 기억해 편집 화면이 그 카드에서 확대되듯 열리게 한다 */
+  const open = (d: DocumentMeta, card?: HTMLElement | null) => {
+    useUI.setState({ docCardRect: card?.getBoundingClientRect() ?? null })
+    navigate({ name: 'editor', docId: d.id })
+  }
 
   const importPdfFiles = async (files: File[], folderId: ID | null) => {
     let last: DocumentMeta | null = null
@@ -883,7 +887,7 @@ export function Library() {
                     key={i.d.id}
                     className="doc-card"
                     data-doc-id={i.d.id}
-                    onClick={() => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d))}
+                    onClick={(e) => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d, e.currentTarget))}
                   >
                     <div className="doc-thumb">
                       {i.d.category && (

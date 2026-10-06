@@ -26,6 +26,7 @@ import { DebugPanel } from './DebugPanel'
 
 export function Editor({ docId }: { docId: ID }) {
   const hostRef = useRef<HTMLElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const engineRef = useRef<Engine | null>(null)
   const [engine, setEngine] = useState<Engine | null>(null)
   const [doc, setDoc] = useState<DocumentMeta | null>(null)
@@ -41,6 +42,41 @@ export function Editor({ docId }: { docId: ID }) {
   const tool = useUI((s) => s.tool)
   const panel = useUI((s) => s.panel)
   const sidebar = useUI((s) => s.sidebar)
+
+  // 노트 열림 애니메이션 — 라이브러리 카드에서 확대되듯 열린다 (모션 최소화 설정이면 생략)
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const rect = useUI.getState().docCardRect
+    useUI.setState({ docCardRect: null })
+    if (!rect) {
+      el.classList.add('doc-enter') // 카드 없이 열 때(딥링크·새 문서 만들기)는 조용히 페이드업
+      return
+    }
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const s = Math.max(0.05, Math.min(1, rect.width / vw))
+    const dx = rect.left + rect.width / 2 - vw / 2
+    const dy = rect.top + rect.height / 2 - vh / 2
+    el.style.transformOrigin = 'center center'
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(${s})`
+    el.style.opacity = '0.4'
+    el.style.transition = 'none'
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        el.style.transition = 'transform .3s cubic-bezier(.2,.8,.2,1), opacity .3s ease'
+        el.style.transform = ''
+        el.style.opacity = '1'
+        const clean = () => {
+          el.style.transition = ''
+          el.style.transformOrigin = ''
+        }
+        el.addEventListener('transitionend', clean, { once: true })
+        setTimeout(clean, 500)
+      })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [])
 
   // 엔진 생성 / 해제
   useEffect(() => {
@@ -234,7 +270,7 @@ export function Editor({ docId }: { docId: ID }) {
   const paged = doc?.mode === 'paged'
 
   return (
-    <div className="editor">
+    <div className="editor" ref={rootRef}>
       <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => navigate({ name: 'library' })} />
       <div className="editor-body">
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
