@@ -801,9 +801,7 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article key={'app:' + i.a.id} className="doc-card app-card" onClick={() => navigate({ name: 'app', appId: i.a.id })}>
                     <div className="doc-thumb">
-                      <span className="doc-spine" aria-hidden="true" />
                       <Icon name="app" size={36} />
-                      <span className="doc-edge" aria-hidden="true" />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
@@ -830,9 +828,7 @@ export function Library() {
                 ) : i.kind === 'file' ? (
                   <article key={'file:' + i.f.id} className="doc-card file-card" onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
                     <div className="doc-thumb">
-                      <span className="doc-spine" aria-hidden="true" />
                       <Icon name="file" size={36} />
-                      <span className="doc-edge" aria-hidden="true" />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.f.title}</h3>
