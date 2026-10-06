@@ -8,7 +8,7 @@ import { confirmTransfer } from '../sync/transfer'
 import * as drive from '../sync/drive'
 import { ensureFolders } from '../sync/folders'
 import { AuthRequiredError, login } from '../sync/token'
-import { AssetUnavailableError, ensureAssetLocal, downloadAllMissing, onAssetProgress } from '../sync/assets'
+import { AssetUnavailableError, ensureAssetLocal, downloadAllMissing, onAssetProgress, uploadAssetLocal } from '../sync/assets'
 import { saveFile } from '../io/download'
 import { Icon } from './Icon'
 import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpty, SheetErrorBoundary, SheetHeader, SheetBanner, useOnline } from './sheetParts'
@@ -298,6 +298,44 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
+  /** 이 기기의 원본을 클라우드에 (다시) 올린다 — 업로드 대기·클라우드 사본 없음 상태의 해소 */
+  const upload = async (a: AssetInfo) => {
+    if (!a.assetId) return
+    if (!(await confirmTransfer('up', a.size))) return
+    try {
+      const ok = await uploadAssetLocal(a.assetId)
+      if (!ok) throw new Error('이 기기에 원본이 없어 업로드할 수 없습니다.')
+      toast(`"${titleOf(a)}"을(를) 클라우드에 업로드했습니다.`)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '업로드하지 못했습니다.', 'error')
+    }
+    await load()
+  }
+
+  /** 확인 필요(클라우드에 없는) 원본을 모두 올린다 */
+  const uploadAll = async () => {
+    const targets = all.filter((a) => a.assetId && a.blob && (a.pending || (cloudKnown && !a.fileId)))
+    if (!targets.length) return
+    const total = targets.reduce((n, a) => n + a.size, 0)
+    if (!(await confirmTransfer('up', total, targets.length))) return
+    let n = 0
+    setBusy({ text: `원본 올리는 중 (0/${targets.length})`, progress: 0 })
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        try {
+          if (await uploadAssetLocal(targets[i].assetId!)) n++
+        } catch (e) {
+          console.warn('[assets] 재업로드 실패', targets[i].sha256, e)
+        }
+        setBusy({ text: `원본 올리는 중 (${i + 1}/${targets.length})`, progress: (i + 1) / targets.length })
+      }
+      toast(n ? `${n}개를 업로드했습니다.` : '업로드할 원본이 없습니다.', n ? 'success' : 'info')
+    } finally {
+      setBusy(null)
+      await load()
+    }
+  }
+
   const menuAsset = menu ? all.find((a) => a.key === menu.key) : undefined
 
   const renderMenu = (a: AssetInfo) => {
@@ -342,7 +380,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       case 'pending':
         return (
           <>
-            <MenuItem icon="upload" label="재업로드는 동기화에서" desc="설정 > 동기화의 올리기를 실행해 주세요" disabled onClick={act(() => {})} />
+            <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
             <MenuSep />
             {cloudDelete}
             {usedByDocs}
@@ -369,7 +407,11 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return (
           <>
             {a.blob ? (
-              <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} onClick={act(() => void dropOriginal(a))} />
+              <>
+                <MenuItem icon="upload" label="재업로드" desc={`${size} · 클라우드에 다시 올립니다`} disabled={!online} onClick={act(() => void upload(a))} />
+                <MenuSep />
+                <MenuItem icon="eraser" label="다운로드 제거" desc={`${size} 확보 · 목록에는 남습니다`} onClick={act(() => void dropOriginal(a))} />
+              </>
             ) : (
               <MenuTitle>이 기기에도 클라우드에도 원본이 없습니다</MenuTitle>
             )}
@@ -427,18 +469,39 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
               </SheetBanner>
             ) : !cloudKnown ? (
               <SheetBanner tone="warn">클라우드 목록을 아직 읽지 못했습니다. 새로 고침을 눌러 주세요.</SheetBanner>
-            ) : counts.cloud > 0 ? (
-              <SheetBanner
-                tone="warn"
-                actions={
-                  <button className="store-banner-btn" disabled={!all.some((a) => a.assetId && !a.blob && a.fileId)} onClick={() => void downloadAll()}>
-                    모두 받기
-                  </button>
-                }
-              >
-                클라우드에만 있는 원본이 {counts.cloud}개 있습니다. 노트가 쓰는 원본은 열 때 자동으로 받으며, 여기서 미리 받을 수도 있습니다.
-              </SheetBanner>
-            ) : null}
+            ) : (
+              <>
+                {counts.confirm > 0 && (
+                  <SheetBanner
+                    tone="warn"
+                    actions={
+                      <>
+                        <button className="store-banner-btn" onClick={() => setFilter('confirm')}>
+                          보기
+                        </button>
+                        <button className="store-banner-btn" onClick={() => void uploadAll()}>
+                          모두 업로드
+                        </button>
+                      </>
+                    }
+                  >
+                    클라우드에 없는 원본이 {counts.confirm}개 있습니다. 다른 기기에서는 받을 수 없으니 올려 주세요.
+                  </SheetBanner>
+                )}
+                {counts.cloud > 0 && (
+                  <SheetBanner
+                    tone="warn"
+                    actions={
+                      <button className="store-banner-btn" disabled={!all.some((a) => a.assetId && !a.blob && a.fileId)} onClick={() => void downloadAll()}>
+                        모두 받기
+                      </button>
+                    }
+                  >
+                    클라우드에만 있는 원본이 {counts.cloud}개 있습니다. 노트가 쓰는 원본은 열 때 자동으로 받으며, 여기서 미리 받을 수도 있습니다.
+                  </SheetBanner>
+                )}
+              </>
+            )}
 
             <div className="store-storage">
               <div className="store-storage-top">

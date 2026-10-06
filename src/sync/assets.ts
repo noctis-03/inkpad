@@ -168,6 +168,29 @@ async function locateRemote(row: AssetRow): Promise<FileRecord | null> {
   return found ? { fileId: found.id, version: found.version } : null
 }
 
+// ───────────────── 수동 재업로드 (에셋 관리 시트) ─────────────────
+
+/**
+ * 이 기기의 원본 바이트를 클라우드에 (다시) 올린다.
+ * 클라우드 사본이 지워졌거나(확인 필요) 아직 올라가지 않았을 때(업로드 대기) 쓴다.
+ * 원본은 sha256 내용 주소라 내용이 같은데 덮어쓰는 일은 없다 — 살아 있는 사본을 찾아
+ * 있으면 그 파일을 덮어쓰고(같은 내용), 없으면 새로 만든다(휴지통에 있는 사본은 건드리지 않는다).
+ */
+export async function uploadAssetLocal(assetId: ID): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine)
+    throw new Error('오프라인에서는 업로드할 수 없습니다. 연결된 뒤 다시 시도해 주세요.')
+  const row = await db.assets.get(assetId)
+  if (!row?.blob) return false // 이 기기에 원본이 없다 — 올릴 것이 없다
+  const folder = await assetsFolder()
+  const name = assetFileName(row.sha256, row.mime)
+  const found = await drive.findByName(name, folder) // trashed=false만 본다
+  const res = await drive.upload(row.blob, { name, mimeType: row.mime, appProperties: { sha256: row.sha256 } }, folder, found?.id)
+  await putSync(KEY(row.sha256), { fileId: res.id, version: res.version })
+  // 수동으로 올렸으면 대기열의 asset 항목을 치운다 — 올리기에서 다시 시도하지 않는다
+  await db.outbox.where('[entity+entityId]').equals(['asset', assetId]).delete()
+  return true
+}
+
 // ───────────────── pull 시 인덱싱 (바이트 없음) ─────────────────
 
 /**
