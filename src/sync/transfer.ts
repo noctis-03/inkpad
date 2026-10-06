@@ -4,8 +4,10 @@ import { confirmDialog, choiceDialog } from '../app/dialogs'
 import { useUI } from '../app/store'
 import { formatBytes } from '../shared/util'
 
-const THRESHOLDS: Record<'off' | '10' | '50', number> = {
+const THRESHOLDS: Record<'always' | 'off' | '5' | '10' | '50', number> = {
+  always: 0, // 무조건 확인 — 크기와 관계없이 모든 전송에서 묻는다
   off: 0,
+  '5': 5 * 1024 * 1024,
   '10': 10 * 1024 * 1024,
   '50': 50 * 1024 * 1024
 }
@@ -23,7 +25,7 @@ export async function confirmTransfer(direction: 'down' | 'up', bytes: number, c
   if (bytes < threshold) return true
   const size = formatBytes(bytes)
   const message = (count > 1 ? `파일 ${count}개, ` : '') + '셀룰러 데이터를 사용 중이라면 그만큼 데이터가 사용됩니다.'
-  const note = `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`
+  const note = mode === 'always' ? '무조건 확인이 켜져 있습니다 · 설정에서 바꿀 수 있습니다' : `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`
   return confirmDialog(direction === 'down' ? `${size}를 다운로드합니다` : `${size}를 업로드합니다`, {
     message,
     note,
@@ -43,7 +45,7 @@ export async function uploadChoice(bytes: number, count = 1): Promise<'cancel' |
   const size = formatBytes(bytes)
   const res = await choiceDialog(`${size}를 업로드합니다`, {
     message: (count > 1 ? `파일 ${count}개, ` : '') + '셀룰러 데이터를 사용 중이라면 그만큼 데이터가 사용됩니다.',
-    note: `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`,
+    note: mode === 'always' ? '무조건 확인이 켜져 있습니다 · 설정에서 바꿀 수 있습니다' : `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`,
     options: [
       { key: 'cancel', label: '취소' },
       { key: 'local', label: '이 기기에만 추가' },

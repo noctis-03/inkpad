@@ -3,7 +3,7 @@ import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { extOf } from '../shared/model'
 import { formatBytes, formatDate } from '../shared/util'
-import { confirmTransfer } from '../sync/transfer'
+import { confirmTransfer, largeFileThreshold } from '../sync/transfer'
 import { AuthRequiredError, login } from '../sync/token'
 import { onSyncStatus, type SyncStatus } from '../sync/sync'
 import {
@@ -53,7 +53,6 @@ function extLabel(f: CloudFileInfo) {
 
 export function FilesSheet({ onClose }: { onClose: () => void }) {
   const toast = useUI((s) => s.toast)
-  const confirmMode = useUI((s) => s.settings.largeFileConfirm)
   const online = useOnline()
   const [status, setStatus] = useState<SyncStatus>('idle')
   const [items, setItems] = useState<CloudFileInfo[] | null>(null)
@@ -99,7 +98,7 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
   }
 
   const all = items ?? []
-  const threshold = confirmMode === 'off' ? 0 : confirmMode === '10' ? 10 * 1024 * 1024 : 50 * 1024 * 1024
+  const threshold = largeFileThreshold() // 설정의 기준 크기(끄기·무조건 확인은 0 — 이 목록의 굵은 표시용)
 
   const counts = useMemo(
     () => ({

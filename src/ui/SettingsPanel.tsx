@@ -227,7 +227,16 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
       <section className="panel-section">
         <h3>기타 파일</h3>
         <Row label="큰 파일 전송 전 확인" hint="이 크기 이상을 다운로드·업로드하기 전에 한 번 더 묻습니다 (iPad는 셀룰러 여부를 알 수 없어 크기로 확인합니다)">
-          <Select k="largeFileConfirm" options={[['off', '끄기'], ['10', '10MB 이상'], ['50', '50MB 이상']]} />
+          <Select
+            k="largeFileConfirm"
+            options={[
+              ['always', '무조건 확인'],
+              ['5', '5MB 이상'],
+              ['10', '10MB 이상'],
+              ['50', '50MB 이상'],
+              ['off', '끄기']
+            ]}
+          />
         </Row>
       </section>
 
