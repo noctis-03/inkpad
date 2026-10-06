@@ -20,6 +20,9 @@
 // 10. 문서 위치 기록(doc:)의 version은 앞으로만 간다. Drive version은 실제보다 뒤처져 보일 수 있고
 //     (listFiles 인덱스 지연, 리비전 고정·해제 같은 메타데이터 전용 쓰기도 값을 올린다),
 //     뒤처진 값으로 덮으면 방금 올린 노트가 "받을 것"으로 오판된다
+// 11. 에셋 GC — 각 기기는 동기화 끝에 자기 참조 sha 목록을 gc/devices에 보고한다(sync/gc.ts).
+//     GC는 삭제하지 않고 garbage 폴더로 격리만 하며, 참조 중인 에셋을 garbage에서 발견하면
+//     즉시 assets로 되돌린다. 최종 삭제는 사용자가 Drive에서 직접 한다
 import type { ID } from '../shared/model'
 import { gzipJson, gunzipJson } from '../storage/compress'
 import { db } from '../storage/db'
@@ -27,13 +30,15 @@ import { getHiddenCategories } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
+import { reportRefs, rescueFromGarbage } from './gc'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { mergeDocs } from './merge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 
-const SYNC_LOCK = 'inkpad-sync'
+/** 동기화와 GC 분석·실행이 함께 쓰는 잠금 — 동시에 하나만 실행한다 (규칙 6, sync/gcRun.ts) */
+export const SYNC_LOCK = 'inkpad-sync'
 /** appProperties에 담을 수 있는 값의 상한 (Google Drive 제한: UTF-8 124바이트) */
 const APP_PROPERTY_MAX_BYTES = 124
 
@@ -251,6 +256,7 @@ export async function pushNow(): Promise<void> {
       const f = await ensureFolders()
       await push(f)
       await pull(f)
+      await reportRefs({ rootId: f.root }) // 에셋 GC 참조 보고 — 실패해도 동기화를 실패시키지 않는다 (sync/gc.ts)
       await db.syncState.put({ key: 'lastPushAt', value: Date.now() })
       setStatus('idle')
     } catch (e) {
@@ -362,6 +368,17 @@ async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
     await putSync(key, { fileId: found.id, version: found.version })
     return
   }
+  // 업로드하기 전에 garbage 폴더를 확인한다 — 격리돼 있으면 되돌려 재사용한다 (sync/gc.ts, 구현.md 6.6).
+  // 찾으면 기록만 남기고 올리지 않는다 — 내용 주소 파일의 중복을 막기 위해서다
+  try {
+    const rescued = await rescueFromGarbage(name)
+    if (rescued) {
+      await putSync(key, rescued)
+      return
+    }
+  } catch (e) {
+    console.warn('[sync] garbage 복구 확인 실패:', e)
+  }
   const res = await drive.upload(row.blob, { name, mimeType: row.mime, appProperties: { sha256: row.sha256 } }, assetsFolderId)
   await putSync(key, { fileId: res.id, version: res.version })
 }
@@ -434,6 +451,7 @@ export async function pullNow(): Promise<PullResult | null> {
     try {
       const f = await ensureFolders()
       const r = await pull(f)
+      await reportRefs({ rootId: f.root }) // 에셋 GC 참조 보고 — 실패해도 동기화를 실패시키지 않는다 (sync/gc.ts)
       await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
       setStatus('idle')
       return { docs: r.docs }

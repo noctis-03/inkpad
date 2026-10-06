@@ -82,6 +82,17 @@ export async function createFolder(name: string, parentId?: string): Promise<str
   return f.id
 }
 
+/** 폴더 이동 — 부모만 바꾸므로 fileId·내용·이름은 그대로다 (에셋 GC의 격리·복구에 쓴다) */
+export async function moveFile(fileId: string, fromFolderId: string, toFolderId: string): Promise<RemoteFile> {
+  return ok<RemoteFile>(
+    await driveFetch(`${API}/files/${fileId}?addParents=${toFolderId}&removeParents=${fromFolderId}&fields=${FIELDS}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    })
+  )
+}
+
 export async function listFiles(folderId: string): Promise<RemoteFile[]> {
   const out: RemoteFile[] = []
   let pageToken = ''
@@ -91,6 +102,28 @@ export async function listFiles(folderId: string): Promise<RemoteFile[]> {
       `${API}/files?q=${q}&pageSize=1000&fields=nextPageToken,files(${FIELDS})` +
       (pageToken ? `&pageToken=${pageToken}` : '')
     const page = await ok<{ files: RemoteFile[]; nextPageToken?: string }>(await driveFetch(url))
+    out.push(...page.files)
+    pageToken = page.nextPageToken ?? ''
+  } while (pageToken)
+  return out
+}
+
+/** GC용 상세 목록 — createdTime·size를 추가로 받는다 (sync/gcRun.ts, 구현.md 7.1) */
+export interface RemoteFileInfo extends RemoteFile {
+  createdTime?: string
+  size?: string
+}
+
+export async function listFilesDetailed(folderId: string): Promise<RemoteFileInfo[]> {
+  const out: RemoteFileInfo[] = []
+  let pageToken = ''
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`)
+  const fields = 'id,name,modifiedTime,createdTime,version,size,appProperties,trashed'
+  do {
+    const url =
+      `${API}/files?q=${q}&pageSize=1000&fields=nextPageToken,files(${fields})` +
+      (pageToken ? `&pageToken=${pageToken}` : '')
+    const page = await ok<{ files: RemoteFileInfo[]; nextPageToken?: string }>(await driveFetch(url))
     out.push(...page.files)
     pageToken = page.nextPageToken ?? ''
   } while (pageToken)
