@@ -860,8 +860,9 @@ textarea {
   color: #cbd5e1;
 }
 /* 카테고리 태그 — 카드(미리보기) 좌측 상단에 얹는다.
+   목록형 캡션의 .doc-cat-text 와 같은 디자인(회색 바탕·모서리 라운드)으로 맞춘다.
    글자색·테두리는 카테고리 색을 인라인으로 주입하고( categoryTag ), 바탕은
-   필기 위에서도 읽히도록 흰색으로 둔다. 이름 텍스트가 항상 함께 있으므로
+   필기 위에서도 읽히도록 불투명 회색으로 둔다. 이름 텍스트가 항상 함께 있으므로
    색만으로 뜻을 전달하지 않는다. */
 .doc-tag {
   position: absolute;
@@ -869,14 +870,13 @@ textarea {
   top: 6px;
   z-index: 3;
   max-width: calc(100% - 12px);
-  padding: 2px 7px;
+  padding: 1px 6px;
   border: 1px solid #11182726;
-  border-radius: 999px;
-  background: #ffffffe6;
-  color: #374151;
+  border-radius: 5px;
+  background: #eef2f7;
+  color: #4b5563;
   font-size: 11px;
   font-weight: 600;
-  box-shadow: 0 1px 2px #0000000f;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
