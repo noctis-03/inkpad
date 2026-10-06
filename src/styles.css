@@ -2931,6 +2931,29 @@ textarea {
 .toolbar-doc {
   min-height: 44px;
   background: #fbfaf7;
+  /* 라이브러리 상단바와 같은 방식: 한 줄을 유지하고, 좁은 화면(모바일)에서는 가로로 스크롤한다 —
+     줄바꿈·잘림 대신 모든 버튼이 닿을 수 있게 한다 */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.toolbar-doc::-webkit-scrollbar {
+  height: 4px;
+}
+.toolbar-doc::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: #cbd5e1;
+}
+.toolbar-doc::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 스크롤 영역 안에서는 항목이 줄어들면 안 된다 (눌리면 터치 영역이 사라진다) */
+.toolbar-doc > * {
+  flex-shrink: 0;
 }
 .doc-title-btn {
   display: inline-flex;
@@ -2966,6 +2989,10 @@ textarea {
   }
   .toolbar-group {
     padding: 0 4px;
+  }
+  /* 모바일: 제목이 상단바를 밀어내지 않게 상한을 더 줄인다 — 나머지 버튼은 가로 스크롤로 닿는다 */
+  .doc-title-btn {
+    max-width: 140px;
   }
 }
 
