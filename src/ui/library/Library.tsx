@@ -9,7 +9,7 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
-import { formatDate } from '../../shared/util'
+import { categoryColor, formatDate } from '../../shared/util'
 import {
   createFolder,
   deleteFolder,
@@ -46,21 +46,24 @@ type Section =
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 
-/** 카드 썸네일 오른쪽 위 동기화 상태 점 — 회:클라우드에 없음 / 노랑:변경 있음 / 초록:최신 / 파랑:클라우드에 새 버전 */
-const SYNC_DOT: Record<CardSyncState, { cls: string; title: string }> = {
-  new: { cls: 'is-new', title: '클라우드에 없음' },
-  pending: { cls: 'is-pending', title: '클라우드에 있음 · 변경사항 있음' },
-  same: { cls: 'is-same', title: '최신 상태' },
-  'remote-new': { cls: 'is-remote-new', title: '클라우드에 새 버전 있음 — 동기화 창에서 받기' }
+/**
+ * 카드 캡션의 동기화 상태 라벨 (변경안 A).
+ * 8px 색 점은 색만으로 뜻을 전달해 색각 이상 사용자에게 닿지 않는다 — 말로 바꾼다.
+ * 클라우드 없음 / 올리기 대기 / 최신 / 클라우드에 새 버전.
+ */
+const SYNC_LABEL: Record<CardSyncState, string> = {
+  new: '클라우드 없음',
+  pending: '올리기 필요',
+  same: '동기화됨',
+  'remote-new': '새 버전'
 }
 
 /** 앱·파일 행의 점 상태 — 행의 pending·fileId 표식만으로 판정한다 (노트와 같은 색 체계) */
 const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
   r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
 
-function SyncDot({ state }: { state: CardSyncState }) {
-  const d = SYNC_DOT[state]
-  return <span className={'doc-sync-dot ' + d.cls} title={d.title} aria-label={d.title} />
+function SyncPill({ state }: { state: CardSyncState }) {
+  return <span className={'doc-state s-' + state}>{SYNC_LABEL[state]}</span>
 }
 
 export function Library() {
@@ -130,10 +133,10 @@ export function Library() {
     }
   }, [refresh])
 
-  /** 노트 카드의 점 — 로컬 DB 기준 판정 (동기화창 새로고침 캐시 포함) */
-  const syncDotFor = (id: ID) => {
+  /** 노트 카드의 동기화 라벨 — 로컬 DB 기준 판정 (동기화창 새로고침 캐시 포함) */
+  const syncPillFor = (id: ID) => {
     const s = syncStates.get(id)
-    return s ? <SyncDot state={s} /> : null
+    return s ? <SyncPill state={s} /> : null
   }
 
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
@@ -796,50 +799,62 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article key={'app:' + i.a.id} className="doc-card app-card" onClick={() => navigate({ name: 'app', appId: i.a.id })}>
                     <div className="doc-thumb">
+                      <span className="doc-spine" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
                       <Icon name="app" size={36} />
-                      <span className="doc-badge">HTML 앱</span>
-                      {i.a.category && <span className="doc-cat">{i.a.category}</span>}
-                      <SyncDot state={rowSyncState(i.a)} />
+                      <span className="doc-edge" aria-hidden="true" />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
-                      <p className="doc-date">{formatDate(i.a.updatedAt)}</p>
+                      <div className="doc-foot">
+                        <p className="doc-meta">
+                          {i.a.category && <span className="doc-cat-text">{i.a.category}</span>}
+                          <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
+                        </p>
+                        <SyncPill state={rowSyncState(i.a)} />
+                        <button
+                          className="doc-more"
+                          aria-label="더보기"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                            setAppMenu({ app: i.a, x: r.right, y: r.bottom })
+                          }}
+                        >
+                          <Icon name="more" size={20} />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      className="doc-more"
-                      aria-label="더보기"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        setAppMenu({ app: i.a, x: r.right, y: r.bottom })
-                      }}
-                    >
-                      <Icon name="more" size={20} />
-                    </button>
                   </article>
                 ) : i.kind === 'file' ? (
                   <article key={'file:' + i.f.id} className="doc-card file-card" onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
                     <div className="doc-thumb">
+                      <span className="doc-spine" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
                       <Icon name="file" size={36} />
-                      <span className="doc-badge">{extOf(i.f.name).toUpperCase() || '파일'}</span>
-                      {i.f.category && <span className="doc-cat">{i.f.category}</span>}
-                      <SyncDot state={rowSyncState(i.f)} />
+                      <span className="doc-edge" aria-hidden="true" />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.f.title}</h3>
-                      <p className="doc-date">{formatDate(i.f.updatedAt)}</p>
+                      <div className="doc-foot">
+                        <p className="doc-meta">
+                          {i.f.category && <span className="doc-cat-text">{i.f.category}</span>}
+                          <span className="doc-meta-date">
+                            {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
+                          </span>
+                        </p>
+                        <SyncPill state={rowSyncState(i.f)} />
+                        <button
+                          className="doc-more"
+                          aria-label="더보기"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                            setFileMenu({ file: i.f, x: r.right, y: r.bottom })
+                          }}
+                        >
+                          <Icon name="more" size={20} />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      className="doc-more"
-                      aria-label="더보기"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        setFileMenu({ file: i.f, x: r.right, y: r.bottom })
-                      }}
-                    >
-                      <Icon name="more" size={20} />
-                    </button>
                   </article>
                 ) : (
                   <article
@@ -849,33 +864,40 @@ export function Library() {
                     onClick={() => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d))}
                   >
                     <div className="doc-thumb">
+                      <span className="doc-spine" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
                       {thumbs.get(i.d.id) ? (
                         <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
-                      <span className="doc-badge">{i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`}</span>
-                      {i.d.category && <span className="doc-cat">{i.d.category}</span>}
-                      {syncDotFor(i.d.id)}
+                      <span className="doc-edge" aria-hidden="true" />
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
-                      <p className="doc-date">
-                        {i.d.category && <span className="doc-cat-text">{i.d.category}</span>}
-                        {section.kind === 'trash' && i.d.deletedAt ? `삭제 ${formatDate(i.d.deletedAt)}` : formatDate(i.d.updatedAt)}
-                      </p>
+                      <div className="doc-foot">
+                        <p className="doc-meta">
+                          {i.d.category && <span className="doc-cat-text">{i.d.category}</span>}
+                          <span className="doc-meta-date">
+                            {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
+                            {section.kind === 'trash' && i.d.deletedAt
+                              ? `삭제 ${formatDate(i.d.deletedAt)}`
+                              : formatDate(i.d.updatedAt)}
+                          </span>
+                        </p>
+                        {syncPillFor(i.d.id)}
+                        <button
+                          className="doc-more"
+                          aria-label="더보기"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                            setMenu({ doc: i.d, x: r.right, y: r.bottom })
+                          }}
+                        >
+                          <Icon name="more" size={20} />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      className="doc-more"
-                      aria-label="더보기"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        setMenu({ doc: i.d, x: r.right, y: r.bottom })
-                      }}
-                    >
-                      <Icon name="more" size={20} />
-                    </button>
                   </article>
                 )
               )}
