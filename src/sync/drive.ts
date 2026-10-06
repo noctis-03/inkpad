@@ -8,7 +8,7 @@ export const ENC_GZIP = 'gzip'
 
 const API = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
-const FIELDS = 'id,name,modifiedTime,version,appProperties,trashed'
+const FIELDS = 'id,name,modifiedTime,version,size,appProperties,trashed'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 
 export interface RemoteFile {
@@ -16,6 +16,7 @@ export interface RemoteFile {
   name: string
   modifiedTime: string
   version: string
+  size?: string // 파일 바이트 수 (폴더는 없음)
   trashed?: boolean
   appProperties?: Record<string, string>
 }
