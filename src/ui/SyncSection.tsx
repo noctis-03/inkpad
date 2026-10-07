@@ -16,6 +16,7 @@ import {
   syncNow,
   type CloudNoteInfo,
   type CloudNoteState,
+  type PullPlan,
   type PushPlan,
   type SyncProgress,
   type SyncStatus
@@ -359,7 +360,8 @@ export function SyncSection() {
   const [checked, setChecked] = useState<string | null>(null)
   const [device, setDevice] = useState('')
   const [preview, setPreview] = useState<PushPlan | null>(null)
-  const [pullPlan, setPullPlan] = useState<{ count: number; bytes: number } | null>(null)
+  const [pullPlan, setPullPlan] = useState<PullPlan | null>(null)
+  const [pullPreview, setPullPreview] = useState<PullPlan | null>(null)
 
   useEffect(() => {
     const un = onSyncStatus((s) => {
@@ -406,7 +408,22 @@ export function SyncSection() {
 
   const counts = useMemo(() => countCloud(cloud ?? []), [cloud])
 
+  /** 받기 미리보기 — 받을 목록을 먼저 보여 주고 확인 받아 실행한다 */
   const doPull = async () => {
+    try {
+      const plan = await planPull()
+      if (!plan.docs.length) {
+        toast('이미 최신 상태입니다.', 'info')
+        return
+      }
+      setPullPreview(plan)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '상태를 확인하지 못했습니다.', 'error')
+    }
+  }
+
+  const confirmPull = async () => {
+    setPullPreview(null)
     const r = await pullNow()
     if (r) {
       toast(r.docs ? `노트 ${r.docs}개를 받았습니다.` : '이미 최신 상태입니다.', r.docs ? 'success' : 'info')
@@ -650,6 +667,7 @@ export function SyncSection() {
       />
 
       {preview && <PushPreview plan={preview} pull={pullPlan} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
+      {pullPreview && <PullPreview plan={pullPreview} busy={status === 'syncing'} onConfirm={() => void confirmPull()} onClose={() => setPullPreview(null)} />}
     </section>
   )
 }
@@ -715,8 +733,8 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
   )
 }
 
-/** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경 목록 */
-function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan; pull: { count: number; bytes: number } | null; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+/** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경과, 올린 뒤 받아올 다른 기기의 변경 */
+function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan; pull: PullPlan | null; busy: boolean; onConfirm: () => void; onClose: () => void }) {
   // 삭제한 노트는 Drive에 올라가는 게 없어 미리보기에 세지 않는다 (지시서 4번)
   const groups = [
     { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
@@ -739,13 +757,21 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
         </header>
 
         <div className="push-list">
-          {pull && (
-            <div className="pull-estimate">
-              <Icon name="download" size={13} />
-              <span>
-                올린 뒤 다른 기기의 변경 <b>{pull.count}개</b>를 받아옵니다{pull.count ? ` · 약 ${formatBytes(pull.bytes)}` : ''}
-              </span>
-            </div>
+          {pull && pull.docs.length > 0 && (
+            <section className="push-group">
+              <h4 className="push-group-label">
+                <Icon name="cloudDown" size={13} /> 받을 것 — 다른 기기의 변경 <b>{pull.docs.length}</b>
+              </h4>
+              {pull.docs.map((d) => (
+                <div key={d.docId} className="push-row">
+                  <span className={'push-stripe ' + (d.change === 'add' ? 'add' : 'recv')} />
+                  <span className="push-name">{d.title}</span>
+                  {d.device && <span className="push-device">{d.device}</span>}
+                  <span className="push-size">{formatBytes(d.bytes)}</span>
+                  <Icon name={d.change === 'add' ? 'plus' : 'cloudDown'} size={14} className="push-ico" />
+                </div>
+              ))}
+            </section>
           )}
           {groups.map((g) => (
             <section key={g.key} className="push-group">
@@ -784,6 +810,58 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
           </button>
           <button className="primary-btn" onClick={onConfirm} disabled={busy}>
             <Icon name="upload" size={18} /> {total ? `${total}건 올리기` : '올리기'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 받기 미리보기 — 다른 기기가 올린 변경 중 이 기기가 받아올 목록 */
+function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+  const groups = [
+    { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
+    { key: 'remote-new' as const, label: '새 버전', icon: 'cloudDown', items: plan.docs.filter((d) => d.change === 'remote-new') }
+  ].filter((g) => g.items.length > 0)
+  return (
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal push-modal" role="dialog" aria-label="받기 미리보기">
+        <header className="push-head">
+          <span className="push-count">{plan.docs.length}</span>
+          <div>
+            <h2 className="modal-title">받기 미리보기</h2>
+            <p className="push-sub">
+              클라우드에서 이 기기로 받아옵니다{plan.bytes > 0 ? ` · 약 ${formatBytes(plan.bytes)}` : ''}
+            </p>
+          </div>
+        </header>
+
+        <div className="push-list">
+          {groups.map((g) => (
+            <section key={g.key} className="push-group">
+              <h4 className="push-group-label">
+                <Icon name={g.icon} size={13} /> {g.label} <b>{g.items.length}</b>
+              </h4>
+              {g.items.map((d) => (
+                <div key={d.docId} className="push-row">
+                  <span className={'push-stripe ' + (g.key === 'add' ? 'add' : 'recv')} />
+                  <span className="push-name">{d.title}</span>
+                  {d.device && <span className="push-device">{d.device}</span>}
+                  <span className="push-size">{formatBytes(d.bytes)}</span>
+                  <Icon name={g.key === 'add' ? 'plus' : 'cloudDown'} size={14} className="push-ico" />
+                </div>
+              ))}
+            </section>
+          ))}
+        </div>
+
+        <div className="modal-actions">
+          <span className="push-total">예상 용량 {plan.bytes > 0 ? `약 ${formatBytes(plan.bytes)}` : '0 B'}</span>
+          <button className="text-btn" onClick={onClose}>
+            취소
+          </button>
+          <button className="primary-btn" onClick={onConfirm} disabled={busy}>
+            <Icon name="download" size={18} /> {plan.docs.length}건 받기
           </button>
         </div>
       </div>

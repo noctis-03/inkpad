@@ -2663,8 +2663,8 @@ textarea {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: var(--accent-soft, #eef2ff);
-  color: var(--accent, #4f46e5);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 18px;
   font-weight: 800;
   display: flex;
@@ -2715,7 +2715,7 @@ textarea {
   padding: 0 10px 0 0;
   border: 0;
   border-radius: 10px;
-  background: #f7f6f3;
+  background: var(--paper);
   font-size: 14px;
 }
 .push-row + .push-row {
@@ -2736,6 +2736,15 @@ textarea {
 }
 .push-stripe.delete {
   background: #dc2626;
+}
+.push-stripe.recv {
+  background: var(--accent);
+}
+.push-device {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 .push-name {
   flex: 1;
@@ -2764,20 +2773,6 @@ textarea {
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-/* 올리기 미리보기의 받아올 변경 용량 — 목록 맨 위 안내 줄 */
-.pull-estimate {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.pull-estimate b {
-  color: var(--ink);
 }
 
 /* ── 폴더 · 카테고리 설정 (LibrarySettings) ── */

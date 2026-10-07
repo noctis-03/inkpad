@@ -88,6 +88,11 @@ function handleSyncError(e: unknown) {
   }
 }
 
+/** 동기화 창이 닫힌 뒤에 끝나도 사용자가 알 수 있게 — 토스트는 전역 상태로 띄운다 */
+function notifyToast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
+  void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
+}
+
 // ───────────────── 진행 표시 ─────────────────
 
 /** 받기·올리기의 노트 단위 진행 — 상태 카드의 "노트 2/5 올리는 중" 문구용 (구현 메모 ④) */
@@ -249,10 +254,17 @@ export async function pushNow(): Promise<void> {
       // 최초 동기화: 기존 로컬 데이터를 모두 업로드 큐에 올린다
       if (!(await db.syncState.get('rootFolderId'))) await enqueueEverything()
       const f = await ensureFolders()
-      await push(f)
+      const uploaded = await push(f)
       await pull(f)
       await db.syncState.put({ key: 'lastPushAt', value: Date.now() })
       setStatus('idle')
+      if (uploaded > 0) {
+        // 동기화 창을 닫고 나서 끝났어도 알 수 있게 한다 — 토스트는 전역으로 뜨고,
+        // 라이브러리 카드의 동기화 표시는 DB만 다시 읽어 최신으로 칠한다 (다른 탭에도 브로드캐스트)
+        notifyToast(`노트 ${uploaded}개를 올렸습니다.`)
+        window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
+        cloudStatesChannel?.postMessage(Date.now())
+      }
     } catch (e) {
       handleSyncError(e)
     } finally {
@@ -260,18 +272,30 @@ export async function pushNow(): Promise<void> {
   })
 }
 
-async function push(f: { docs: string; assets: string }) {
+/** 실제로 Drive에 올라가는 노트만 돌려 실행한다. 삭제(묘비)·클라우드 삭제 제외 노트는 올라가는 게 없어
+ * "노트 n/n 올리는 중"의 n에 끼면 표시가 실제와 어긋난다 — 집계에서도 뺀다 */
+async function push(f: { docs: string; assets: string }): Promise<number> {
   const rows = await db.outbox.toArray()
   const docs = await pendingDocs()
 
+  const uploadable = new Set<ID>()
+  for (const [docId] of docs) {
+    const doc = await db.documents.get(docId)
+    if (!doc || doc.deletedAt) continue
+    // 클라우드에서 삭제된 노트는 일괄 올리기에서 뺀다 — 목록의 행을 직접 눌렀을 때만 다시 올린다 (지시서 3번)
+    if (await getSync(`clouddel:${docId}`)) continue
+    uploadable.add(docId)
+  }
+
   let n = 0
   for (const [docId, info] of docs) {
-    emitProgress('push', ++n, docs.size) // 쓰이지 않던 카운터로 진행을 내보낸다 (구현 메모 ④)
-    const doc = await db.documents.get(docId)
-    if (!doc || doc.deletedAt) await pushTombstone(docId, info)
-    // 클라우드에서 삭제된 노트는 일괄 올리기에서 뺀다 — 목록의 행을 직접 눌렀을 때만 다시 올린다 (지시서 3번)
-    else if (await getSync(`clouddel:${docId}`)) continue
-    else await pushDoc(docId, info, f)
+    if (!uploadable.has(docId)) {
+      const doc = await db.documents.get(docId)
+      if (!doc || doc.deletedAt) await pushTombstone(docId, info) // 삭제는 묘비만 남긴다 — Drive에 올라가는 게 없다
+      continue
+    }
+    emitProgress('push', ++n, uploadable.size)
+    await pushDoc(docId, info, f)
   }
 
   for (const r of rows.filter((r) => r.entity === 'asset')) {
@@ -279,6 +303,7 @@ async function push(f: { docs: string; assets: string }) {
     await db.outbox.delete(r.seq!)
   }
 
+  return uploadable.size
 }
 
 async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }) {
@@ -600,28 +625,66 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/** 받아올 변경 한 개 — 받기 미리보기와 올리기 미리보기의 "받을 것" 목록이 쓴다 */
+export interface PullDoc {
+  docId: ID
+  title: string
+  device?: string
+  updatedAt: number
+  /** Drive 파일 크기 (메타만 읽어 알 수 있는 예상 용량) */
+  bytes: number
+  /** 이 기기에 없는 노트(새 노트)인지, 이미 있는 노트의 새 버전인지 */
+  change: 'add' | 'remote-new'
+}
+
+export interface PullPlan {
+  docs: PullDoc[]
+  bytes: number
+}
+
 /**
- * 받아올(풀에서 내려받을) 변경의 예상 용량 — 클라우드 목록만 읽고 본문은 받지 않는다.
- * 올리기 미리보기에서 "올린 뒤 다른 기기의 변경도 받아옵니다"의 받을 용량을 보여 주는 데 쓴다.
- * 판정 규칙은 listCloudNotes·받기와 같다 (위치 기록 version + 내용 표식, 규칙 10).
+ * 받아올(풀에서 내려받을) 변경의 목록과 예상 용량 — 클라우드 목록만 읽고 본문은 받지 않는다.
+ * 받기 미리보기와, 올리기 미리보기의 "올린 뒤 다른 기기의 변경" 목록이 쓴다.
+ * 판정 규칙은 받기(pull)의 대상 선정과 같다 — 숨긴 카테고리·삭제·로컬 변경 대기 노트도 뺀다 (규칙 9·10).
  */
-export async function planPull(): Promise<{ count: number; bytes: number }> {
+export async function planPull(): Promise<PullPlan> {
   const f = await ensureFolders()
   const remotes = await drive.listFiles(f.docs)
-  let count = 0
+  const outboxRows = await db.outbox.toArray()
+  const pendingDocs_ = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
+  const hidden = new Set(await getHiddenCategories())
+  const recs = new Map<string, FileRecord>()
+  for (const kv of await db.syncState.toArray()) {
+    if (kv.key.startsWith('doc:')) recs.set(kv.key.slice(4), kv.value as FileRecord)
+  }
+  const docs: PullDoc[] = []
   let bytes = 0
   for (const remote of remotes) {
     const docId = remote.appProperties?.docId
     if (!docId) continue
-    const [local, rec] = await Promise.all([db.documents.get(docId), getSync<FileRecord>(`doc:${docId}`)])
+    if (await getSync(`gone:${docId}`)) continue // 이 기기에서 지운 노트 — 받기로 되살리지 않는다
+    const remoteCat = remote.appProperties?.category
+    if (remoteCat && hidden.has(remoteCat)) continue // 숨긴 카테고리 — 이 기기는 받지 않는다
+    const local = await db.documents.get(docId)
+    if (local?.deletedAt) continue // 휴지통에 있는 노트도 되살리지 않는다
+    if (pendingDocs_.has(docId)) continue // 로컬 변경은 올리기의 머지에서 처리
+    const rec = recs.get(docId)
     const sameByVersion = !!rec && verNum(rec.version) >= verNum(remote.version)
     const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
     const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
     if (sameByVersion || sameByContent) continue // 이미 맞춰진 노트 — 풀에서 내려받지 않는다
-    count++
-    bytes += Math.max(0, Number(remote.size ?? 0) || 0)
+    const size = Math.max(0, Number(remote.size ?? 0) || 0)
+    bytes += size
+    docs.push({
+      docId,
+      title: remote.appProperties?.title || local?.title || docId,
+      device: remote.appProperties?.device,
+      updatedAt: remoteUpdatedAt || Date.parse(remote.modifiedTime) || 0,
+      bytes: size,
+      change: local ? 'remote-new' : 'add'
+    })
   }
-  return { count, bytes }
+  return { docs, bytes }
 }
 
 /** 클라우드 노트 한 개를 이 기기로 내려받는다. 삭제 대기 중이던 노트면 대기를 지우고 되살린다 */
