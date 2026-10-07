@@ -19,8 +19,9 @@ export function categoryColor(name: string | null | undefined): string {
 }
 
 /**
- * 카테고리 태그용 색 — 글자색 + 테두리색. 바탕은 CSS가 흰색으로 준다
- * (필기 미리보기 위에 얹히므로 종이 위에서도 읽혀야 한다).
+ * 카테고리 태그용 색 — 글자색 + 테두리색 + 바탕(파스텔).
+ * 바탕은 카테고리 색을 흰색 쪽으로 옅게 섞은 불투명 파스텔이다 — 필기 미리보기 위에
+ * 얹히므로 반투명이면 글씨가 비쳐 읽히지 않는다(그래서 알파가 아니라 흰색과 섞는다).
  */
 export function categoryTag(name: string | null | undefined) {
   const hex = categoryColor(name)
@@ -28,9 +29,12 @@ export function categoryTag(name: string | null | undefined) {
   const r = (n >> 16) & 255
   const g = (n >> 8) & 255
   const b = n & 255
+  // 흰색 84% + 카테고리 색 16% → 연한 파스텔 (불투명)
+  const pastel = (c: number) => Math.round(255 - (255 - c) * 0.16)
   return {
     color: hex,
-    borderColor: `rgba(${r}, ${g}, ${b}, .45)`
+    borderColor: `rgba(${r}, ${g}, ${b}, .45)`,
+    background: `rgb(${pastel(r)}, ${pastel(g)}, ${pastel(b)})`
   }
 }
 
