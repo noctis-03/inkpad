@@ -4,6 +4,7 @@ import { confirmDialog } from '../app/dialogs'
 import { formatBytes, formatDate } from '../shared/util'
 import type { ID } from '../shared/model'
 import { db, type AssetRow } from '../storage/db'
+import { collectAssetUsage } from '../storage/repo'
 import { confirmTransfer } from '../sync/transfer'
 import * as drive from '../sync/drive'
 import { ensureFolders } from '../sync/folders'
@@ -19,7 +20,7 @@ import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpt
 //   - 원본을 지워도 노트·필기는 그대로고, 클라우드 사본이 있으면 나중에 다시 받는다.
 //   - 클라우드에서 지운 원본은 Drive 휴지통으로 가므로 30일 동안 되살릴 수 있다.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
-type FilterKey = 'all' | 'local' | 'cloud' | 'confirm'
+type FilterKey = 'all' | 'local' | 'cloud' | 'confirm' | 'unref'
 type Sort = 'recent' | 'size' | 'name'
 
 /** 행 상태 — local(원본 있음) / pending(업로드 대기) / meta-only(이 기기에 원본 없음·클라우드에 있음)
@@ -40,8 +41,10 @@ interface AssetInfo {
   createdAt: number
   /** 이 기기에 받아 둔 원본 바이트 */
   blob?: Blob
-  /** 이 원본을 속지(PDF)로 쓰는 살아 있는 노트 제목 */
+  /** 이 원본을 쓰는(속지 PDF·이미지 요소) 살아 있는 노트 제목 */
   docs: string[]
+  /** 이 기기의 살아 있는 노트가 이 원본을 참조하는가 (아니면 상태 아이콘에 X) */
+  referenced: boolean
   /** 업로드 대기 (outbox에 asset 항목이 있음) */
   pending: boolean
 }
@@ -65,27 +68,34 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
   const [downloading, setDownloading] = useState<Set<ID>>(new Set())
 
   const load = useCallback(async () => {
-    const [assets, pages, outbox, docs] = await Promise.all([
+    const [assets, outbox, docs, usage] = await Promise.all([
       db.assets.toArray(),
-      db.pages.toArray(),
       db.outbox.filter((r) => r.entity === 'asset').toArray(),
-      db.documents.toArray()
+      db.documents.toArray(),
+      collectAssetUsage()
     ])
-    // 원본 → 이 원본을 속지로 쓰는 문서 (page.pdf 참조, 삭제된 페이지 제외)
+    // 이 기기(살아 있는 페이지·이미지 요소)가 참조하는 원본 → 그 원본을 쓰는 문서 제목
     const docTitle = new Map(docs.map((d) => [d.id, d.title]))
     const usedBy = new Map<ID, string[]>()
-    for (const p of pages) {
-      if (p.deletedAt || !p.pdf) continue
-      const list = usedBy.get(p.pdf.assetId) ?? []
-      const t = docTitle.get(p.documentId)
-      if (t && !list.includes(t)) list.push(t)
-      usedBy.set(p.pdf.assetId, list)
+    for (const [assetId, docIds] of usage) {
+      const list: string[] = []
+      for (const id of docIds) {
+        const t = docTitle.get(id)
+        if (t && !list.includes(t)) list.push(t)
+      }
+      usedBy.set(assetId, list)
     }
     const pendingIds = new Set(outbox.map((r) => r.entityId))
     const bySha = new Map<string, AssetInfo>()
     const infos: AssetInfo[] = []
     for (const a of assets) {
-      const info: AssetInfo = { ...a, key: a.id, docs: usedBy.get(a.id) ?? [], pending: pendingIds.has(a.id) }
+      const info: AssetInfo = {
+        ...a,
+        key: a.id,
+        docs: usedBy.get(a.id) ?? [],
+        referenced: usage.has(a.id),
+        pending: pendingIds.has(a.id)
+      }
       bySha.set(a.sha256, info)
       infos.push(info)
     }
@@ -121,6 +131,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
               name,
               createdAt: at,
               docs: [],
+              referenced: false,
               pending: false
             }
             bySha.set(sha, info)
@@ -177,16 +188,21 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       dl: all.filter((a) => a.assetId && !a.blob).length,
       /** 이 기기에 참조가 아예 없는 클라우드 전용 원본 */
       cloudOnly: all.filter((a) => st.get(a.key) === 'cloud-only').length,
+      /** 이 기기의 노트·이미지가 참조하지 않는 원본 — 정리 후보 */
+      unref: all.filter((a) => !a.referenced).length,
       st
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, cloudKnown])
 
-  const matchFilter = (s: RowState, f: FilterKey) =>
-    f === 'all' ||
-    (f === 'local' && (s === 'local' || s === 'pending' || s === 'cloud-missing')) || // 이 기기에 원본 바이트가 있는 것
-    (f === 'cloud' && (s === 'meta-only' || s === 'cloud-only')) ||
-    (f === 'confirm' && (s === 'pending' || s === 'cloud-missing'))
+  const matchFilter = (a: AssetInfo, f: FilterKey) => {
+    const s = stateOf(a)
+    if (f === 'all') return true
+    if (f === 'unref') return !a.referenced // 이 기기의 노트가 참조하지 않는 원본
+    if (f === 'local') return s === 'local' || s === 'pending' || s === 'cloud-missing' // 이 기기에 원본 바이트가 있는 것
+    if (f === 'cloud') return s === 'meta-only' || s === 'cloud-only'
+    return s === 'pending' || s === 'cloud-missing'
+  }
 
   const localBytes = useMemo(() => all.reduce((n, a) => n + (a.blob ? a.size : 0), 0), [all])
   const totalBytes = useMemo(() => {
@@ -199,7 +215,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const arr = all.filter((a) => {
-      if (!matchFilter(stateOf(a), filter)) return false
+      if (!matchFilter(a, filter)) return false
       if (!q) return true
       return `${a.name ?? ''} ${a.sha256}`.toLowerCase().includes(q)
     })
@@ -610,6 +626,9 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                 <span>
                   <Icon name="cloudDown" size={13} /> 클라우드에만
                 </span>
+                <span className="unref">
+                  <Icon name="xCircle" size={13} /> 이 기기에서 참조 없음
+                </span>
                 <button
                   className="store-legend-btn"
                   disabled={!counts.local}
@@ -632,6 +651,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                   { key: 'all', label: '전체', count: all.length },
                   { key: 'local', label: '이 기기에 있음', count: counts.local },
                   { key: 'cloud', label: '클라우드에만', count: counts.cloud },
+                  ...(counts.unref ? [{ key: 'unref' as FilterKey, label: '참조 없음', count: counts.unref }] : []),
                   ...(counts.confirm ? [{ key: 'confirm' as FilterKey, label: '확인 필요', count: counts.confirm, warn: true }] : [])
                 ]}
               />
@@ -670,7 +690,10 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                   const { chip, tone } = chipOf(s, !!a.blob)
                   const isDown = a.assetId != null && downloading.has(a.assetId)
                   const dim = !online && (s === 'meta-only' || s === 'cloud-only')
-                  const statusIcon = s === 'local' ? 'checkCircle' : s === 'meta-only' || s === 'cloud-only' ? 'cloudDown' : null
+                  // 이 기기가 참조하지 않는 원본은 상태 자리에 X를 띄운다 (참조하는 원본만 있음/클라우드를 보여준다)
+                  const statusIcon = !a.referenced ? 'xCircle' : s === 'local' ? 'checkCircle' : s === 'meta-only' || s === 'cloud-only' ? 'cloudDown' : null
+                  const statusLabel =
+                    statusIcon === 'xCircle' ? '이 기기의 노트가 참조하지 않는 원본' : statusIcon === 'checkCircle' ? '이 기기에 원본 있음' : '클라우드에만 있음'
                   return (
                     <div key={a.key} className={'store-row tone-' + tone + (dim ? ' is-dim' : '')}>
                       <span className="store-file-icon" data-kind={a.kind === 'pdf' ? 'pdf' : 'image'}>
@@ -683,7 +706,15 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                         <div className="store-row-sub">
                           <span className="store-row-name">{shaLabel(a)}…</span>
                           <span className={a.size >= 50 * 1024 * 1024 ? 'store-size big' : 'store-size'}>{formatBytes(a.size)}</span>
-                          {a.docs.length > 0 ? <span>노트 {a.docs.length}개</span> : s === 'cloud-only' ? <span>클라우드 전용</span> : <span>사용 중인 노트 없음</span>}
+                          {a.docs.length > 0 ? (
+                            <span>노트 {a.docs.length}개</span>
+                          ) : s === 'cloud-only' ? (
+                            <span>클라우드 전용</span>
+                          ) : !a.referenced ? (
+                            <span>참조 없음</span>
+                          ) : (
+                            <span>사용 중인 노트 없음</span>
+                          )}
                           <span>{formatDate(a.createdAt)}</span>
                         </div>
                       </div>
@@ -692,7 +723,12 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
                         <span className="store-chip recv">받는 중…</span>
                       ) : (
                         statusIcon && (
-                          <span className={'store-status-icon ' + (statusIcon === 'checkCircle' ? 'ok' : 'cloud')} aria-hidden="true">
+                          <span
+                            className={'store-status-icon ' + (statusIcon === 'checkCircle' ? 'ok' : statusIcon === 'xCircle' ? 'off' : 'cloud')}
+                            role="img"
+                            aria-label={statusLabel}
+                            title={statusLabel}
+                          >
                             <Icon name={statusIcon} size={16} />
                           </span>
                         )

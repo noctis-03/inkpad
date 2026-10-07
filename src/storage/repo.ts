@@ -211,6 +211,39 @@ async function gcAssets() {
   if (orphan.length) await db.assets.bulkDelete(orphan)
 }
 
+/**
+ * 이 기기가 참조하는 에셋 → 그 에셋을 쓰는 문서 ID 집합.
+ * 속지 PDF(page.pdf)와 이미지 요소(청크 안 ImageElement)를 모두 세고, 삭제된 페이지는 제외한다.
+ * 에셋 관리 시트의 "이 기기가 참조하는가" 판정의 단일 출처.
+ */
+export async function collectAssetUsage(): Promise<Map<ID, Set<ID>>> {
+  const usage = new Map<ID, Set<ID>>()
+  const add = (assetId: ID, documentId: ID) => {
+    const set = usage.get(assetId) ?? new Set<ID>()
+    set.add(documentId)
+    usage.set(assetId, set)
+  }
+  const livePages = new Set<ID>()
+  await db.pages.each((p) => {
+    if (p.deletedAt) return
+    livePages.add(p.id)
+    if (p.pdf) add(p.pdf.assetId, p.documentId)
+  })
+  // 이미지 요소는 청크(gzip) 안에 있다 — 풀어서 센다 (이미지 요소가 없으면 금방 끝난다)
+  for (const c of await db.chunks.toArray()) {
+    if (!livePages.has(c.pageId)) continue
+    let elements: Element[]
+    try {
+      elements = await decodeChunk(c)
+    } catch (e) {
+      console.warn('[assets] 청크를 풀지 못해 이미지 참조를 세지 못했습니다.', c.pageId, e)
+      continue
+    }
+    for (const el of elements) if (el.type === 'image') add(el.assetId, c.documentId)
+  }
+  return usage
+}
+
 // ───────────────────────── pages ─────────────────────────
 
 export async function getPages(documentId: ID): Promise<Page[]> {
