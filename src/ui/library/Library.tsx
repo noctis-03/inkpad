@@ -99,6 +99,7 @@ export function Library() {
   const [fileMenu, setFileMenu] = useState<{ file: FileRow; x: number; y: number } | null>(null)
   const [categorizingFile, setCategorizingFile] = useState<FileRow | null>(null)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
+  const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
@@ -118,6 +119,7 @@ export function Library() {
       th.forEach((blob, id) => m.set(id, URL.createObjectURL(blob)))
       return m
     })
+    setReady(true)
   }, [])
 
   useEffect(() => {
@@ -248,10 +250,11 @@ export function Library() {
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
 
-  // 보고 있던 카테고리가 숨김 처리되면 전체로
+  // 보고 있던 카테고리가 숨김 처리되면 전체로 — 데이터를 다 읽기 전(복원 직후)에는 빈 목록으로 판정하지 않는다
   useEffect(() => {
+    if (!ready) return
     if (section.kind === 'category' && !shownCategories.includes(section.name)) setSection({ kind: 'all' })
-  }, [shownCategories, section])
+  }, [ready, shownCategories, section])
 
   const subfolders = useMemo(
     () => (section.kind === 'trash' || query ? [] : folders.filter((f) => f.parentId === currentFolderId)),
