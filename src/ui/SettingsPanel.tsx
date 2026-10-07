@@ -107,6 +107,9 @@ export function PressureSection() {
           <Row label="최소 필압" hint="아주 약하게 눌러도 이만큼은 굵게">
             <Slider k="minPressure" min={0} max={0.5} step={0.05} />
           </Row>
+          <Row label="필압 평활화" hint="높을수록 굵기 변화가 부드러워지고, 낮을수록 필압에 즉시 반응합니다">
+            <Slider k="pressureSmoothing" min={0} max={0.9} step={0.05} />
+          </Row>
         </>
       )}
 

@@ -61,7 +61,8 @@ export class Renderer {
   transformed = false
   lastFullMs = 0
   visibleCount = 0
-  private liveHasContent = false
+  /** 입력 레이어에서 지난 프레임에 실제로 그린 영역(기기 픽셀). 전체 clearRect를 피하기 위해 기록한다 */
+  private liveDrawn: LiveBox | null = null
   /** 선택된 획은 확정 레이어에서 빼고 입력 레이어에 그린다 */
   hidden: Set<string> | null = null
 
@@ -101,6 +102,7 @@ export class Renderer {
       c.style.width = this.cssW + 'px'
       c.style.height = this.cssH + 'px'
     }
+    this.liveDrawn = null // 크기 변경 시 캔버스가 자동으로 비워진다
   }
 
   get canvasPx() {
@@ -291,12 +293,16 @@ export class Renderer {
 
   drawLive(cam: Camera, stroke: LiveDraw | null, cursor: Cursor | null, overlay: Overlay | null) {
     const ctx = this.lctx
-    if (this.liveHasContent) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.clearRect(0, 0, this.live.width, this.live.height)
-      this.liveHasContent = false
-    }
     const k = cam.zoom * this.scale
+    // 입력 레이어에는 지난 프레임에 그린 것만 남아 있다 → 그 영역만 지우면 된다.
+    // 캔버스 전체를 매 프레임 지우는 것은 큰 화면에서 수 ms를 쓰므로 지연을 키운다.
+    if (this.liveDrawn) {
+      const b = this.liveDrawn
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(Math.floor(b.x0) - 2, Math.floor(b.y0) - 2, Math.ceil(b.x1 - b.x0) + 4, Math.ceil(b.y1 - b.y0) + 4)
+      this.liveDrawn = null
+    }
+    const boxes: LiveBox[] = []
     if (overlay?.selection) {
       const { recs, dx, dy, scale, cx, cy } = overlay.selection
       for (const rec of recs) {
@@ -306,8 +312,14 @@ export class Renderer {
         ctx.setTransform(k * scale, 0, 0, k * scale, (ox - cam.x) * k, (oy - cam.y) * k)
         ctx.fillStyle = rec.stroke.color
         ctx.fill(getPath(rec))
+        const it = rec.item
+        boxes.push({
+          x0: (it.minX + dx - cam.x) * k,
+          y0: (it.minY + dy - cam.y) * k,
+          x1: (it.maxX + dx - cam.x) * k,
+          y1: (it.maxY + dy - cam.y) * k
+        })
       }
-      this.liveHasContent = true
     }
     if (stroke && stroke.points.length) {
       ctx.save()
@@ -322,15 +334,26 @@ export class Renderer {
       ctx.fillStyle = stroke.color
       ctx.fill(outlineToPath(strokeOutline(stroke.points, stroke.width, stroke.opts, false, stroke.predicted)))
       ctx.restore()
-      this.liveHasContent = true
+      const b = liveStrokeBox(stroke)
+      boxes.push({
+        x0: (b.minX - cam.x) * k,
+        y0: (b.minY - cam.y) * k,
+        x1: (b.maxX - cam.x) * k,
+        y1: (b.maxY - cam.y) * k
+      })
     }
     if (overlay?.lasso && overlay.lasso.length >= 4) {
       const l = overlay.lasso
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
       ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0)
       ctx.beginPath()
       for (let i = 0; i < l.length; i += 2) {
         const sx = (l[i] - cam.x) * cam.zoom
         const sy = (l[i + 1] - cam.y) * cam.zoom
+        if (sx < x0) x0 = sx
+        if (sy < y0) y0 = sy
+        if (sx > x1) x1 = sx
+        if (sy > y1) y1 = sy
         if (i === 0) ctx.moveTo(sx, sy)
         else ctx.lineTo(sx, sy)
       }
@@ -342,13 +365,14 @@ export class Renderer {
       ctx.strokeStyle = '#2563eb'
       ctx.stroke()
       ctx.setLineDash([])
-      this.liveHasContent = true
+      boxes.push({ x0: x0 * this.scale, y0: y0 * this.scale, x1: x1 * this.scale, y1: y1 * this.scale })
     }
     if (cursor) {
       const s = this.scale
+      const r = Math.max(1.5, cursor.radius)
       ctx.setTransform(s, 0, 0, s, 0, 0)
       ctx.beginPath()
-      ctx.arc(cursor.sx, cursor.sy, Math.max(1.5, cursor.radius), 0, Math.PI * 2)
+      ctx.arc(cursor.sx, cursor.sy, r, 0, Math.PI * 2)
       if (cursor.kind === 'eraser') {
         ctx.lineWidth = 1
         ctx.strokeStyle = 'rgba(0,0,0,0.55)'
@@ -361,9 +385,51 @@ export class Renderer {
         ctx.fill()
         ctx.globalAlpha = 1
       }
-      this.liveHasContent = true
+      boxes.push({ x0: cursor.sx * s - r * s, y0: cursor.sy * s - r * s, x1: cursor.sx * s + r * s, y1: cursor.sy * s + r * s })
     }
+    this.liveDrawn = unionLiveBoxes(boxes)
   }
+}
+
+/** 입력 레이어에 그린 것의 기기 픽셀 영역 */
+interface LiveBox {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
+/** 입력 중인 획이 차지하는 월드 bbox (외곽선 두께·예측 점 포함) */
+function liveStrokeBox(stroke: LiveDraw): { minX: number; minY: number; maxX: number; maxY: number } {
+  const pts = stroke.points
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (let i = 0; i < pts.length; i += 4) {
+    if (pts[i] < minX) minX = pts[i]
+    if (pts[i] > maxX) maxX = pts[i]
+    if (pts[i + 1] < minY) minY = pts[i + 1]
+    if (pts[i + 1] > maxY) maxY = pts[i + 1]
+  }
+  for (const p of stroke.predicted) {
+    if (p[0] < minX) minX = p[0]
+    if (p[0] > maxX) maxX = p[0]
+    if (p[1] < minY) minY = p[1]
+    if (p[1] > maxY) maxY = p[1]
+  }
+  if (minX === Infinity) return { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+  const pad = stroke.width + 2
+  return { minX: minX + stroke.ox - pad, minY: minY + stroke.oy - pad, maxX: maxX + stroke.ox + pad, maxY: maxY + stroke.oy + pad }
+}
+
+function unionLiveBoxes(list: LiveBox[]): LiveBox | null {
+  if (!list.length) return null
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const b of list) {
+    if (b.x0 < x0) x0 = b.x0
+    if (b.y0 < y0) y0 = b.y0
+    if (b.x1 > x1) x1 = b.x1
+    if (b.y1 > y1) y1 = b.y1
+  }
+  return { x0, y0, x1, y1 }
 }
 
 function mod(a: number, n: number) {

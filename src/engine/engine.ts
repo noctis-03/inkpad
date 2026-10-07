@@ -6,6 +6,7 @@ import { History, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
+import { minPointDist, smoothPressure } from './quality'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
 import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
 import { drawPattern } from './background'
@@ -61,6 +62,8 @@ interface ActiveStroke {
   color: string
   opts: StrokeOpts
   pressure: ResolvedPressure
+  /** 직전까지의 평활된 필압 (-1 = 아직 없음) */
+  smoothP: number
   // 지우개
   removed: Map<ID, Entry>
   added: Map<ID, Entry>
@@ -93,6 +96,8 @@ interface Gesture {
 
 const LAT_SAMPLES = 120
 const SAVE_DEBOUNCE_MS = 500
+/** 미리보기에 쓰는 예측 점 상한 — 너무 많으면 펜 끝이 실제보다 길게 튀어나온다 */
+const MAX_PREDICTED = 6
 
 /** 페이지 기준 상대 좌표를 허용 범위(페이지 밖 BLOCK_MAX_OUTSIDE까지)로 clamp한다 */
 const clampBlockRel = (v: number, max: number) => Math.min(Math.max(v, -BLOCK_MAX_OUTSIDE), Math.max(-BLOCK_MAX_OUTSIDE, max))
@@ -967,7 +972,7 @@ export class Engine {
         this.collect(a, e)
         a.predicted =
           this.settings.prediction && (a.tool === 'pen' || a.tool === 'highlighter') && e.getPredictedEvents
-            ? e.getPredictedEvents().map((ev) => this.toChunkPoint(a, ev))
+            ? e.getPredictedEvents().slice(0, MAX_PREDICTED).map((ev) => this.toChunkPoint(a, ev))
             : []
         this.stats.predictedCount = a.predicted.length
         this.liveDirty = true
@@ -1091,6 +1096,7 @@ export class Engine {
       color: st.color,
       opts: strokeOptsFor(pressure, this.settings, hl ? 'highlighter' : 'pen'),
       pressure,
+      smoothP: -1,
       removed: new Map(),
       added: new Map(),
       lasso: [],
@@ -1113,16 +1119,15 @@ export class Engine {
     this.liveDirty = true
   }
 
-  private pressureOf(ev: PointerEvent, a: ActiveStroke, record = true) {
-    if (record && a.pointerType === 'pen') a.raw.push(ev.pressure)
+  /**
+   * 필압 원시값에 필압 곡선(감마)·최소 필압만 적용해 매핑한다. 상태를 바꾸지 않는다.
+   * 반환 -1 = 이 이벤트가 필압 0을 보냄(일부 펜) → 호출부가 직전 값을 이어 쓴다.
+   */
+  private mappedPressure(ev: PointerEvent, a: ActiveStroke): number {
     if (a.pressure !== 'pressure') return 0.5
-    let p = ev.pressure
-    if (!(p > 0)) {
-      // 일부 이벤트는 0을 보낸다 → 직전 값 유지
-      const n = a.points.length
-      return n >= 4 ? a.points[n - 2] : 0.5
-    }
-    p = Math.min(1, p)
+    const raw = ev.pressure
+    if (!(raw > 0)) return -1
+    let p = Math.min(1, raw)
     const g = this.settings.pressureGamma
     if (g !== 1) p = Math.pow(p, g)
     return Math.max(this.settings.minPressure, p)
@@ -1131,7 +1136,9 @@ export class Engine {
   private toChunkPoint(a: ActiveStroke, ev: PointerEvent): number[] {
     const p = this.local(ev)
     const w = this.cam.screenToWorld(p.x, p.y)
-    return [w.x - a.ox, w.y - a.oy, a.pressure === 'pressure' ? this.pressureOf(ev, a, false) : 0.5]
+    const m = this.mappedPressure(ev, a)
+    const pr = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
+    return [w.x - a.ox, w.y - a.oy, a.pressure === 'pressure' ? pr : 0.5]
   }
 
   private addPoint(a: ActiveStroke, ev: PointerEvent) {
@@ -1153,12 +1160,30 @@ export class Engine {
       }
       return
     }
-    const pr = this.pressureOf(ev, a)
-    const qx = q2(w.x - a.ox), qy = q2(w.y - a.oy)
+    if (a.pointerType === 'pen') a.raw.push(ev.pressure)
+    // 필압: 곡선·최소값 적용 → 지수 평활(직전 값과 섞어 굵기가 계단처럼 변하지 않게)
+    const m = this.mappedPressure(ev, a)
+    let pr: number
+    if (m < 0) {
+      // 이 이벤트는 필압을 보내지 않았다 → 직전 값 유지 (평활 상태는 건드리지 않는다)
+      pr = a.smoothP >= 0 ? a.smoothP : a.points.length >= 4 ? a.points[a.points.length - 2] : 0.5
+    } else {
+      pr = a.smoothP < 0 ? m : smoothPressure(a.smoothP, m, this.settings.pressureSmoothing)
+      a.smoothP = pr
+    }
+    const qx = q2(w.x - a.ox)
+    const qy = q2(w.y - a.oy)
     const n = a.points.length
-    if (n >= 4 && a.points[n - 4] === qx && a.points[n - 3] === qy) {
-      a.points[n - 2] = q2(Math.max(a.points[n - 2], pr))
-      return
+    if (n >= 4) {
+      // 화면에서 sub-pixel만큼 움직인 점은 떨림으로 보고 점을 만들지 않는다.
+      // 선이 매끄러워지고 점 수가 줄어 프레임 비용(입력 지연)도 함께 줄어든다.
+      const dx = qx - a.points[n - 4]
+      const dy = qy - a.points[n - 3]
+      const minD = minPointDist(this.cam.zoom)
+      if (dx * dx + dy * dy < minD * minD) {
+        if (a.pressure === 'pressure') a.points[n - 2] = q2(Math.max(a.points[n - 2], pr))
+        return
+      }
     }
     const dt = Math.max(0, Math.round(ev.timeStamp - a.lastT))
     a.lastT = ev.timeStamp

@@ -22,6 +22,7 @@ export interface Settings {
   thinning: number // 굵기 변화 폭 0~0.95
   pressureGamma: number // 필압 곡선 (<1 가볍게, >1 세게 눌러야 굵어짐)
   minPressure: number // 이보다 약한 필압은 이 값으로 (너무 가늘어지는 것 방지)
+  pressureSmoothing: number // 필압 평활화 0~0.9 (높을수록 굵기 변화가 부드럽지만 반응이 둔해짐)
   // 필기
   streamline: number
   smoothing: number
@@ -49,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   thinning: 0.6,
   pressureGamma: 1,
   minPressure: 0.05,
+  pressureSmoothing: 0.35,
   streamline: 0.3,
   smoothing: 0.5,
   fingerDraw: false,
