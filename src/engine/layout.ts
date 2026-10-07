@@ -35,6 +35,8 @@ export function parseChunkKey(key: string) {
 export class Layout {
   mode: 'infinite' | 'paged'
   pages: Page[] = []
+  /** rect가 있는(=실제로 배치된) 페이지만 y 오름차순으로 담은 배열. 이진 탐색의 기준이다 */
+  placed: Page[] = []
   rects = new Map<ID, Rect>()
   index = new Map<ID, number>()
   bounds: Rect = { x: 0, y: 0, w: 0, h: 0 }
@@ -45,6 +47,7 @@ export class Layout {
 
   setPages(pages: Page[]) {
     this.pages = pages
+    this.placed = []
     this.rects.clear()
     this.index.clear()
     let y = 0
@@ -54,6 +57,7 @@ export class Layout {
       if (!p.size) return
       const r = { x: -p.size.w / 2, y, w: p.size.w, h: p.size.h }
       this.rects.set(p.id, r)
+      this.placed.push(p)
       y += p.size.h + PAGE_GAP
       maxW = Math.max(maxW, p.size.w)
     })
@@ -116,9 +120,14 @@ export class Layout {
   /** 화면 영역과 겹치는 페이지 (세로로 정렬되어 있으므로 이진 탐색) */
   visiblePages(minY: number, maxY: number, minX = -Infinity, maxX = Infinity): Page[] {
     const out: Page[] = []
-    const ps = this.pages
+    // 배치된 페이지만 y 오름차순으로 정렬되어 있다 — 이 배열 위에서 탐색한다.
+    // (this.pages에는 size가 없어 rect가 없는 페이지가 섞일 수 있어 정렬 불변식이 깨진다)
+    const ps = this.placed
+    if (!ps.length) return out
+    // hi를 ps.length로 열어 둔다 — 그래야 "마지막 페이지보다도 아래"인 뷰포트를
+    // lo = ps.length로 표현할 수 있고, 화면 밖의 마지막 페이지를 잘못 반환하지 않는다.
     let lo = 0
-    let hi = ps.length - 1
+    let hi = ps.length
     while (lo < hi) {
       const mid = (lo + hi) >> 1
       const r = this.rects.get(ps[mid].id)!
@@ -126,8 +135,8 @@ export class Layout {
       else hi = mid
     }
     for (let i = lo; i < ps.length; i++) {
-      const r = this.rects.get(ps[i].id)
-      if (!r) continue
+      const r = this.rects.get(ps[i].id)!
+      if (r.y + r.h < minY) continue // 경계 오차 방어
       if (r.y > maxY) break
       if (r.x + r.w < minX || r.x > maxX) continue
       out.push(ps[i])
@@ -142,7 +151,8 @@ export class Layout {
     let best = 0
     let bestD = Infinity
     this.pages.forEach((p, i) => {
-      const r = this.rects.get(p.id)!
+      const r = this.rects.get(p.id)
+      if (!r) return // size:null(무한 캔버스) 페이지는 배치 대상이 아니다
       const d = mid < r.y ? r.y - mid : mid > r.y + r.h ? mid - r.y - r.h : 0
       if (d < bestD) {
         bestD = d

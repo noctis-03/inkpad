@@ -28,12 +28,32 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
     const o = pageOf(ours.pages, id)
     const t = pageOf(theirs.pages, id)
     const bb = base ? pageOf(base.pages, id) : undefined
-    if (o && t) pages.push(t) // 정의가 같은 페이지 — 원격 우선
-    else if (o) {
+    if (o && t) {
+      // 페이지 정의(속지·크기·회전)도 청크와 같은 3-way 규칙을 따른다 — 한쪽만 바꾼 변경을 보존한다.
+      if (j(o) === j(t)) pages.push(t)
+      else if (!bb || j(o) === j(bb)) pages.push(t) // 이 기기가 안 바꿈 → 원격
+      else if (j(t) === j(bb)) pages.push(o) // 원격이 안 바꿈 → 이 기기
+      else {
+        pages.push(t) // 양쪽에서 다르게 고침 — 원격 우선, 이 기기 편집은 리비전으로 복구
+        conflicts++
+      }
+    } else if (o) {
       if (!bb) pages.push(o) // 원격에 없지만 base에도 없었다 → 원격 삭제의 증거 없음, 유지
     } else if (t) {
       if (!bb) pages.push(t) // 원격이 새로 만든 페이지
     }
+  }
+
+  // pageOrder를 실제로 살아남은 페이지 집합과 맞춘다.
+  // 기존 규칙(로컬이 바꿨으면 ours)만으로는 두 기기가 서로 다른 페이지를 동시에 추가했을 때
+  // 한쪽 pageOrder만 남아, applySnapshot → layout.setPages에서 페이지가 통째로 사라진다(페이지 유실).
+  {
+    const livePageIds = pages.map((p) => p.id)
+    const liveSet = new Set(livePageIds)
+    const prevOrder = Array.isArray(doc.pageOrder) ? doc.pageOrder : []
+    const order = prevOrder.filter((id) => liveSet.has(id))
+    for (const id of livePageIds) if (!order.includes(id)) order.push(id)
+    doc.pageOrder = order
   }
 
   // 청크(필기 저장 단위): base와 비교해 한쪽만 바꿨으면 그쪽, 양쪽 다 바꿨으면 원격 우선

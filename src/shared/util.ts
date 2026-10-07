@@ -74,7 +74,9 @@ export function parsePageRange(input: string, total: number): number[] | null {
       for (let i = a; i <= b; i++) if (i >= 1 && i <= total) out.add(i - 1)
     } else if (/^\d+$/.test(p)) {
       const i = parseInt(p, 10)
-      if (i >= 1 && i <= total) out.add(i - 1)
+      // 범위 밖 단일 번호(0 등)를 조용히 버리면 빈 결과가 "선택 없음"으로 처리된다 — 오류로 알린다
+      if (i < 1 || i > total) return null
+      out.add(i - 1)
     } else return null
   }
   return [...out].sort((a, b) => a - b)

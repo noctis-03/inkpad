@@ -64,10 +64,14 @@ export function normalizeBlockUrl(raw: string): string | null {
   }
 }
 
-/** 실행(탭) 직전에 한 번 더 검증한다 — window.open에 절대 위험 스킴을 넘기지 않는다 */
+/**
+ * 실행(탭) 직전에 한 번 더 검증한다 — window.open에 절대 위험 스킴을 넘기지 않는다.
+ * normalizeBlockUrl이 스킴 검사와 정규화를 모두 담당하므로 결과가 비어 있지 않으면 안전하다.
+ * (문자열 동등성 비교는 쓰지 않는다: new URL().href가 끝 슬래시를 붙이므로
+ *  'https://example.com' 같은 정상 URL이 정규화 후 값과 달라 잘못 거부된다)
+ */
 export function isSafeBlockUrl(url: string): boolean {
-  const normalized = normalizeBlockUrl(url)
-  return !!normalized && normalized === url.trim()
+  return !!normalizeBlockUrl(url)
 }
 
 // ───────── 블록 레지스트리 (팔레트·헤더 라벨 공용) ─────────
