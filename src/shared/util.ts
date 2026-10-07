@@ -29,8 +29,8 @@ export function categoryTag(name: string | null | undefined) {
   const r = (n >> 16) & 255
   const g = (n >> 8) & 255
   const b = n & 255
-  // 흰색 84% + 카테고리 색 16% → 연한 파스텔 (불투명)
-  const pastel = (c: number) => Math.round(255 - (255 - c) * 0.16)
+  // 흰색 92% + 카테고리 색 8% → 아주 연한 파스텔 (불투명)
+  const pastel = (c: number) => Math.round(255 - (255 - c) * 0.08)
   return {
     color: hex,
     borderColor: `rgba(${r}, ${g}, ${b}, .45)`,
