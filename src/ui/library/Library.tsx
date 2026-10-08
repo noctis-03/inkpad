@@ -11,6 +11,7 @@ import { AssetsSheet } from '../AssetsSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
 import { categoryColor, categoryTag, formatDate } from '../../shared/util'
+import { loadRecentDocs } from '../../shared/recentDocs'
 import {
   createFolder,
   deleteFolder,
@@ -101,8 +102,17 @@ export function Library() {
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
+  // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
+  const [recent, setRecent] = useState(() => loadRecentDocs())
+  const [recentOnly, setRecentOnly] = useState(false)
+  const recentActive = section.kind === 'all' && recentOnly
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
+
+  // '전체'가 아닌 다른 항목을 고르면 최근 열람 모드를 끈다
+  useEffect(() => {
+    if (section.kind !== 'all') setRecentOnly(false)
+  }, [section])
 
   const refresh = useCallback(async () => {
     const [d, t, f, th, hid, ap, fls, st] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates()])
@@ -174,7 +184,30 @@ export function Library() {
 
   const currentFolderId = section.kind === 'folder' ? section.id : null
 
+  /** 최근 열람한 노트 — 열람 순서(최신이 먼저)를 그대로 유지한다 */
+  const recentDocs = useMemo(() => {
+    const order = new Map(recent.map((r, i) => [r.id, i] as const))
+    return docs
+      .filter((d) => order.has(d.id) && (!d.category || !hiddenCats.has(d.category)))
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  }, [docs, recent, hiddenCats])
+
+  /** '전체' 버튼 — 눌러 있던 상태에서 한 번 더 누르면 최근 열람 모드를 토글한다 */
+  const onAllClick = () => {
+    if (section.kind === 'all') {
+      setRecentOnly((v) => !v)
+      setRecent(loadRecentDocs()) // 노트를 열었다 돌아온 사이 늘어난 기록을 반영
+    } else {
+      setSection({ kind: 'all' })
+      setRecentOnly(false)
+    }
+  }
+
   const visible = useMemo(() => {
+    if (recentActive) {
+      const q = query.trim().toLowerCase()
+      return q ? recentDocs.filter((d) => d.title.toLowerCase().includes(q)) : recentDocs // 최근 열람 모드
+    }
     let list: DocumentMeta[] = section.kind === 'apps' || section.kind === 'files' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱·기타 파일에서는 노트를 숨긴다
     if (section.kind !== 'trash') list = list.filter((d) => !d.category || !hiddenCats.has(d.category)) // 숨긴 카테고리는 이 기기에서 미사용
     if (section.kind === 'folder') {
@@ -193,11 +226,11 @@ export function Library() {
     else if (prefs.sort === 'created') sorted.sort((a, b) => b.createdAt - a.createdAt)
     else sorted.sort((a, b) => (section.kind === 'trash' ? (b.deletedAt ?? 0) - (a.deletedAt ?? 0) : b.updatedAt - a.updatedAt))
     return sorted
-  }, [docs, trash, folders, hiddenCats, section, query, prefs.sort])
+  }, [recentActive, recentDocs, docs, trash, folders, hiddenCats, section, query, prefs.sort])
 
   /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·기타 파일에는 표시하지 않는다) */
   const visibleApps = useMemo(() => {
-    if (section.kind === 'trash' || section.kind === 'notes' || section.kind === 'files') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'files') return []
     let list = apps.filter((a) => !a.category || !hiddenCats.has(a.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -207,11 +240,11 @@ export function Library() {
     const q = query.trim().toLowerCase()
     if (q) list = list.filter((a) => a.title.toLowerCase().includes(q))
     return list
-  }, [apps, folders, hiddenCats, section, query])
+  }, [recentActive, apps, folders, hiddenCats, section, query])
 
   /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 앱에는 표시하지 않는다) */
   const visibleFiles = useMemo(() => {
-    if (section.kind === 'trash' || section.kind === 'notes' || section.kind === 'apps') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'apps') return []
     let list = files.filter((f) => !f.category || !hiddenCats.has(f.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -221,7 +254,7 @@ export function Library() {
     const q = query.trim().toLowerCase()
     if (q) list = list.filter((f) => f.title.toLowerCase().includes(q))
     return list
-  }, [files, folders, hiddenCats, section, query])
+  }, [recentActive, files, folders, hiddenCats, section, query])
 
   /** 노트 + 앱 + 파일을 한 목록으로 합쳐 정렬한다 (노트만 있으면 기존 노트 정렬을 그대로 쓴다) */
   const items = useMemo<Item[]>(() => {
@@ -617,8 +650,9 @@ export function Library() {
     await refresh()
   }
 
-  const title =
-    section.kind === 'trash'
+  const title = recentActive
+    ? '최근 열람한 노트'
+    : section.kind === 'trash'
       ? '휴지통'
       : section.kind === 'uncategorized'
         ? '미분류'
@@ -688,8 +722,13 @@ export function Library() {
         {treeOpen && <div className="tree-backdrop" role="presentation" onClick={() => setTreeOpen(false)} />}
         {treeOpen && (
           <nav className="folder-tree" aria-label="폴더">
-            <button className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')} onClick={() => setSection({ kind: 'all' })}>
-              <Icon name="grid" size={18} /> 전체 <span className="count">{docs.length + apps.length + files.length}</span>
+            <button
+              className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')}
+              onClick={onAllClick}
+              title="다시 누르면 최근에 열어 본 노트"
+            >
+              <Icon name={recentActive ? 'restore' : 'grid'} size={18} /> {recentActive ? '최근 열람' : '전체'}{' '}
+              <span className="count">{recentActive ? recentDocs.length : docs.length + apps.length + files.length}</span>
             </button>
             <button className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
@@ -776,7 +815,9 @@ export function Library() {
 
           {items.length === 0 ? (
             <div className="empty-state">
-              {section.kind === 'trash' ? (
+              {recentActive ? (
+                <p>최근에 열람한 노트가 없습니다. 노트를 열면 여기에 표시됩니다.</p>
+              ) : section.kind === 'trash' ? (
                 <p>휴지통이 비어 있습니다.</p>
               ) : section.kind === 'apps' ? (
                 <>

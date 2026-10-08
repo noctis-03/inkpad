@@ -3,6 +3,7 @@ import { useUI } from '../../app/store'
 import { askPdfPassword } from '../../app/dialogs'
 import { Engine } from '../../engine/engine'
 import { PdfCache } from '../../engine/pdf/pdfCache'
+import { trackRecentDoc } from '../../shared/recentDocs'
 import { recallPassword, rememberPassword } from '../../io/passwords'
 import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
@@ -44,6 +45,9 @@ export function Editor({ docId }: { docId: ID }) {
   const tool = useUI((s) => s.tool)
   const panel = useUI((s) => s.panel)
   const sidebar = useUI((s) => s.sidebar)
+
+  // 최근 열람 기록 — 라이브러리 '전체'를 다시 누를 때 최근 열람한 노트를 보여 주는 데 쓴다
+  useEffect(() => trackRecentDoc(docId), [docId])
 
   // 노트 열림 애니메이션 — 라이브러리 카드에서 확대되듯 열린다 (모션 최소화 설정이면 생략)
   useEffect(() => {

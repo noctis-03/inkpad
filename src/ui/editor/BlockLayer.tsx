@@ -12,6 +12,10 @@ import { Icon } from '../Icon'
 import { FtPopover } from './FloatingToolbar'
 
 const HEAD_H = 28 // .blk-head 높이 (styles.css의 Blocks 섹션과 동일)
+/** 크기 조절(우측 아래 모서리 드래그) 허용 폭 범위(pt) */
+const BLK_MIN_W = 120
+const BLK_MAX_W = 600
+const clampW = (w: number) => Math.min(BLK_MAX_W, Math.max(BLK_MIN_W, Math.round(w)))
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.max(0, s % 60)).padStart(2, '0')}`
 
 /** 타이머 실행 상태 — UI 메모리 전용(저장·동기화·히스토리 대상이 아니다) */
@@ -352,6 +356,11 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
   const onHeadDown = (e: ReactPointerEvent) => {
     if (readOnly) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    // 고정된 블록은 옮길 수 없다 (선택은 루트의 onPointerDownCapture가 맡는다)
+    if (block.fixed) return
+    // 블록 메뉴(점3개) 버튼 위에서는 드래그를 시작하지 않는다 — 헤더가 pointer capture를 잠그면
+    // click이 버튼까지 닿지 않아 메뉴가 열리지 않는다(마우스로 추가한 블록에서 재현).
+    if ((e.target as HTMLElement).closest('button')) return
     const el = rootRef.current
     if (!el) return
     e.preventDefault()
@@ -407,6 +416,32 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
   }
   const requestEdit = () => setEditTick((n) => n + 1)
 
+  // ── 우측 아래 모서리 드래그로 폭 조절 (높이는 내용에 따라 자동) ──
+  const resize = useRef<null | { id: number; sx: number; startW: number; before: Block }>(null)
+  const onResizeDown = (e: ReactPointerEvent) => {
+    if (readOnly) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const before = engine.blocks.get(block.id)
+    if (!before) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    resize.current = { id: e.pointerId, sx: e.clientX, startW: block.w, before }
+  }
+  const onResizeMove = (e: ReactPointerEvent) => {
+    const d = resize.current
+    if (!d || e.pointerId !== d.id) return
+    const w = clampW(d.startW + (e.clientX - d.sx) / engine.cam.zoom)
+    if (w !== engine.blocks.get(block.id)?.w) engine.updateBlock(block.id, { w }, { history: false })
+  }
+  const onResizeUp = (e: ReactPointerEvent) => {
+    const d = resize.current
+    if (!d || e.pointerId !== d.id) return
+    resize.current = null
+    // 드래그 전체를 히스토리 1건으로 기록한다 (메모 입력 blur 커밋과 같은 패턴)
+    engine.commitBlockEdit(d.before)
+  }
+
   const style: CSSProperties = { left: x, top: y, width: block.w }
   if (block.type === 'memo') (style as Record<string, string | number>)['--memo'] = MEMO_BG[block.data.color]
 
@@ -417,6 +452,9 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
       data-type={block.type}
       data-selected={p.selected ? '' : undefined}
       data-outside={outside ? '' : undefined}
+      data-minimal={block.minimal ? '' : undefined}
+      data-transparent={block.transparent ? '' : undefined}
+      data-fixed={block.fixed ? '' : undefined}
       data-blk-id={block.id}
       style={style}
       onPointerDownCapture={() => p.onSelect(block.id)}
@@ -432,12 +470,30 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
           <Icon name="more" size={14} />
         </button>
       </div>
+      {block.minimal && (
+        // 간소화 모드에서는 헤더가 숨으므로 가리킬 때·선택했을 때만 작은 메뉴 단추를 띄운다
+        <button className="blk-corner" aria-label="블록 메뉴" onClick={(e) => setMenu(e.currentTarget)}>
+          <Icon name="more" size={12} />
+        </button>
+      )}
 
       {block.type === 'memo' && <MemoBody {...p} block={block} />}
       {block.type === 'link' && <LinkBody {...p} block={block} fire={fire} editTick={editTick} />}
       {block.type === 'todo' && <TodoBody {...p} block={block} />}
       {block.type === 'timer' && <TimerBody {...p} block={block} fire={fire} editTick={editTick} />}
       {block.type === 'jump' && <JumpBody {...p} block={block} fire={fire} editTick={editTick} />}
+
+      {!readOnly && (
+        <div
+          className="blk-resize"
+          role="separator"
+          aria-label="블록 크기 조절"
+          onPointerDown={onResizeDown}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
+          onPointerCancel={onResizeUp}
+        />
+      )}
 
       {menu && (
         <FtPopover anchor={menu} side="below" kind="blocks" onClose={() => setMenu(null)}>
@@ -779,6 +835,18 @@ function BlockMenu(p: CardProps & { maxZ: () => number; requestEdit: () => void;
       <button className="menu-item" disabled={readOnly} onClick={done(() => engine.bringBlockToFront(block.id))}>
         <Icon name="arrowUp" />
         맨 앞으로
+      </button>
+      <button className="menu-item" disabled={readOnly} onClick={done(() => engine.updateBlock(block.id, { minimal: !block.minimal }))}>
+        <Icon name={block.minimal ? 'maximize' : 'minimize'} />
+        {block.minimal ? '간소화 해제' : '간소화 (내용만 표시)'}
+      </button>
+      <button className="menu-item" disabled={readOnly} onClick={done(() => engine.updateBlock(block.id, { transparent: !block.transparent }))}>
+        <Icon name={block.transparent ? 'palette' : 'eyeOff'} />
+        {block.transparent ? '배경 채우기' : '배경 투명 (텍스트 박스처럼)'}
+      </button>
+      <button className="menu-item" disabled={readOnly} onClick={done(() => engine.updateBlock(block.id, { fixed: !block.fixed }))}>
+        <Icon name={block.fixed ? 'unlock' : 'pin'} />
+        {block.fixed ? '고정 해제' : '움직이지 않게 고정'}
       </button>
       {block.type === 'memo' && <MemoMenuItems {...p} block={block} done={done} />}
       {block.type === 'link' && (

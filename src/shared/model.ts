@@ -191,6 +191,12 @@ export interface BlockBase {
   updatedAt: number
   /** tombstone (동기화 머지용) */
   deletedAt?: number
+  /** 간소화 — 헤더를 숨기고 내용만 표시한다 */
+  minimal?: boolean
+  /** 배경 투명 — 카드 배경·그림자를 없애 텍스트 박스처럼 보인다 */
+  transparent?: boolean
+  /** 고정 — 헤더 드래그로 옮길 수 없다 */
+  fixed?: boolean
 }
 
 export interface MemoData {

@@ -68,7 +68,9 @@ const PATHS: Record<string, string> = {
   cloudDown: 'M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9ZM12 12v6M9 15l3 3 3-3',
   wifiOff: 'M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 3-1.9M2 8.8a15 15 0 0 1 4-2.5M22 8.8A15 15 0 0 0 12 5c-1 0-2 .1-2.9.4M19 12.9a10 10 0 0 0-2-1.3M12 20h.01',
   lock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM7 11V7a5 5 0 0 1 10 0v4',
-  sort: 'M3 6h12M3 12h8M3 18h4M17 4v16M14 17l3 3 3-3'
+  sort: 'M3 6h12M3 12h8M3 18h4M17 4v16M14 17l3 3 3-3',
+  pin: 'M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z',
+  unlock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM7 11V7a5 5 0 0 1 9.9-1'
 }
 
 export function Icon({ name, size = 22, className }: { name: string; size?: number; className?: string }) {
