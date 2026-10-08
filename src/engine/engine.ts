@@ -159,6 +159,8 @@ export class Engine {
   private dirtyBlocks = new Map<ID, Block>()
   private deletedBlocks = new Set<ID>()
   private orderDirty = false
+  /** 되돌리기·다시 실행이 이번 저장에 끼어 있으면 true — 되돌린 내용이 마지막 동기화와 같아졌는지 확인하는 힌트 */
+  private undoneSinceFlush = false
   private saveTimer = 0
   private saving: Promise<void> | null = null
   private saveState: SaveState = 'saved'
@@ -370,13 +372,17 @@ export class Engine {
   undo() {
     if (this.active || this.readOnly) return
     const cmd = this.history.popUndo()
-    if (cmd) this.applyCommand(cmd, true)
+    if (!cmd) return
+    this.undoneSinceFlush = true
+    this.applyCommand(cmd, true)
   }
 
   redo() {
     if (this.active || this.readOnly) return
     const cmd = this.history.popRedo()
-    if (cmd) this.applyCommand(cmd, false)
+    if (!cmd) return
+    this.undoneSinceFlush = true
+    this.applyCommand(cmd, false)
   }
 
   get canUndo() {
@@ -809,13 +815,15 @@ export class Engine {
       pagesDelete: pagesDel,
       blocksUpsert: blocksUp.length ? blocksUp : undefined,
       blocksDelete: blocksDel.length ? blocksDel : undefined,
-      doc: order ? { pageOrder: this.layout.pages.map((p) => p.id) } : undefined
+      doc: order ? { pageOrder: this.layout.pages.map((p) => p.id) } : undefined,
+      viaUndo: this.undoneSinceFlush
     }
     if (order) this.doc = { ...this.doc, pageOrder: batch.doc!.pageOrder! }
     this.setSaveState('saving')
     this.saving = (async () => {
       try {
         await this.persist(batch)
+        this.undoneSinceFlush = false // 성공한 배치의 힌트는 소모 — 실패하면 재시도에 다시 끼운다
         this.setSaveState(this.hasPendingChanges ? 'pending' : 'saved')
       } catch (e) {
         // 실패하면 다시 대기열에 넣고 재시도

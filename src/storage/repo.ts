@@ -321,6 +321,8 @@ export interface SaveBatch {
   chunks?: ChunkData[] // 빈 elements = 청크 삭제
   blocksUpsert?: Block[] // 편집 블록 (PDF 내보내기와 무관)
   blocksDelete?: ID[] // soft delete (tombstone)
+  /** 되돌리기·다시 실행이 이 배치에 끼어 있다 — 되돌린 내용이 마지막 동기화와 같아졌는지 확인하는 힌트 */
+  viaUndo?: boolean
 }
 
 /** 문서 편집 결과를 한 트랜잭션으로 기록 (반쯤 쓰인 데이터가 남지 않는다, 16.4) */
