@@ -15,6 +15,34 @@ import { AuthRequiredError } from './token'
 /** 이 기기에 원본이 없고, 지금 받아올 수도 없을 때 */
 export class AssetUnavailableError extends Error {}
 
+/** 사용자가 원본 내려받기를 취소했을 때. 오류가 아니므로 화면에 알리지 않는다 */
+export class AssetDownloadCancelledError extends Error {
+  constructor() {
+    super('원본 내려받기를 취소했습니다.')
+    this.name = 'AssetDownloadCancelledError'
+  }
+}
+
+// ───────────────── 내려받기 전 확인(게이트) ─────────────────
+// 노트를 열 때처럼 앱이 스스로 원본을 받아오는 경우, 전송 전에 사용자에게 물어볼 수 있게
+// 화면(에디터)이 훅을 등록한다. 등록되어 있지 않으면 묻지 않는다.
+
+export interface AssetDownloadRequest {
+  assetId: ID
+  kind: 'pdf' | 'image'
+  name?: string
+  bytes: number
+}
+
+export type AssetDownloadGate = (req: AssetDownloadRequest) => boolean | Promise<boolean>
+
+let downloadGate: AssetDownloadGate | null = null
+
+/** 원본을 받기 전에 확인할 훅을 등록한다 (null이면 해제) */
+export function setAssetDownloadGate(fn: AssetDownloadGate | null) {
+  downloadGate = fn
+}
+
 const KEY = (sha256: string) => `asset:${sha256}`
 
 // ───────────────── 진행률 알림(UI용) ─────────────────
@@ -83,7 +111,7 @@ const inflight = new Map<ID, Promise<Blob>>()
  * 원본을 이 기기에 확보한다. 이미 있으면 그대로 돌려준다.
  * 실패하면 AssetUnavailableError(사용자에게 보여줄 한국어 메시지)를 던진다.
  */
-export async function ensureAssetLocal(assetId: ID): Promise<Blob> {
+export async function ensureAssetLocal(assetId: ID, opts?: { skipGate?: boolean }): Promise<Blob> {
   const row = await db.assets.get(assetId)
   if (!row) throw new AssetUnavailableError('이 문서가 참조하는 원본 정보가 없습니다.')
   if (row.blob) return row.blob
@@ -96,6 +124,12 @@ export async function ensureAssetLocal(assetId: ID): Promise<Blob> {
       throw new AssetUnavailableError('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 열어 주세요.')
     }
     const row_ = row as AssetRow
+    // 앱이 스스로 받아오는 경로(노트를 열 때 등)에는 전송 전 확인을 끼운다.
+    // 이미 사용자에게 물어본 경로(원본 관리 시트 등)는 skipGate로 건너뛴다.
+    if (!opts?.skipGate && downloadGate) {
+      const ok = await downloadGate({ assetId: row_.id, kind: row_.kind, name: row_.name, bytes: row_.size })
+      if (!ok) throw new AssetDownloadCancelledError()
+    }
     emit({ assetId: row_.id, loaded: 0, total: null, done: false })
     const blob = await downloadAsset(row_)
     await db.assets.update(row_.id, { blob })
@@ -128,7 +162,8 @@ export async function downloadAllMissing(onProgress?: (done: number, total: numb
   let authFailed = false
   for (let i = 0; i < missing.length; i++) {
     try {
-      await ensureAssetLocal(missing[i].id)
+      // 호출한 쪽(원본 관리 시트 등)에서 이미 확인했으므로 여기서는 다시 묻지 않는다
+      await ensureAssetLocal(missing[i].id, { skipGate: true })
       ok++
     } catch (e) {
       failed++

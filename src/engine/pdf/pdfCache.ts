@@ -1,4 +1,5 @@
 import { getAsset } from '../../storage/repo'
+import { AssetDownloadCancelledError } from '../../sync/assets'
 import { closePdf, openPdf, PdfPasswordError, type PDFDocumentProxy, type PDFPageProxy } from './pdfjs'
 import type { ID, PdfRef } from '../../shared/model'
 
@@ -44,7 +45,8 @@ export class PdfCache {
             row = { ...row, blob: await this.assetProvider(assetId) }
           } catch (e) {
             const msg = e instanceof Error ? e.message : 'PDF 원본을 받지 못했습니다.'
-            this.onAssetError?.(assetId, msg)
+            // 사용자가 내려받기를 취소한 것은 오류가 아니다 — 알리지 않는다
+            if (!(e instanceof AssetDownloadCancelledError)) this.onAssetError?.(assetId, msg)
             throw new Error(msg)
           }
         }

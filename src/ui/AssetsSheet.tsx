@@ -266,7 +266,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     if (!a.assetId) return
     if (!(await confirmTransfer('down', a.size))) return
     try {
-      await ensureAssetLocal(a.assetId)
+      await ensureAssetLocal(a.assetId, { skipGate: true })
       toast(`"${titleOf(a)}" 원본을 받았습니다.`)
     } catch (e) {
       if (e instanceof AuthRequiredError) {

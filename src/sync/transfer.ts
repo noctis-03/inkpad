@@ -17,8 +17,11 @@ export function largeFileThreshold(): number {
   return THRESHOLDS[useUI.getState().settings.largeFileConfirm]
 }
 
-/** 설정의 기준 이상이면 다운로드/업로드 전에 확인 창을 띄운다. 기준 미만이거나 끄기면 묻지 않는다 */
-export async function confirmTransfer(direction: 'down' | 'up', bytes: number, count = 1): Promise<boolean> {
+/**
+ * 설정의 기준 이상이면 다운로드/업로드 전에 확인 창을 띄운다. 기준 미만이거나 끄기면 묻지 않는다.
+ * `what`을 주면 무엇을 받는지 제목에 함께 보여준다 ("노트 원본(PDF) 12.3 MB를 다운로드합니다").
+ */
+export async function confirmTransfer(direction: 'down' | 'up', bytes: number, count = 1, what?: string): Promise<boolean> {
   const mode = useUI.getState().settings.largeFileConfirm
   if (mode === 'off') return true
   const threshold = THRESHOLDS[mode]
@@ -26,11 +29,21 @@ export async function confirmTransfer(direction: 'down' | 'up', bytes: number, c
   const size = formatBytes(bytes)
   const message = (count > 1 ? `파일 ${count}개, ` : '') + '셀룰러 데이터를 사용 중이라면 그만큼 데이터가 사용됩니다.'
   const note = mode === 'always' ? '무조건 확인이 켜져 있습니다 · 설정에서 바꿀 수 있습니다' : `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`
-  return confirmDialog(direction === 'down' ? `${size}를 다운로드합니다` : `${size}를 업로드합니다`, {
+  const head = what ? `${what} ${size}` : size
+  return confirmDialog(direction === 'down' ? `${head}를 다운로드합니다` : `${head}를 업로드합니다`, {
     message,
     note,
     ok: direction === 'down' ? '다운로드' : '업로드'
   })
+}
+
+/**
+ * 노트를 열 때 지연 로딩되는 원본(PDF·이미지)을 받기 전 확인 (명세 11.5).
+ * "받기"는 메타데이터만 받으므로, 메타만 있는 노트를 열면 그때 원본이 네트워크로 내려온다.
+ * 그 경로에서도 큰 파일 전송 전 확인과 같은 기준·문구로 묻는다.
+ */
+export async function confirmAssetDownload(bytes: number, kind: 'pdf' | 'image'): Promise<boolean> {
+  return confirmTransfer('down', bytes, 1, kind === 'pdf' ? '노트 원본(PDF)' : '노트 원본(이미지)')
 }
 
 /**

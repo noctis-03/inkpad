@@ -229,7 +229,7 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
 
       <section className="panel-section">
         <h3>기타 파일</h3>
-        <Row label="큰 파일 전송 전 확인" hint="이 크기 이상을 다운로드·업로드하기 전에 한 번 더 묻습니다 (iPad는 셀룰러 여부를 알 수 없어 크기로 확인합니다)">
+        <Row label="큰 파일 전송 전 확인" hint="이 크기 이상을 다운로드·업로드하기 전에 한 번 더 묻습니다 (iPad는 셀룰러 여부를 알 수 없어 크기로 확인합니다). 메타데이터만 있는 노트를 열어 원본(PDF·이미지)을 받을 때도 묻습니다">
           <Select
             k="largeFileConfirm"
             options={[
