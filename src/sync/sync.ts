@@ -313,9 +313,20 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     remote = await drive.getMeta(record.fileId)
     if (remote?.trashed) remote = null
   }
+  if (!remote) {
+    // 기록이 없거나 기록한 파일이 사라졌다(폴더가 통째로 지워져 다른 기기가 먼저 재올린 경우 등).
+    // 같은 이름의 살아 있는 파일이 있으면 그 파일을 이어 쓴다 — 새 파일로 올리면 같은 docId가
+    // 파일 2개로 분기하고, 폴더 재생성 뒤에는 Drive version이 재시작돼 받기의 버전 비교로
+    // 분기를 구분하지 못해 두 기기가 발산한다.
+    const same = await drive.findByName(`docs/${docId}.json`, f.docs)
+    if (same) remote = same
+  }
 
-  // 머지: 다른 기기가 먼저 올렸다 (규칙 2)
-  if (remote && record?.version && remote.version !== record.version) {
+  // 머지: 다른 기기가 먼저 올렸거나(규칙 2), 기록과 다른 파일을 이어 쓰는 경우.
+  // 재생성된 파일의 Drive version은 재시작했으므로 버전이 같든 다르든 파일 신원이 바뀌었으면
+  // 머지로 합친다. 기록이 통째로 지워진 뒤(resetRemoteRecords)에도 마찬가지다 — 머지 없이
+  // 덮어쓰면 다른 기기가 방금 올린 상태를 흘린다. base가 없으면 무base 머지 규칙을 따른다.
+  if (remote && (!record?.version || remote.version !== record.version || remote.id !== record.fileId)) {
     await mergePush(docId, remote, f.docs)
     await db.outbox.bulkDelete(info.seqs)
     return
@@ -490,9 +501,20 @@ async function pull(f: { docs: string; assets: string }) {
   for (const kv of await db.syncState.toArray()) {
     if (kv.key.startsWith('doc:')) recs.set(kv.key.slice(4), kv.value as FileRecord)
   }
+  // 같은 docId의 살아 있는 파일이 여러 개면(폴더 재생성 직후 분기 등) 가장 최신 하나만 본다 —
+  // 버전이 재시작한 파일끼리 크기를 비교해 되받기를 반복하는 일이 없게 한다 (규칙 10)
+  const newestByDoc = new Map<string, drive.RemoteFile>()
+  for (const remote of remotes) {
+    const docId = remote.appProperties?.docId
+    if (!docId) continue
+    const cur = newestByDoc.get(docId)
+    if (!cur || verNum(remote.version) > verNum(cur.version) || (remote.version === cur.version && remote.modifiedTime > cur.modifiedTime))
+      newestByDoc.set(docId, remote)
+  }
+
   // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용 (구현 메모 ④)
   const eligible: typeof remotes = []
-  for (const remote of remotes) {
+  for (const remote of newestByDoc.values()) {
     const docId = remote.appProperties?.docId
     if (!docId) continue
     if (await getSync(`gone:${docId}`)) continue // 이 기기에서 지운 노트 — 받기로 되살리지 않는다 (목록에서 개별 받기)
