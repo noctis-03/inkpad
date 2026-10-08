@@ -10,6 +10,7 @@ import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
 import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../sync/assets'
 import { confirmAssetDownload } from '../../sync/transfer'
+import { clearPendingIfUnchanged } from '../../sync/unchanged'
 import { CONFLICT_EVENT, REMOTE_EVENT } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
@@ -118,7 +119,11 @@ export function Editor({ docId }: { docId: ID }) {
           doc: loaded,
           pdf,
           readOnly: !lock,
-          persist: (b) => saveBatch(b),
+          persist: async (b) => {
+            await saveBatch(b)
+            // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점으로 돌아왔으면 '올리기 필요'를 내린다
+            if (b.viaUndo) await clearPendingIfUnchanged(b.documentId)
+          },
           callbacks: {
             onStats: (s) => useUI.setState({ stats: s }),
             onView: (v) => useUI.setState({ view: v }),

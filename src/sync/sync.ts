@@ -21,17 +21,19 @@
 //     (listFiles 인덱스 지연, 리비전 고정·해제 같은 메타데이터 전용 쓰기도 값을 올린다),
 //     뒤처진 값으로 덮으면 방금 올린 노트가 "받을 것"으로 오판된다
 import type { ID } from '../shared/model'
-import { gzipJson, gunzipJson } from '../storage/compress'
+import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { getHiddenCategories } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
+import { loadBase, saveBase } from './base'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { mergeDocs } from './merge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
+import { clearPendingIfUnchanged } from './unchanged'
 
 const SYNC_LOCK = 'inkpad-sync'
 /** appProperties에 담을 수 있는 값의 상한 (Google Drive 제한: UTF-8 124바이트) */
@@ -129,21 +131,7 @@ function emitRemoteChanged(ids: Set<string>) {
 }
 
 // ───────────────── 공통 ─────────────────
-
-/** 마지막으로 맞춘 시점의 문서 스냅샷(머지의 base). gzip JSON blob을 syncState에 보관 */
-async function saveBase(docId: ID, file: DocFileV1) {
-  await putSync(`base:${docId}`, { blob: await gzipJson(file) })
-}
-async function loadBase(docId: ID): Promise<DocFileV1 | null> {
-  const rec = await getSync<{ blob: Blob }>(`base:${docId}`)
-  if (!rec?.blob) return null
-  try {
-    const file = await gunzipJson<DocFileV1>(rec.blob)
-    return file?.kind === 'inkpad-doc' ? file : null
-  } catch {
-    return null
-  }
-}
+// base 스냅샷(saveBase·loadBase)은 sync/base.ts — 되돌림 판정(unchanged.ts)이 함께 쓴다
 
 /** Drive version 비교용 — int64 문자열이라 Number로는 정밀도를 잃는다. 없거나 깨졌으면 0으로 본다 */
 function verNum(v: string | undefined): bigint {
@@ -288,6 +276,7 @@ async function push(f: { docs: string; assets: string }): Promise<number> {
   }
 
   let n = 0
+  let uploaded = 0
   for (const [docId, info] of docs) {
     if (!uploadable.has(docId)) {
       const doc = await db.documents.get(docId)
@@ -295,7 +284,7 @@ async function push(f: { docs: string; assets: string }): Promise<number> {
       continue
     }
     emitProgress('push', ++n, uploadable.size)
-    await pushDoc(docId, info, f)
+    if (await pushDoc(docId, info, f)) uploaded++ // 되돌리기로 내용이 같아진 노트는 올리지 않고 뺀다
   }
 
   for (const r of rows.filter((r) => r.entity === 'asset')) {
@@ -303,10 +292,16 @@ async function push(f: { docs: string; assets: string }): Promise<number> {
     await db.outbox.delete(r.seq!)
   }
 
-  return uploadable.size
+  return uploaded
 }
 
-async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }) {
+async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }): Promise<boolean> {
+  // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점과 같아졌으면 올리지 않고 대기를 내린다 —
+  // 바뀐 게 없는데 리비전을 하나 더 만드는 일이 없게 한다.
+  // '되돌림' 리비전(버전 기록 복원)은 내용이 같아도 사용자가 명시적으로 요청한 반영이므로 그대로 올린다.
+  const restored = (await getSync<string>(`revKind:${docId}`)) === 'restore'
+  if (!restored && info.seqs.length > 0 && (await clearPendingIfUnchanged(docId, info.seqs))) return false
+
   const record = await getSync<FileRecord>(`doc:${docId}`)
   let remote: drive.RemoteFile | null = null
   if (record?.fileId) {
@@ -329,7 +324,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   if (remote && (!record?.version || remote.version !== record.version || remote.id !== record.fileId)) {
     await mergePush(docId, remote, f.docs)
     await db.outbox.bulkDelete(info.seqs)
-    return
+    return true
   }
 
   const file = await packDocument(docId)
@@ -343,7 +338,6 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   }
   const device = await getDeviceName()
   // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
-  const restored = (await getSync<string>(`revKind:${docId}`)) === 'restore'
   const rev: RevMarker = { kind: restored ? 'restore' : 'push', device, at: Date.now() }
   const result = await drive.upload(
     await gzipJson({ ...file, rev }),
@@ -361,6 +355,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   // 그래서 헤드를 다시 읽어 저장한다 (규칙 10)
   const head = (await drive.getMeta(result.id).catch(() => null)) ?? result
   await markSynced(docId, file, head, info.seqs)
+  return true
 }
 
 /** 업로드가 끝난 뒤 로컬 상태 반영 (규칙 3) — base 스냅샷도 함께 갱신 */
