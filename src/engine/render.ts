@@ -65,6 +65,11 @@ export class Renderer {
   private liveDrawn: LiveBox | null = null
   /** 선택된 획은 확정 레이어에서 빼고 입력 레이어에 그린다 */
   hidden: Set<string> | null = null
+  /** 모션그래픽 레이어(화면 좌표계)와 입자 목록 */
+  readonly fx: HTMLCanvasElement
+  private fctx: CanvasRenderingContext2D
+  private fxp: FxParticle[] = []
+  private fxOn = false
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -74,14 +79,18 @@ export class Renderer {
     this.committed.className = 'layer layer-committed'
     this.live = document.createElement('canvas')
     this.live.className = 'layer layer-live'
-    root.append(this.pageLayer, this.committed, this.live)
+    // 인터랙티브 모션그래픽(잉크 버스트) 전용 레이어 — 카메라 변환 없이 화면 좌표계로 그린다
+    this.fx = document.createElement('canvas')
+    this.fx.className = 'layer layer-fx'
+    root.append(this.pageLayer, this.committed, this.live, this.fx)
     this.pctx = this.pageLayer.getContext('2d')!
     this.cctx = this.committed.getContext('2d')!
     this.lctx = this.live.getContext('2d', { desynchronized: true } as CanvasRenderingContext2DSettings)!
+    this.fctx = this.fx.getContext('2d')!
   }
 
   destroy() {
-    for (const c of [this.pageLayer, this.committed, this.live]) {
+    for (const c of [this.pageLayer, this.committed, this.live, this.fx]) {
       c.width = c.height = 0
       c.remove()
     }
@@ -96,7 +105,7 @@ export class Renderer {
     const px = this.cssW * this.cssH * scale * scale
     if (px > MAX_CANVAS_PIXELS) scale = Math.sqrt(MAX_CANVAS_PIXELS / (this.cssW * this.cssH))
     this.scale = scale
-    for (const c of [this.pageLayer, this.committed, this.live]) {
+    for (const c of [this.pageLayer, this.committed, this.live, this.fx]) {
       c.width = Math.round(this.cssW * scale)
       c.height = Math.round(this.cssH * scale)
       c.style.width = this.cssW + 'px'
@@ -389,6 +398,88 @@ export class Renderer {
     }
     this.liveDrawn = unionLiveBoxes(boxes)
   }
+
+  // ───────── 인터랙티브 모션그래픽 (INK FX) ─────────
+
+  /** 획이 끝난 지점에 잉크가 잔물결처럼 번지는 버스트를 띄운다 (화면 좌표계) */
+  bloom(wx: number, wy: number, color: string, cam: Camera) {
+    if (this.fxp.length > 140) return
+    const k = cam.zoom * this.scale
+    const sx = (wx - cam.x) * k
+    const sy = (wy - cam.y) * k
+    const n = 9
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.7
+      const sp = this.scale * (58 + Math.random() * 120)
+      this.fxp.push({
+        x: sx,
+        y: sy,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        r: this.scale * (1.6 + Math.random() * 2.6),
+        life: 1,
+        decay: 0.028 + Math.random() * 0.022,
+        color
+      })
+    }
+    this.fxp.push({ x: sx, y: sy, vx: 0, vy: 0, r: this.scale * 2.4, life: 1, decay: 0.09, color, ring: true })
+    this.fxOn = true
+  }
+
+  /** 매 프레임 FX 레이어를 갱신한다. 입자가 없으면 한 번만 지우고 이후 비용은 0 */
+  drawFx() {
+    const ctx = this.fctx
+    if (!this.fxp.length) {
+      if (this.fxOn) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.clearRect(0, 0, this.fx.width, this.fx.height)
+        this.fxOn = false
+      }
+      return
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, this.fx.width, this.fx.height)
+    for (let i = this.fxp.length - 1; i >= 0; i--) {
+      const p = this.fxp[i]
+      p.life -= p.decay
+      if (p.life <= 0) {
+        this.fxp.splice(i, 1)
+        continue
+      }
+      p.x += p.vx
+      p.y += p.vy
+      p.vx *= 0.9
+      p.vy *= 0.9
+      const e = p.life * p.life
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.r * (p.ring ? 1 + (1 - p.life) * 5 : 1), 0, Math.PI * 2)
+      if (p.ring) {
+        ctx.globalAlpha = Math.min(0.8, e * 1.5)
+        ctx.strokeStyle = p.color
+        ctx.lineWidth = Math.max(1, this.scale * 1.4)
+        ctx.stroke()
+      } else {
+        ctx.globalAlpha = Math.min(0.85, e)
+        ctx.fillStyle = p.color
+        ctx.fill()
+      }
+    }
+    ctx.globalAlpha = 1
+    this.fxOn = true
+  }
+}
+
+/** 모션그래픽 입자 (화면/기기 픽셀 좌표계, px/frame 속도) */
+interface FxParticle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  r: number
+  life: number
+  decay: number
+  color: string
+  ring?: boolean
 }
 
 /** 입력 레이어에 그린 것의 기기 픽셀 영역 */

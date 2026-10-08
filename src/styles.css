@@ -3475,3 +3475,174 @@ textarea {
 }
 .modal-actions.wrap{flex-wrap:wrap;}
 .modal-actions.equal.wrap .text-btn{flex:1 1 40%;}
+
+/* ═══════════════════════════════════════════════════════════════════
+   인터랙티브 모션그래픽 (Interactive Motion Graphics)
+   - 잉크 리플/스파크, 라이브러리 오라, 카드 등장 스태거 + 3D 틸트
+   - 시트·다이얼로그·토스트 스프링 진입, 필기 잉크 버스트 캔버스
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --mg-spring: cubic-bezier(.22, 1.15, .36, 1);
+  --mg-out: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* ── 잉크 버스트 캔버스(필기 FX) ── */
+.layer-fx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* ── 전역 리플 / 스파크 레이어 ── */
+.mg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  overflow: hidden;
+}
+.mg-bit {
+  position: absolute;
+  will-change: transform, opacity;
+}
+.mg-ripple {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid #2563eb8c;
+  background: radial-gradient(circle, #2563eb2e, transparent 70%);
+  animation: mg-ripple .62s var(--mg-out) forwards;
+}
+@keyframes mg-ripple {
+  from { transform: scale(.35); opacity: .9; }
+  to { transform: scale(7); opacity: 0; }
+}
+.mg-spark {
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: hsl(var(--h, 210) 92% 58%);
+  box-shadow: 0 0 9px hsl(var(--h, 210) 92% 62% / .85);
+  animation: mg-spark .74s var(--mg-out) forwards;
+}
+@keyframes mg-spark {
+  from { transform: translate(0, 0) scale(1); opacity: 1; }
+  to { transform: translate(var(--dx, 0), var(--dy, 0)) scale(0); opacity: 0; }
+}
+
+/* ── 라이브러리 오라(aurora) ── */
+.library {
+  background:
+    radial-gradient(56% 42% at 10% 6%, #dbeafe99, transparent 62%),
+    radial-gradient(50% 40% at 92% 10%, #fce7f399, transparent 64%),
+    radial-gradient(58% 48% at 50% 110%, #d1fae599, transparent 62%),
+    var(--paper);
+  background-size: 165% 165%, 165% 165%, 175% 175%, 100% 100%;
+  animation: lib-in .2s ease-out both, mg-aurora 24s ease-in-out infinite;
+}
+@keyframes mg-aurora {
+  0% { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
+  50% { background-position: 42% 32%, 58% 42%, 28% 68%, 0 0; }
+  100% { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
+}
+
+/* ── 카드 등장 스태거 ── */
+.doc-card {
+  animation: mg-card-in .44s var(--mg-out) both;
+  animation-delay: var(--mg-delay, 0ms);
+}
+@keyframes mg-card-in {
+  from { opacity: 0; translate: 0 16px; scale: .965; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+.doc-grid > .doc-card:nth-child(1), .doc-list > .doc-card:nth-child(1) { --mg-delay: 0ms; }
+.doc-grid > .doc-card:nth-child(2), .doc-list > .doc-card:nth-child(2) { --mg-delay: 28ms; }
+.doc-grid > .doc-card:nth-child(3), .doc-list > .doc-card:nth-child(3) { --mg-delay: 56ms; }
+.doc-grid > .doc-card:nth-child(4), .doc-list > .doc-card:nth-child(4) { --mg-delay: 84ms; }
+.doc-grid > .doc-card:nth-child(5), .doc-list > .doc-card:nth-child(5) { --mg-delay: 112ms; }
+.doc-grid > .doc-card:nth-child(6), .doc-list > .doc-card:nth-child(6) { --mg-delay: 140ms; }
+.doc-grid > .doc-card:nth-child(7), .doc-list > .doc-card:nth-child(7) { --mg-delay: 168ms; }
+.doc-grid > .doc-card:nth-child(8), .doc-list > .doc-card:nth-child(8) { --mg-delay: 196ms; }
+.doc-grid > .doc-card:nth-child(9), .doc-list > .doc-card:nth-child(9) { --mg-delay: 224ms; }
+.doc-grid > .doc-card:nth-child(10), .doc-list > .doc-card:nth-child(10) { --mg-delay: 252ms; }
+.doc-grid > .doc-card:nth-child(11), .doc-list > .doc-card:nth-child(11) { --mg-delay: 280ms; }
+.doc-grid > .doc-card:nth-child(12), .doc-list > .doc-card:nth-child(12) { --mg-delay: 308ms; }
+
+/* ── 카드 3D 틸트 + 하이라이트 + 눌림 ── */
+.doc-grid .doc-card {
+  transform-style: preserve-3d;
+  transform: perspective(1000px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
+  transition: transform .25s var(--mg-out), box-shadow .3s var(--mg-out);
+}
+.doc-grid .doc-card:hover,
+.doc-grid .doc-card[data-mg-tilt] {
+  z-index: 2;
+}
+.doc-grid .doc-card:hover .doc-thumb {
+  box-shadow: 0 18px 38px -16px #1f29375e, 0 0 0 1px #2563eb26;
+}
+.doc-grid .doc-card .doc-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(240px circle at var(--gx, 50%) var(--gy, 50%), #ffffff5c, transparent 62%);
+  transition: opacity .25s var(--mg-out);
+}
+.doc-grid .doc-card[data-mg-tilt] .doc-thumb::after {
+  opacity: 1;
+}
+.doc-grid .doc-card:active {
+  scale: .985;
+}
+
+/* ── 시트 / 다이얼로그 / 토스트 스프링 진입 ── */
+.modal-backdrop {
+  animation: mg-fade .18s ease both;
+}
+.modal,
+.sheet,
+.store-sheet {
+  animation: mg-sheet-in .32s var(--mg-spring) both;
+}
+.toast {
+  animation: mg-toast-in .34s var(--mg-spring) both;
+}
+@keyframes mg-fade {
+  from { opacity: 0; }
+}
+@keyframes mg-sheet-in {
+  from { opacity: 0; translate: 0 20px; scale: .965; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes mg-toast-in {
+  from { opacity: 0; translate: 0 16px; scale: .92; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+/* ── 접근성: 모션 최소화 ── */
+@media (prefers-reduced-motion: reduce) {
+  .library {
+    animation: none;
+    background-image: none;
+  }
+  .doc-card,
+  .modal,
+  .sheet,
+  .store-sheet,
+  .toast,
+  .modal-backdrop {
+    animation: none !important;
+  }
+  .doc-grid .doc-card {
+    transform: none;
+  }
+  .mg-layer {
+    display: none;
+  }
+}

@@ -118,6 +118,8 @@ export class Engine {
   style: ToolStyle
   tool: Tool = 'pen'
   readOnly: boolean
+  /** 인터랙티브 모션그래픽(획 완료 잉크 버스트) 사용 여부 */
+  fxEnabled = true
   private cb: EngineCallbacks
   private persist: (b: SaveBatch) => Promise<void>
   private detector: PressureDetector
@@ -1282,6 +1284,11 @@ export class Engine {
     this.history.push({ removed: [], added: [entry] })
     this.markDirty(a.pageId, a.key)
     this.bumpPage(a.pageId)
+    // 획을 놓은 지점에 잉크 버스트 (모션 최소화 설정이면 생략)
+    if (this.fxEnabled && a.points.length >= 8 && !prefersReducedMotion()) {
+      const n = a.points.length
+      this.renderer.bloom(a.ox + a.points[n - 4], a.oy + a.points[n - 3], a.color, this.cam)
+    }
     if (this.renderer.inSync(this.cam)) {
       if (stroke.layer === 'under') this.renderer.redrawRegion(this.scene, this.cam, rec.item)
       else this.renderer.drawIncremental(rec, this.cam)
@@ -1595,6 +1602,8 @@ export class Engine {
       }
     }
 
+    r.drawFx()
+
     if (now - this.lastStatsAt >= 500) this.flushStats(now)
   }
 
@@ -1783,6 +1792,10 @@ function unionBox(a: Box | null, b: Box): Box {
     maxX: Math.max(a.maxX, b.maxX),
     maxY: Math.max(a.maxY, b.maxY)
   }
+}
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
 function eventTimeToPerf(ts: number) {

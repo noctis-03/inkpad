@@ -6,6 +6,7 @@ import { Editor } from '../ui/editor/Editor'
 import { AppRunner } from '../ui/app/AppRunner'
 import { FileRunner } from '../ui/app/FileRunner'
 import { Icon } from '../ui/Icon'
+import { MotionLayer } from '../ui/motion'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
 
@@ -30,6 +31,7 @@ export function App() {
       <Toasts />
       <Busy />
       <DialogHost />
+      <MotionLayer />
     </div>
   )
 }
