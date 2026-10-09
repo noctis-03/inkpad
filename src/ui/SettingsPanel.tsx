@@ -3,6 +3,7 @@ import { useUI } from '../app/store'
 import type { PressureMode, Settings } from '../engine/types'
 import { Icon } from './Icon'
 import { NetUsageSection } from './NetUsageDebug'
+import { useIndicator } from './motion/useIndicator'
 
 function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -44,6 +45,36 @@ function Select({ k, options }: { k: keyof Settings; options: [string, string][]
         </option>
       ))}
     </select>
+  )
+}
+
+/** 모션 단계 세그먼트 (명세 4장) — 슬라이딩 흰 칩 인디케이터(5.2) 적용 */
+function MotionSelect() {
+  const v = useUI((s) => s.settings.motion)
+  const set = useUI((s) => s.setSettings)
+  const ref = useRef<HTMLDivElement>(null)
+  useIndicator(ref, v, 'x')
+  const opts: [Settings['motion'], string][] = [
+    ['auto', '자동'],
+    ['off', '끄기'],
+    ['normal', '보통'],
+    ['rich', '풍부']
+  ]
+  return (
+    <div className="seg" ref={ref} role="radiogroup" aria-label="모션">
+      {opts.map(([val, label]) => (
+        <button
+          key={val}
+          data-indicator-key={val}
+          role="radio"
+          aria-checked={v === val}
+          className={v === val ? 'is-active' : ''}
+          onClick={() => set({ motion: val })}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -262,6 +293,13 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         </Row>
         <Row label="한 손가락 스크롤 관성">
           <Toggle k="momentum" />
+        </Row>
+      </section>
+
+      <section className="panel-section">
+        <h3>화면</h3>
+        <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다">
+          <MotionSelect />
         </Row>
       </section>
 

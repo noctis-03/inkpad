@@ -3475,3 +3475,105 @@ textarea {
 }
 .modal-actions.wrap{flex-wrap:wrap;}
 .modal-actions.equal.wrap .text-btn{flex:1 1 40%;}
+
+/* ═════════════════════ 인터랙티브 모션 (MOTION_SPEC) ═════════════════════ */
+
+/* 3장 · 디자인 토큰 */
+:root {
+  --tray: #efede7;
+  --press: #1f29370d;
+  --spring-pop: cubic-bezier(.34, 1.56, .64, 1);
+  --raise: 0 1px 2px #0000001a, 0 0 0 .5px #0000000f;
+  --focus-ring: 0 0 0 4px #1f29370a;
+  --dur-fast: 120ms;
+  --dur-base: 280ms;
+  --dur-slow: 520ms;
+}
+
+/* 모션 끄기 — 모든 전환/애니메이션을 즉시 끝낸다 (기능은 그대로) */
+[data-motion='off'] *,
+[data-motion='off'] *::before,
+[data-motion='off'] *::after {
+  animation-duration: .01ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* 5.1 · 전역 누름 피드백 */
+[data-press],
+.tb-btn,
+.primary-btn,
+.text-btn,
+.icon-mini,
+.doc-card,
+.mode-card,
+.menu-item,
+.store-pop-item,
+.tree-item,
+.tree-main,
+.folder-chip,
+.seg button,
+.paper-option,
+.hidden-cat-chip,
+.cloud-chip,
+.cloud-bulk,
+.cloud-act-main,
+.cloud-icon-btn,
+.store-btn,
+.store-tab,
+.sync-big,
+.sync-mini {
+  transition: scale .5s var(--spring-pop), background-color .2s, box-shadow .3s var(--ft-ease);
+}
+[data-press].is-pressed,
+.tb-btn.is-pressed,
+.primary-btn.is-pressed,
+.text-btn.is-pressed,
+.icon-mini.is-pressed,
+.mode-card.is-pressed,
+.menu-item.is-pressed,
+.store-pop-item.is-pressed,
+.tree-item.is-pressed,
+.tree-main.is-pressed,
+.folder-chip.is-pressed,
+.seg button.is-pressed,
+.paper-option.is-pressed,
+.hidden-cat-chip.is-pressed,
+.cloud-chip.is-pressed,
+.cloud-bulk.is-pressed,
+.cloud-act-main.is-pressed,
+.cloud-icon-btn.is-pressed,
+.store-btn.is-pressed,
+.store-tab.is-pressed,
+.sync-big.is-pressed,
+.sync-mini.is-pressed {
+  scale: .93;
+  transition-duration: var(--dur-fast);
+}
+.tb-btn.is-pressed,
+.icon-mini.is-pressed,
+.seg button.is-pressed {
+  background: var(--press);
+}
+.primary-btn.is-pressed,
+.doc-card.is-pressed,
+.mode-card.is-pressed,
+.card.is-pressed {
+  scale: .965;
+}
+
+/* 기존 :active 누름 스타일 제거 — 위의 눌림+탄성 복원으로 통일 */
+.tb-btn:active { background: transparent; }
+.primary-btn:active { filter: none; }
+.text-btn:active { background: #fff; }
+.icon-mini:active { background: transparent; }
+.menu-item:active { background: transparent; }
+.sync-big:active:not(:disabled) { transform: none; }
+
+/* 포커스는 키보드(:focus-visible)일 때만 표시한다 */
+:focus-visible {
+  outline: 2px solid #1f293759;
+  outline-offset: 2px;
+}

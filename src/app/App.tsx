@@ -8,12 +8,35 @@ import { FileRunner } from '../ui/app/FileRunner'
 import { Icon } from '../ui/Icon'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
+import { installPress } from '../ui/motion/press'
 
 export function App() {
   const route = useUI((s) => s.route)
   useEffect(() => {
     // 휴지통 30일 정리 (로컬). 서버 쪽은 Phase 2에서 요청 시 lazy 정리
     void purgeExpiredTrash().catch(() => {})
+  }, [])
+
+  // 모션 단계 결정 (명세 4장) — auto는 OS '동작 줄이기'를 따르고, 결과를 <html data-motion>에 반영한다
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const apply = () => {
+      const pref = useUI.getState().settings.motion
+      const level = pref === 'auto' ? (mq.matches ? 'off' : 'normal') : pref
+      document.documentElement.dataset.motion = level
+    }
+    apply()
+    mq.addEventListener('change', apply)
+    const unsub = useUI.subscribe(apply) // 설정에서 모션을 바꾸면 즉시 반영
+    return () => {
+      mq.removeEventListener('change', apply)
+      unsub()
+    }
+  }, [])
+
+  // 전역 누름 피드백 (명세 5.1)
+  useEffect(() => {
+    installPress()
   }, [])
   return (
     <div className="app-shell">

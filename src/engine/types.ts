@@ -41,6 +41,8 @@ export interface Settings {
   momentum: boolean // 한 손가락 스크롤 관성
   // 기타 파일 전송 전 확인 (iPad Safari는 셀룰러 여부를 알 수 없어 크기로 묻는다)
   largeFileConfirm: 'always' | 'off' | '5' | '10' | '50'
+  // 인터랙티브 모션 (MOTION_SPEC 4장). auto = 기기의 '동작 줄이기' 설정을 따름
+  motion: 'auto' | 'off' | 'normal' | 'rich'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -64,7 +66,8 @@ export const DEFAULT_SETTINGS: Settings = {
   resolution: 1,
   showHud: false,
   momentum: true,
-  largeFileConfirm: 'always'
+  largeFileConfirm: 'always',
+  motion: 'auto'
 }
 
 export interface PenStyle {
