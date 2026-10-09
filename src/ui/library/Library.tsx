@@ -16,7 +16,7 @@ import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
-import { categoryColor, categoryTag, formatDate } from '../../shared/util'
+import { categoryColor, formatDate } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import {
   createFolder,
@@ -1239,13 +1239,7 @@ export function Library() {
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
-                        <div
-                          className="doc-stack"
-                          style={{
-                            background: `color-mix(in srgb, ${categoryTag(i.a.category).color} 20%, rgba(255,255,255,0.72))`,
-                            color: `color-mix(in srgb, ${categoryTag(i.a.category).color} 78%, #1c1b18)`
-                          }}
-                        >
+                        <div className="doc-stack">
                           <span className="doc-stack-meta">{appMetaText(i.a)}</span>
                         </div>
                       )}
@@ -1293,13 +1287,7 @@ export function Library() {
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
-                        <div
-                          className="doc-stack"
-                          style={{
-                            background: `color-mix(in srgb, ${categoryTag(i.f.category).color} 20%, rgba(255,255,255,0.72))`,
-                            color: `color-mix(in srgb, ${categoryTag(i.f.category).color} 78%, #1c1b18)`
-                          }}
-                        >
+                        <div className="doc-stack">
                           <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
                         </div>
                       )}
@@ -1348,13 +1336,7 @@ export function Library() {
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
-                        <div
-                          className="doc-stack"
-                          style={{
-                            background: `color-mix(in srgb, ${categoryTag(i.d.category).color} 20%, rgba(255,255,255,0.72))`,
-                            color: `color-mix(in srgb, ${categoryTag(i.d.category).color} 78%, #1c1b18)`
-                          }}
-                        >
+                        <div className="doc-stack">
                           <span className="doc-stack-meta">{docMetaText(i.d)}</span>
                         </div>
                       )}

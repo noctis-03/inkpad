@@ -1100,9 +1100,8 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 — 한 장뿐이고, 상단에 카테고리 색 띠를 얹어 쪽수·날짜를 앉힌다.
-   띠는 미리보기 위에 겹쳐 얹히되 반투명이라 뒤 미리보기가 살짝 비친다
-   (배경색은 카테고리 색을 투명과 섞은 인라인 color-mix). */
+/* 카드 — 한 장뿐이고, 상단 띠는 카테고리 색 없이 옅은 스크림 + 블러만 얹는다.
+   뒤 미리보기가 은은하게 비치고 글자는 읽힌다. */
 .doc-grid .doc-plate {
   position: relative;
   border-radius: var(--r-lg);
@@ -1121,9 +1120,10 @@ textarea {
   justify-content: center;
   height: 21px;
   padding: 0 8px;
-  background: var(--thumb-paper); /* 카테고리 반투명 색이 인라인 스타일로 덮는다 */
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px); /* 뒤 미리보기 위에서도 글자가 읽히게 */
+  color: var(--muted);
+  background: color-mix(in srgb, var(--thumb-paper) 42%, transparent); /* 색 없이 옅은 스크림 */
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px); /* 약간의 블러만 */
 }
 .doc-grid .doc-stack-meta {
   max-width: 100%;
