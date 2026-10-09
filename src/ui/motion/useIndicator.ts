@@ -7,6 +7,11 @@ import { useEffect, useRef, type RefObject } from 'react'
  * 축은 표시용 의미만 갖는다.
  *
  * activeKey 가 null/빈 값이면(선택 해제) 남아 있던 인디케이터를 숨긴다.
+ *
+ * 이동은 항상 슬라이딩(모핑)으로 한다 — 항목을 누르면 칩이 스프링으로 미끄러져 간다.
+ * 단, 칩을 새로 만든 직후(서랍을 다시 열 때 등)와 컨테이너 첫 배치 때는 0,0에서
+ * 출발하는 가짜 슬라이드를 막으려고 즉시 배치한다. 슬라이딩이 진행되는 동안에는
+ * ResizeObserver·재시도의 즉시 재배치가 트랜지션을 끊지 않게 잠금(hold) 창을 둔다.
  */
 export function useIndicator(
   containerRef: RefObject<HTMLElement | null>,
@@ -14,6 +19,7 @@ export function useIndicator(
   axis: 'x' | 'y' = 'x'
 ) {
   const first = useRef(true)
+  const hold = useRef(0)
   const key = activeKey == null ? '' : String(activeKey)
 
   useEffect(() => {
@@ -32,6 +38,7 @@ export function useIndicator(
     el.dataset.indAxis = axis
 
     let ind = el.querySelector<HTMLElement>(':scope > .motion-ind')
+    const created = !ind
     if (!ind) {
       ind = document.createElement('span')
       ind.className = 'motion-ind'
@@ -51,7 +58,14 @@ export function useIndicator(
       ind.style.height = `${target.offsetHeight}px`
       ind.style.transform = `translate(${target.offsetLeft}px, ${target.offsetTop}px)`
       ind.style.opacity = '1'
-      if (!animate) {
+      if (animate) {
+        // 트랜지션이 끝날 때까지 즉시 재배치(리사이즈·재시도)가 덮어쓰지 않게 잠근다
+        hold.current = performance.now() + 520
+        // 잠금이 풀린 뒤 한 번 실제 위치에 맞춘다 — 애니메이션 중 목록이 바뀐 경우의 보정
+        window.setTimeout(() => {
+          if (performance.now() >= hold.current) place(false)
+        }, 560)
+      } else {
         ind.style.transition = prevTransition
         // transition을 되돌린 직후 다음 프레임에는 애니메이션이 가능해야 한다
         requestAnimationFrame(() => {
@@ -60,16 +74,21 @@ export function useIndicator(
       }
     }
 
-    place(!first.current)
+    // 새 칩·첫 배치는 즉시, 이후의 선택 이동은 슬라이딩으로
+    place(!created && !first.current)
     first.current = false
 
-    const ro = new ResizeObserver(() => place(false))
+    const instant = () => {
+      if (performance.now() < hold.current) return
+      place(false)
+    }
+    const ro = new ResizeObserver(instant)
     ro.observe(el)
-    const raf = requestAnimationFrame(() => place(false))
-    document.fonts?.ready?.then(() => place(false)).catch(() => {})
+    const raf = requestAnimationFrame(instant)
+    document.fonts?.ready?.then(instant).catch(() => {})
 
     // 비동기 목록(카테고리·폴더 등)에서 활성 항목이 나중에 붙는 경우를 대비한 소수 재시도
-    const retries = [50, 140, 300].map((ms) => window.setTimeout(() => place(false), ms))
+    const retries = [50, 140, 300].map((ms) => window.setTimeout(instant, ms))
 
     return () => {
       ro.disconnect()
