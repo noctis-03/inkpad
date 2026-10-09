@@ -1101,11 +1101,12 @@ textarea {
   -webkit-touch-callout: none;
 }
 /* 카드 겹침 없음 — 카드는 한 장뿐이고, 그 상단에 카테고리 색 띠를 두어
-   쪽수·날짜를 앉힌다. 별도 카드 요소·음수 오프셋·겹침이 전혀 없다.
+   쪽수·날짜를 앉힌다. 띠와 사진 사이에 여백을 주고, 사진은 네 모서리를
+   각각 둥글게 해 둥근 사진이 카드 안에 얹힌 느낌을 낸다.
    띠는 카테고리 파스텔 바탕 + 카테고리 색 글자를 따른다. */
 .doc-grid .doc-plate {
+  padding: 8px 8px 0; /* 띠 아래(사진 좌우) 여백 — 사진을 안쪽에 띄운다 */
   border-radius: var(--r-lg);
-  overflow: hidden; /* 카드 모서리에서 띠·미리보기를 함께 잘라 낸다 */
   background: var(--thumb-paper);
   box-shadow: var(--e1);
 }
@@ -1113,8 +1114,10 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 23px;
+  margin: 0 -8px; /* 띠는 좌우 여백을 상쇄해 plate 상단에 꽉 찬다 */
   padding: 0 8px;
+  height: 23px;
+  border-radius: var(--r-sm) var(--r-sm) 0 0; /* 상단 모서리는 plate 곡률을 따라간다 */
   background: var(--thumb-paper); /* 카테고리 파스텔이 인라인 스타일로 덮는다 */
 }
 .doc-grid .doc-stack-meta {
@@ -1128,9 +1131,10 @@ textarea {
 .doc-grid .doc-thumb {
   position: relative;
   aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
-  border-radius: 0; /* 모서리는 .doc-plate 가 맡는다 */
+  margin-top: 8px; /* 띠와 사진 사이 여백 */
+  border-radius: var(--r-md); /* 사진 네 모서리를 각각 둥글게 */
   background: var(--thumb-paper);
-  box-shadow: none; /* 그림자도 .doc-plate 가 맡는다 */
+  box-shadow: none; /* 그림자는 .doc-plate 가 맡는다 */
   overflow: hidden;
   display: flex;
   align-items: center;
