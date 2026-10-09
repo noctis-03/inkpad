@@ -299,7 +299,11 @@ export function Editor({ docId }: { docId: ID }) {
         <div className="editor-area">
           <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
           {engine && <BlockLayer engine={engine} readOnly={readOnly} />}
-          {!engine && <div className="loading">문서 여는 중…</div>}
+          {!engine && (
+            <div className="doc-skeleton" role="status" aria-label="문서 여는 중">
+              <span className="doc-skeleton-paper" />
+            </div>
+          )}
           {fetching && (
             <div className="loading">
               원본 받는 중… {fmtBytes(fetching.loaded)}

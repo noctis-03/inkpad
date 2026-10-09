@@ -4135,3 +4135,45 @@ button.save-state {
 .menu:focus {
   outline: none;
 }
+
+/* ───────── 문서 여는 중 스켈레톤 (C-5) ───────── */
+.doc-skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.doc-skeleton-paper {
+  position: relative;
+  width: min(62%, 420px);
+  aspect-ratio: 1 / 1.414;
+  max-height: 80%;
+  border-radius: var(--r-lg);
+  background: var(--thumb-paper); /* 종이는 테마와 무관하게 흰색 */
+  box-shadow: var(--e2);
+  opacity: 0.75;
+  overflow: hidden;
+}
+.doc-skeleton-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, #ffffffcc 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: doc-shimmer 1.4s linear infinite;
+}
+@keyframes doc-shimmer {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+/* 모션 끄기에서는 shimmer도 끈다 */
+:root[data-motion='off'] .doc-skeleton-paper::after {
+  animation: none;
+  content: none;
+}
