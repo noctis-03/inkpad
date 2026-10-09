@@ -1053,8 +1053,8 @@ textarea {
    정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 캡션의 색 점 + 이름. */
 .doc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px 12px;
 }
 .doc-card {
   position: relative;
@@ -2035,8 +2035,8 @@ textarea {
    180px 기준으로는 390px 폭에서 180*2+18 > 366 이라 한 줄에 1장만 들어간다. */
 @media (max-width: 560px) {
   .doc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+    gap: 12px 10px;
   }
 }
 
