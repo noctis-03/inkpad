@@ -905,8 +905,10 @@ export function Library() {
         <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
           <Icon name="sidebar" />
         </button>
-        <h1 key={title} className="library-title">
-          <span className="title-text">{title}</span>
+        <h1 className="library-title">
+          {/* 제목만 키를 바꿔 cross-fade 한다 — 개수는 리마운트되지 않아야
+              섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
+          <span key={title} className="title-text">{title}</span>
           <span className="title-count">
             <CountUp value={recentActive ? recentDocs.length : items.length} />
           </span>
@@ -981,7 +983,7 @@ export function Library() {
                 setRecentOnly(true)
               }}
             >
-              <Icon name="restore" size={18} /> 최근 <span className="count"><CountUp value={recentDocs.length} /></span>
+              <Icon name="restore" size={18} /> 최근 <span className="count">{recentDocs.length}</span>
             </button>
             <button data-indicator-key="notes" className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count"><CountUp value={docs.length} /></span>
@@ -1002,7 +1004,7 @@ export function Library() {
               >
                 <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
                 <span className="tree-name">{c}</span>
-                <span className="count"><CountUp value={docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length} /></span>
+                <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
               </button>
             ))}
             <button
@@ -1012,7 +1014,7 @@ export function Library() {
             >
               <span className="tree-cat-dot" style={{ background: categoryColor(null) }} aria-hidden="true" />
               <span className="tree-name">미분류</span>
-              <span className="count"><CountUp value={docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length} /></span>
+              <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
             </button>
             <div className="tree-label">
               폴더
@@ -1407,11 +1409,9 @@ function FolderTree(props: {
             <button className="tree-main" onClick={() => props.onSelect(f.id)}>
               <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
               <span className="count">
-                <CountUp
-                  value={props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length +
-                    props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length +
-                    props.files.filter((x) => x.category && (f.categories ?? []).includes(x.category)).length}
-                />
+                {props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length +
+                  props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length +
+                  props.files.filter((x) => x.category && (f.categories ?? []).includes(x.category)).length}
               </span>
             </button>
             <button
