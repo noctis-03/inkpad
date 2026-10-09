@@ -103,7 +103,11 @@ function TitleText({ text }: { text: string }) {
     out.addEventListener(
       'finish',
       () => {
-        // 취소된 뒤에도 늦게 불릴 수 없게(out이 취소되면 finish는 오지 않는다) 그대로 둔다
+        // out의 fill:forwards(opacity 0 고정)를 먼저 걷는다 — 안 그러면 아래에서
+        // 올라오는 애니메이션이 끝난 뒤 고정된 0이 다시 적용돼 제목이 안 뜬다.
+        // 같은 태스크에서 inn을 시작하므로 첫 키프레임(opacity 0)이 즉시 덮어 빈틈이 없다.
+        out.cancel()
+        anims.current = []
         shownRef.current = text
         setShown(text)
         const inn = el.animate(
