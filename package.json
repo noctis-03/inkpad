@@ -9,7 +9,8 @@
     "deploy": "npm run build && wrangler pages deploy dist",
     "clean-port": "fuser -k 3000/tcp 2>/dev/null || true",
     "test": "curl -s http://localhost:3000/api/health",
-    "test:motion": "node --experimental-strip-types --no-warnings tools/verify/motion-dom-sim.ts"
+    "test:motion": "node --experimental-strip-types --no-warnings tools/verify/motion-dom-sim.ts",
+    "test:flip": "node --experimental-strip-types --no-warnings tools/verify/flip-plan-test.ts"
   },
   "dependencies": {
     "dexie": "^4.4.6",
