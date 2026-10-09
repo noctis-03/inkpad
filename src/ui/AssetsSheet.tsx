@@ -11,6 +11,7 @@ import { ensureFolders } from '../sync/folders'
 import { assetFileName } from '../sync/pack'
 import { AuthRequiredError, login } from '../sync/token'
 import { AssetUnavailableError, ensureAssetLocal, downloadAllMissing, onAssetProgress, uploadAssetLocal } from '../sync/assets'
+import { refreshMissingThumbnails } from '../io/docThumb'
 import { saveFile } from '../io/download'
 import { Icon } from './Icon'
 import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpty, SheetErrorBoundary, SheetHeader, SheetBanner, useOnline } from './sheetParts'
@@ -352,6 +353,8 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       } else {
         toast(`원본 ${r.ok}개를 모두 받았습니다.`, 'success')
       }
+      // 방금 확보한 원본으로 미리보기가 비어 있던 노트를 채운다
+      void refreshMissingThumbnails()
     } finally {
       setBusy(null)
       await load()

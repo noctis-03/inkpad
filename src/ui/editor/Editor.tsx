@@ -165,14 +165,13 @@ export function Editor({ docId }: { docId: ID }) {
       releaseDocLock(docId)
       if (e) {
         const view = e.getViewState()
-        const hadChanges = e.canUndo
         void (async () => {
           await e.destroy()
           await saveLastView(docId, view)
-          if (hadChanges) {
-            const blob = await e.renderDocThumb().catch(() => null)
-            if (blob) await putThumbnail(docId, blob)
-          }
+          // 미리보기는 로컬 전용(동기화 대상 아님)이라 여기서 항상 다시 만든다.
+          // 편집이 없어도(다른 기기에서 받아 처음 연 경우 등) 이 기기의 미리보기를 채운다.
+          const blob = await e.renderDocThumb().catch(() => null)
+          if (blob) await putThumbnail(docId, blob)
           await pdf.destroy()
         })()
       } else void pdf.destroy()
