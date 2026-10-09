@@ -175,6 +175,7 @@ export function Library() {
   const [showApps, setShowApps] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [showAssets, setShowAssets] = useState(false)
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null)
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
@@ -1002,17 +1003,16 @@ export function Library() {
         <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
           <Icon name="gear" />
         </button>
-        <button className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')} onClick={() => setShowSync(true)} aria-label="동기화" title="동기화">
-          <Icon name="cloud" />
-        </button>
-        <button className="tb-btn" onClick={() => setShowAssets(true)} aria-label="에셋 원본" title="에셋 원본 (PDF·이미지)">
-          <Icon name="filePdf" />
-        </button>
-        <button className="tb-btn" onClick={() => setShowApps(true)} aria-label="앱" title="앱">
-          <Icon name="apps" />
-        </button>
-        <button className="tb-btn" onClick={() => setShowFiles(true)} aria-label="기타 파일" title="기타 파일">
-          <Icon name="files" />
+        <button
+          className="tb-btn"
+          aria-label="동기화·에셋·앱·파일 메뉴"
+          title="동기화 · 에셋 원본 · 앱 · 기타 파일"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            setMoreMenu({ x: r.right, y: r.bottom })
+          }}
+        >
+          <Icon name="more" />
         </button>
         {section.kind !== 'trash' && (
           <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
@@ -1325,6 +1325,15 @@ export function Library() {
           )}
         </main>
       </div>
+
+      {moreMenu && (
+        <Menu x={moreMenu.x} y={moreMenu.y} onClose={() => setMoreMenu(null)}>
+          <MenuItem icon="cloud" label="동기화" onClick={() => { setMoreMenu(null); setShowSync(true) }} />
+          <MenuItem icon="filePdf" label="에셋 원본 (PDF·이미지)" onClick={() => { setMoreMenu(null); setShowAssets(true) }} />
+          <MenuItem icon="apps" label="앱" onClick={() => { setMoreMenu(null); setShowApps(true) }} />
+          <MenuItem icon="files" label="기타 파일" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />
+        </Menu>
+      )}
 
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>

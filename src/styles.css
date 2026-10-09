@@ -789,11 +789,8 @@ textarea {
 .library-header .search-box {
   flex-basis: 220px;
   min-width: 160px;
-}
-/* 환경설정·새로 만들기 버튼은 상단 바 오른쪽 끝에 붙는다 */
-.library-header [aria-label='설정'] {
+  /* 오른쪽 정렬 그룹(검색·보기·정렬·버튼) — 남는 공간을 제목과 검색 사이로 몰아 넣는다 */
   margin-left: auto;
-  flex-shrink: 0;
 }
 .library-header #new-doc-btn {
   flex-shrink: 0;
