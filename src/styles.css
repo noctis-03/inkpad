@@ -1006,6 +1006,22 @@ textarea {
 .tree-item.trash {
   margin-top: 14px;
 }
+/* '최근' 항목 — 평소에는 접혀 숨겨 '전체' 바로 아래에서 0 높이로 닫혀 있고,
+   전체를 눌러 최근 열람 모드가 되면 펼쳐지며 내려온다 */
+.tree-item.tree-recent {
+  height: 0;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: height .45s var(--ft-spring), padding .45s var(--ft-spring), opacity .3s ease, scale .5s var(--spring-pop);
+}
+.tree-item.tree-recent.is-active {
+  height: 40px;
+  opacity: 1;
+}
 .library-main {
   flex: 1;
   overflow-y: auto;
