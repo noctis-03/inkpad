@@ -351,7 +351,7 @@ button {
   max-width: calc(100% - 20px);
   padding: 8px 10px;
   border-radius: var(--r-md);
-  background: var(--btn-bg)d9;
+  background: var(--toast-bg);
   color: var(--line-2);
   font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
   z-index: 5;
@@ -3867,10 +3867,10 @@ textarea {
   inset: 0;
   border-radius: inherit;
   background-image:
-    linear-gradient(90deg, var(--ink)cc 50%, transparent 0),
-    linear-gradient(90deg, var(--ink)cc 50%, transparent 0),
-    linear-gradient(0deg, var(--ink)cc 50%, transparent 0),
-    linear-gradient(0deg, var(--ink)cc 50%, transparent 0);
+    linear-gradient(90deg, #1f2937cc 50%, transparent 0),
+    linear-gradient(90deg, #1f2937cc 50%, transparent 0),
+    linear-gradient(0deg, #1f2937cc 50%, transparent 0),
+    linear-gradient(0deg, #1f2937cc 50%, transparent 0);
   background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
   background-size: 12px 1.5px, 12px 1.5px, 1.5px 12px, 1.5px 12px;
   background-position: 0 0, 0 100%, 0 0, 100% 0;
@@ -4047,6 +4047,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 /* 주요 버튼: accent → ink */
 .primary-btn {
   background: var(--btn-bg);
+  color: var(--btn-fg);
   box-shadow: inset 0 1px 0 #ffffff1f;
 }
 /* 패널 열림 spring */
@@ -4058,7 +4059,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 .toast,
 .toast.error,
 .toast.success {
-  background: var(--btn-bg)eb;
+  background: var(--toast-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   animation: toast-in .5s var(--ft-spring) both;
