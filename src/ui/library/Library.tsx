@@ -252,7 +252,7 @@ export function Library() {
     else if (prefs.sort === 'created') sorted.sort((a, b) => b.createdAt - a.createdAt)
     else sorted.sort((a, b) => (section.kind === 'trash' ? (b.deletedAt ?? 0) - (a.deletedAt ?? 0) : b.updatedAt - a.updatedAt))
     return sorted
-  }, [recentActive, recentDocs, docs, trash, folders, hiddenCats, section, query, prefs.sort])
+  }, [recentActive, recentDocs, docs, trash, folders, hiddenCats, section, dq, prefs.sort])
 
   /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·기타 파일에는 표시하지 않는다) */
   const visibleApps = useMemo(() => {
@@ -266,7 +266,7 @@ export function Library() {
     const q = dq.trim().toLowerCase()
     if (q) list = list.filter((a) => a.title.toLowerCase().includes(q))
     return list
-  }, [recentActive, apps, folders, hiddenCats, section, query])
+  }, [recentActive, apps, folders, hiddenCats, section, dq])
 
   /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 앱에는 표시하지 않는다) */
   const visibleFiles = useMemo(() => {
@@ -280,7 +280,7 @@ export function Library() {
     const q = dq.trim().toLowerCase()
     if (q) list = list.filter((f) => f.title.toLowerCase().includes(q))
     return list
-  }, [recentActive, files, folders, hiddenCats, section, query])
+  }, [recentActive, files, folders, hiddenCats, section, dq])
 
   /** 노트 + 앱 + 파일을 한 목록으로 합쳐 정렬한다 (노트만 있으면 기존 노트 정렬을 그대로 쓴다) */
   const items = useMemo<Item[]>(() => {
