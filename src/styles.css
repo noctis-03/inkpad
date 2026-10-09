@@ -3414,10 +3414,12 @@ textarea {
 .blk.fire { animation:blk-fire .45s ease-out; }
 @keyframes blk-fire { from { box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent) } to { box-shadow:0 0 0 12px transparent } }
 
-.blk[data-type='memo'] { background:var(--memo, var(--warn-soft)); }
+.blk[data-type='memo'] { background:var(--memo, var(--warn-soft)); color:#23211d; }
+/* 블록은 테마와 상관없이 흰 종이 위 파스텔 배경 — 안 글자는 고정된 어두운 색 (다크 모드에서 밝은 글자가 밝은 블록에 올라가지 않게, D-3) */
 .blk[data-type='memo'] textarea { width:100%; border:0; background:transparent; resize:none; outline:none;
-  font-size: var(--fs-md); line-height:1.5; user-select:text; -webkit-user-select:text; color:var(--ink); font-family:inherit; padding:0; }
-/* 메모 색: yellow #fef3c7 / pink #fce7f3 / blue #dbeafe / green #d1fae5 — 인라인 --memo로 지정 */
+  font-size: var(--fs-md); line-height:1.5; user-select:text; -webkit-user-select:text; color:inherit; font-family:inherit; padding:0; }
+.blk[data-type='memo'] .blk-head { color:#6a655b; }
+/* 메모 색: yellow #fbf0cf / pink #f8e3ea / blue #e2eaf7 / green #dff0e4 — 인라인 --memo로 지정 */
 
 .blk-action { width:100%; min-height:40px; display:flex; align-items:center; gap:8px; padding:6px 8px;
   border:0; border-radius: var(--r-sm); background:var(--surface-2); text-align:left; cursor:pointer; color:var(--ink); font-size:13px; font-family:inherit; }

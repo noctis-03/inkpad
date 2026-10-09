@@ -77,18 +77,18 @@ export function isSafeBlockUrl(url: string): boolean {
 // ───────── 블록 레지스트리 (팔레트·헤더 라벨 공용) ─────────
 
 export const BLOCK_META: Record<BlockType, { label: string; desc: string; icon: string; color: string }> = {
-  memo: { label: '메모', desc: '짧은 글을 적어 둡니다', icon: 'memo', color: '#fef3c7' },
-  link: { label: '링크', desc: '웹사이트로 바로 갑니다', icon: 'link', color: '#dbeafe' },
-  todo: { label: '할 일', desc: '체크 목록을 만듭니다', icon: 'todo', color: '#d1fae5' },
-  timer: { label: '타이머', desc: '시간을 재고 알려 줍니다', icon: 'timer', color: '#fce7f3' },
-  jump: { label: '페이지 이동', desc: '다른 페이지로 건너뜁니다', icon: 'jump', color: '#ede9fe' }
+  memo: { label: '메모', desc: '짧은 글을 적어 둡니다', icon: 'memo', color: '#fbf0cf' },
+  link: { label: '링크', desc: '웹사이트로 바로 갑니다', icon: 'link', color: '#e2eaf7' },
+  todo: { label: '할 일', desc: '체크 목록을 만듭니다', icon: 'todo', color: '#dff0e4' },
+  timer: { label: '타이머', desc: '시간을 재고 알려 줍니다', icon: 'timer', color: '#f8e3ea' },
+  jump: { label: '페이지 이동', desc: '다른 페이지로 건너뜁니다', icon: 'jump', color: '#ebe5f6' }
 }
 
 export const MEMO_BG: Record<import('../shared/model').MemoColor, string> = {
-  yellow: '#fef3c7',
-  pink: '#fce7f3',
-  blue: '#dbeafe',
-  green: '#d1fae5'
+  yellow: '#fbf0cf',
+  pink: '#f8e3ea',
+  blue: '#e2eaf7',
+  green: '#dff0e4'
 }
 
 /** 배치 모드에서 새 블록 하나를 만든다. 높이는 내용에 따라 정해지므로 저장하지 않는다 */
