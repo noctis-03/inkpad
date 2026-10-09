@@ -901,6 +901,29 @@ textarea {
   border-right: 1px solid var(--line);
   overflow-y: auto;
   background: var(--paper-2);
+  /* 스크롤바를 얇게 — 평소에는 숨기고 스크롤할 때만 뜬다 */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable;
+  transition: scrollbar-color .25s ease;
+}
+.folder-tree:hover,
+.folder-tree:focus-within {
+  scrollbar-color: var(--muted-2) transparent;
+}
+.folder-tree::-webkit-scrollbar {
+  width: 6px;
+}
+.folder-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+.folder-tree::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: transparent;
+}
+.folder-tree:hover::-webkit-scrollbar-thumb,
+.folder-tree:focus-within::-webkit-scrollbar-thumb {
+  background: var(--muted-2);
 }
 /* 모바일 서랍을 닫는 배경막 — 넓은 화면에서는 쓰지 않는다 */
 .tree-backdrop {
