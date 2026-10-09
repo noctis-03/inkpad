@@ -1241,9 +1241,9 @@ export function Library() {
                       {prefs.view === 'grid' && (
                         <div
                           className="doc-stack"
-                          style={{ background: categoryTag(i.a.category).background, borderTopColor: categoryTag(i.a.category).borderColor }}
+                          style={{ background: categoryTag(i.a.category).background, color: categoryTag(i.a.category).color }}
                         >
-                          <span className="doc-stack-meta" style={{ color: categoryTag(i.a.category).color }}>{appMetaText(i.a)}</span>
+                          <span className="doc-stack-meta">{appMetaText(i.a)}</span>
                         </div>
                       )}
                       <div className="doc-thumb">
@@ -1292,9 +1292,9 @@ export function Library() {
                       {prefs.view === 'grid' && (
                         <div
                           className="doc-stack"
-                          style={{ background: categoryTag(i.f.category).background, borderTopColor: categoryTag(i.f.category).borderColor }}
+                          style={{ background: categoryTag(i.f.category).background, color: categoryTag(i.f.category).color }}
                         >
-                          <span className="doc-stack-meta" style={{ color: categoryTag(i.f.category).color }}>{fileMetaText(i.f)}</span>
+                          <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
                         </div>
                       )}
                       <div className="doc-thumb">
@@ -1344,9 +1344,9 @@ export function Library() {
                       {prefs.view === 'grid' && (
                         <div
                           className="doc-stack"
-                          style={{ background: categoryTag(i.d.category).background, borderTopColor: categoryTag(i.d.category).borderColor }}
+                          style={{ background: categoryTag(i.d.category).background, color: categoryTag(i.d.category).color }}
                         >
-                          <span className="doc-stack-meta" style={{ color: categoryTag(i.d.category).color }}>{docMetaText(i.d)}</span>
+                          <span className="doc-stack-meta">{docMetaText(i.d)}</span>
                         </div>
                       )}
                       <div className="doc-thumb">

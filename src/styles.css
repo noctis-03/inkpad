@@ -1100,27 +1100,22 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 겹침 — 미리보기 카드 위에 같은 크기의 카드를 한 장 겹쳐
-   살짝 위로 삐져나오게 하고, 그 띠에 쪽수·날짜를 앉힌다 (시안).
-   띠는 카테고리 색(연한 파스텔 바탕 + 윗변 강조선)을 따른다. */
-.doc-plate {
-  position: relative;
-}
+/* 카드 겹침 없음 — 카드는 한 장뿐이고, 그 상단에 카테고리 색 띠를 두어
+   쪽수·날짜를 앉힌다. 별도 카드 요소·음수 오프셋·겹침이 전혀 없다.
+   띠는 카테고리 파스텔 바탕 + 카테고리 색 글자를 따른다. */
 .doc-grid .doc-plate {
-  margin-top: 20px; /* 위로 삐져나온 띠만큼 카드 위 자리를 비워 둔다 */
-}
-.doc-grid .doc-stack {
-  position: absolute;
-  inset: 0;
-  transform: translateY(-18px);
   border-radius: var(--r-lg);
+  overflow: hidden; /* 카드 모서리에서 띠·미리보기를 함께 잘라 낸다 */
   background: var(--thumb-paper);
   box-shadow: var(--e1);
-  border-top: 2px solid transparent;
+}
+.doc-grid .doc-stack {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 2px;
+  height: 23px;
+  padding: 0 8px;
+  background: var(--thumb-paper); /* 카테고리 파스텔이 인라인 스타일로 덮는다 */
 }
 .doc-grid .doc-stack-meta {
   max-width: 100%;
@@ -1128,16 +1123,14 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
+  font-weight: 600;
 }
 .doc-grid .doc-thumb {
   position: relative;
-  z-index: 1; /* 겹친 카드 위에 미리보기가 온다 */
   aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
-  border-radius: var(--r-lg);
+  border-radius: 0; /* 모서리는 .doc-plate 가 맡는다 */
   background: var(--thumb-paper);
-  box-shadow: var(--e1);
+  box-shadow: none; /* 그림자도 .doc-plate 가 맡는다 */
   overflow: hidden;
   display: flex;
   align-items: center;
