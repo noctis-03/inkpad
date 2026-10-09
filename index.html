@@ -12,6 +12,17 @@
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <title>Inkpad</title>
+    <script>
+      // 첫 페인트 전에 모션 단계를 정해 깜빡임을 막는다.
+      // 저장된 설정은 IndexedDB(비동기)에 있으므로 여기서는 OS '동작 줄이기'만 우선 반영하고,
+      // 앱이 뜨면 App.tsx 가 저장된 설정으로 덮어쓴다.
+      (function () {
+        try {
+          var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          document.documentElement.dataset.motion = reduce ? 'off' : 'normal'
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

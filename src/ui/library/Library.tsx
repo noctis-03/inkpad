@@ -1053,7 +1053,13 @@ export function Library() {
             >
               {items.map((i, idx) =>
                 i.kind === 'app' ? (
-                  <article key={'app:' + i.a.id} className="doc-card app-card" data-flip-key={'app:' + i.a.id} onClick={() => navigate({ name: 'app', appId: i.a.id })}>
+                  <article
+                    key={'app:' + i.a.id}
+                    className="doc-card app-card"
+                    data-flip-key={'app:' + i.a.id}
+                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
+                    onClick={() => navigate({ name: 'app', appId: i.a.id })}
+                  >
                     <div className="doc-thumb">
                       {i.a.category && (
                         <span className="doc-tag" style={categoryTag(i.a.category)}>{i.a.category}</span>
@@ -1084,7 +1090,13 @@ export function Library() {
                     </div>
                   </article>
                 ) : i.kind === 'file' ? (
-                  <article key={'file:' + i.f.id} className="doc-card file-card" data-flip-key={'file:' + i.f.id} onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
+                  <article
+                    key={'file:' + i.f.id}
+                    className="doc-card file-card"
+                    data-flip-key={'file:' + i.f.id}
+                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
+                    onClick={() => navigate({ name: 'file', fileId: i.f.id })}
+                  >
                     <div className="doc-thumb">
                       {i.f.category && (
                         <span className="doc-tag" style={categoryTag(i.f.category)}>{i.f.category}</span>

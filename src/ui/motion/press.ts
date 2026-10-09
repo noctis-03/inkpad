@@ -68,6 +68,8 @@ export function installPress() {
     const t = e.target as HTMLElement | null
     const found = t?.closest?.(TARGETS) as HTMLElement | null
     if (!found || found.closest(EXCLUDE)) return
+    // 여러 손가락으로 다른 요소를 눌러도 이전 요소의 눌림 표시가 남지 않게 먼저 푼다
+    if (el && el !== found) el.classList.remove('is-pressed')
     clearTimers()
     el = found
     if (e.pointerType === 'touch') {

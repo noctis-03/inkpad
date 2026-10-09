@@ -5,6 +5,7 @@ import { dur } from './motion'
 export function CountUp({ value }: { value: number }) {
   const [shown, setShown] = useState(value)
   const from = useRef(value)
+  const shownRef = useRef(value)
 
   useEffect(() => {
     const start = from.current
@@ -12,6 +13,7 @@ export function CountUp({ value }: { value: number }) {
     const d = dur(450)
     if (!d) {
       from.current = value
+      shownRef.current = value
       setShown(value)
       return
     }
@@ -20,15 +22,22 @@ export function CountUp({ value }: { value: number }) {
     const step = (t: number) => {
       const p = Math.min(1, (t - t0) / d)
       const eased = 1 - Math.pow(1 - p, 3)
-      setShown(Math.round(start + (value - start) * eased))
+      const v = Math.round(start + (value - start) * eased)
+      shownRef.current = v
+      setShown(v)
       if (p < 1) raf = requestAnimationFrame(step)
       else {
         from.current = value
+        shownRef.current = value
         setShown(value)
       }
     }
     raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      // 세는 도중 값이 또 바뀌면 지금 보이는 값에서 이어 센다 (0 으로 튀지 않게)
+      from.current = shownRef.current
+    }
   }, [value])
 
   return <>{shown}</>
