@@ -4189,3 +4189,41 @@ details.adv > summary {
 details.adv > summary::marker {
   color: var(--muted);
 }
+
+/* ───────── 새로 만들기: 가져오기 줄 (C-7) ───────── */
+.import-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.import-btn:active {
+  background: var(--press);
+}
+.sheet-footer.end {
+  justify-content: flex-end;
+}

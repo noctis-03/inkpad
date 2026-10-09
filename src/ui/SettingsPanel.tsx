@@ -3,7 +3,7 @@ import { useUI } from '../app/store'
 import type { PressureMode, Settings } from '../engine/types'
 import { Icon } from './Icon'
 import { NetUsageSection } from './NetUsageDebug'
-import { useIndicator } from './motion/useIndicator'
+import { Segmented } from './Segmented'
 
 /**
  * 설정 행. asLabel이 true면 <label>로 감싸 컨트롤이 하나뿐인 행(토글·슬라이더·셀렉트)에서
@@ -51,38 +51,6 @@ function Select({ k, options }: { k: keyof Settings; options: [string, string][]
         </option>
       ))}
     </select>
-  )
-}
-
-/** 세그먼트 선택 — 슬라이딩 흰 칩 인디케이터(5.2) 적용 */
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  label
-}: {
-  value: T
-  options: [T, string][]
-  onChange: (v: T) => void
-  label: string
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  useIndicator(ref, value, 'x')
-  return (
-    <div className="seg" ref={ref} role="radiogroup" aria-label={label}>
-      {options.map(([val, text]) => (
-        <button
-          key={val}
-          data-indicator-key={val}
-          role="radio"
-          aria-checked={value === val}
-          className={value === val ? 'is-active' : ''}
-          onClick={() => onChange(val)}
-        >
-          {text}
-        </button>
-      ))}
-    </div>
   )
 }
 

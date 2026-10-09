@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from '../Icon'
+import { Segmented } from '../Segmented'
 import { createDocument } from '../../storage/repo'
 import {
   BACKGROUND_LABELS,
@@ -13,6 +14,11 @@ import {
 
 const PAGED_BGS: BackgroundType[] = ['blank', 'lined', 'grid', 'dot', 'cornell']
 const INFINITE_BGS: BackgroundType[] = ['dot', 'grid', 'lined', 'blank']
+
+const SIZE_OPTIONS: [PageSizeKey, string][] = [
+  ...(Object.keys(PAGE_SIZES) as Exclude<PageSizeKey, 'custom'>[]).map((k) => [k, PAGE_SIZES[k].label] as [PageSizeKey, string]),
+  ['custom', '사용자 지정']
+]
 
 export function NewDocumentSheet(props: {
   folderId: ID | null
@@ -38,6 +44,13 @@ export function NewDocumentSheet(props: {
   const customMm = () => ({ w: clampMm(Math.round(parseFloat(customText.w) || 0)), h: clampMm(Math.round(parseFloat(customText.h) || 0)) })
   const pageCountNum = () => Math.max(1, Math.min(200, Math.round(parseFloat(pageCountText) || 0)))
   const stepPage = (d: number) => setPageCountText(String(Math.max(1, Math.min(200, pageCountNum() + d))))
+
+  // Esc로도 닫는다. 제목을 적는 중에는 바깥을 눌러도 닫히지 않는다 (C-7)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [props.onClose])
 
   const size = () => {
     const mm = customMm()
@@ -65,7 +78,7 @@ export function NewDocumentSheet(props: {
   const bgs = mode === 'paged' ? PAGED_BGS : INFINITE_BGS
 
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && props.onClose()}>
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && !title.trim() && props.onClose()}>
       <div className="sheet" role="dialog" aria-label="새로 만들기">
         <header className="sheet-header">
           <h2>새로 만들기</h2>
@@ -74,6 +87,7 @@ export function NewDocumentSheet(props: {
           </button>
         </header>
 
+        {/* 만들 종류는 선택만 한다 — 눌러도 바로 실행되지 않는다 (C-7) */}
         <div className="mode-cards">
           <button className={'mode-card' + (mode === 'paged' ? ' is-active' : '')} onClick={() => (setMode('paged'), setBg('lined'))}>
             <Icon name="notebook" size={30} />
@@ -84,21 +98,6 @@ export function NewDocumentSheet(props: {
             <Icon name="infinite" size={30} />
             <strong>무한 캔버스</strong>
             <small>스케치, 마인드맵</small>
-          </button>
-          <button className="mode-card" onClick={props.onImportPdf}>
-            <Icon name="filePdf" size={30} />
-            <strong>PDF 가져오기</strong>
-            <small>필기 후 PDF로 내보내기</small>
-          </button>
-          <button className="mode-card" onClick={props.onAddApp}>
-            <Icon name="app" size={30} />
-            <strong>HTML 앱 추가</strong>
-            <small>단일 .html 파일 실행</small>
-          </button>
-          <button className="mode-card" onClick={props.onAddFile}>
-            <Icon name="file" size={30} />
-            <strong>파일 추가</strong>
-            <small>이미지 · 텍스트 · PDF 등</small>
           </button>
         </div>
 
@@ -112,16 +111,7 @@ export function NewDocumentSheet(props: {
             <>
               <div className="field">
                 <span>페이지 크기</span>
-                <div className="seg">
-                  {(Object.keys(PAGE_SIZES) as (keyof typeof PAGE_SIZES)[]).map((k) => (
-                    <button key={k} className={sizeKey === k ? 'is-active' : ''} onClick={() => setSizeKey(k)}>
-                      {PAGE_SIZES[k].label}
-                    </button>
-                  ))}
-                  <button className={sizeKey === 'custom' ? 'is-active' : ''} onClick={() => setSizeKey('custom')}>
-                    사용자 지정
-                  </button>
-                </div>
+                <Segmented value={sizeKey} label="페이지 크기" onChange={setSizeKey} options={SIZE_OPTIONS} />
               </div>
               {sizeKey === 'custom' && (
                 <div className="field inline">
@@ -149,14 +139,12 @@ export function NewDocumentSheet(props: {
               )}
               <div className="field">
                 <span>방향</span>
-                <div className="seg">
-                  <button className={!landscape ? 'is-active' : ''} onClick={() => setLandscape(false)}>
-                    세로
-                  </button>
-                  <button className={landscape ? 'is-active' : ''} onClick={() => setLandscape(true)}>
-                    가로
-                  </button>
-                </div>
+                <Segmented
+                  value={landscape ? 'landscape' : 'portrait'}
+                  label="방향"
+                  onChange={(v) => setLandscape(v === 'landscape')}
+                  options={[['portrait', '세로'], ['landscape', '가로']]}
+                />
               </div>
               {/* 스테퍼 버튼이 안에 있으므로 label이 아니라 div로 그린다 (A-1과 같은 이유) */}
               <div className="field inline">
@@ -195,10 +183,26 @@ export function NewDocumentSheet(props: {
           </div>
         </section>
 
-        <footer className="sheet-footer">
-          <button className="text-btn" onClick={props.onImportInkpad}>
-            <Icon name="upload" size={18} /> .inkpad / 백업 가져오기
-          </button>
+        {/* 바로 실행되는 동작은 가져오기 줄로 — 버튼 모양으로 선택/실행이 구분된다 (C-7) */}
+        <section className="sheet-section import-section">
+          <span className="import-label">가져오기</span>
+          <div className="import-row">
+            <button className="import-btn" onClick={props.onImportPdf}>
+              <Icon name="filePdf" size={20} /> PDF
+            </button>
+            <button className="import-btn" onClick={props.onImportInkpad}>
+              <Icon name="upload" size={20} /> .inkpad · 백업
+            </button>
+            <button className="import-btn" onClick={props.onAddApp}>
+              <Icon name="app" size={20} /> HTML 앱
+            </button>
+            <button className="import-btn" onClick={props.onAddFile}>
+              <Icon name="file" size={20} /> 파일
+            </button>
+          </div>
+        </section>
+
+        <footer className="sheet-footer end">
           <button id="create-doc-btn" className="primary-btn" onClick={create}>
             만들기
           </button>
