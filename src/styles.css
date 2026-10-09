@@ -4792,3 +4792,12 @@ details.adv > summary::marker {
 
 /* ── 프리셋 시트 아이콘 ── */
 .board-preset-icon { background: linear-gradient(135deg, var(--accent), var(--app)); color: #fff; }
+
+/* ── 벽지가 어두워도 판(서랍·팝오버·HUD·라벨)은 밝은 면이므로 글자는 항상 잉크색 ──
+   반대로 벽지 위에 바로 놓이는 글자(상단 제목·개수·빈 상태)는 inherit 으로 벽지 색을 따른다. */
+.board-drawer, .board-pop, .board-hud, .board-item-label { color: var(--ink); }
+.board-actions .tb-btn { color: var(--ink); }
+.board-count { color: inherit; opacity: .72; }
+.board-empty { color: inherit; }
+.board-empty h2 { color: inherit; }
+.board-empty p { opacity: .75; }
