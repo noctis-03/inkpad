@@ -4093,6 +4093,8 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   50% { opacity: .45; transform: scale(.8); }
 }
 .tb-btn.sync-btn.is-syncing svg { animation: spin .8s linear infinite; }
+/* 메뉴로 통합된 구름 버튼도 동기화 중에는 회전해 '새로고침 중'을 알린다 */
+.library-header .tb-btn.sync-btn.is-syncing svg { animation: spin .8s linear infinite; }
 
 /* ═══════════════ 5.9 · 시트 · 패널 · 토스트 ═══════════════ */
 .modal-backdrop {

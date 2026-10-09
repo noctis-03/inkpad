@@ -1003,7 +1003,7 @@ export function Library() {
           <Icon name="gear" />
         </button>
         <button
-          className="tb-btn"
+          className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
           aria-label="동기화·에셋·앱·파일 메뉴"
           title="동기화 · 에셋 원본 · 앱 · 기타 파일"
           onClick={(e) => {
@@ -1011,7 +1011,7 @@ export function Library() {
             setMoreMenu({ x: r.right, y: r.bottom })
           }}
         >
-          <Icon name="more" />
+          <Icon name="cloud" />
         </button>
         {section.kind !== 'trash' && (
           <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
