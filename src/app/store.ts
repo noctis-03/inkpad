@@ -111,6 +111,8 @@ export interface Toast {
   text: string
   kind: 'info' | 'error' | 'success'
   action?: { label: string; run: () => void }
+  /** 자동으로 사라지지 않는다 (미리보기 생성 같은 진행 표시) — dismissToast로 직접 닫는다 */
+  sticky?: boolean
 }
 
 interface UIState {
@@ -147,7 +149,7 @@ interface UIState {
   setLibrary: (p: Partial<LibraryPrefs>) => void
   setPanel: (p: UIState['panel']) => void
   setSidebar: (v: boolean) => void
-  toast: (text: string, kind?: Toast['kind'], action?: Toast['action']) => void
+  toast: (text: string, kind?: Toast['kind'], action?: Toast['action'], opts?: { sticky?: boolean }) => number
   dismissToast: (id: number) => void
   setBusy: (b: UIState['busy']) => void
   setToolbarPos: (p: ToolbarPos) => void
@@ -228,10 +230,12 @@ export const useUI = create<UIState>((set, get) => ({
   },
   setPanel: (panel) => set({ panel: get().panel === panel ? 'none' : panel }),
   setSidebar: (sidebar) => set({ sidebar }),
-  toast: (text, kind = 'info', action) => {
+  toast: (text, kind = 'info', action, opts) => {
     const id = ++toastSeq
-    set({ toasts: [...get().toasts, { id, text, kind, action }].slice(-3) })
-    setTimeout(() => get().dismissToast(id), action ? 7000 : kind === 'error' ? 6000 : 3000)
+    set({ toasts: [...get().toasts, { id, text, kind, action, sticky: opts?.sticky }].slice(-3) })
+    // sticky(진행 표시 등)는 직접 닫을 때까지 남는다
+    if (!opts?.sticky) setTimeout(() => get().dismissToast(id), action ? 7000 : kind === 'error' ? 6000 : 3000)
+    return id
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
   setBusy: (busy) => set({ busy }),

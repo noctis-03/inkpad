@@ -7,6 +7,7 @@ import { trackRecentDoc } from '../../shared/recentDocs'
 import { recallPassword, rememberPassword } from '../../io/passwords'
 import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
+import { hasThumbnail } from '../../io/docThumb'
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
 import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../sync/assets'
@@ -170,8 +171,15 @@ export function Editor({ docId }: { docId: ID }) {
           await saveLastView(docId, view)
           // 미리보기는 로컬 전용(동기화 대상 아님)이라 여기서 항상 다시 만든다.
           // 편집이 없어도(다른 기기에서 받아 처음 연 경우 등) 이 기기의 미리보기를 채운다.
+          // 비어 있던 미리보기를 채우는 경우에만 진행/완료 토스트를 띄운다(평소엔 조용히 갱신).
+          const had = await hasThumbnail(docId)
+          const sticky = had ? null : useUI.getState().toast('미리보기를 만드는 중…', 'info', undefined, { sticky: true })
           const blob = await e.renderDocThumb().catch(() => null)
-          if (blob) await putThumbnail(docId, blob)
+          if (sticky !== null) useUI.getState().dismissToast(sticky)
+          if (blob) {
+            await putThumbnail(docId, blob)
+            if (!had) useUI.getState().toast('미리보기를 만들었습니다.', 'success')
+          }
           await pdf.destroy()
         })()
       } else void pdf.destroy()

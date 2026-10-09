@@ -8,6 +8,7 @@ import { loadDocument, putThumbnail } from '../storage/repo'
 import { drawPattern } from '../engine/background'
 import { getPath } from '../engine/scene'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
+import { useUI } from '../app/store'
 import type { ID, Page, Stroke } from '../shared/model'
 
 const THUMB_W = 320
@@ -90,26 +91,55 @@ export async function regenerateThumbnail(docId: ID): Promise<boolean> {
   return true
 }
 
-/**
- * 아직 미리보기가 없는 문서들만 골라 다시 만든다.
- * docIds를 주면 그 문서들만 본다(받기 결과 등). 없으면 전체 문서를 훑는다(원본 모두 받기 뒤).
- * 실패는 삼킨다 — 미리보기는 선택 사항이다.
- */
-export async function refreshMissingThumbnails(docIds?: ID[]): Promise<void> {
+/** 이 문서에 미리보기가 이미 저장돼 있는지 */
+export async function hasThumbnail(docId: ID): Promise<boolean> {
+  return !!(await db.thumbnails.get(docId))
+}
+
+/** 미리보기가 없는 문서 id만 고른다. docIds를 주면 그중에서만, 없으면 전체(휴지통 제외). */
+async function collectMissingThumbnails(docIds?: ID[]): Promise<ID[]> {
   const have = new Set<ID>(await db.thumbnails.toCollection().primaryKeys())
   let ids = docIds
   if (!ids) {
     const docs = await db.documents.toArray()
     ids = docs.filter((d) => !d.deletedAt).map((d) => d.id)
   }
-  for (const id of ids) {
-    if (have.has(id)) continue
+  return ids.filter((id) => !have.has(id))
+}
+
+/**
+ * 아직 미리보기가 없는 문서들만 골라 다시 만든다 (알림 없음).
+ * 실패는 삼킨다 — 미리보기는 선택 사항이다.
+ */
+export async function refreshMissingThumbnails(docIds?: ID[]): Promise<void> {
+  for (const id of await collectMissingThumbnails(docIds)) {
     try {
       await regenerateThumbnail(id)
     } catch {
       /* 미리보기는 선택 사항 */
     }
   }
+}
+
+/**
+ * refreshMissingThumbnails와 같지만 진행/완료 토스트를 띄운다.
+ * 만들 게 없으면 토스트를 띄우지 않는다. 만들어진 개수를 돌려준다.
+ */
+export async function refreshMissingThumbnailsWithToast(docIds?: ID[]): Promise<number> {
+  const missing = await collectMissingThumbnails(docIds)
+  if (!missing.length) return 0
+  const sticky = useUI.getState().toast(`미리보기를 만드는 중… (${missing.length}개)`, 'info', undefined, { sticky: true })
+  let made = 0
+  for (const id of missing) {
+    try {
+      if (await regenerateThumbnail(id)) made++
+    } catch {
+      /* 미리보기는 선택 사항 */
+    }
+  }
+  useUI.getState().dismissToast(sticky)
+  if (made) useUI.getState().toast(`미리보기 ${made}개를 만들었습니다.`, 'success')
+  return made
 }
 
 export type { ThumbRow }

@@ -34,7 +34,7 @@ import { mergeDocs } from './merge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 import { clearPendingIfUnchanged } from './unchanged'
-import { refreshMissingThumbnails } from '../io/docThumb'
+import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 
 const SYNC_LOCK = 'inkpad-sync'
 /** appProperties에 담을 수 있는 값의 상한 (Google Drive 제한: UTF-8 124바이트) */
@@ -548,7 +548,7 @@ async function pull(f: { docs: string; assets: string }) {
   if (changed.size) emitRemoteChanged(changed)
   // 받은 노트의 카드 미리보기를 이 기기에서 복구한다(미리보기는 동기화 대상이 아니다).
   // 원본(PDF)이 이 기기에 이미 있으면 여기서 바로 그려지고, 없으면 다음에 열 때 채워진다.
-  if (changed.size) void refreshMissingThumbnails([...changed])
+  if (changed.size) void refreshMissingThumbnailsWithToast([...changed])
   return r
 }
 
