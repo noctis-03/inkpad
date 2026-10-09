@@ -177,6 +177,7 @@ export function Library() {
   const [showFiles, setShowFiles] = useState(false)
   const [showAssets, setShowAssets] = useState(false)
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null)
+  const [revealKey, setRevealKey] = useState<string | null>(null) // 격자: 카드를 누르면 띠·블러·열기 오버레이가 뜬 카드
   const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
@@ -273,6 +274,29 @@ export function Library() {
   useEffect(() => {
     if (window.innerWidth < 900) setTreeOpen(false)
   }, [section])
+
+  // 카드 열기 오버레이 — 바깥을 누르면 닫는다 (오버레이가 열린 카드만 예외)
+  useEffect(() => {
+    if (!revealKey) return
+    const onDown = (e: PointerEvent) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.doc-card[data-reveal-key]')
+      if (!el || el.dataset.revealKey !== revealKey) setRevealKey(null)
+    }
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
+  }, [revealKey])
+  // 섹션·보기·검색이 바뀌면 오버레이는 닫는다
+  useEffect(() => setRevealKey(null), [section, prefs.view, dq])
+
+  /** 격자에서 카드 누름 — 처음엔 띠·블러·열기 오버레이를 열고, 이미 열려 있으면 바로 연다.
+      목록 보기에서는 곧바로 연다. */
+  const cardOpen = (key: string, onOpen: () => void) => {
+    if (prefs.view !== 'grid') return onOpen()
+    if (revealKey === key) {
+      setRevealKey(null)
+      onOpen()
+    } else setRevealKey(key)
+  }
 
   /**
    * 동기화 라벨. '동기화됨'도 보여 준다(사용자 요청) — 클라우드를 쓰지 않는
@@ -1232,10 +1256,11 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article
                     key={'app:' + i.a.id}
-                    className="doc-card app-card"
+                    className={'doc-card app-card' + (revealKey === 'app:' + i.a.id ? ' is-revealed' : '')}
                     data-flip-key={'app:' + i.a.id}
+                    data-reveal-key={'app:' + i.a.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={() => navigate({ name: 'app', appId: i.a.id })}
+                    onClick={() => cardOpen('app:' + i.a.id, () => navigate({ name: 'app', appId: i.a.id }))}
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
@@ -1246,6 +1271,29 @@ export function Library() {
                       <div className="doc-thumb">
                         <Icon name="app" size={36} />
                         {rowPill(rowSyncState(i.a), true)}
+                        {prefs.view === 'grid' && (
+                          <>
+                            <span
+                              className="doc-open-veil"
+                              aria-hidden="true"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRevealKey(null)
+                              }}
+                            />
+                            <button
+                              className="doc-open-btn"
+                              aria-label="실행"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRevealKey(null)
+                                navigate({ name: 'app', appId: i.a.id })
+                              }}
+                            >
+                              <Icon name="play" size={15} /> 실행
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="doc-info">
@@ -1280,10 +1328,11 @@ export function Library() {
                 ) : i.kind === 'file' ? (
                   <article
                     key={'file:' + i.f.id}
-                    className="doc-card file-card"
+                    className={'doc-card file-card' + (revealKey === 'file:' + i.f.id ? ' is-revealed' : '')}
                     data-flip-key={'file:' + i.f.id}
+                    data-reveal-key={'file:' + i.f.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={() => navigate({ name: 'file', fileId: i.f.id })}
+                    onClick={() => cardOpen('file:' + i.f.id, () => navigate({ name: 'file', fileId: i.f.id }))}
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
@@ -1294,6 +1343,29 @@ export function Library() {
                       <div className="doc-thumb">
                         <Icon name="file" size={36} />
                         {rowPill(rowSyncState(i.f), true)}
+                        {prefs.view === 'grid' && (
+                          <>
+                            <span
+                              className="doc-open-veil"
+                              aria-hidden="true"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRevealKey(null)
+                              }}
+                            />
+                            <button
+                              className="doc-open-btn"
+                              aria-label="열기"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRevealKey(null)
+                                navigate({ name: 'file', fileId: i.f.id })
+                              }}
+                            >
+                              <Icon name="external" size={15} /> 열기
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="doc-info">
@@ -1328,11 +1400,15 @@ export function Library() {
                 ) : (
                   <article
                     key={i.d.id}
-                    className="doc-card"
+                    className={'doc-card' + (revealKey === i.d.id ? ' is-revealed' : '')}
                     data-doc-id={i.d.id}
                     data-flip-key={i.d.id}
+                    data-reveal-key={i.d.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={(e) => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d, e.currentTarget))}
+                    onClick={(e) => {
+                      if (section.kind === 'trash') return setMenu({ doc: i.d, x: 0, y: 0 })
+                      cardOpen(i.d.id, () => open(i.d, e.currentTarget))
+                    }}
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
@@ -1348,6 +1424,29 @@ export function Library() {
                         )}
                         <span className="doc-gloss" aria-hidden="true" />
                         {syncPillFor(i.d.id)}
+                        {prefs.view === 'grid' && (
+                          <>
+                            <span
+                              className="doc-open-veil"
+                              aria-hidden="true"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRevealKey(null)
+                              }}
+                            />
+                            <button
+                              className="doc-open-btn"
+                              aria-label="열기"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRevealKey(null)
+                                open(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'))
+                              }}
+                            >
+                              <Icon name="external" size={15} /> 열기
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="doc-info">

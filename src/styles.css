@@ -1100,8 +1100,9 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 — 한 장뿐이고, 상단 띠는 카테고리 색 없이 옅은 스크림 + 블러만 얹는다.
-   뒤 미리보기가 은은하게 비치고 글자는 읽힌다. */
+/* 카드 — 한 장뿐이고, 상단 띠(쪽수·날짜)는 기본적으로 카드 뒤에 숨어 있다가
+   카드를 누르면 위로 떠오르며 나타난다. 동시에 미리보기가 블러되고 그 위에
+   '열기' 버튼이 뜬다 (격자 보기). 띠는 카테고리 색 없이 옅은 스크림 + 약간의 블러. */
 .doc-grid .doc-plate {
   position: relative;
   border-radius: var(--r-lg);
@@ -1114,7 +1115,7 @@ textarea {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 2; /* 미리보기 위에 얹힌다 */
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1124,6 +1125,15 @@ textarea {
   background: color-mix(in srgb, var(--thumb-paper) 42%, transparent); /* 색 없이 옅은 스크림 */
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px); /* 약간의 블러만 */
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  transform: translateY(130%); /* 뒤로 숨김 */
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .42s var(--ft-ease), opacity .3s var(--ft-ease);
+}
+.doc-card.is-revealed .doc-stack {
+  transform: translateY(0); /* 위로 떠오름 */
+  opacity: 1;
 }
 .doc-grid .doc-stack-meta {
   max-width: 100%;
@@ -1132,6 +1142,50 @@ textarea {
   white-space: nowrap;
   font-size: 9.5px; /* 쪽수·날짜를 더 작게 */
   font-weight: 500;
+}
+/* 누름 오버레이 — 미리보기가 블러되고 그 위에 열기 버튼 */
+.doc-open-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: color-mix(in srgb, var(--thumb-paper) 14%, transparent);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .32s var(--ft-ease);
+}
+.doc-card.is-revealed .doc-open-veil {
+  opacity: 1;
+  pointer-events: auto;
+}
+.doc-open-btn {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(.9);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 15px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--e2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s var(--ft-ease), transform .42s var(--spring-pop);
+}
+.doc-card.is-revealed .doc-open-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
 }
 .doc-grid .doc-thumb {
   position: relative;
