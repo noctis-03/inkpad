@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import type { Engine } from '../../engine/engine'
 import { useUI } from '../../app/store'
 import type { DocumentMeta } from '../../shared/model'
+import { onSyncStatus } from '../../sync/sync'
 import { Icon } from '../Icon'
+import { Menu, MenuItem } from '../library/Library'
 
 const SAVE_LABEL = { saved: '저장됨', pending: '저장 대기', saving: '저장 중', error: '저장 실패' }
 
 /**
- * 편집 화면 상단 문서 바.
- * 1단 문서 바: 문서 정보와 문서 단위 액션 (제목·저장 상태·페이지·버전·내보내기·설정·동기화)
- * 도구(펜·형광펜·지우개·올가미·색·굵기·되돌리기·전체 보기)는 FloatingToolbar로 분리했다.
+ * 편집 화면 상단 문서 바. 도구(펜·형광펜·지우개·올가미·색·굵기·되돌리기·전체 보기)는 FloatingToolbar로 분리됐다.
+ * 필기 중 시선을 빼지 않도록 자주 쓰는 페이지·배경 설정 버튼만 남기고,
+ * 버전 기록·내보내기·설정·동기화는 ⋯ 메뉴로 모았다 (C-1).
+ * 저장 상태와 동기화 상태를 한 줄로 합쳤다 — "저장됨"은 1.5초 뒤 아이콘만 흐리게 남는다.
  */
 export function EditorToolbar(props: {
   engine: Engine | null
@@ -26,8 +29,32 @@ export function EditorToolbar(props: {
   const saveState = useUI((s) => s.saveState)
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState('')
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [savedQuiet, setSavedQuiet] = useState(false)
 
   useEffect(() => setTitle(doc?.title ?? ''), [doc?.title])
+
+  // "저장됨"은 잠깐 보였다가 조용해진다. 저장 대기·저장 중·실패는 계속 보인다 (C-1)
+  useEffect(() => {
+    if (saveState !== 'saved') {
+      setSavedQuiet(false)
+      return
+    }
+    const t = setTimeout(() => setSavedQuiet(true), 1500)
+    return () => clearTimeout(t)
+  }, [saveState])
+
+  useEffect(() => onSyncStatus((s) => setSyncing(s === 'syncing')), [])
+
+  const openMenu = (e: MouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setMenu((m) => (m ? null : { x: r.right, y: r.bottom }))
+  }
+  const run = (fn: () => void) => () => {
+    setMenu(null)
+    fn()
+  }
 
   return (
     <header id="editor-toolbar" className="toolbar-stack">
@@ -69,10 +96,22 @@ export function EditorToolbar(props: {
 
         <div className="toolbar-spacer" />
 
-        <span className={'save-state ' + saveState} title={SAVE_LABEL[saveState]}>
-          <Icon name={saveState === 'error' ? 'alert' : 'check'} size={14} />
-          <span className="save-label">{SAVE_LABEL[saveState]}</span>
-        </span>
+        {saveState === 'error' ? (
+          <button className="save-state error" onClick={() => setPanel('sync')} aria-label="저장 실패 — 눌러서 동기화 패널 열기">
+            <Icon name="alert" size={14} />
+            <span className="save-label">{SAVE_LABEL.error}</span>
+          </button>
+        ) : syncing ? (
+          <span className="save-state syncing" aria-label="동기화 중">
+            <Icon name="cloud" size={14} />
+            <span className="save-label">동기화 중</span>
+          </span>
+        ) : (
+          <span className={'save-state ' + saveState + (savedQuiet ? ' is-quiet' : '')} aria-label={SAVE_LABEL[saveState]}>
+            <Icon name="check" size={14} />
+            <span className="save-label">{SAVE_LABEL[saveState]}</span>
+          </span>
+        )}
 
         <nav className="toolbar-group" aria-label="문서">
           {doc?.mode === 'paged' && (
@@ -85,20 +124,20 @@ export function EditorToolbar(props: {
               <Icon name="grid" size={20} />
             </button>
           )}
-          <button className={'tb-btn' + (panel === 'history' ? ' is-active' : '')} onClick={() => setPanel('history')} aria-label="버전 기록">
-            <Icon name="restore" size={20} />
-          </button>
-          <button className={'tb-btn' + (panel === 'export' ? ' is-active' : '')} onClick={() => setPanel('export')} aria-label="내보내기">
-            <Icon name="share" size={20} />
-          </button>
-          <button className={'tb-btn' + (panel === 'settings' ? ' is-active' : '')} onClick={() => setPanel('settings')} aria-label="설정">
-            <Icon name="gear" size={20} />
-          </button>
-          <button className={'tb-btn sync-btn' + (panel === 'sync' ? ' is-active' : '')} onClick={() => setPanel('sync')} aria-label="동기화">
-            <Icon name="cloud" size={20} />
+          <button className={'tb-btn' + (menu ? ' is-active' : '')} onClick={openMenu} aria-label="더보기" aria-haspopup="menu" aria-expanded={!!menu}>
+            <Icon name="more" size={20} />
           </button>
         </nav>
       </div>
+
+      {menu && (
+        <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />
+          <MenuItem icon="share" label="내보내기" onClick={run(() => setPanel('export'))} />
+          <MenuItem icon="gear" label="설정" onClick={run(() => setPanel('settings'))} />
+          <MenuItem icon="cloud" label="동기화" onClick={run(() => setPanel('sync'))} />
+        </Menu>
+      )}
     </header>
   )
 }

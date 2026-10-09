@@ -4114,3 +4114,24 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 .stepper-btn:active {
   background: var(--press);
 }
+
+/* ───────── 문서 바 상태·⋯ 메뉴 (C-1) ───────── */
+.save-state.is-quiet .save-label {
+  display: none;
+}
+.save-state.is-quiet {
+  opacity: 0.5;
+}
+.save-state.syncing {
+  color: var(--accent-ink);
+}
+button.save-state {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 8px;
+}
+.menu:focus {
+  outline: none;
+}
