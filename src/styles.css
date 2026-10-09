@@ -4080,3 +4080,32 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 @keyframes toast-out {
   to { opacity: 0; transform: translateY(6px); }
 }
+
+/* ───────── 숫자 스테퍼 (A-3) — 터치 영역 44px 이상 ───────── */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.stepper input {
+  width: 72px;
+  text-align: center;
+}
+.stepper-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.stepper-btn:active {
+  background: var(--press);
+}
