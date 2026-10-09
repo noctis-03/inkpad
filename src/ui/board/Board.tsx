@@ -452,7 +452,6 @@ export function Board() {
                   (ok) => ok && removeShortcut(sc.id)
                 )
               }}
-              onDoubleClick={() => removeShortcut(sc.id)}
               title={it ? titleOf(it) : '사라진 항목'}
             >
               {it ? (
