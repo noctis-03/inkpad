@@ -2,25 +2,25 @@
   color-scheme: light;
 
   /* ── 표면 (종이 · 카드 · 채움) ── */
-  --paper: #f8f7f4;        /* 앱 바탕 */
-  --paper-2: #faf9f6;      /* 사이드바·패널 바탕 */
+  --paper: #f7f6f2;        /* 앱 바탕 */
+  --paper-2: #f2f0eb;      /* 사이드바·패널 바탕 */
   --surface: #ffffff;      /* 카드·시트·입력 */
-  --surface-2: #f3f4f6;    /* 옅은 채움(검색창·칩) */
-  --surface-3: #eef0f3;    /* 한 단계 더 */
-  --panel: #ffffffee;      /* 상단바·떠 있는 패널(반투명) */
+  --surface-2: #f1efe9;    /* 옅은 채움(검색창·칩) */
+  --surface-3: #e9e6de;    /* 한 단계 더 */
+  --panel: #fffffff0;      /* 상단바·떠 있는 패널(반투명) */
   --chip: #ffffff;         /* 선택된 항목의 떠 있는 칩 */
 
   /* ── 경계 ── */
-  --line: #e5e1d8;
-  --line-2: #e5e7eb;
+  --line: #e3dfd5;
+  --line-2: #e3dfd5;
 
   /* ── 글자 ── */
-  --ink: #1f2937;
-  --ink-2: #374151;
-  --muted: #5b6472;        /* AA 대비 확보를 위해 기존 #6b7280 에서 진하게 */
-  --muted-2: #9ca3af;
+  --ink: #23211d;
+  --ink-2: #3e3a33;
+  --muted: #6a655b;        /* --surface·--paper 위에서 4.5:1 이상 (AA) */
+  --muted-2: #a49e92;      /* 아이콘·장식 전용 — 본문 글자에 쓰지 않는다 */
   --on-ink: #ffffff;       /* 어두운 면 위 글자(테마 공통) */
-  --btn-bg: #1f2937;       /* 잉크 버튼 면 — 다크에서 뒤집힌다 */
+  --btn-bg: #23211d;       /* 잉크 버튼 면 — 다크에서 뒤집힌다 */
   --btn-fg: #ffffff;
   --toast-bg: #111827eb;
 
@@ -31,12 +31,12 @@
   --focus-ring: 0 0 0 4px #1f29370a;
 
   /* ── 강조 (잉크 블루) ── */
-  --accent: #2563eb;
-  --accent-ink: #1d4ed8;
-  --accent-soft: #dbeafe;
-  --accent-soft-2: #eff6ff;
-  --accent-line: #bfdbfe;
-  --accent-line-2: #93c5fd;
+  --accent: #3355c8;
+  --accent-ink: #2442a8;
+  --accent-soft: #e5eafa;
+  --accent-soft-2: #f1f4fd;
+  --accent-line: #c5d1f4;
+  --accent-line-2: #9fb2ea;
 
   /* ── 상태 ── */
   --success: #16a34a;
@@ -55,12 +55,12 @@
   --danger-line-2: #fca5a5;
 
   /* ── 개체 색 (앱 · 파일) ── */
-  --app: #4f46e5;
-  --app-2: #a855f7;
+  --app: #5b4fc4;
+  --app-2: #8b6fd6;
   --app-ink: #5b21b6;
   --app-soft: #ede9fe;
   --app-line: #c4b5fd;
-  --file: #0f766e;
+  --file: #2f7a72;
 
   /* ── 그림자 ── */
   --raise: 0 1px 2px #0000001a, 0 0 0 .5px #0000000f;
@@ -84,7 +84,7 @@
   --fs-2xl: 24px;
 
   /* ── 모션 ── */
-  --tray: #efede7;
+  --tray: #eeebe4;
   --spring-pop: cubic-bezier(.34, 1.56, .64, 1);
   --ft-spring: cubic-bezier(.2, .9, .25, 1.05);
   --ft-ease: cubic-bezier(.2, .8, .2, 1);
@@ -93,7 +93,7 @@
   --dur-slow: 520ms;
 
   /* ── 필기 캔버스(종이) — 테마와 무관하게 종이는 흰색 ── */
-  --bg-pattern: #cfcac0;
+  --bg-pattern: #d6dbe3;
 
   --toolbar-h: 52px;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -107,24 +107,24 @@
 :root[data-theme='dark'] {
     color-scheme: dark;
 
-    --paper: #14161a;
-    --paper-2: #191c21;
-    --surface: #1e2228;
-    --surface-2: #262b32;
-    --surface-3: #2c323a;
-    --panel: #1e2228ee;
-    --chip: #3a424c;
+    --paper: #161513;
+    --paper-2: #1b1a17;
+    --surface: #211f1c;
+    --surface-2: #2a2824;
+    --surface-3: #33302b;
+    --panel: #211f1cf0;
+    --chip: #3b3833;
 
-    --line: #2e343c;
-    --line-2: #343b44;
+    --line: #34312c;
+    --line-2: #34312c;
 
-    --ink: #e8e6e1;
-    --ink-2: #cbd2da;
-    --muted: #9aa4b1;
-    --muted-2: #6f7885;
+    --ink: #ece8e1;
+    --ink-2: #d2ccc2;
+    --muted: #a39d92;
+    --muted-2: #77726a;
     --on-ink: #ffffff;
-    --btn-bg: #e8e6e1;
-    --btn-fg: #14161a;
+    --btn-bg: #ece8e1;
+    --btn-fg: #161513;
     --toast-bg: #2f3540f2;
 
     --press: #ffffff14;
@@ -132,11 +132,11 @@
     --focus-outline: #ffffff66;
     --focus-ring: 0 0 0 4px #ffffff1a;
 
-    --accent: #6ea8ff;
-    --accent-ink: #9cc4ff;
-    --accent-soft: #1e3358;
-    --accent-soft-2: #16243d;
-    --accent-line: #2f4d7a;
+    --accent: #8aa6ff;
+    --accent-ink: #b0c3ff;
+    --accent-soft: #24304f;
+    --accent-soft-2: #1b2338;
+    --accent-line: #34467a;
     --accent-line-2: #3f6399;
 
     --success: #4ade80;
@@ -166,7 +166,7 @@
     --e2: 0 8px 24px #00000099;
     --e3: 0 24px 60px #000000b3;
 
-    --tray: #262b32;
+    --tray: #2a2824;
 }
 
 * {
