@@ -43,7 +43,12 @@ export function useFlip(containerRef: RefObject<HTMLElement | null>, deps: unkno
       capture()
       return
     }
-    if (sectionChanged) prev.current = new Map() // 섹션 전환 — 새 목록으로 취급
+    // 섹션 전환의 '등장'은 Library 의 data-enter(CSS)가 담당한다.
+    // 여기서 WAAPI 로 또 등장을 걸면 두 애니메이션이 겹쳐 어긋난다 — 위치만 기억하고 끝낸다.
+    if (sectionChanged) {
+      capture()
+      return
+    }
 
     const cards = [...el.querySelectorAll<HTMLElement>('[data-flip-key]')]
     if (cards.length > 60) {

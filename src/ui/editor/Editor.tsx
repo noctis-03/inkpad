@@ -26,6 +26,7 @@ import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
+import { takeOpenRect } from '../motion/openMorph'
 
 export function Editor({ docId }: { docId: ID }) {
   const hostRef = useRef<HTMLElement>(null)
@@ -53,7 +54,7 @@ export function Editor({ docId }: { docId: ID }) {
   useEffect(() => {
     const el = rootRef.current
     if (!el || document.documentElement.dataset.motion === 'off') return
-    const rect = useUI.getState().docCardRect
+    const rect = takeOpenRect() ?? useUI.getState().docCardRect
     useUI.setState({ docCardRect: null })
     if (!rect) {
       el.classList.add('doc-enter') // 카드 없이 열 때(딥링크·새 문서 만들기)는 조용히 페이드업
