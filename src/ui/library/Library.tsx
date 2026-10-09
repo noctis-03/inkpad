@@ -1242,8 +1242,8 @@ export function Library() {
                         <div
                           className="doc-stack"
                           style={{
-                            background: `color-mix(in srgb, ${categoryTag(i.a.category).color} 22%, transparent)`,
-                            color: categoryTag(i.a.category).color
+                            background: `color-mix(in srgb, ${categoryTag(i.a.category).color} 20%, rgba(255,255,255,0.72))`,
+                            color: `color-mix(in srgb, ${categoryTag(i.a.category).color} 78%, #1c1b18)`
                           }}
                         >
                           <span className="doc-stack-meta">{appMetaText(i.a)}</span>
@@ -1296,8 +1296,8 @@ export function Library() {
                         <div
                           className="doc-stack"
                           style={{
-                            background: `color-mix(in srgb, ${categoryTag(i.f.category).color} 22%, transparent)`,
-                            color: categoryTag(i.f.category).color
+                            background: `color-mix(in srgb, ${categoryTag(i.f.category).color} 20%, rgba(255,255,255,0.72))`,
+                            color: `color-mix(in srgb, ${categoryTag(i.f.category).color} 78%, #1c1b18)`
                           }}
                         >
                           <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
@@ -1351,8 +1351,8 @@ export function Library() {
                         <div
                           className="doc-stack"
                           style={{
-                            background: `color-mix(in srgb, ${categoryTag(i.d.category).color} 22%, transparent)`,
-                            color: categoryTag(i.d.category).color
+                            background: `color-mix(in srgb, ${categoryTag(i.d.category).color} 20%, rgba(255,255,255,0.72))`,
+                            color: `color-mix(in srgb, ${categoryTag(i.d.category).color} 78%, #1c1b18)`
                           }}
                         >
                           <span className="doc-stack-meta">{docMetaText(i.d)}</span>
