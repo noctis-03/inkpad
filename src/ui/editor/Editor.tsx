@@ -51,7 +51,9 @@ export function Editor({ docId }: { docId: ID }) {
   // 최근 열람 기록 — 라이브러리 '전체'를 다시 누를 때 최근 열람한 노트를 보여 주는 데 쓴다
   useEffect(() => trackRecentDoc(docId), [docId])
 
-  // 노트 열림 애니메이션 — 라이브러리 카드에서 확대되듯 열린다 (모션 최소화 설정이면 생략)
+  // 노트 열림 애니메이션 — 라이브러리가 만든 열기 고스트(.doc-open-ghost)가 카드에서
+  // 편집 화면으로 펼쳐지는 동안은 가리고 있다가, 고스트가 자리 잡은 뒤 드러난다.
+  // (모션 최소화 설정이면 생략 — 카드 없이 열 때는 조용히 페이드업)
   useEffect(() => {
     const el = rootRef.current
     if (!el || document.documentElement.dataset.motion === 'off') return
@@ -61,32 +63,19 @@ export function Editor({ docId }: { docId: ID }) {
       el.classList.add('doc-enter') // 카드 없이 열 때(딥링크·새 문서 만들기)는 조용히 페이드업
       return
     }
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const s = Math.max(0.05, Math.min(1, rect.width / vw))
-    const dx = rect.left + rect.width / 2 - vw / 2
-    const dy = rect.top + rect.height / 2 - vh / 2
-    el.style.transformOrigin = 'center center'
-    el.style.transform = `translate(${dx}px, ${dy}px) scale(${s})`
-    el.style.opacity = '0.4'
-    el.style.borderRadius = '12px'
-    el.style.transition = 'none'
-    let raf = requestAnimationFrame(() => {
-      raf = requestAnimationFrame(() => {
-        el.style.transition = `transform ${dur(520)}ms ${SPRING}, opacity ${dur(400)}ms ease, border-radius ${dur(520)}ms ${SPRING}`
-        el.style.transform = ''
-        el.style.opacity = '1'
-        el.style.borderRadius = '0px'
-        const clean = () => {
-          el.style.transition = ''
-          el.style.transformOrigin = ''
-          el.style.borderRadius = ''
-        }
-        el.addEventListener('transitionend', clean, { once: true })
-        setTimeout(clean, 700)
-      })
-    })
-    return () => cancelAnimationFrame(raf)
+    el.style.opacity = '0'
+    const showT = window.setTimeout(() => {
+      el.style.transition = `opacity ${dur(240)}ms ease`
+      el.style.opacity = '1'
+    }, dur(400))
+    const cleanT = window.setTimeout(() => {
+      el.style.transition = ''
+      el.style.opacity = ''
+    }, dur(800))
+    return () => {
+      window.clearTimeout(showT)
+      window.clearTimeout(cleanT)
+    }
   }, [])
 
   // 엔진 생성 / 해제

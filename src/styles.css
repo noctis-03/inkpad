@@ -4005,6 +4005,18 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   box-shadow: var(--e2);
   pointer-events: none;
 }
+/* 열기 고스트 (5.6 열기) — 카드 썸네일이 편집 화면으로 펼쳐진다 */
+.doc-open-ghost {
+  position: fixed;
+  z-index: 45;
+  border-radius: var(--r-lg);
+  background-color: var(--thumb-paper);
+  background-size: cover;
+  background-position: top center;
+  box-shadow: var(--e2);
+  pointer-events: none;
+  will-change: transform;
+}
 
 /* 5.4 · 섹션 제목 cross-fade */
 .library-title { animation: title-in .3s var(--ft-ease) both; }

@@ -502,9 +502,44 @@ export function Library() {
 
   // ───────── 작업 ─────────
 
-  /** 노트 열기 — 누른 카드의 화면 위치를 기억해 편집 화면이 그 카드에서 확대되듯 열리게 한다 */
+  /** 노트 열기 — 카드 썸네일 고스트가 편집 화면으로 펼쳐지는 모핑 (5.6 열기, 시안 openEditor 방식) */
   const open = (d: DocumentMeta, card?: HTMLElement | null) => {
-    useUI.setState({ docCardRect: card?.getBoundingClientRect() ?? null })
+    const rect = card?.getBoundingClientRect() ?? null
+    useUI.setState({ docCardRect: rect })
+    if (rect && document.documentElement.dataset.motion !== 'off') {
+      const ghost = document.createElement('div')
+      ghost.className = 'doc-open-ghost'
+      const url = thumbsRef.current.get(d.id)
+      if (url) ghost.style.backgroundImage = `url(${url})`
+      Object.assign(ghost.style, {
+        left: `${rect.left}px`,
+        top: `${rect.top}px`,
+        width: `${rect.width}px`,
+        height: `${rect.height}px`
+      })
+      document.body.appendChild(ghost)
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      // 종이 비율을 유지한 채 화면을 가득 덮는 배율 (cover)
+      const cover = Math.max(vw / rect.width, vh / rect.height)
+      const dx = vw / 2 - (rect.left + rect.width / 2)
+      const dy = vh / 2 - (rect.top + rect.height / 2)
+      const anim = ghost.animate(
+        [
+          { transform: 'none', borderRadius: 'var(--r-lg)' },
+          { transform: `translate(${dx}px, ${dy}px) scale(${cover})`, borderRadius: '0px' }
+        ],
+        { duration: dur(480), easing: SPRING, fill: 'forwards' }
+      )
+      // 편집 화면이 이미 아래에서 드러나는 타이밍과 맞춰 고스트를 스치듯 지운다
+      const drop = () => {
+        const out = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur(160), easing: 'ease' })
+        out.addEventListener('finish', () => ghost.remove(), { once: true })
+        out.addEventListener('cancel', () => ghost.remove(), { once: true })
+      }
+      anim.addEventListener('finish', drop, { once: true })
+      window.setTimeout(() => ghost.remove(), dur(900)) // 안전망 — 어떤 경로로도 고스트가 남지 않게
+    }
     navigate({ name: 'editor', docId: d.id })
   }
 
