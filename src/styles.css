@@ -4018,9 +4018,9 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   will-change: transform;
 }
 
-/* 5.4 · 섹션 제목 cross-fade — 제목 텍스트만 애니메이션한다.
-   개수(.title-count)는 h1 밖에서 리마운트 없이 카운트업하므로 같이 애니메이션하지 않는다 */
-.library-title .title-text { animation: title-in .3s var(--ft-ease) both; display: inline-block; }
+/* 5.4 · 섹션 제목 모핑 — 애니메이션은 TitleText 컴포넌트가 Web Animations API로
+   두 단계(슬러드아웃→슬러드인)로 실행한다. CSS에서는 자리만 잡아 준다. */
+.library-title .title-text { display: inline-block; }
 @keyframes title-in {
   from { opacity: 0; transform: translateY(6px); }
 }

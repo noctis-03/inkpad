@@ -71,7 +71,57 @@ const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloud
   r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
 
 /** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */
-function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
+function TitleText({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [shown, setShown] = useState(text)
+  const shownRef = useRef(text)
+  const anims = useRef<Animation[]>([])
+  // 섹션 제목 모핑 (시안 setTitle 방식): 위로 슬러드아웃 → 텍스트 교체 → 아래에서 슬러드인.
+  // CSS 한 단계 페이드보다 느리고 두 단계로 해서 섹션이 바뀌는 느낌을 살린다.
+  useEffect(() => {
+    const el = ref.current
+    if (!el || shownRef.current === text) return
+    if (document.documentElement.dataset.motion === 'off') {
+      shownRef.current = text
+      setShown(text)
+      return
+    }
+    anims.current.forEach((a) => a.cancel())
+    anims.current = []
+    const out = el.animate(
+      [
+        { opacity: 1, transform: 'none' },
+        { opacity: 0, transform: 'translateY(-7px)' }
+      ],
+      { duration: dur(170), easing: 'ease-in', fill: 'forwards' }
+    )
+    anims.current.push(out)
+    out.addEventListener(
+      'finish',
+      () => {
+        shownRef.current = text
+        setShown(text)
+        const inn = el.animate(
+          [
+            { opacity: 0, transform: 'translateY(7px)' },
+            { opacity: 1, transform: 'none' }
+          ],
+          { duration: dur(380), easing: SPRING }
+        )
+        anims.current.push(inn)
+      },
+      { once: true }
+    )
+    return () => anims.current.forEach((a) => a.cancel())
+  }, [text])
+  return (
+    <span ref={ref} className="title-text">
+      {shown}
+    </span>
+  )
+}
+
+/** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null)
   const prev = useRef(state)
   useEffect(() => {
@@ -906,9 +956,9 @@ export function Library() {
           <Icon name="sidebar" />
         </button>
         <h1 className="library-title">
-          {/* 제목만 키를 바꿔 cross-fade 한다 — 개수는 리마운트되지 않아야
+          {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
               섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
-          <span key={title} className="title-text">{title}</span>
+          <TitleText text={title} />
           <span className="title-count">
             <CountUp value={recentActive ? recentDocs.length : items.length} />
           </span>
