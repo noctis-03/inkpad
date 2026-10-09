@@ -485,7 +485,9 @@ export function Library() {
     )
     imgs.forEach((im) => io.observe(im))
     return () => io.disconnect()
-  }, [items, prefs.view])
+    // thumbs도 의존성에 넣는다 — 미리보기가 나중에 채워지면 새 <img>가 DOM에
+    // 들어오므로, 다시 관찰해 is-revealed(리빌 애니메이션)를 붙여야 보인다.
+  }, [items, thumbs, prefs.view])
 
   // 동기화 버튼 회전 (5.5)
   useEffect(() => onSyncStatus((s) => { setSyncing(s === 'syncing'); setCloudOff(s === 'disabled') }), [])
