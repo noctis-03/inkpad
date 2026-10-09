@@ -84,11 +84,12 @@ await act(async () => {
 })
 check('섹션 전환(컨테이너 유지)에서도 노트 카드가 등장 애니메이션', appearAnims(['x', 'y']).length === 2, `등장 ${appearAnims(['x', 'y']).length}건 / 전체 ${anims().length}건`)
 
-/* 5) 같은 섹션에서 재정렬 — 등장이 아니라 '이동' 애니메이션이어야 한다 */
+/* 5) 같은 섹션에서 재정렬 — 등장이 아니라 '이동' 애니메이션이어야 한다.
+      키 '순서'가 바뀌어야 FLIP 이 다시 돈다(순서가 그대로면 재계산할 이유가 없다). */
 anims().length = 0
 rects.x = { left: -40, top: 0, width: 100, height: 100 }
 await act(async () => {
-  root.render(<List keys={['x', 'y']} section="all" />)
+  root.render(<List keys={['y', 'x']} section="all" />)
 })
 const moveX = anims().find((a) => a.key === 'x' && !JSON.stringify(a.keyframes).includes('"opacity":0'))
 check('같은 섹션 재정렬은 이동 애니메이션', !!moveX, JSON.stringify(anims().map((a: any) => a.key)))
