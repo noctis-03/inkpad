@@ -1061,6 +1061,9 @@ export function Library() {
           <option value="created">만든 날</option>
           <option value="title">제목</option>
         </select>
+        <button className="tb-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
+          <Icon name="board" />
+        </button>
         <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
           <Icon name="gear" />
         </button>
@@ -1468,6 +1471,7 @@ export function Library() {
       {moreMenu && (
         <Menu x={moreMenu.x} y={moreMenu.y} onClose={() => setMoreMenu(null)}>
           <MenuItem icon="cloud" label="동기화 관리" onClick={() => { setMoreMenu(null); setShowSync(true) }} />
+          <MenuItem icon="board" label="작업보드" onClick={() => { setMoreMenu(null); navigate({ name: 'board' }) }} />
           <MenuItem icon="filePdf" label="에셋 원본 (PDF·이미지)" onClick={() => { setMoreMenu(null); setShowAssets(true) }} />
           <MenuItem icon="apps" label="앱 관리" onClick={() => { setMoreMenu(null); setShowApps(true) }} />
           <MenuItem icon="files" label="기타 파일 관리" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />

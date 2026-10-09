@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import type { BoardPreset } from '../shared/board'
 import type { Asset, Block, DocumentMeta, Folder, HtmlApp, ID, Page, StoredFile } from '../shared/model'
 
 /** IndexedDB 레코드 (설계 8장) */
@@ -63,6 +64,7 @@ export class InkpadDB extends Dexie {
   apps!: Table<HtmlApp, ID>
   appStorage!: Table<{ appId: ID; data: Record<string, string> }, ID>
   files!: Table<FileRow, ID>
+  boardPresets!: Table<BoardPreset, ID>
 
   constructor(name = 'inkpad') {
     super(name)
@@ -86,6 +88,8 @@ export class InkpadDB extends Dexie {
     this.version(4).stores({ apps: 'id, updatedAt', appStorage: 'appId' })
     // v5: 일반 파일 (임의 형식 — 노트·앱과 별개 테이블)
     this.version(5).stores({ files: 'id, updatedAt' })
+    // v6: 작업보드 프리셋 (보드 배치 = 바로가기 위치. Drive Inkpad/boards/ 와 공유)
+    this.version(6).stores({ boardPresets: 'id, updatedAt' })
   }
 }
 
