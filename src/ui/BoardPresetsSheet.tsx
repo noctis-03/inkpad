@@ -1,11 +1,11 @@
 // 작업보드 프리셋 목록 — 앱 · 기타 파일 시트와 같은 규칙의 전용 창.
 // 이 기기의 프리셋과 Drive(Inkpad/boards)에 올라간 프리셋을 한 목록으로 보여 주고
-// 저장 · 적용(불러오기) · 업로드 · 받기 · 삭제를 항목별로 한다.
+// 저장 · 불러오기(적용) · 업로드 · 받기 · 삭제를 항목별로 한다.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useUI } from '../app/store'
 import { confirmDialog, promptDialog } from '../app/dialogs'
 import { formatDate } from '../shared/util'
-import { cfgSummary, type Board as BoardModel, type BoardPreset } from '../shared/board'
+import type { Board as BoardModel, BoardPreset } from '../shared/board'
 import { AuthRequiredError, login } from '../sync/token'
 import { onSyncStatus, type SyncStatus } from '../sync/sync'
 import {
@@ -113,7 +113,7 @@ export function BoardPresetsSheet({
     [all]
   )
 
-  /** 지금 보드 설정을 새 프리셋으로 */
+  /** 지금 배치를 새 프리셋으로 */
   const onSaveCurrent = async () => {
     const name = await promptDialog('프리셋으로 저장', {
       value: `작업보드 ${new Date().getMonth() + 1}/${new Date().getDate()}`,
@@ -124,15 +124,15 @@ export function BoardPresetsSheet({
       const p = await createPreset(name.trim(), board)
       const up = await uploadPreset(p.id)
       if (!up) toast('오프라인이라 업로드하지 못했습니다. 연결된 뒤 업로드를 눌러 주세요.', 'error')
-      else toast(`"${p.name}" 저장했습니다. (${cfgSummary(p)})`, 'success')
+      else toast(`"${p.name}" 저장했습니다. (바로가기 ${p.shortcuts.length}개)`, 'success')
     })
   }
 
-  /** 지금 보드 설정을 기존 프리셋에 덮어쓰기 */
+  /** 지금 배치를 기존 프리셋에 덮어쓰기 */
   const onOverwrite = (p: CloudPresetInfo) =>
     run(async () => {
       const up = await overwritePreset(p.presetId, board)
-      toast(up ? `"${p.name}"을(를) 지금 설정으로 덮어썼습니다.` : `"${p.name}"을(를) 덮어썼습니다. 클라우드에는 나중에 올릴 수 있습니다.`, up ? 'success' : 'info')
+      toast(up ? `"${p.name}"을(를) 지금 배치로 덮어썼습니다.` : `"${p.name}"을(를) 덮어썼습니다. 클라우드에는 나중에 올릴 수 있습니다.`, up ? 'success' : 'info')
     })
 
   const applyLocal = async (presetId: string) => {
@@ -215,10 +215,8 @@ export function BoardPresetsSheet({
     const local = p.state !== 'available'
     return (
       <>
-        {local && (
-          <MenuItem icon="check" label="보드에 적용" desc="저장된 배경화면·시각화 설정을 지금 보드로 불러옵니다" disabled={busy} onClick={act(() => void applyLocal(p.presetId))} />
-        )}
-        {local && <MenuItem icon="replace" label="지금 설정으로 덮어쓰기" desc="현재 보드 설정으로 프리셋을 갱신합니다" disabled={busy} onClick={act(() => void onOverwrite(p))} />}
+        {local && <MenuItem icon="check" label="보드에 적용" desc="저장된 바로가기 배치를 지금 보드로 불러옵니다" disabled={busy} onClick={act(() => void run(() => applyLocal(p.presetId), `"${p.name}"을(를) 적용했습니다.`))} />}
+        {local && <MenuItem icon="replace" label="지금 배치로 덮어쓰기" desc="현재 보드의 바로가기 위치로 프리셋을 갱신합니다" disabled={busy} onClick={act(() => void onOverwrite(p))} />}
         {(p.state === 'available' || p.state === 'update') && (
           <MenuItem icon="download" label="받기" desc="Drive의 프리셋을 받아 보드에 적용합니다" disabled={busy || !online} onClick={act(() => void doReceive(p))} />
         )}
@@ -252,7 +250,7 @@ export function BoardPresetsSheet({
             onClose={onClose}
             action={
               <button className="primary-btn" onClick={() => void onSaveCurrent()} disabled={busy}>
-                <Icon name="plus" size={16} /> 지금 설정 저장
+                <Icon name="plus" size={16} /> 지금 배치 저장
               </button>
             }
           />
@@ -301,9 +299,7 @@ export function BoardPresetsSheet({
                   />
                 </div>
 
-                <p className="store-hint">
-                  배경화면·시각화 형태·카드 크기·정렬·필터만 저장합니다. 노트·앱·파일 내용은 각자의 동기화 경로로 오갑니다.
-                </p>
+                <p className="store-hint">바로가기의 <b>위치</b>만 저장합니다. 노트·앱·파일 내용은 각자의 동기화 경로로 오갑니다.</p>
 
                 {items === null ? (
                   <p className="store-hint">프리셋 목록을 불러오는 중…</p>
@@ -311,7 +307,7 @@ export function BoardPresetsSheet({
                   <SheetEmpty
                     icon="board"
                     title={all.length === 0 ? '프리셋이 없습니다' : '조건에 맞는 프리셋이 없습니다'}
-                    desc={all.length === 0 ? '“지금 설정 저장”을 누르면 이 보드 설정을 프리셋으로 남기고 Drive에 올릴 수 있습니다.' : undefined}
+                    desc={all.length === 0 ? '“지금 배치 저장”을 누르면 이 보드의 배치를 프리셋으로 남기고 Drive에 올릴 수 있습니다.' : undefined}
                   />
                 ) : (
                   groups.map((g) => (
@@ -325,11 +321,6 @@ export function BoardPresetsSheet({
                           const m = PRESET_STATE[p.state]
                           const at = p.remoteUpdatedAt ?? p.localUpdatedAt
                           const primary = m.primary
-                          const onPrimary = () => {
-                            if (primary === 'apply') void run(() => applyLocal(p.presetId))
-                            else if (primary === 'receive') void doReceive(p)
-                            else void doUpload(p)
-                          }
                           return (
                             <div key={p.presetId} className={'store-card tone-' + m.tone + (m.group === 'confirm' ? ' is-confirm' : '')}>
                               <div className="store-card-top">
@@ -340,7 +331,9 @@ export function BoardPresetsSheet({
                                   <div className="store-card-title" title={p.name}>
                                     {p.name}
                                   </div>
-                                  <div className="store-card-sub">{[cfgSummary(p.cfg), at ? formatDate(at) : ''].filter(Boolean).join(' · ')}</div>
+                                  <div className="store-card-sub">
+                                    {[`바로가기 ${p.shortcutCount}개`, at ? formatDate(at) : ''].filter(Boolean).join(' · ')}
+                                  </div>
                                 </div>
                                 <button
                                   className="store-more"
@@ -360,7 +353,15 @@ export function BoardPresetsSheet({
                               <div className="store-card-bottom">
                                 <span className="store-chip-slot">{m.chip && <span className={'store-chip ' + m.tone}>{m.chip}</span>}</span>
                                 {primary && (
-                                  <button className={'store-btn' + (primary === 'apply' ? ' primary' : '')} disabled={busy || (!online && primary !== 'apply')} onClick={onPrimary}>
+                                  <button
+                                    className={'store-btn' + (primary === 'apply' ? ' primary' : '')}
+                                    disabled={busy || (!online && primary !== 'apply')}
+                                    onClick={() => {
+                                      if (primary === 'apply') void run(() => applyLocal(p.presetId), `"${p.name}"을(를) 적용했습니다.`)
+                                      else if (primary === 'receive') void doReceive(p)
+                                      else void doUpload(p)
+                                    }}
+                                  >
                                     {PRIMARY_LABEL[primary]}
                                   </button>
                                 )}
