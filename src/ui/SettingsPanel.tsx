@@ -289,7 +289,16 @@ function PressureTester() {
 export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) {
   return (
     <>
-      <PressureSection />
+      <section className="panel-section">
+        <h3>화면</h3>
+        <Row label="테마" hint="자동은 기기의 외관(라이트/다크) 설정을 따릅니다" asLabel={false}>
+          <ThemeSelect />
+        </Row>
+        <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다" asLabel={false}>
+          <MotionSelect />
+        </Row>
+      </section>
+
       <section className="panel-section">
         <h3>필기</h3>
         <Row label="손떨림 보정" hint="높을수록 부드럽지만 펜 끝에서 뒤처짐">
@@ -303,8 +312,10 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         </Row>
       </section>
 
+      <PressureSection />
+
       <section className="panel-section">
-        <h3>기타 파일</h3>
+        <h3>파일 전송</h3>
         <Row label="큰 파일 전송 전 확인" hint="이 크기 이상을 다운로드·업로드하기 전에 한 번 더 묻습니다 (iPad는 셀룰러 여부를 알 수 없어 크기로 확인합니다). 메타데이터만 있는 노트를 열어 원본(PDF·이미지)을 받을 때도 묻습니다">
           <Select
             k="largeFileConfirm"
@@ -319,55 +330,49 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         </Row>
       </section>
 
-      <section className="panel-section">
-        <h3>입력 · 지연</h3>
-        <Row label="펜 끝 예측 그리기" hint="getPredictedEvents">
-          <Toggle k="prediction" />
-        </Row>
-        <Row label="중간 점 수집" hint="getCoalescedEvents">
-          <Toggle k="coalesced" />
-        </Row>
-        <Row label="팜 리젝션 시간" hint="펜을 뗀 뒤 터치 무시">
-          <Slider k="palmWindowMs" min={0} max={1500} step={50} fmt={(v) => `${v}ms`} />
-        </Row>
-        <Row label="큰 접촉면 무시" hint="0 = 끔">
-          <Slider k="palmMaxContact" min={0} max={80} step={2} fmt={(v) => (v ? `${v}px` : '끔')} />
-        </Row>
-        <Row label="입력이 끊겼을 때">
-          <Select k="cancelBehavior" options={[['commit', '그린 데까지 확정'], ['discard', '폐기']]} />
-        </Row>
-        <Row label="한 손가락 스크롤 관성">
-          <Toggle k="momentum" />
-        </Row>
-      </section>
-
-      <section className="panel-section">
-        <h3>화면</h3>
-        <Row label="테마" hint="자동은 기기의 외관(라이트/다크) 설정을 따릅니다" asLabel={false}>
-          <ThemeSelect />
-        </Row>
-        <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다" asLabel={false}>
-          <MotionSelect />
-        </Row>
-      </section>
-
-      {showDebug && (
+      {/* 자주 바꾸지 않는 항목 — 기본은 접어 둔다 (C-6). API 이름이 들어간 힌트는 여기 안에서만 보인다. */}
+      <details className="panel-section adv">
+        <summary>고급</summary>
         <section className="panel-section">
-          <h3>렌더링</h3>
-          <Row label="팬/줌 중 렌더링">
-            <Select k="gestureRender" options={[['auto', '자동'], ['transform', '변환만 (빠름)'], ['redraw', '매 프레임 다시 그림']]} />
+          <h3>입력 · 지연</h3>
+          <Row label="펜 끝 예측 그리기" hint="getPredictedEvents">
+            <Toggle k="prediction" />
           </Row>
-          <Row label="해상도" hint="낮추면 빠르지만 흐려짐">
-            <Slider k="resolution" min={0.5} max={1} step={0.25} fmt={(v) => `${v * 100}%`} />
+          <Row label="중간 점 수집" hint="getCoalescedEvents">
+            <Toggle k="coalesced" />
           </Row>
-          <Row label="성능 표시 (HUD)">
-            <Toggle k="showHud" />
+          <Row label="팜 리젝션 시간" hint="펜을 뗀 뒤 터치 무시">
+            <Slider k="palmWindowMs" min={0} max={1500} step={50} fmt={(v) => `${v}ms`} />
+          </Row>
+          <Row label="큰 접촉면 무시" hint="0 = 끔">
+            <Slider k="palmMaxContact" min={0} max={80} step={2} fmt={(v) => (v ? `${v}px` : '끔')} />
+          </Row>
+          <Row label="입력이 끊겼을 때">
+            <Select k="cancelBehavior" options={[['commit', '그린 데까지 확정'], ['discard', '폐기']]} />
+          </Row>
+          <Row label="한 손가락 스크롤 관성">
+            <Toggle k="momentum" />
           </Row>
         </section>
-      )}
 
-      {/* 디버깅용: 앱 인터넷 사용량 (셀룰러 데이터 확인) — 이 한 줄과 import를 지우면 사라진다 */}
-      {showDebug && <NetUsageSection />}
+        {showDebug && (
+          <section className="panel-section">
+            <h3>렌더링</h3>
+            <Row label="팬/줌 중 렌더링">
+              <Select k="gestureRender" options={[['auto', '자동'], ['transform', '변환만 (빠름)'], ['redraw', '매 프레임 다시 그림']]} />
+            </Row>
+            <Row label="해상도" hint="낮추면 빠르지만 흐려짐">
+              <Slider k="resolution" min={0.5} max={1} step={0.25} fmt={(v) => `${v * 100}%`} />
+            </Row>
+            <Row label="성능 표시 (HUD)">
+              <Toggle k="showHud" />
+            </Row>
+          </section>
+        )}
+
+        {/* 디버깅용: 앱 인터넷 사용량 (셀룰러 데이터 확인) — 이 한 줄과 import를 지우면 사라진다 */}
+        {showDebug && <NetUsageSection />}
+      </details>
     </>
   )
 }

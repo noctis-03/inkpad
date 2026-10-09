@@ -4177,3 +4177,15 @@ button.save-state {
   animation: none;
   content: none;
 }
+
+/* ───────── 설정 고급 섹션 (C-6) — 기본 접어 둠 ───────── */
+details.adv > summary {
+  cursor: pointer;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--ink);
+  padding: 4px 2px;
+}
+details.adv > summary::marker {
+  color: var(--muted);
+}
