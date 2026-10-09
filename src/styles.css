@@ -1352,7 +1352,7 @@ textarea {
   border-radius: 999px;
   background: var(--btn-bg);
   box-shadow: var(--e2);
-  pointer-events: auto;
+  pointer-events: none;
 }
 .doc-open-actions {
   margin: auto 0;
@@ -1373,6 +1373,15 @@ textarea {
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--e2);
+  pointer-events: none;
+}
+/* 오버레이가 실제로 열린 카드에서만 탭/버튼이 클릭을 받는다.
+   숨김 상태(패널 opacity:0)에서도 자식이 pointer-events:auto 였던 탓에,
+   카드 가운데(버튼이 놓이는 자리)를 누르면 오버레이가 뜨지 않고
+   곧바로 '편집모드/뷰어보드'로 열려 버리던 버그의 원인. */
+.doc-card.is-revealed .doc-open-tabs,
+.doc-card.is-revealed .doc-open-actions,
+.doc-card.is-revealed .doc-open-btn {
   pointer-events: auto;
 }
 .doc-open-tabs .doc-open-btn,
