@@ -1262,12 +1262,12 @@ export function Library() {
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
                     onClick={() => cardOpen('app:' + i.a.id, () => navigate({ name: 'app', appId: i.a.id }))}
                   >
+                    {prefs.view === 'grid' && (
+                      <div className="doc-stack">
+                        <span className="doc-stack-meta">{appMetaText(i.a)}</span>
+                      </div>
+                    )}
                     <div className="doc-plate">
-                      {prefs.view === 'grid' && (
-                        <div className="doc-stack">
-                          <span className="doc-stack-meta">{appMetaText(i.a)}</span>
-                        </div>
-                      )}
                       <div className="doc-thumb">
                         <Icon name="app" size={36} />
                         {rowPill(rowSyncState(i.a), true)}
@@ -1334,12 +1334,12 @@ export function Library() {
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
                     onClick={() => cardOpen('file:' + i.f.id, () => navigate({ name: 'file', fileId: i.f.id }))}
                   >
+                    {prefs.view === 'grid' && (
+                      <div className="doc-stack">
+                        <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
+                      </div>
+                    )}
                     <div className="doc-plate">
-                      {prefs.view === 'grid' && (
-                        <div className="doc-stack">
-                          <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
-                        </div>
-                      )}
                       <div className="doc-thumb">
                         <Icon name="file" size={36} />
                         {rowPill(rowSyncState(i.f), true)}
@@ -1410,12 +1410,12 @@ export function Library() {
                       cardOpen(i.d.id, () => open(i.d, e.currentTarget))
                     }}
                   >
+                    {prefs.view === 'grid' && (
+                      <div className="doc-stack">
+                        <span className="doc-stack-meta">{docMetaText(i.d)}</span>
+                      </div>
+                    )}
                     <div className="doc-plate">
-                      {prefs.view === 'grid' && (
-                        <div className="doc-stack">
-                          <span className="doc-stack-meta">{docMetaText(i.d)}</span>
-                        </div>
-                      )}
                       <div className="doc-thumb">
                         {thumbs.get(i.d.id) ? (
                           <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />

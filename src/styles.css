@@ -1100,13 +1100,14 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 — 한 장뿐이고, 상단 띠(쪽수·날짜)는 기본적으로 카드 뒤에 숨어 있다가
-   카드를 누르면 위로 떠오르며 나타난다. 동시에 미리보기가 블러되고 그 위에
-   '열기' 버튼이 뜬다 (격자 보기). 띠는 카테고리 색 없이 옅은 스크림 + 약간의 블러. */
+/* 카드 — 한 장뿐. 상단 띠(쪽수·날짜)는 평소 카드 뒤에 숨어 있다가
+   카드를 누르면 카드 위쪽 바깥으로 떠오른다 — 미리보기를 덮지 않는다.
+   같은 동작에서 미리보기가 블러되고 그 위에 '열기' 버튼이 뜬다 (격자 보기). */
 .doc-grid .doc-plate {
   position: relative;
+  z-index: 1; /* 띠 위에 온다 — 띠는 카드 뒤에서 올라온다 */
   border-radius: var(--r-lg);
-  overflow: hidden; /* 카드 모서리에서 띠·미리보기를 함께 잘라 낸다 */
+  overflow: hidden; /* 카드 모서리에서 미리보기를 잘라 낸다 */
   background: var(--thumb-paper);
   box-shadow: var(--e1);
 }
@@ -1115,24 +1116,24 @@ textarea {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 2;
+  z-index: 0; /* 카드(plate) 뒤에 깔린다 */
   display: flex;
   align-items: center;
   justify-content: center;
   height: 21px;
   padding: 0 8px;
   color: var(--muted);
-  background: color-mix(in srgb, var(--thumb-paper) 42%, transparent); /* 색 없이 옅은 스크림 */
+  background: color-mix(in srgb, var(--thumb-paper) 78%, transparent); /* 색 없이 옅은 스크림 */
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px); /* 약간의 블러만 */
-  border-radius: var(--r-lg) var(--r-lg) 0 0;
-  transform: translateY(130%); /* 뒤로 숨김 */
+  border-radius: var(--r-sm);
+  transform: translateY(0); /* 처음엔 카드 뒤에 숨어 있다 */
   opacity: 0;
   pointer-events: none;
   transition: transform .42s var(--ft-ease), opacity .3s var(--ft-ease);
 }
 .doc-card.is-revealed .doc-stack {
-  transform: translateY(0); /* 위로 떠오름 */
+  transform: translateY(calc(-100% - 3px)); /* 카드 위쪽 바깥으로 떠오른다 */
   opacity: 1;
 }
 .doc-grid .doc-stack-meta {
