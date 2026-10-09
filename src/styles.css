@@ -1122,8 +1122,8 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px; /* 쪽수·날짜를 한 단계 작게 */
+  font-weight: 500;
 }
 .doc-grid .doc-thumb {
   position: relative;
@@ -1172,20 +1172,7 @@ textarea {
   flex: 1 1 auto;
   margin: 0;
 }
-/* 페이지 결 — 오른쪽 종이 단면 2겹 */
-.doc-edge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 10px;
-  z-index: 2;
-  pointer-events: none;
-  border-left: 1px solid var(--line-2);
-  background:
-    repeating-linear-gradient(180deg, #0000000d 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(180deg, var(--thumb-paper) 0 3px, var(--line) 3px 4px);
-}
+/* (삭제) 페이지 결 — 오른쪽 책 질감(.doc-edge)은 사용자 요청으로 걷어냈다 */
 .doc-thumb img {
   width: 100%;
   height: 100%;
@@ -1318,10 +1305,7 @@ textarea {
   justify-content: center;
   color: var(--muted-2);
 }
-/* 리스트 보기: 캡션을 한 줄로 눕히고 책등·페이지 결은 숨긴다 */
-.doc-list .doc-edge {
-  display: none;
-}
+/* 리스트 보기: 캡션을 한 줄로 눕힌다 */
 .doc-list .doc-info {
   flex: 1;
   min-width: 0;

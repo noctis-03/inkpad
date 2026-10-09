@@ -1355,7 +1355,6 @@ export function Library() {
                         ) : (
                           <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                         )}
-                        <span className="doc-edge" aria-hidden="true" />
                         <span className="doc-gloss" aria-hidden="true" />
                         {syncPillFor(i.d.id)}
                       </div>
