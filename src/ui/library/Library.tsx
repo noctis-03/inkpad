@@ -481,8 +481,10 @@ export function Library() {
       (entries) => {
         for (const en of entries) {
           if (!en.isIntersecting) continue
-          const img = en.target as HTMLImageElement
-          io.unobserve(img)
+          const holder = en.target as HTMLElement
+          io.unobserve(holder)
+          const img = holder.querySelector<HTMLImageElement>('img[data-reveal]')
+          if (!img) continue
           const id = img.dataset.reveal!
           if (seenReveal.current.has(id)) img.classList.add('no-anim')
           seenReveal.current.add(id)
@@ -491,7 +493,11 @@ export function Library() {
       },
       { threshold: 0.1 }
     )
-    imgs.forEach((im) => io.observe(im))
+    // 미리보기 <img>를 직접 관찰하지 않는다 — 리빌 대기 클립(clip-path: 완전 가림)이
+    // 교차 판정에까지 반영되는 엔진(크로뮴)에서는 가려진 <img>의 isIntersecting이
+    // 영원히 false다(리빌을 못 해 클립도 못 벗는 교착). 클립 없는 카드 썸네일
+    // 컨테이너를 관찰해 그 안의 img에 리빌을 붙인다.
+    imgs.forEach((im) => io.observe(im.closest('.doc-thumb') ?? im))
     return () => io.disconnect()
     // thumbs도 의존성에 넣는다 — 미리보기가 나중에 채워지면 새 <img>가 DOM에
     // 들어오므로, 다시 관찰해 is-revealed(리빌 애니메이션)를 붙여야 보인다.
