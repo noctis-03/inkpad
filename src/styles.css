@@ -1086,7 +1086,7 @@ textarea {
 }
 .doc-grid .doc-thumb {
   position: relative;
-  aspect-ratio: 1 / 1.414; /* A4 쪽 비율 — 3:4 크롭 제거 */
+  aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
   border-radius: var(--r-lg);
   background: var(--thumb-paper);
   box-shadow: var(--e1);
