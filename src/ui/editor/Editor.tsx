@@ -24,6 +24,7 @@ import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
+import { SPRING, dur } from '../motion/motion'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
 import { Menu, MenuItem } from '../library/Library'
@@ -72,7 +73,7 @@ export function Editor({ docId }: { docId: ID }) {
     el.style.transition = 'none'
     let raf = requestAnimationFrame(() => {
       raf = requestAnimationFrame(() => {
-        el.style.transition = 'transform .52s cubic-bezier(.2,.9,.25,1.05), opacity .4s ease, border-radius .52s cubic-bezier(.2,.9,.25,1.05)'
+        el.style.transition = `transform ${dur(520)}ms ${SPRING}, opacity ${dur(400)}ms ease, border-radius ${dur(520)}ms ${SPRING}`
         el.style.transform = ''
         el.style.opacity = '1'
         el.style.borderRadius = '0px'
@@ -260,7 +261,7 @@ export function Editor({ docId }: { docId: ID }) {
     const onConflict = (ev: Event) => {
       const detail = (ev as CustomEvent<{ docId: string }>).detail
       if (detail?.docId !== docId) return
-      toast('다른 기기에서도 이 문서를 수정해 이 기기의 편집을 버전 기록에 보관했습니다. 문서는 다른 기기 버전으로 맞췄습니다.', 'info', {
+      toast('다른 기기 버전으로 맞췄어요. 내 편집은 버전 기록에 있어요.', 'info', {
         label: '버전 기록',
         run: () => useUI.getState().setPanel('history')
       })
