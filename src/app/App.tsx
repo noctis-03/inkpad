@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useUI } from './store'
+import { useUI, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { Library } from '../ui/library/Library'
 import { Editor } from '../ui/editor/Editor'
@@ -60,10 +60,30 @@ export function App() {
 function Toasts() {
   const toasts = useUI((s) => s.toasts)
   const dismiss = useUI((s) => s.dismissToast)
+  const [rendered, setRendered] = useState<(Toast & { out?: boolean })[]>([])
+
+  // store에서 빠져도 퇴장 애니메이션이 끝날 때까지 DOM에 남긴다 (명세 5.9)
+  useEffect(() => {
+    setRendered((prev) => {
+      const present = new Set(toasts.map((t) => t.id))
+      const next: (Toast & { out?: boolean })[] = prev.map((r) => (present.has(r.id) ? { ...r, out: false } : { ...r, out: true }))
+      for (const t of toasts) if (!next.some((r) => r.id === t.id)) next.push({ ...t, out: false })
+      return next
+    })
+  }, [toasts])
+
+  useEffect(() => {
+    const outIds = rendered.filter((r) => r.out).map((r) => r.id)
+    if (!outIds.length) return
+    const timers = outIds.map((id) => window.setTimeout(() => setRendered((prev) => prev.filter((p) => p.id !== id)), 300))
+    return () => timers.forEach((t) => clearTimeout(t))
+  }, [rendered])
+
   return (
     <div className="toasts" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={'toast ' + t.kind}>
+      {rendered.map((t) => (
+        <div key={t.id} className={'toast ' + t.kind + (t.out ? ' is-out' : '')}>
+          <i className="toast-dot" aria-hidden="true" />
           <span>{t.text}</span>
           {t.action && (
             <button

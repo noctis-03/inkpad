@@ -93,6 +93,8 @@ interface UIState {
   selectedBlockId: ID | null
   /** 노트 열기 애니메이션용 — 누른 카드의 화면 위치 (편집 화면 마운트 시 1회 읽고 지운다) */
   docCardRect: DOMRect | null
+  /** 편집 화면을 닫을 때 — 라이브러리 복귀 전환이 이 카드로 축소한다 (모션 5.6) */
+  returnDocId: ID | null
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -146,6 +148,7 @@ export const useUI = create<UIState>((set, get) => ({
   placingBlock: null,
   selectedBlockId: null,
   docCardRect: null,
+  returnDocId: null,
 
   navigate: (route) => {
     const hash = route.name === 'editor' ? `#/doc/${route.docId}` : route.name === 'app' ? `#/app/${route.appId}` : route.name === 'file' ? `#/file/${route.fileId}` : '#/'
@@ -207,5 +210,12 @@ export const useUI = create<UIState>((set, get) => ({
 }))
 
 window.addEventListener('popstate', () => {
-  useUI.setState({ route: initialRoute(), panel: 'none' })
+  const prev = useUI.getState().route
+  const next = initialRoute()
+  useUI.setState({
+    route: next,
+    panel: 'none',
+    // 뒤로가기로 편집 화면에서 나올 때도 닫기 전환을 위해 카드 id를 남긴다 (모션 5.6)
+    ...(prev.name === 'editor' && next.name === 'library' ? { returnDocId: prev.docId } : {})
+  })
 })

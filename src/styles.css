@@ -3755,3 +3755,184 @@ textarea {
 @keyframes roll-in {
   from { transform: translateY(10px); opacity: .2; }
 }
+
+/* ═══════════════ 5.3 · 라이브러리 카드 ═══════════════ */
+.doc-card,
+.doc-list .doc-card {
+  transition: transform .3s var(--ft-ease), scale .5s var(--spring-pop), background-color .2s, box-shadow .3s var(--ft-ease);
+}
+/* 등장: 최초 마운트 시 1회 (rich에서만 35ms 지연) */
+.doc-grid[data-enter] .doc-card,
+.doc-list[data-enter] .doc-card {
+  animation: card-in .6s var(--ft-spring) both;
+}
+html[data-motion='rich'] .doc-grid[data-enter] .doc-card,
+html[data-motion='rich'] .doc-list[data-enter] .doc-card {
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(18px) scale(.94); }
+}
+/* 누름: 그림자를 0 1px 2px로 축소 (종이가 책상에 붙는 느낌) */
+.doc-card.is-pressed .doc-thumb {
+  box-shadow: 0 1px 2px #0000001a;
+}
+/* 광택 레이어 + 틸트 (mouse/pen hover 전용) */
+.doc-gloss {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: 12px;
+  background: radial-gradient(220px circle at var(--gx, 50%) var(--gy, 50%), #ffffff80, transparent 60%);
+  mix-blend-mode: overlay;
+  transition: opacity .2s;
+}
+.doc-list .doc-gloss { border-radius: 6px; }
+.doc-card.is-tilt .doc-gloss { opacity: .9; }
+/* 썸네일 리빌 (위 → 아래로 쓸어내리듯) */
+.doc-thumb img[data-reveal] { clip-path: inset(0 0 100% 0); }
+.doc-thumb img[data-reveal].is-revealed { animation: thumb-reveal .6s var(--ft-ease) both; }
+.doc-thumb img[data-reveal].is-revealed.no-anim { animation: none; clip-path: inset(0); }
+@keyframes thumb-reveal {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0); }
+}
+/* settle: 흰 광택 띠 + 5px 들렸다 내려앉기 */
+.doc-card.is-settling .doc-thumb { animation: settle-lift .7s var(--spring-pop); }
+.doc-card.is-settling .doc-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, #ffffffcc 50%, transparent 70%);
+  animation: sheen .95s var(--ft-ease);
+}
+@keyframes settle-lift {
+  0%, 100% { transform: none; }
+  45% { transform: translateY(-5px); }
+}
+@keyframes sheen {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(130%); }
+}
+/* 복귀 고스트 (5.6 닫기) */
+.doc-return-ghost {
+  position: fixed;
+  z-index: 45;
+  border-radius: 12px;
+  background-color: var(--paper);
+  background-size: cover;
+  background-position: top center;
+  box-shadow: 0 10px 30px #00000033;
+  pointer-events: none;
+}
+
+/* 5.4 · 섹션 제목 cross-fade */
+.library-title { animation: title-in .3s var(--ft-ease) both; }
+@keyframes title-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+/* 5.5 · 동기화 상태 점 */
+.doc-state { display: inline-flex; align-items: center; gap: 5px; }
+.doc-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1px #00000010;
+  flex: none;
+}
+.doc-state.s-new .doc-state-dot { background: #9ca3af; }
+.doc-state.s-same .doc-state-dot { background: #16a34a; }
+.doc-state.s-pending .doc-state-dot { background: #d97706; animation: dot-pulse 1.6s ease-in-out infinite; }
+.doc-state.s-remote-new .doc-state-dot { background: var(--accent); box-shadow: 0 0 0 3px #2563eb1f; }
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .45; transform: scale(.8); }
+}
+.tb-btn.sync-btn.is-syncing svg { animation: spin .8s linear infinite; }
+
+/* ═══════════════ 5.9 · 시트 · 패널 · 토스트 ═══════════════ */
+.modal-backdrop {
+  background: #1118272e;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.sheet,
+.store-sheet {
+  animation: sheet-up .55s var(--ft-spring) both;
+}
+@keyframes sheet-up {
+  from { opacity: 0; transform: translateY(24px); }
+}
+/* NewDocumentSheet: 템플릿이 55ms씩 차례로 올라온다 */
+.sheet .mode-card { animation: card-up .5s var(--ft-spring) both; }
+.sheet .mode-card:nth-child(1) { animation-delay: 0ms; }
+.sheet .mode-card:nth-child(2) { animation-delay: 55ms; }
+.sheet .mode-card:nth-child(3) { animation-delay: 110ms; }
+.sheet .mode-card:nth-child(4) { animation-delay: 165ms; }
+.sheet .mode-card:nth-child(5) { animation-delay: 220ms; }
+.sheet .mode-card:nth-child(6) { animation-delay: 275ms; }
+@keyframes card-up {
+  from { opacity: 0; transform: translateY(14px); }
+}
+/* 선택된 템플릿: 잉크 링 + 들림 */
+.mode-card.is-active {
+  border-color: var(--ink);
+  background: #faf9f6;
+  color: var(--ink);
+  box-shadow: 0 0 0 1.5px var(--ink), 0 8px 18px #0000001f;
+  transform: translateY(-4px);
+}
+/* 입력 포커스: 파란 링 제거 */
+.field input:focus,
+.sheet input:focus,
+.sheet select:focus,
+.sheet textarea:focus,
+.modal-input:focus,
+.search-box input:focus,
+.cloud-search input:focus,
+.store-search input:focus {
+  outline: none;
+  border-color: #a8a29e;
+  box-shadow: var(--focus-ring);
+}
+/* 주요 버튼: accent → ink */
+.primary-btn {
+  background: var(--ink);
+  box-shadow: inset 0 1px 0 #ffffff1f;
+}
+/* 패널 열림 spring */
+.side-panel { animation: panel-in .4s var(--ft-spring) both; }
+@keyframes panel-in {
+  from { opacity: 0; transform: translateX(12px) scale(.99); }
+}
+/* 토스트 등장/퇴장 + 점 */
+.toast,
+.toast.error,
+.toast.success {
+  background: #111827eb;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: toast-in .5s var(--ft-spring) both;
+}
+.toast.is-out { animation: toast-out .3s ease both; }
+.toast-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+.toast.success .toast-dot { background: #4ade80; }
+.toast.error .toast-dot { background: #f87171; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(6px); }
+}

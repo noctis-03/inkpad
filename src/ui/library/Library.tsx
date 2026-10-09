@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { useIndicator } from '../motion/useIndicator'
-import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
+import { useFlip } from '../motion/useFlip'
+import { settle } from '../motion/settle'
+import { CountUp } from '../motion/CountUp'
+import { SPRING, dur, motionLevel } from '../motion/motion'
 import { Icon } from '../Icon'
+import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
@@ -31,7 +35,7 @@ import {
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
-import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, pushOneNote, type CardSyncState } from '../../sync/sync'
+import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, type CardSyncState } from '../../sync/sync'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { confirmTransfer, uploadChoice } from '../../sync/transfer'
@@ -65,8 +69,22 @@ const SYNC_LABEL: Record<CardSyncState, string> = {
 const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
   r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
 
+/** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */
 function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
-  return <span className={'doc-state s-' + state + (overlay ? ' is-overlay' : '')}>{SYNC_LABEL[state]}</span>
+  const ref = useRef<HTMLSpanElement>(null)
+  const prev = useRef(state)
+  useEffect(() => {
+    if (prev.current !== state && ref.current && document.documentElement.dataset.motion !== 'off') {
+      ref.current.animate([{ scale: '0.7' }, { scale: '1.08' }, { scale: '1' }], { duration: dur(450), easing: SPRING })
+    }
+    prev.current = state
+  }, [state])
+  return (
+    <span ref={ref} className={'doc-state s-' + state + (overlay ? ' is-overlay' : '')}>
+      <i className="doc-state-dot" aria-hidden="true" />
+      {SYNC_LABEL[state]}
+    </span>
+  )
 }
 
 export function Library() {
@@ -211,7 +229,7 @@ export function Library() {
 
   const visible = useMemo(() => {
     if (recentActive) {
-      const q = query.trim().toLowerCase()
+      const q = dq.trim().toLowerCase()
       return q ? recentDocs.filter((d) => d.title.toLowerCase().includes(q)) : recentDocs // 최근 열람 모드
     }
     let list: DocumentMeta[] = section.kind === 'apps' || section.kind === 'files' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱·기타 파일에서는 노트를 숨긴다
@@ -225,7 +243,7 @@ export function Library() {
     } else if (section.kind === 'uncategorized') {
       list = list.filter((d) => d.category == null) // 카테고리가 아예 없는 노트만 — 매핑 안 된 카테고리는 사이드바의 카테고리 항목으로 보인다
     }
-    const q = query.trim().toLowerCase()
+    const q = dq.trim().toLowerCase()
     if (q) list = list.filter((d) => d.title.toLowerCase().includes(q))
     const sorted = [...list]
     if (prefs.sort === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
@@ -243,7 +261,7 @@ export function Library() {
       list = list.filter((a) => a.category != null && cats.has(a.category))
     } else if (section.kind === 'category') list = list.filter((a) => a.category === section.name)
     else if (section.kind === 'uncategorized') list = list.filter((a) => a.category == null)
-    const q = query.trim().toLowerCase()
+    const q = dq.trim().toLowerCase()
     if (q) list = list.filter((a) => a.title.toLowerCase().includes(q))
     return list
   }, [recentActive, apps, folders, hiddenCats, section, query])
@@ -257,7 +275,7 @@ export function Library() {
       list = list.filter((f) => f.category != null && cats.has(f.category))
     } else if (section.kind === 'category') list = list.filter((f) => f.category === section.name)
     else if (section.kind === 'uncategorized') list = list.filter((f) => f.category == null)
-    const q = query.trim().toLowerCase()
+    const q = dq.trim().toLowerCase()
     if (q) list = list.filter((f) => f.title.toLowerCase().includes(q))
     return list
   }, [recentActive, files, folders, hiddenCats, section, query])
@@ -311,6 +329,157 @@ export function Library() {
     }
     return out
   }, [folders, currentFolderId])
+
+  // ───────── 인터랙티브 모션 (MOTION_SPEC) ─────────
+  const gridRef = useRef<HTMLElement>(null)
+  const thumbsRef = useRef<Map<ID, string>>(thumbs)
+  const seenReveal = useRef<Set<string>>(new Set())
+  const enteredRef = useRef(false)
+  const tiltLast = useRef<HTMLElement | null>(null)
+  const tiltRaf = useRef(0)
+  const prevSync = useRef<Map<ID, CardSyncState>>(new Map())
+  const [enter, setEnter] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [dq, setDq] = useState('') // 검색어 디바운스 — FLIP 트리거(120ms)
+
+  const settleDoc = useCallback(
+    (id: ID) =>
+      requestAnimationFrame(() => settle(document.querySelector<HTMLElement>(`[data-doc-id="${CSS.escape(id)}"]`))),
+    []
+  )
+
+  useEffect(() => {
+    thumbsRef.current = thumbs
+  }, [thumbs])
+
+  // 검색어 120ms 디바운스 (명세 5.4)
+  useEffect(() => {
+    const t = setTimeout(() => setDq(query), 120)
+    return () => clearTimeout(t)
+  }, [query])
+
+  // 최초 마운트 시 1회 카드 등장 (5.3-1) — rich에서만 지연을 준다
+  useEffect(() => {
+    if (!ready || enteredRef.current) return
+    enteredRef.current = true
+    setEnter(true)
+    const t = setTimeout(() => setEnter(false), 900)
+    return () => clearTimeout(t)
+  }, [ready])
+
+  // 썸네일 리빌 (5.3-2) — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
+  useEffect(() => {
+    const root = gridRef.current
+    if (!root) return
+    const imgs = [...root.querySelectorAll<HTMLImageElement>('img[data-reveal]')]
+    if (!imgs.length) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) {
+          if (!en.isIntersecting) continue
+          const img = en.target as HTMLImageElement
+          io.unobserve(img)
+          const id = img.dataset.reveal!
+          if (seenReveal.current.has(id)) img.classList.add('no-anim')
+          seenReveal.current.add(id)
+          img.classList.add('is-revealed')
+        }
+      },
+      { threshold: 0.1 }
+    )
+    imgs.forEach((im) => io.observe(im))
+    return () => io.disconnect()
+  }, [items, prefs.view])
+
+  // 동기화 버튼 회전 (5.5)
+  useEffect(() => onSyncStatus((s) => setSyncing(s === 'syncing')), [])
+
+  // 동기화가 끝나 '최신'이 된 카드에 settle (5.3-5)
+  useEffect(() => {
+    const prev = prevSync.current
+    syncStates.forEach((s, id) => {
+      if (s === 'same' && prev.get(id) && prev.get(id) !== 'same') settleDoc(id)
+    })
+    prevSync.current = new Map(syncStates)
+  }, [syncStates, settleDoc])
+
+  // 편집 화면에서 복귀: 고스트를 카드로 축소하고 settle (5.6 닫기)
+  useEffect(() => {
+    if (!ready) return
+    const rid = useUI.getState().returnDocId
+    if (!rid) return
+    useUI.setState({ returnDocId: null })
+    requestAnimationFrame(() => {
+      const card = document.querySelector<HTMLElement>(`[data-doc-id="${CSS.escape(rid)}"]`)
+      if (!card) return
+      if (document.documentElement.dataset.motion === 'off') return settle(card)
+      const r = card.getBoundingClientRect()
+      if (r.bottom < 0 || r.top > window.innerHeight) return settle(card) // 화면 밖이면 강제 스크롤 없이 settle만
+      const ghost = document.createElement('div')
+      ghost.className = 'doc-return-ghost'
+      const url = thumbsRef.current.get(rid)
+      if (url) ghost.style.backgroundImage = `url(${url})`
+      Object.assign(ghost.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
+      document.body.appendChild(ghost)
+      const anim = ghost.animate(
+        [
+          { transform: `scale(${Math.max(1, window.innerWidth / r.width)})`, opacity: 0.4 },
+          { transform: 'none', opacity: 1 }
+        ],
+        { duration: dur(480), easing: SPRING, fill: 'both' }
+      )
+      const done = () => {
+        ghost.remove()
+        settle(card)
+      }
+      anim.addEventListener('finish', done, { once: true })
+      anim.addEventListener('cancel', () => ghost.remove(), { once: true })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready])
+
+  // 목록 변화 FLIP (5.4)
+  const flipSig = items.map((i) => (i.kind === 'doc' ? i.d.id : i.kind === 'app' ? i.a.id : i.f.id)).join('|')
+  useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig])
+
+  // 틸트 + 광택 (5.3-3) — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
+  const onGridMove = (e: React.PointerEvent) => {
+    if (prefs.view === 'list' || e.pointerType === 'touch') return
+    const lvl = motionLevel()
+    if (lvl === 'off') return
+    const card = (e.target as HTMLElement).closest<HTMLElement>('.doc-card')
+    if (!card || tiltRaf.current) return
+    const cx = e.clientX
+    const cy = e.clientY
+    tiltRaf.current = requestAnimationFrame(() => {
+      tiltRaf.current = 0
+      if (tiltLast.current && tiltLast.current !== card) {
+        tiltLast.current.classList.remove('is-tilt')
+        tiltLast.current.style.transform = ''
+      }
+      tiltLast.current = card
+      const r = card.getBoundingClientRect()
+      const px = (cx - r.left) / r.width
+      const py = (cy - r.top) / r.height
+      const angle = lvl === 'rich' ? 8 : 3
+      card.style.transform = `perspective(700px) rotateX(${-(py - 0.5) * 2 * angle}deg) rotateY(${(px - 0.5) * 2 * angle}deg)`
+      card.style.setProperty('--gx', `${px * 100}%`)
+      card.style.setProperty('--gy', `${py * 100}%`)
+      card.classList.add('is-tilt')
+    })
+  }
+  const onGridLeave = () => {
+    if (tiltRaf.current) {
+      cancelAnimationFrame(tiltRaf.current)
+      tiltRaf.current = 0
+    }
+    const el = tiltLast.current
+    if (el) {
+      el.classList.remove('is-tilt')
+      el.style.transform = ''
+      tiltLast.current = null
+    }
+  }
 
   // ───────── 작업 ─────────
 
@@ -620,7 +789,9 @@ export function Library() {
       case 'restore':
         await restoreDocument(d.id)
         toast('복원했습니다.', 'success')
-        break
+        await refresh()
+        settleDoc(d.id)
+        return
       case 'purge':
         if (await confirmDialog('영구 삭제', { message: `"${d.title}"을(를) 영구 삭제합니다. 되돌릴 수 없습니다.`, ok: '삭제', danger: true }))
           await purgeDocument(d.id)
@@ -680,7 +851,7 @@ export function Library() {
         <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
           <Icon name="sidebar" />
         </button>
-        <h1 className="library-title">{title}</h1>
+        <h1 key={title} className="library-title">{title}</h1>
         <div className="search-box">
           <Icon name="search" size={18} />
           <input id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -705,7 +876,7 @@ export function Library() {
         <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
           <Icon name="gear" />
         </button>
-        <button className="tb-btn sync-btn" onClick={() => setShowSync(true)} aria-label="동기화" title="동기화">
+        <button className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')} onClick={() => setShowSync(true)} aria-label="동기화" title="동기화">
           <Icon name="cloud" />
         </button>
         <button className="tb-btn" onClick={() => setShowAssets(true)} aria-label="에셋 원본" title="에셋 원본 (PDF·이미지)">
@@ -735,16 +906,18 @@ export function Library() {
               title="다시 누르면 최근에 열어 본 노트"
             >
               <Icon name={recentActive ? 'restore' : 'grid'} size={18} /> {recentActive ? '최근 열람' : '전체'}{' '}
-              <span className="count">{recentActive ? recentDocs.length : docs.length + apps.length + files.length}</span>
+              <span className="count">
+                {recentActive ? recentDocs.length : <CountUp value={docs.length + apps.length + files.length} />}
+              </span>
             </button>
             <button data-indicator-key="notes" className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
-              <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
+              <Icon name="notebook" size={18} /> 모든 노트 <span className="count"><CountUp value={docs.length} /></span>
             </button>
             <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
-              <Icon name="app" size={18} /> 모든 앱 <span className="count">{apps.length}</span>
+              <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
             </button>
             <button data-indicator-key="files" className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
-              <Icon name="file" size={18} /> 기타 파일 <span className="count">{files.length}</span>
+              <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
@@ -786,7 +959,7 @@ export function Library() {
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
             />
             <button data-indicator-key="trash" className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
-              <Icon name="trash" size={18} /> 휴지통 <span className="count">{trash.length}</span>
+              <Icon name="trash" size={18} /> 휴지통 <span className="count"><CountUp value={trash.length} /></span>
             </button>
           </nav>
         )}
@@ -869,10 +1042,17 @@ export function Library() {
               )}
             </div>
           ) : (
-            <section className={prefs.view === 'grid' ? 'doc-grid' : 'doc-list'} aria-label="문서">
-              {items.map((i) =>
+            <section
+              ref={gridRef}
+              className={prefs.view === 'grid' ? 'doc-grid' : 'doc-list'}
+              data-enter={enter ? '' : undefined}
+              aria-label="문서"
+              onPointerMove={onGridMove}
+              onPointerLeave={onGridLeave}
+            >
+              {items.map((i, idx) =>
                 i.kind === 'app' ? (
-                  <article key={'app:' + i.a.id} className="doc-card app-card" onClick={() => navigate({ name: 'app', appId: i.a.id })}>
+                  <article key={'app:' + i.a.id} className="doc-card app-card" data-flip-key={'app:' + i.a.id} onClick={() => navigate({ name: 'app', appId: i.a.id })}>
                     <div className="doc-thumb">
                       {i.a.category && (
                         <span className="doc-tag" style={categoryTag(i.a.category)}>{i.a.category}</span>
@@ -903,7 +1083,7 @@ export function Library() {
                     </div>
                   </article>
                 ) : i.kind === 'file' ? (
-                  <article key={'file:' + i.f.id} className="doc-card file-card" onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
+                  <article key={'file:' + i.f.id} className="doc-card file-card" data-flip-key={'file:' + i.f.id} onClick={() => navigate({ name: 'file', fileId: i.f.id })}>
                     <div className="doc-thumb">
                       {i.f.category && (
                         <span className="doc-tag" style={categoryTag(i.f.category)}>{i.f.category}</span>
@@ -940,6 +1120,8 @@ export function Library() {
                     key={i.d.id}
                     className="doc-card"
                     data-doc-id={i.d.id}
+                    data-flip-key={i.d.id}
+                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
                     onClick={(e) => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d, e.currentTarget))}
                   >
                     <div className="doc-thumb">
@@ -947,11 +1129,12 @@ export function Library() {
                         <span className="doc-tag" style={categoryTag(i.d.category)}>{i.d.category}</span>
                       )}
                       {thumbs.get(i.d.id) ? (
-                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
+                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
                       <span className="doc-edge" aria-hidden="true" />
+                      <span className="doc-gloss" aria-hidden="true" />
                       {syncPillFor(i.d.id)}
                     </div>
                     <div className="doc-info">

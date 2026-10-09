@@ -52,7 +52,7 @@ export function Editor({ docId }: { docId: ID }) {
   // 노트 열림 애니메이션 — 라이브러리 카드에서 확대되듯 열린다 (모션 최소화 설정이면 생략)
   useEffect(() => {
     const el = rootRef.current
-    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (!el || document.documentElement.dataset.motion === 'off') return
     const rect = useUI.getState().docCardRect
     useUI.setState({ docCardRect: null })
     if (!rect) {
@@ -67,18 +67,21 @@ export function Editor({ docId }: { docId: ID }) {
     el.style.transformOrigin = 'center center'
     el.style.transform = `translate(${dx}px, ${dy}px) scale(${s})`
     el.style.opacity = '0.4'
+    el.style.borderRadius = '12px'
     el.style.transition = 'none'
     let raf = requestAnimationFrame(() => {
       raf = requestAnimationFrame(() => {
-        el.style.transition = 'transform .3s cubic-bezier(.2,.8,.2,1), opacity .3s ease'
+        el.style.transition = 'transform .52s cubic-bezier(.2,.9,.25,1.05), opacity .4s ease, border-radius .52s cubic-bezier(.2,.9,.25,1.05)'
         el.style.transform = ''
         el.style.opacity = '1'
+        el.style.borderRadius = '0px'
         const clean = () => {
           el.style.transition = ''
           el.style.transformOrigin = ''
+          el.style.borderRadius = ''
         }
         el.addEventListener('transitionend', clean, { once: true })
-        setTimeout(clean, 500)
+        setTimeout(clean, 700)
       })
     })
     return () => cancelAnimationFrame(raf)
@@ -289,7 +292,7 @@ export function Editor({ docId }: { docId: ID }) {
 
   return (
     <div className="editor" ref={rootRef}>
-      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => navigate({ name: 'library' })} />
+      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => { useUI.setState({ returnDocId: docId }); navigate({ name: 'library' }) }} />
       <div className="editor-body">
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
         <div className="editor-area">
