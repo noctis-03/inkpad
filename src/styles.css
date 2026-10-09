@@ -95,6 +95,10 @@
   /* ── 필기 캔버스(종이) — 테마와 무관하게 종이는 흰색 ── */
   --bg-pattern: #d6dbe3;
 
+  /* ── 고정 종이·태그 (B-2) ── */
+  --thumb-paper: #ffffff;   /* 썸네일·종이는 테마와 상관없이 흰색 */
+  --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
+
   --toolbar-h: 52px;
   --safe-top: env(safe-area-inset-top, 0px);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
@@ -277,7 +281,7 @@ button {
   position: absolute;
   inset: 6px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--ink);
 }
 
 .width-btn {
@@ -424,7 +428,7 @@ button {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line);
   border-radius: var(--r-xl);
-  box-shadow: 0 10px 30px #0000001f;
+  box-shadow: var(--e2);
   z-index: 8;
   touch-action: pan-y;
   user-select: none;
@@ -734,7 +738,7 @@ textarea {
   flex: 0 0 auto;
 }
 .icon-mini:active {
-  background: #0000000f;
+  background: var(--press);
 }
 .btn-row.center {
   justify-content: center;
@@ -1004,8 +1008,8 @@ textarea {
   position: relative;
   aspect-ratio: 1 / 1.414; /* A4 쪽 비율 — 3:4 크롭 제거 */
   border-radius: var(--r-lg);
-  background: #ffffff;
-  box-shadow: 0 1px 3px #0000001a, 0 0 0 1px #0000000d;
+  background: var(--thumb-paper);
+  box-shadow: var(--e1);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -1025,7 +1029,7 @@ textarea {
   z-index: 3;
   max-width: calc(100% - 12px);
   padding: 1px 6px;
-  border: 1px solid #11182726;
+  border: 1px solid var(--tag-border);
   border-radius: 5px;
   background: var(--surface-3);
   color: var(--ink-2);
@@ -1049,7 +1053,7 @@ textarea {
   z-index: 2;
   pointer-events: none;
   border-left: 1px solid var(--line);
-  background: repeating-linear-gradient(180deg, #ffffff 0 3px, var(--line) 3px 4px);
+  background: repeating-linear-gradient(180deg, var(--thumb-paper) 0 3px, var(--line) 3px 4px);
 }
 .doc-thumb img {
   width: 100%;
@@ -1063,7 +1067,7 @@ textarea {
   flex: 0 1 auto;
   min-width: 0;
   padding: 1px 6px;
-  border: 1px solid #11182726;
+  border: 1px solid var(--tag-border);
   border-radius: 5px;
   background: var(--surface-3);
   color: var(--ink-2);
@@ -1238,7 +1242,7 @@ textarea {
   padding: 6px;
   border-radius: var(--r-lg);
   background: var(--surface);
-  box-shadow: 0 10px 30px #00000033, 0 0 0 1px #0000000d;
+  box-shadow: var(--e2), 0 0 0 1px var(--tag-border);
 }
 .menu.centered {
   left: 50%;
@@ -1274,7 +1278,7 @@ textarea {
   padding: 20px;
   border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 20px 50px #0000004d;
+  box-shadow: var(--e3);
 }
 .modal-title {
   margin: 0 0 8px;
@@ -1312,7 +1316,7 @@ textarea {
   max-height: 92%;
   border-radius: var(--r-2xl);
   background: var(--surface);
-  box-shadow: 0 20px 50px #0000004d;
+  box-shadow: var(--e3);
   overflow: hidden;
 }
 .sheet.tall {
