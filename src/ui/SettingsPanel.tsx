@@ -238,7 +238,7 @@ function PressureTester() {
         ctx.lineTo(p.x, p.y)
         ctx.lineCap = 'round'
         ctx.lineWidth = Math.max(0.5, ev.pressure * 14 * dpr)
-        ctx.strokeStyle = '#2563eb'
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2563eb'
         ctx.stroke()
         last = p
       }
