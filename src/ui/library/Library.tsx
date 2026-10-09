@@ -129,6 +129,8 @@ export function Library() {
   // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
   const [recent, setRecent] = useState(() => loadRecentDocs())
   const [recentOnly, setRecentOnly] = useState(false)
+  // 검색어 디바운스 — FLIP 트리거(120ms). 메모(useMemo)들이 렌더 중 이 값을 읽으므로 반드시 위쪽에서 선언한다
+  const [dq, setDq] = useState('')
   const recentActive = section.kind === 'all' && recentOnly
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
@@ -340,7 +342,6 @@ export function Library() {
   const prevSync = useRef<Map<ID, CardSyncState>>(new Map())
   const [enter, setEnter] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [dq, setDq] = useState('') // 검색어 디바운스 — FLIP 트리거(120ms)
 
   const settleDoc = useCallback(
     (id: ID) =>
