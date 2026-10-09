@@ -472,15 +472,17 @@ export async function duplicateDocument(id: ID): Promise<DocumentMeta> {
 export async function storageStats() {
   const est = (await navigator.storage?.estimate?.()) ?? {}
   const persisted = (await navigator.storage?.persisted?.()) ?? false
-  const [docs, pages, chunks, assets, pending] = await Promise.all([
+  const [docs, pages, chunks, assets, pending, thumbs] = await Promise.all([
     db.documents.count(),
     db.pages.count(),
     db.chunks.count(),
     db.assets.toArray(),
-    db.outbox.count()
+    db.outbox.count(),
+    db.thumbnails.toArray()
   ])
   const assetBytes = assets.reduce((s, a) => s + (a.blob ? a.size : 0), 0)
-  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, docs, pages, chunks, assets: assets.length, assetBytes, pending }
+  const thumbBytes = thumbs.reduce((s, t) => s + (t.blob?.size ?? 0), 0)
+  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, docs, pages, chunks, assets: assets.length, assetBytes, pending, thumbs: thumbs.length, thumbBytes }
 }
 
 // ───────────────── 폴더 · 카테고리 설정 (기기별 로컬 전용) ─────────────────

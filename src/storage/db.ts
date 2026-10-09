@@ -91,6 +91,44 @@ export class InkpadDB extends Dexie {
 
 export const db = new InkpadDB()
 
+export interface CacheClearResult {
+  /** 지운 미리보기(썸네일) 개수 */
+  thumbnails: number
+  /** 지운 미리보기 바이트 합계 */
+  thumbBytes: number
+  /** 지운 서비스 워커 캐시 개수 */
+  swCaches: number
+}
+
+/**
+ * 캐시 삭제 — 노트·앱·파일·설정은 그대로 두고, 다시 만들 수 있는 것만 지운다.
+ *  1) 미리보기(썸네일): 노트를 열거나 받을 때 다시 만들어진다
+ *  2) 서비스 워커 Cache Storage: 다음 실행 때 다시 채워진다 (오프라인 캐시)
+ * PDF 렌더 비트맵 캐시는 메모리 전용이라 이 기기 저장소에는 남지 않는다.
+ */
+export async function clearAppCaches(): Promise<CacheClearResult> {
+  let thumbnails = 0
+  let thumbBytes = 0
+  const rows = await db.thumbnails.toArray()
+  for (const r of rows) {
+    thumbnails++
+    thumbBytes += r.blob?.size ?? 0
+  }
+  if (thumbnails) await db.thumbnails.clear()
+
+  let swCaches = 0
+  try {
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys()
+      swCaches = keys.length
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch {
+    /* 캐시 저장소 차단 환경 */
+  }
+  return { thumbnails, thumbBytes, swCaches }
+}
+
 /** 로컬 초기화 — 이 기기의 모든 데이터(노트·앱·파일·설정·동기화 상태·백업)를 지운다. 클라우드는 건드리지 않는다 */
 export async function wipeLocalData(): Promise<void> {
   await db.delete()

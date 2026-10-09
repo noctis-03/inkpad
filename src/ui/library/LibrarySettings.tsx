@@ -18,7 +18,7 @@ import {
 } from '../../storage/repo'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { pickFiles, saveFile } from '../../io/download'
-import { wipeLocalData } from '../../storage/db'
+import { clearAppCaches, wipeLocalData } from '../../storage/db'
 
 type Stats = Awaited<ReturnType<typeof storageStats>>
 
@@ -83,6 +83,29 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
     toast(n ? `오래된 휴지통 문서 ${n}개를 정리했습니다.` : '정리할 문서가 없습니다.')
     onChanged()
     load()
+  }
+
+  /** 캐시 삭제 — 노트·앱·파일·설정은 두고, 다시 만들 수 있는 것(미리보기·오프라인 캐시)만 지운다 */
+  const clearCache = async () => {
+    const ok = await confirmDialog('캐시 삭제', {
+      message: '미리보기와 오프라인 캐시를 지웁니다. 노트·앱·파일·설정은 그대로 남습니다.',
+      note: '미리보기는 노트를 열거나 받을 때 다시 만들어지고, 오프라인 캐시는 다음 실행 때 다시 채워집니다.',
+      ok: '캐시 삭제'
+    })
+    if (!ok) return
+    setBusy({ text: '캐시를 지우는 중' })
+    try {
+      const r = await clearAppCaches()
+      const parts: string[] = []
+      if (r.thumbnails) parts.push(`미리보기 ${r.thumbnails}개(${formatBytes(r.thumbBytes)})`)
+      if (r.swCaches) parts.push(`오프라인 캐시 ${r.swCaches}개`)
+      toast(parts.length ? `캐시를 삭제했습니다 — ${parts.join(', ')}.` : '지울 캐시가 없습니다.', 'success')
+      load()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '캐시 삭제 실패', 'error')
+    } finally {
+      setBusy(null)
+    }
   }
 
   /** 앱 초기화 (로컬 초기화) — 이 기기의 데이터만 지우고, 클라우드는 건드리지 않는다 (받기로 복구) */
@@ -169,6 +192,12 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
                         </dd>
                       </div>
                       <div>
+                        <dt>미리보기 캐시</dt>
+                        <dd>
+                          {stats.thumbs}개 · {formatBytes(stats.thumbBytes)}
+                        </dd>
+                      </div>
+                      <div>
                         <dt>동기화 대기 (Drive)</dt>
                         <dd>{stats.pending}건</dd>
                       </div>
@@ -196,6 +225,9 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
                   )}
                   <button className="text-btn" onClick={cleanTrash}>
                     오래된 휴지통 정리
+                  </button>
+                  <button className="text-btn" onClick={clearCache}>
+                    캐시 삭제
                   </button>
                   <button className="text-btn danger" onClick={resetLocal}>
                     앱 초기화 (로컬 초기화)
