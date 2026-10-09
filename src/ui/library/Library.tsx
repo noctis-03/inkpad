@@ -104,6 +104,7 @@ export function Library() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [syncStates, setSyncStates] = useState<Map<ID, CardSyncState>>(new Map())
+  const [cloudOff, setCloudOff] = useState(false) // 동기화를 설정하지 않은 기기 (C-8)
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -124,7 +125,15 @@ export function Library() {
   // 사이드바 선택 항목 슬라이딩 인디케이터 (5.2, 세로)
   const treeRef = useRef<HTMLElement>(null)
   const treeActiveKey =
-    section.kind === 'category' ? `cat:${section.name}` : section.kind === 'folder' ? `folder:${section.id}` : section.kind
+    section.kind === 'all'
+      ? recentActive
+        ? 'recent'
+        : 'all'
+      : section.kind === 'category'
+        ? `cat:${section.name}`
+        : section.kind === 'folder'
+          ? `folder:${section.id}`
+          : section.kind
   useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y')
   // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
   const [recent, setRecent] = useState(() => loadRecentDocs())
@@ -178,16 +187,24 @@ export function Library() {
     if (window.innerWidth < 900) setTreeOpen(false)
   }, [section])
 
+  /**
+   * 동기화 라벨은 조용할 때 숨긴다 (C-8). '동기화됨'은 언제나 숨기고,
+   * 클라우드를 쓰지 않는 기기에는 '클라우드 없음'도 숨긴다.
+   * 올리기 필요·새 버전처럼 사용자 행동이 필요한 상태만 보인다.
+   */
+  const pillVisible = (st: CardSyncState) => st !== 'same' && !(st === 'new' && cloudOff)
   /** 노트 카드 좌측 하단에 얹는 동기화 라벨 (그리드 전용) */
   const syncPillFor = (id: ID) => {
-    const s = syncStates.get(id)
-    return s ? <SyncPill state={s} overlay /> : null
+    const st = syncStates.get(id)
+    return st && pillVisible(st) ? <SyncPill state={st} overlay /> : null
   }
   /** 캡션 안에 들어가는 동기화 라벨 (리스트 전용) */
   const syncLabelFor = (id: ID) => {
-    const s = syncStates.get(id)
-    return s ? <SyncPill state={s} /> : null
+    const st = syncStates.get(id)
+    return st && pillVisible(st) ? <SyncPill state={st} /> : null
   }
+  /** 앱·파일 행의 동기화 라벨 */
+  const rowPill = (st: CardSyncState, overlay?: boolean) => (pillVisible(st) ? <SyncPill state={st} overlay={overlay} /> : null)
 
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
   useEffect(() => {
@@ -393,7 +410,7 @@ export function Library() {
   }, [items, prefs.view])
 
   // 동기화 버튼 회전 (5.5)
-  useEffect(() => onSyncStatus((s) => setSyncing(s === 'syncing')), [])
+  useEffect(() => onSyncStatus((s) => { setSyncing(s === 'syncing'); setCloudOff(s === 'disabled') }), [])
 
   // 동기화가 끝나 '최신'이 된 카드에 settle (5.3-5)
   useEffect(() => {
@@ -462,7 +479,7 @@ export function Library() {
       const r = card.getBoundingClientRect()
       const px = (cx - r.left) / r.width
       const py = (cy - r.top) / r.height
-      const angle = lvl === 'rich' ? 8 : 3
+      const angle = e.pointerType === 'pen' ? 3 : lvl === 'rich' ? 8 : 3 // 펜 호버는 기울기 상한을 낮춘다 (C-8)
       card.style.transform = `perspective(700px) rotateX(${-(py - 0.5) * 2 * angle}deg) rotateY(${(px - 0.5) * 2 * angle}deg)`
       card.style.setProperty('--gx', `${px * 100}%`)
       card.style.setProperty('--gy', `${py * 100}%`)
@@ -902,7 +919,7 @@ export function Library() {
           <nav className="folder-tree" aria-label="폴더" ref={treeRef}>
             <button
               data-indicator-key="all"
-              className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')}
+              className={'tree-item' + (section.kind === 'all' && !recentActive ? ' is-active' : '')}
               onClick={onAllClick}
               title="다시 누르면 최근에 열어 본 노트"
             >
@@ -910,6 +927,17 @@ export function Library() {
               <span className="count">
                 {recentActive ? recentDocs.length : <CountUp value={docs.length + apps.length + files.length} />}
               </span>
+            </button>
+            <button
+              data-indicator-key="recent"
+              className={'tree-item' + (recentActive ? ' is-active' : '')}
+              onClick={() => {
+                setSection({ kind: 'all' })
+                setRecent(loadRecentDocs())
+                setRecentOnly(true)
+              }}
+            >
+              <Icon name="restore" size={18} /> 최근 <span className="count">{recentDocs.length}</span>
             </button>
             <button data-indicator-key="notes" className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count"><CountUp value={docs.length} /></span>
@@ -1065,7 +1093,7 @@ export function Library() {
                         <span className="doc-tag" style={categoryTag(i.a.category)}>{i.a.category}</span>
                       )}
                       <Icon name="app" size={36} />
-                      <SyncPill state={rowSyncState(i.a)} overlay />
+                      {rowPill(rowSyncState(i.a), true)}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
@@ -1074,7 +1102,7 @@ export function Library() {
                           {i.a.category && <span className="doc-cat-text" style={categoryTag(i.a.category)}>{i.a.category}</span>}
                           <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
                         </p>
-                        <SyncPill state={rowSyncState(i.a)} />
+                        {rowPill(rowSyncState(i.a))}
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1102,7 +1130,7 @@ export function Library() {
                         <span className="doc-tag" style={categoryTag(i.f.category)}>{i.f.category}</span>
                       )}
                       <Icon name="file" size={36} />
-                      <SyncPill state={rowSyncState(i.f)} overlay />
+                      {rowPill(rowSyncState(i.f), true)}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.f.title}</h3>
@@ -1113,7 +1141,7 @@ export function Library() {
                             {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
                           </span>
                         </p>
-                        <SyncPill state={rowSyncState(i.f)} />
+                        {rowPill(rowSyncState(i.f))}
                         <button
                           className="doc-more"
                           aria-label="더보기"
