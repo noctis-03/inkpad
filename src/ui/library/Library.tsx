@@ -1327,10 +1327,10 @@ export function Library() {
 
       {moreMenu && (
         <Menu x={moreMenu.x} y={moreMenu.y} onClose={() => setMoreMenu(null)}>
-          <MenuItem icon="cloud" label="동기화" onClick={() => { setMoreMenu(null); setShowSync(true) }} />
+          <MenuItem icon="cloud" label="동기화 관리" onClick={() => { setMoreMenu(null); setShowSync(true) }} />
           <MenuItem icon="filePdf" label="에셋 원본 (PDF·이미지)" onClick={() => { setMoreMenu(null); setShowAssets(true) }} />
-          <MenuItem icon="apps" label="앱" onClick={() => { setMoreMenu(null); setShowApps(true) }} />
-          <MenuItem icon="files" label="기타 파일" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />
+          <MenuItem icon="apps" label="앱 관리" onClick={() => { setMoreMenu(null); setShowApps(true) }} />
+          <MenuItem icon="files" label="기타 파일 관리" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />
         </Menu>
       )}
 
