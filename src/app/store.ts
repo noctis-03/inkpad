@@ -104,7 +104,12 @@ export interface LibraryPrefs {
   sort: 'updated' | 'created' | 'title'
 }
 
-export type Route = { name: 'library' } | { name: 'editor'; docId: ID } | { name: 'app'; appId: ID } | { name: 'file'; fileId: ID }
+export type Route =
+  | { name: 'library' }
+  | { name: 'board' }
+  | { name: 'editor'; docId: ID }
+  | { name: 'app'; appId: ID }
+  | { name: 'file'; fileId: ID }
 
 export interface Toast {
   id: number
@@ -164,6 +169,7 @@ interface UIState {
 let toastSeq = 0
 
 function initialRoute(): Route {
+  if (/^#\/board\/?$/.test(location.hash)) return { name: 'board' }
   const m = /^#\/doc\/([0-9A-Z]{26})$/.exec(location.hash)
   if (m) return { name: 'editor', docId: m[1] }
   const a = /^#\/app\/([0-9A-Z]{26})$/.exec(location.hash)
@@ -198,7 +204,16 @@ export const useUI = create<UIState>((set, get) => ({
   viewOnly: false,
 
   navigate: (route) => {
-    const hash = route.name === 'editor' ? `#/doc/${route.docId}` : route.name === 'app' ? `#/app/${route.appId}` : route.name === 'file' ? `#/file/${route.fileId}` : '#/'
+    const hash =
+      route.name === 'editor'
+        ? `#/doc/${route.docId}`
+        : route.name === 'app'
+          ? `#/app/${route.appId}`
+          : route.name === 'file'
+            ? `#/file/${route.fileId}`
+            : route.name === 'board'
+              ? '#/board'
+              : '#/'
     if (location.hash !== hash) history.pushState(null, '', hash)
     set({ route, panel: 'none', selection: null })
   },

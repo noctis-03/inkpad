@@ -70,7 +70,11 @@ const PATHS: Record<string, string> = {
   lock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM7 11V7a5 5 0 0 1 10 0v4',
   sort: 'M3 6h12M3 12h8M3 18h4M17 4v16M14 17l3 3 3-3',
   pin: 'M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z',
-  unlock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM7 11V7a5 5 0 0 1 9.9-1'
+  unlock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM7 11V7a5 5 0 0 1 9.9-1',
+  board: 'M4 4h6v7H4zM14 4h6v4h-6zM4 15h6v5H4zM14 12h6v8h-6z',
+  wallpaper: 'M3 4h18v16H3zM3 15.5l4.5-4.5 3 3 3.5-4 6 7',
+  save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8',
+  hex: 'M12 2.6l7.5 4.3v8.6L12 19.8 4.5 15.5V6.9zM12 2.6v17.2M4.5 6.9L12 11.2l7.5-4.3'
 }
 
 export function Icon({ name, size = 22, className }: { name: string; size?: number; className?: string }) {

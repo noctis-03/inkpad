@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useUI, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { Library } from '../ui/library/Library'
+import { Board } from '../ui/board/Board'
 import { Editor } from '../ui/editor/Editor'
 import { AppRunner } from '../ui/app/AppRunner'
 import { FileRunner } from '../ui/app/FileRunner'
@@ -64,6 +65,8 @@ export function App() {
         <AppRunner key={route.appId} appId={route.appId} />
       ) : route.name === 'file' ? (
         <FileRunner key={route.fileId} fileId={route.fileId} />
+      ) : route.name === 'board' ? (
+        <Board />
       ) : (
         <Library />
       )}
