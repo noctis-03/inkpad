@@ -122,6 +122,10 @@ export function Library() {
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
+  // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
+  const [recent, setRecent] = useState(() => loadRecentDocs())
+  const [recentOnly, setRecentOnly] = useState(false)
+  const recentActive = section.kind === 'all' && recentOnly
   // 사이드바 선택 항목 슬라이딩 인디케이터 (5.2, 세로)
   const treeRef = useRef<HTMLElement>(null)
   const treeActiveKey =
@@ -135,12 +139,8 @@ export function Library() {
           ? `folder:${section.id}`
           : section.kind
   useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y')
-  // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
-  const [recent, setRecent] = useState(() => loadRecentDocs())
-  const [recentOnly, setRecentOnly] = useState(false)
   // 검색어 디바운스 — FLIP 트리거(120ms). 메모(useMemo)들이 렌더 중 이 값을 읽으므로 반드시 위쪽에서 선언한다
   const [dq, setDq] = useState('')
-  const recentActive = section.kind === 'all' && recentOnly
 
   useEffect(() => sessionStorage.setItem('inkpad.section', JSON.stringify(section)), [section])
 
