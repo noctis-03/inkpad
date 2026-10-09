@@ -14,6 +14,7 @@ import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, useUI, type
 import { BLOCK_META } from '../../engine/blocks'
 import type { BlockType } from '../../shared/model'
 import { Icon } from '../Icon'
+import { useIndicator } from '../motion/useIndicator'
 import {
   NARROW_BP,
   POS_ALL,
@@ -84,6 +85,8 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const [snap, setSnap] = useState<{ allowed: ToolbarPos[]; W: number; H: number } | null>(null)
   const [near, setNear] = useState<ToolbarPos | null>(null)
   const [pop, setPop] = useState<{ kind: PopKind; anchor: HTMLElement } | null>(null)
+  const toolsRef = useRef<HTMLDivElement>(null)
+  const widthsRef = useRef<HTMLDivElement>(null)
 
   // ── 현재 스타일 파생값 (기존 EditorToolbar 로직과 동일) ──
   const isHl = tool === 'highlighter'
@@ -293,6 +296,12 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const toolColor = (t: Tool) =>
     t === 'pen' ? opaque(style.pen.color) : t === 'highlighter' ? opaque(style.highlighter.color) : 'transparent'
   const widthMark = (w: number) => widthMarkOf(tool, curColor, w)
+  const swatchColor = (c: string) => (isHl ? opaque(c) : c)
+
+  // 슬라이딩 선택 인디케이터 (5.2) — 세로 배치(left/right)에서는 axis='y'
+  const orientAxis: 'x' | 'y' = layout?.orient === 'v' ? 'y' : 'x'
+  useIndicator(toolsRef, tool, orientAxis)
+  useIndicator(widthsRef, `${tool}:${curWidth}`, orientAxis)
 
   return (
     <>
@@ -327,10 +336,11 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
           <Icon name="grip" />
         </button>
 
-        <div className="ft-group ft-tools">
+        <div className="ft-group ft-tools" ref={toolsRef}>
           {TOOLS.map((t) => (
             <button
               key={t.id}
+              data-indicator-key={t.id}
               className={'ft-btn ft-tool' + (tool === t.id ? ' is-active' : '')}
               style={{ ['--tc' as string]: toolColor(t.id) }}
               aria-label={t.label}
@@ -365,16 +375,17 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
                 <button
                   key={c}
                   className={'ft-sw' + (c === curColor ? ' is-active' : '')}
-                  style={{ ['--c' as string]: c }}
+                  style={{ ['--c' as string]: swatchColor(c) }}
                   aria-label={`색상 ${opaque(c)}`}
                   onClick={() => pickColor(c)}
                 />
               ))}
           </div>
-          <div className="ft-widths">
+          <div className="ft-widths" ref={widthsRef}>
             {widths.map((w) => (
               <button
-                key={w}
+                key={`${tool}:${w}`}
+                data-indicator-key={`${tool}:${w}`}
                 className={'ft-wbtn' + (w === curWidth ? ' is-active' : '')}
                 aria-label={`굵기 ${w}`}
                 aria-pressed={w === curWidth}
@@ -606,7 +617,7 @@ function StylePanel(props: {
               <button
                 key={c}
                 className={'ft-sw' + (c === curColor ? ' is-active' : '')}
-                style={{ ['--c' as string]: c }}
+                style={{ ['--c' as string]: isHl ? opaque(c) : c }}
                 aria-label={`색상 ${opaque(c)}`}
                 onClick={() => pickColor(c)}
               />

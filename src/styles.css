@@ -3577,3 +3577,181 @@ textarea {
   outline: 2px solid #1f293759;
   outline-offset: 2px;
 }
+
+/* ═══════════════ 5.2 · 슬라이딩 선택 인디케이터 ═══════════════ */
+.motion-ind {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: var(--raise);
+  pointer-events: none;
+  opacity: 0;
+  transition: transform .45s var(--ft-spring), width .3s var(--ft-spring), height .3s var(--ft-spring), opacity .18s ease;
+}
+[data-indicator-key] {
+  position: relative;
+  z-index: 1;
+}
+.seg {
+  position: relative;
+}
+.seg .motion-ind {
+  border-radius: 8px;
+}
+.folder-tree,
+.ft-tools,
+.ft-swatches,
+.ft-widths {
+  position: relative;
+}
+.folder-tree .motion-ind {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: var(--raise);
+}
+.ft-tools .motion-ind,
+.ft-swatches .motion-ind,
+.ft-widths .motion-ind {
+  border-radius: calc(var(--ft-btn) / 2);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .14), 0 0 0 .5px rgba(0, 0, 0, .05);
+}
+
+/* ═══════════════ 5.7 · 도구 트레이 + 선택 스타일 ═══════════════ */
+.ft-bar .ft-sep {
+  display: none;
+}
+.ft-tools,
+.ft-swatches,
+.ft-widths {
+  background: var(--tray);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 2px;
+}
+.ft-bar[data-density='dense'] :is(.ft-tools, .ft-swatches, .ft-widths),
+.ft-bar[data-density='tiny'] :is(.ft-tools, .ft-swatches, .ft-widths) {
+  padding: 2px;
+}
+.ft-tool {
+  color: var(--muted);
+}
+.ft-tool.is-active {
+  background: transparent;
+  color: var(--ink);
+}
+.ft-tool.is-active svg {
+  animation: ft-pop .45s var(--spring-pop);
+}
+@keyframes ft-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+/* 색 선택: 칩 대신 색 링 */
+.ft-sw.is-active::before {
+  border: 0;
+  box-shadow: inset 0 0 0 1px #0000001a, 0 0 0 2.5px var(--tray), 0 0 0 4px var(--c);
+}
+.ft-sw.is-active::after {
+  transform: translate(-50%, -50%) scale(.92);
+}
+/* 굵기 선택: 흰 칩 + 점 색 muted→ink */
+.ft-wline { background: var(--muted); }
+.ft-edot { border-color: var(--muted); }
+.ft-wbtn.is-active {
+  background: #fff;
+  box-shadow: var(--raise);
+}
+.ft-wbtn.is-active .ft-wline { background: var(--ink); }
+.ft-wbtn.is-active .ft-edot { border-color: var(--ink); }
+.ft-wbtn.is-active .ft-wline,
+.ft-wbtn.is-active .ft-edot { scale: 1.2; }
+/* 위치/접기 spring */
+.ft-bar {
+  transition: left .45s var(--ft-spring), top .45s var(--ft-spring), transform .2s var(--ft-ease), box-shadow .2s;
+}
+/* 진입 연출: 그룹이 위에서 10px 내려오며 45ms씩 차례로 */
+.ft-bar[data-ready] > * {
+  animation: ft-in .45s var(--ft-spring) both;
+}
+.ft-bar[data-ready] > *:nth-child(2) { animation-delay: 45ms; }
+.ft-bar[data-ready] > *:nth-child(3) { animation-delay: 90ms; }
+.ft-bar[data-ready] > *:nth-child(4) { animation-delay: 135ms; }
+.ft-bar[data-ready] > *:nth-child(5) { animation-delay: 180ms; }
+.ft-bar[data-ready] > *:nth-child(6) { animation-delay: 225ms; }
+@keyframes ft-in {
+  from { opacity: 0; transform: translateY(-10px); }
+}
+
+/* 빠른 전환: 지우개 상태 = 잉크 배경 + 흰 아이콘, 전환 시 rotateY flip */
+.quick-switch {
+  transition: left .45s var(--ft-spring), top .45s var(--ft-spring), background .25s var(--ft-ease), color .25s var(--ft-ease), scale .5s var(--spring-pop);
+}
+.quick-switch.is-dragging {
+  transition: background .25s var(--ft-ease), color .25s var(--ft-ease);
+}
+.quick-switch.is-eraser {
+  background: var(--ink);
+  color: #fff;
+  border-color: transparent;
+}
+.quick-switch.is-eraser .quick-switch-badge {
+  background: #fff;
+  color: var(--ink);
+}
+.quick-switch .qs-flip {
+  display: inline-flex;
+  animation: qs-flip .5s var(--ft-spring);
+}
+@keyframes qs-flip {
+  from { transform: rotateY(90deg); }
+  to { transform: rotateY(0deg); }
+}
+
+/* ═══════════════ 5.8 · 올가미 선택 · 페이지 번호 ═══════════════ */
+.selection-box {
+  border: 0;
+  border-radius: 6px;
+  background: #1f293705;
+}
+.selection-box::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image:
+    linear-gradient(90deg, #1f2937cc 50%, transparent 0),
+    linear-gradient(90deg, #1f2937cc 50%, transparent 0),
+    linear-gradient(0deg, #1f2937cc 50%, transparent 0),
+    linear-gradient(0deg, #1f2937cc 50%, transparent 0);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 12px 1.5px, 12px 1.5px, 1.5px 12px, 1.5px 12px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  animation: ants .6s linear infinite;
+}
+@keyframes ants {
+  to { background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px; }
+}
+.selection-bar {
+  background: var(--ink);
+  color: #fff;
+  animation: sbar-in .45s var(--ft-spring) both;
+}
+.selection-bar .sel-count { color: #d1d5db; }
+.selection-bar .tb-btn { color: #fff; }
+.selection-bar .tb-btn.danger { color: #fca5a5; }
+@keyframes sbar-in {
+  from { opacity: 0; transform: scale(.94); }
+}
+.page-num-roll {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  animation: roll-in .26s var(--ft-ease) both;
+}
+@keyframes roll-in {
+  from { transform: translateY(10px); opacity: .2; }
+}

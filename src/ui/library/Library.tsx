@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
+import { useIndicator } from '../motion/useIndicator'
 import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { NewDocumentSheet } from './NewDocumentSheet'
@@ -102,6 +103,11 @@ export function Library() {
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
+  // 사이드바 선택 항목 슬라이딩 인디케이터 (5.2, 세로)
+  const treeRef = useRef<HTMLElement>(null)
+  const treeActiveKey =
+    section.kind === 'category' ? `cat:${section.name}` : section.kind === 'folder' ? `folder:${section.id}` : section.kind
+  useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y')
   // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
   const [recent, setRecent] = useState(() => loadRecentDocs())
   const [recentOnly, setRecentOnly] = useState(false)
@@ -721,8 +727,9 @@ export function Library() {
       <div className="library-body">
         {treeOpen && <div className="tree-backdrop" role="presentation" onClick={() => setTreeOpen(false)} />}
         {treeOpen && (
-          <nav className="folder-tree" aria-label="폴더">
+          <nav className="folder-tree" aria-label="폴더" ref={treeRef}>
             <button
+              data-indicator-key="all"
               className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')}
               onClick={onAllClick}
               title="다시 누르면 최근에 열어 본 노트"
@@ -730,19 +737,20 @@ export function Library() {
               <Icon name={recentActive ? 'restore' : 'grid'} size={18} /> {recentActive ? '최근 열람' : '전체'}{' '}
               <span className="count">{recentActive ? recentDocs.length : docs.length + apps.length + files.length}</span>
             </button>
-            <button className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
+            <button data-indicator-key="notes" className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count">{docs.length}</span>
             </button>
-            <button className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
+            <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
               <Icon name="app" size={18} /> 모든 앱 <span className="count">{apps.length}</span>
             </button>
-            <button className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
+            <button data-indicator-key="files" className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
               <Icon name="file" size={18} /> 기타 파일 <span className="count">{files.length}</span>
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
               <button
                 key={c}
+                data-indicator-key={'cat:' + c}
                 className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
                 onClick={() => setSection({ kind: 'category', name: c })}
               >
@@ -752,6 +760,7 @@ export function Library() {
               </button>
             ))}
             <button
+              data-indicator-key="uncategorized"
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
               onClick={() => setSection({ kind: 'uncategorized' })}
             >
@@ -776,7 +785,7 @@ export function Library() {
               onSelect={(id) => setSection({ kind: 'folder', id })}
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
             />
-            <button className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
+            <button data-indicator-key="trash" className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
               <Icon name="trash" size={18} /> 휴지통 <span className="count">{trash.length}</span>
             </button>
           </nav>
@@ -1120,7 +1129,7 @@ function FolderTree(props: {
     <>
       {children.map((f) => (
         <div key={f.id}>
-          <div className={'tree-item folder' + (props.activeId === f.id ? ' is-active' : '')} style={{ paddingLeft: 12 + props.depth * 16 }}>
+          <div className={'tree-item folder' + (props.activeId === f.id ? ' is-active' : '')} data-indicator-key={'folder:' + f.id} style={{ paddingLeft: 12 + props.depth * 16 }}>
             <button className="tree-main" onClick={() => props.onSelect(f.id)}>
               <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
               <span className="count">

@@ -331,7 +331,10 @@ function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
     <div className="page-indicator">
       {paged && (
         <span>
-          {view.currentPage + 1} / {view.pageCount}
+          <b key={view.currentPage} className="page-num-roll">
+            {view.currentPage + 1}
+          </b>{' '}
+          / {view.pageCount}
         </span>
       )}
       <button onClick={() => engine.resetView()} aria-label={paged ? '폭 맞춤' : '원점, 100%'}>
