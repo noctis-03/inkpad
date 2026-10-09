@@ -187,6 +187,7 @@ export function Library() {
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
+  const [revealKey, setRevealKey] = useState<string | null>(null) // 격자: 누르면 미리보기가 블러되며 오버레이가 뜬 카드
   // '전체'를 눌러 있던 상태에서 한 번 더 누르면 최근 열람한 노트만 보여 준다
   const [recent, setRecent] = useState(() => loadRecentDocs())
   const [recentOnly, setRecentOnly] = useState(false)
@@ -274,6 +275,30 @@ export function Library() {
     if (window.innerWidth < 900) setTreeOpen(false)
   }, [section])
 
+  // 카드 오버레이 — 바깥을 누르면 닫는다 (오버레이가 열린 카드만 예외)
+  useEffect(() => {
+    if (!revealKey) return
+    const onDown = (e: PointerEvent) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.doc-card[data-reveal-key]')
+      if (!el || el.dataset.revealKey !== revealKey) setRevealKey(null)
+    }
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
+  }, [revealKey])
+  // 섹션·보기·검색이 바뀌면 오버레이는 닫는다
+  useEffect(() => setRevealKey(null), [section, prefs.view, dq])
+
+  /** 격자에서 카드 누름 — 처음엔 오버레이를 열고, 이미 열려 있으면 닫는다. 목록 보기는 곧바로 연다. */
+  const cardTap = (key: string, onOpen: () => void) => {
+    if (prefs.view !== 'grid') return onOpen()
+    setRevealKey((cur) => (cur === key ? null : key))
+  }
+  /** 노트 열기 — 편집모드(false) / 뷰어보드(true) */
+  const openIn = (d: DocumentMeta, card: HTMLElement | null | undefined, viewOnly: boolean) => {
+    useUI.setState({ viewOnly })
+    open(d, card)
+  }
+
   /**
    * 동기화 라벨. '동기화됨'도 보여 준다(사용자 요청) — 클라우드를 쓰지 않는
    * 기기에는 '클라우드 없음'만 숨긴다.
@@ -291,6 +316,15 @@ export function Library() {
   }
   /** 앱·파일 행의 동기화 라벨 */
   const rowPill = (st: CardSyncState, overlay?: boolean) => (pillVisible(st) ? <SyncPill state={st} overlay={overlay} /> : null)
+
+  /** 카드 한 줄 메타 — 노트는 쪽수·날짜, 앱은 'HTML 앱'·날짜, 파일은 확장자·날짜.
+      격자에서는 누르면 뜨는 오버레이 맨 위에, 목록에서는 캡션 줄에 앉는다. */
+  const docMetaText = (d: DocumentMeta) =>
+    `${d.mode === 'infinite' ? '무한' : `${d.pageOrder.length}쪽`} · ${
+      section.kind === 'trash' && d.deletedAt ? `삭제 ${formatDate(d.deletedAt)}` : formatDate(d.updatedAt)
+    }`
+  const appMetaText = (a: HtmlApp) => `HTML 앱 · ${formatDate(a.updatedAt)}`
+  const fileMetaText = (f: FileRow) => `${extOf(f.name).toUpperCase() || '파일'} · ${formatDate(f.updatedAt)}`
 
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
   useEffect(() => {
@@ -1221,28 +1255,43 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article
                     key={'app:' + i.a.id}
-                    className="doc-card app-card"
+                    className={'doc-card app-card' + (revealKey === 'app:' + i.a.id ? ' is-revealed' : '')}
                     data-flip-key={'app:' + i.a.id}
+                    data-reveal-key={'app:' + i.a.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={() => navigate({ name: 'app', appId: i.a.id })}
+                    onClick={() => cardTap('app:' + i.a.id, () => navigate({ name: 'app', appId: i.a.id }))}
                   >
                     <div className="doc-thumb">
                       <Icon name="app" size={36} />
                       {rowPill(rowSyncState(i.a), true)}
+                      {prefs.view === 'grid' && (
+                        <>
+                          <span
+                            className="doc-open-veil"
+                            aria-hidden="true"
+                            onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
+                          />
+                          <div className="doc-open-panel">
+                            <span className="doc-open-meta">{appMetaText(i.a)}</span>
+                            <div className="doc-open-actions">
+                              <button
+                                className="doc-open-btn"
+                                onClick={(e) => { e.stopPropagation(); setRevealKey(null); navigate({ name: 'app', appId: i.a.id }) }}
+                              >
+                                <Icon name="play" size={15} /> 실행
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
-                      {i.a.category && (
+                      <div className="doc-cap">
                         <p className="doc-cat-line">
                           <i className="cat-dot" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.a.category}</span>
+                          <span className="doc-cat-name">{i.a.category ?? '미분류'}</span>
                         </p>
-                      )}
-                      <div className="doc-foot">
-                        <p className="doc-meta">
-                          <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
-                        </p>
-                        {rowPill(rowSyncState(i.a))}
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1255,35 +1304,56 @@ export function Library() {
                           <Icon name="more" size={20} />
                         </button>
                       </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">{appMetaText(i.a)}</span>
+                          </p>
+                          {rowPill(rowSyncState(i.a))}
+                        </div>
+                      )}
                     </div>
                   </article>
                 ) : i.kind === 'file' ? (
                   <article
                     key={'file:' + i.f.id}
-                    className="doc-card file-card"
+                    className={'doc-card file-card' + (revealKey === 'file:' + i.f.id ? ' is-revealed' : '')}
                     data-flip-key={'file:' + i.f.id}
+                    data-reveal-key={'file:' + i.f.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={() => navigate({ name: 'file', fileId: i.f.id })}
+                    onClick={() => cardTap('file:' + i.f.id, () => navigate({ name: 'file', fileId: i.f.id }))}
                   >
                     <div className="doc-thumb">
                       <Icon name="file" size={36} />
                       {rowPill(rowSyncState(i.f), true)}
+                      {prefs.view === 'grid' && (
+                        <>
+                          <span
+                            className="doc-open-veil"
+                            aria-hidden="true"
+                            onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
+                          />
+                          <div className="doc-open-panel">
+                            <span className="doc-open-meta">{fileMetaText(i.f)}</span>
+                            <div className="doc-open-actions">
+                              <button
+                                className="doc-open-btn"
+                                onClick={(e) => { e.stopPropagation(); setRevealKey(null); navigate({ name: 'file', fileId: i.f.id }) }}
+                              >
+                                <Icon name="external" size={15} /> 열기
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
-                      <div className="doc-info">
-                        <h3 className="doc-title">{i.f.title}</h3>
-                        {i.f.category && (
-                          <p className="doc-cat-line">
-                            <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
-                            <span className="doc-cat-name">{i.f.category}</span>
-                          </p>
-                        )}
-                        <div className="doc-foot">
-                          <p className="doc-meta">
-                            <span className="doc-meta-date">
-                              {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
-                            </span>
-                          </p>
-                          {rowPill(rowSyncState(i.f))}
+                    <div className="doc-info">
+                      <h3 className="doc-title">{i.f.title}</h3>
+                      <div className="doc-cap">
+                        <p className="doc-cat-line">
+                          <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
+                          <span className="doc-cat-name">{i.f.category ?? '미분류'}</span>
+                        </p>
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1296,16 +1366,28 @@ export function Library() {
                           <Icon name="more" size={20} />
                         </button>
                       </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">{fileMetaText(i.f)}</span>
+                          </p>
+                          {rowPill(rowSyncState(i.f))}
+                        </div>
+                      )}
                     </div>
                   </article>
                 ) : (
                   <article
                     key={i.d.id}
-                    className="doc-card"
+                    className={'doc-card' + (revealKey === i.d.id ? ' is-revealed' : '')}
                     data-doc-id={i.d.id}
                     data-flip-key={i.d.id}
+                    data-reveal-key={i.d.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={(e) => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d, e.currentTarget))}
+                    onClick={(e) => {
+                      if (section.kind === 'trash') return setMenu({ doc: i.d, x: 0, y: 0 })
+                      cardTap(i.d.id, () => openIn(i.d, e.currentTarget, false))
+                    }}
                   >
                     <div className="doc-thumb">
                       {thumbs.get(i.d.id) ? (
@@ -1316,25 +1398,48 @@ export function Library() {
                       <span className="doc-edge" aria-hidden="true" />
                       <span className="doc-gloss" aria-hidden="true" />
                       {syncPillFor(i.d.id)}
+                      {prefs.view === 'grid' && (
+                        <>
+                          <span
+                            className="doc-open-veil"
+                            aria-hidden="true"
+                            onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
+                          />
+                          <div className="doc-open-panel">
+                            <span className="doc-open-meta">{docMetaText(i.d)}</span>
+                            <div className="doc-open-tabs">
+                              <button
+                                className="doc-open-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRevealKey(null)
+                                  openIn(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'), false)
+                                }}
+                              >
+                                <Icon name="edit" size={14} /> 편집모드
+                              </button>
+                              <button
+                                className="doc-open-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRevealKey(null)
+                                  openIn(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'), true)
+                                }}
+                              >
+                                <Icon name="external" size={14} /> 뷰어보드
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
-                      {i.d.category && (
+                      <div className="doc-cap">
                         <p className="doc-cat-line">
                           <i className="cat-dot" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.d.category}</span>
+                          <span className="doc-cat-name">{i.d.category ?? '미분류'}</span>
                         </p>
-                      )}
-                      <div className="doc-foot">
-                        <p className="doc-meta">
-                          <span className="doc-meta-date">
-                            {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
-                            {section.kind === 'trash' && i.d.deletedAt
-                              ? `삭제 ${formatDate(i.d.deletedAt)}`
-                              : formatDate(i.d.updatedAt)}
-                          </span>
-                        </p>
-                        {syncLabelFor(i.d.id)}
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1347,6 +1452,14 @@ export function Library() {
                           <Icon name="more" size={20} />
                         </button>
                       </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">{docMetaText(i.d)}</span>
+                          </p>
+                          {syncLabelFor(i.d.id)}
+                        </div>
+                      )}
                     </div>
                   </article>
                 )

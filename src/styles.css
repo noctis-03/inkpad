@@ -1297,6 +1297,120 @@ textarea {
   flex: 1 1 auto;
 }
 
+/* ───────── 카드 누름 오버레이 (격자) ─────────
+   카드를 누르면 미리보기가 블러되고 그 위에 정보가 뜬다.
+   쪽수·날짜는 카드 안쪽 맨 위 가운데, 그 아래(세로 가운데)에 편집모드/뷰어보드 버튼. */
+.doc-open-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: color-mix(in srgb, var(--thumb-paper) 16%, transparent);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .32s var(--ft-ease);
+}
+.doc-card.is-revealed .doc-open-veil {
+  opacity: 1;
+  pointer-events: auto;
+}
+.doc-open-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 11px 10px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity .3s var(--ft-ease), transform .42s var(--spring-pop);
+}
+.doc-card.is-revealed .doc-open-panel {
+  opacity: 1;
+  transform: none;
+}
+/* 쪽수·날짜 — 카드 안쪽 맨 위 가운데 */
+.doc-open-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow: 0 1px 2px #ffffffcc, 0 1px 3px #ffffff99;
+}
+/* 편집모드 / 뷰어보드 — 한 줄을 반으로 나눈 버튼 (세로 가운데) */
+.doc-open-tabs {
+  margin: auto 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  box-shadow: var(--e2);
+  pointer-events: auto;
+}
+.doc-open-actions {
+  margin: auto 0;
+  display: flex;
+  pointer-events: none;
+}
+.doc-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 15px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--e2);
+  pointer-events: auto;
+}
+.doc-open-tabs .doc-open-btn,
+.doc-open-tabs .doc-open-btn:hover {
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.doc-open-tabs .doc-open-btn + .doc-open-btn {
+  position: relative;
+}
+.doc-open-tabs .doc-open-btn + .doc-open-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: color-mix(in srgb, var(--btn-fg) 26%, transparent);
+}
+.doc-open-tabs .doc-open-btn:active {
+  background: color-mix(in srgb, var(--btn-fg) 16%, transparent);
+}
+
+/* 캡션 — 카테고리(없으면 '미분류')와 더보기(⋯)를 같은 높이(28px)로 맞춘 한 줄 */
+.doc-cap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 2px;
+}
+.doc-cap .doc-cat-line {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
 /* ───────── 메뉴 / 모달 / 시트 ───────── */
 .menu-backdrop,
 .modal-backdrop {

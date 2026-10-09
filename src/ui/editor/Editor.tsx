@@ -102,6 +102,9 @@ export function Editor({ docId }: { docId: ID }) {
     pdf.assetProvider = (assetId) => ensureAssetLocal(assetId)
     pdf.onAssetError = (_assetId, message) => useUI.getState().toast(message, 'error')
     ;(async () => {
+      // 뷰어보드로 열기 — 편집 도구 없이 보기 전용으로 연다 (라이브러리 카드가 1회 전달)
+      const wantView = useUI.getState().viewOnly
+      if (wantView) useUI.setState({ viewOnly: false })
       try {
         const [loaded, lock] = await Promise.all([loadDocument(docId), acquireDocLock(docId)])
         if (disposed) return
@@ -109,6 +112,7 @@ export function Editor({ docId }: { docId: ID }) {
           setReadOnly(true)
           toast('이 문서는 다른 탭에서 열려 있어 읽기 전용으로 엽니다.', 'info')
         }
+        if (wantView) setReadOnly(true)
         setDoc(loaded.doc)
         setPages(loaded.pages)
         const st = useUI.getState()

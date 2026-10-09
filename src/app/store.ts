@@ -139,6 +139,8 @@ interface UIState {
   docCardRect: DOMRect | null
   /** 편집 화면을 닫을 때 — 라이브러리 복귀 전환이 이 카드로 축소한다 (모션 5.6) */
   returnDocId: ID | null
+  /** 뷰어보드 열기 — 편집 화면을 보기 전용으로 연다 (편집 화면이 1회 읽고 지운다) */
+  viewOnly: boolean
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -193,6 +195,7 @@ export const useUI = create<UIState>((set, get) => ({
   selectedBlockId: null,
   docCardRect: null,
   returnDocId: null,
+  viewOnly: false,
 
   navigate: (route) => {
     const hash = route.name === 'editor' ? `#/doc/${route.docId}` : route.name === 'app' ? `#/app/${route.appId}` : route.name === 'file' ? `#/file/${route.fileId}` : '#/'
