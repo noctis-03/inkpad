@@ -5,10 +5,15 @@ import { SPRING, dur } from './motion'
  * 목록 변화 FLIP (명세 5.4).
  * deps가 바뀌어 목록이 다시 그려질 때, 각 카드([data-flip-key])의 이동/등장을 부드럽게 잇는다.
  * 화면에 보이는 카드가 많을 때(>60)는 성능을 위해 생략한다.
+ *
+ * resetKey(보통 현재 섹션 키)가 바뀌면 이전 위치 기억을 버려 카드를 '등장'으로 취급한다.
+ * 목록이 비어 컨테이너가 사라진 경우에도 기억을 버린다 — 그러지 않으면 다시 나타난 카드가
+ * 이전 위치와 같다는 이유로 '이동 0px'으로 판정돼 아무 애니메이션도 나오지 않는다.
  */
-export function useFlip(containerRef: RefObject<HTMLElement | null>, deps: unknown[]) {
+export function useFlip(containerRef: RefObject<HTMLElement | null>, deps: unknown[], resetKey?: string) {
   const prev = useRef<Map<string, DOMRect>>(new Map())
   const first = useRef(true)
+  const prevReset = useRef(resetKey)
 
   const capture = () => {
     const el = containerRef.current
@@ -23,11 +28,23 @@ export function useFlip(containerRef: RefObject<HTMLElement | null>, deps: unkno
 
   useLayoutEffect(() => {
     const el = containerRef.current
-    if (!el || document.documentElement.dataset.motion === 'off' || first.current) {
+    const sectionChanged = prevReset.current !== resetKey
+    prevReset.current = resetKey
+
+    if (!el) {
+      // 목록이 비어 컨테이너가 사라졌다 — 이전 위치 기억을 버리고 '첫 목록' 표시도 내린다.
+      // 그래야 다시 목록이 나타날 때 카드가 등장 애니메이션으로 들어온다.
+      prev.current = new Map()
+      first.current = false
+      return
+    }
+    if (document.documentElement.dataset.motion === 'off' || first.current) {
       first.current = false
       capture()
       return
     }
+    if (sectionChanged) prev.current = new Map() // 섹션 전환 — 새 목록으로 취급
+
     const cards = [...el.querySelectorAll<HTMLElement>('[data-flip-key]')]
     if (cards.length > 60) {
       capture()

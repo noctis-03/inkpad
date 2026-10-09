@@ -441,7 +441,7 @@ export function Library() {
 
   // 목록 변화 FLIP (5.4)
   const flipSig = items.map((i) => (i.kind === 'doc' ? i.d.id : i.kind === 'app' ? i.a.id : i.f.id)).join('|')
-  useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig])
+  useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig], treeActiveKey)
 
   // 틸트 + 광택 (5.3-3) — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
   const onGridMove = (e: React.PointerEvent) => {

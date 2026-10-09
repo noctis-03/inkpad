@@ -9,7 +9,8 @@
     "deploy": "npm run build && wrangler pages deploy dist",
     "clean-port": "fuser -k 3000/tcp 2>/dev/null || true",
     "test": "curl -s http://localhost:3000/api/health",
-    "test:motion": "node --experimental-strip-types --no-warnings tools/verify/motion-dom-sim.ts"
+    "test:motion": "node --experimental-strip-types --no-warnings tools/verify/motion-dom-sim.ts",
+    "test:flip": "esbuild tools/verify/flip-sim.tsx --bundle --format=esm --platform=node --jsx=automatic --outfile=node_modules/.cache/flip-sim.mjs --external:react --external:react-dom --external:react-dom/client --external:jsdom && node tools/verify/jsdom-env.mjs node_modules/.cache/flip-sim.mjs"
   },
   "dependencies": {
     "dexie": "^4.4.6",
@@ -31,6 +32,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "wrangler": "^4.110.0"
