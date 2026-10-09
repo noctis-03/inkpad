@@ -26,6 +26,16 @@ const blocksLs = load<{ visible: boolean }>(LS_BLOCKS, { visible: true })
 
 export const PEN_COLORS = ['#111827ff', '#2563ebff', '#dc2626ff', '#059669ff', '#7c3aedff', '#ea580cff', '#6b7280ff', '#db2777ff']
 export const HL_COLORS = ['#facc1566', '#4ade8066', '#60a5fa66', '#f472b666', '#fb923c66']
+export const PEN_COLOR_NAMES = ['먹', '파랑', '빨강', '초록', '보라', '주황', '회색', '분홍']
+export const HL_COLOR_NAMES = ['노랑', '연두', '하늘', '분홍', '살구']
+
+/** 마지막 글자의 받침에 따라 '로/으로' 조사를 붙인다 ("파랑으로") */
+export const ro = (name: string) => {
+  const code = name.charCodeAt(name.length - 1)
+  const hasFinal = code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 > 0
+  return `${name}${hasFinal ? '으로' : '로'}`
+}
+
 export const PEN_WIDTHS = [1, 1.5, 2.5, 4, 6, 10]
 export const HL_WIDTHS = [10, 16, 24]
 export const ERASER_SIZES = [12, 24, 48]

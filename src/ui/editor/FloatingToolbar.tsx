@@ -10,7 +10,17 @@ import {
 import { createPortal } from 'react-dom'
 import type { Engine } from '../../engine/engine'
 import type { Tool } from '../../engine/types'
-import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS, useUI, type ToolbarPos } from '../../app/store'
+import {
+  ERASER_SIZES,
+  HL_COLORS,
+  HL_COLOR_NAMES,
+  HL_WIDTHS,
+  PEN_COLORS,
+  PEN_COLOR_NAMES,
+  PEN_WIDTHS,
+  useUI,
+  type ToolbarPos
+} from '../../app/store'
 import { BLOCK_META } from '../../engine/blocks'
 import type { BlockType } from '../../shared/model'
 import { Icon } from '../Icon'
@@ -371,12 +381,12 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
         <div className="ft-group ft-hide ft-style" aria-label="색상과 굵기">
           <div className="ft-swatches">
             {!isEr &&
-              inlineColors.map((c) => (
+              inlineColors.map((c, i) => (
                 <button
                   key={c}
                   className={'ft-sw' + (c === curColor ? ' is-active' : '')}
                   style={{ ['--c' as string]: swatchColor(c) }}
-                  aria-label={`색상 ${opaque(c)}`}
+                  aria-label={`색상 ${(isHl ? HL_COLOR_NAMES : PEN_COLOR_NAMES)[i] ?? opaque(c)}`}
                   onClick={() => pickColor(c)}
                 />
               ))}
@@ -613,12 +623,12 @@ function StylePanel(props: {
         <>
           <div className="ft-pop-label">색상</div>
           <div className="ft-sw-grid">
-            {colors.map((c) => (
+            {colors.map((c, i) => (
               <button
                 key={c}
                 className={'ft-sw' + (c === curColor ? ' is-active' : '')}
                 style={{ ['--c' as string]: isHl ? opaque(c) : c }}
-                aria-label={`색상 ${opaque(c)}`}
+                aria-label={`색상 ${(isHl ? HL_COLOR_NAMES : PEN_COLOR_NAMES)[i] ?? opaque(c)}`}
                 onClick={() => pickColor(c)}
               />
             ))}
