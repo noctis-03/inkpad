@@ -1130,14 +1130,15 @@ textarea {
   object-position: top;
 }
 /* (시안 적용) 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
-/* 캡션 한 줄 — 왼쪽 날짜, 오른쪽 더보기. align-items:center 로 더보기 버튼
-   가운데가 날짜 줄과 같은 높이에 온다. */
+/* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가
+   세로 중앙에 오게 한다. 왼쪽 날짜, 오른쪽 더보기. */
 .doc-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  min-height: 28px;
   gap: 3px 6px;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 .doc-info {
   padding: 8px 0 0 2px; /* 더보기 자리 32px 비움 없음 — 제목이 온전히 보인다 */
@@ -1158,6 +1159,7 @@ textarea {
   margin: 0;
   min-width: 0;
   font-size: 11.5px;
+  line-height: 28px; /* 더보기 버튼 높이에 맞춘 한 줄 세로 중앙 */
   color: var(--muted);
 }
 .doc-meta-date {
