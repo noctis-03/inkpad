@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
-import { useSectionEnter } from '../motion/useSectionEnter'
-import { setOpenRect } from '../motion/openMorph'
 import { settle } from '../motion/settle'
 import { CountUp } from '../motion/CountUp'
 import { SPRING, dur, motionLevel } from '../motion/motion'
@@ -342,6 +340,7 @@ export function Library() {
   const tiltLast = useRef<HTMLElement | null>(null)
   const tiltRaf = useRef(0)
   const prevSync = useRef<Map<ID, CardSyncState>>(new Map())
+  const [enter, setEnter] = useState(false)
   const [syncing, setSyncing] = useState(false)
 
   const settleDoc = useCallback(
@@ -360,9 +359,14 @@ export function Library() {
     return () => clearTimeout(t)
   }, [query])
 
-  // 카드 등장 연출 — 첫 데이터 로드와 섹션 전환에 재무장한다 (5.3-1).
-  // FLIP 내부 기억에 맡기지 않아 카드가 많거나 컨테이너가 다시 붙어도 확실히 재생된다.
-  const enter = useSectionEnter(ready, treeActiveKey)
+  // 최초 마운트 시 1회 카드 등장 (5.3-1) — rich에서만 지연을 준다
+  useEffect(() => {
+    if (!ready || enteredRef.current) return
+    enteredRef.current = true
+    setEnter(true)
+    const t = setTimeout(() => setEnter(false), 900)
+    return () => clearTimeout(t)
+  }, [ready])
 
   // 썸네일 리빌 (5.3-2) — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
   useEffect(() => {
@@ -437,7 +441,7 @@ export function Library() {
 
   // 목록 변화 FLIP (5.4)
   const flipSig = items.map((i) => (i.kind === 'doc' ? i.d.id : i.kind === 'app' ? i.a.id : i.f.id)).join('|')
-  useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig], treeActiveKey)
+  useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig])
 
   // 틸트 + 광택 (5.3-3) — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
   const onGridMove = (e: React.PointerEvent) => {
@@ -482,9 +486,7 @@ export function Library() {
 
   /** 노트 열기 — 누른 카드의 화면 위치를 기억해 편집 화면이 그 카드에서 확대되듯 열리게 한다 */
   const open = (d: DocumentMeta, card?: HTMLElement | null) => {
-    const rect = card?.getBoundingClientRect() ?? null
-    setOpenRect(rect) // 편집 화면이 한 번 꺼내 쓰는 값 — store 소비에 의존하지 않는다
-    useUI.setState({ docCardRect: rect })
+    useUI.setState({ docCardRect: card?.getBoundingClientRect() ?? null })
     navigate({ name: 'editor', docId: d.id })
   }
 
