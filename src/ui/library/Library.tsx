@@ -80,14 +80,18 @@ function TitleText({ text }: { text: string }) {
   // CSS 한 단계 페이드보다 느리고 두 단계로 해서 섹션이 바뀌는 느낌을 살린다.
   useEffect(() => {
     const el = ref.current
-    if (!el || shownRef.current === text) return
+    if (!el) return
+    // 실행 중인 애니메이션은 무조건 먼저 정리한다 — fill: forwards 가 남긴
+    // opacity:0 고정 상태도 cancel 로 풀린다. 가드를 먼저 보면 A→B→A 처럼
+    // 되돌아온 선택에서 사라짐 애니메이션이 끝까지 재생돼 제목이 사라진 채 남는다.
+    anims.current.forEach((a) => a.cancel())
+    anims.current = []
+    if (shownRef.current === text) return
     if (document.documentElement.dataset.motion === 'off') {
       shownRef.current = text
       setShown(text)
       return
     }
-    anims.current.forEach((a) => a.cancel())
-    anims.current = []
     const out = el.animate(
       [
         { opacity: 1, transform: 'none' },
@@ -99,6 +103,7 @@ function TitleText({ text }: { text: string }) {
     out.addEventListener(
       'finish',
       () => {
+        // 취소된 뒤에도 늦게 불릴 수 없게(out이 취소되면 finish는 오지 않는다) 그대로 둔다
         shownRef.current = text
         setShown(text)
         const inn = el.animate(
@@ -112,7 +117,10 @@ function TitleText({ text }: { text: string }) {
       },
       { once: true }
     )
-    return () => anims.current.forEach((a) => a.cancel())
+    return () => {
+      anims.current.forEach((a) => a.cancel())
+      anims.current = []
+    }
   }, [text])
   return (
     <span ref={ref} className="title-text">
