@@ -1006,8 +1006,9 @@ textarea {
 .tree-item.trash {
   margin-top: 14px;
 }
-/* '최근' 항목 — 평소에는 접혀 숨겨 '전체' 바로 아래에서 0 높이로 닫혀 있고,
-   전체를 눌러 최근 열람 모드가 되면 펼쳐지며 내려온다 */
+/* '최근 열람한 노트' 항목 — 최근에 열어 본 노트가 있을 때만 '전체' 아래에서 펼쳐진다.
+   (예전에는 '전체'를 한 번 더 눌러야 나왔지만, 이제 '전체'는 항상 전체로 남는다.
+    is-shown = 펼침, is-active = 현재 선택 표시 — 둘을 분리했다.) */
 .tree-item.tree-recent {
   height: 0;
   min-height: 0;
@@ -1018,7 +1019,7 @@ textarea {
   opacity: 0;
   transition: height .45s var(--ft-spring), padding .45s var(--ft-spring), opacity .3s ease, scale .5s var(--spring-pop);
 }
-.tree-item.tree-recent.is-active {
+.tree-item.tree-recent.is-shown {
   height: 40px;
   opacity: 1;
 }

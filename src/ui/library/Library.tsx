@@ -356,15 +356,11 @@ export function Library() {
       .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
   }, [docs, recent, hiddenCats])
 
-  /** '전체' 버튼 — 눌러 있던 상태에서 한 번 더 누르면 최근 열람 모드를 토글한다 */
+  /** '전체' 버튼 — 항상 전체 문서를 보여 준다. 최근 열람은 아래 '최근 열람한 노트' 항목이 맡는다. */
   const onAllClick = () => {
-    if (section.kind === 'all') {
-      setRecentOnly((v) => !v)
-      setRecent(loadRecentDocs()) // 노트를 열었다 돌아온 사이 늘어난 기록을 반영
-    } else {
-      setSection({ kind: 'all' })
-      setRecentOnly(false)
-    }
+    setSection({ kind: 'all' })
+    setRecentOnly(false)
+    setRecent(loadRecentDocs()) // 노트를 열었다 돌아온 사이 늘어난 기록을 반영
   }
 
   const visible = useMemo(() => {
@@ -1094,23 +1090,22 @@ export function Library() {
               data-indicator-key="all"
               className={'tree-item' + (section.kind === 'all' && !recentActive ? ' is-active' : '')}
               onClick={onAllClick}
-              title="다시 누르면 최근에 열어 본 노트"
             >
-              <Icon name={recentActive ? 'restore' : 'grid'} size={18} /> {recentActive ? '최근 열람' : '전체'}{' '}
+              <Icon name="grid" size={18} /> 전체{' '}
               <span className="count">
-                {recentActive ? recentDocs.length : <CountUp value={docs.length + apps.length + files.length} />}
+                <CountUp value={docs.length + apps.length + files.length} />
               </span>
             </button>
             <button
               data-indicator-key="recent"
-              className={'tree-item tree-recent' + (section.kind === 'all' ? ' is-active' : '')}
+              className={'tree-item tree-recent' + (recentDocs.length ? ' is-shown' : '') + (recentActive ? ' is-active' : '')}
               onClick={() => {
                 setSection({ kind: 'all' })
                 setRecent(loadRecentDocs())
                 setRecentOnly(true)
               }}
             >
-              <Icon name="restore" size={18} /> 최근 <span className="count">{recentDocs.length}</span>
+              <Icon name="restore" size={18} /> 최근 열람한 노트 <span className="count">{recentDocs.length}</span>
             </button>
             <button data-indicator-key="notes" className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
               <Icon name="notebook" size={18} /> 모든 노트 <span className="count"><CountUp value={docs.length} /></span>
