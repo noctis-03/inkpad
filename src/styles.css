@@ -1100,51 +1100,29 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 — 한 장뿐. 상단 띠(쪽수·날짜)는 평소 카드 뒤에 숨어 있다가
-   카드를 누르면 카드 위쪽 바깥으로 떠오른다 — 미리보기를 덮지 않는다.
-   같은 동작에서 미리보기가 블러되고 그 위에 '열기' 버튼이 뜬다 (격자 보기). */
+/* 카드 — 한 장뿐. 띠는 없애고, 카드를 누르면 미리보기가 블러되며 그 위에
+   쪽수·날짜와 '열기' 버튼이 함께 뜬다 (격자 보기). */
 .doc-grid .doc-plate {
   position: relative;
-  z-index: 1; /* 띠 위에 온다 — 띠는 카드 뒤에서 올라온다 */
+  z-index: 1;
   border-radius: var(--r-lg);
   overflow: hidden; /* 카드 모서리에서 미리보기를 잘라 낸다 */
   background: var(--thumb-paper);
   box-shadow: var(--e1);
 }
-.doc-grid .doc-stack {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 0; /* 카드(plate) 뒤에 깔린다 */
+.doc-grid .doc-thumb {
+  position: relative;
+  aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
+  border-radius: 0; /* 모서리는 .doc-plate 가 맡는다 */
+  background: var(--thumb-paper);
+  box-shadow: none; /* 그림자도 .doc-plate 가 맡는다 */
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 21px;
-  padding: 0 8px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--thumb-paper) 78%, transparent); /* 색 없이 옅은 스크림 */
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px); /* 약간의 블러만 */
-  border-radius: var(--r-sm);
-  transform: translateY(0); /* 처음엔 카드 뒤에 숨어 있다 */
-  opacity: 0;
-  pointer-events: none;
-  transition: transform .42s var(--ft-ease), opacity .3s var(--ft-ease);
+  color: var(--muted-2);
 }
-.doc-card.is-revealed .doc-stack {
-  transform: translateY(calc(-100% - 3px)); /* 카드 위쪽 바깥으로 떠오른다 */
-  opacity: 1;
-}
-.doc-grid .doc-stack-meta {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 9.5px; /* 쪽수·날짜를 더 작게 */
-  font-weight: 500;
-}
-/* 누름 오버레이 — 미리보기가 블러되고 그 위에 열기 버튼 */
+/* 누름 오버레이 — 미리보기가 블러되고, 그 위에 쪽수·날짜 + 열기 버튼 */
 .doc-open-veil {
   position: absolute;
   inset: 0;
@@ -1160,12 +1138,37 @@ textarea {
   opacity: 1;
   pointer-events: auto;
 }
-.doc-open-btn {
+.doc-open-panel {
   position: absolute;
+  inset: 0;
   z-index: 4;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) scale(.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity .3s var(--ft-ease), transform .42s var(--spring-pop);
+}
+.doc-card.is-revealed .doc-open-panel {
+  opacity: 1;
+  transform: none;
+}
+.doc-open-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-shadow: 0 1px 2px #ffffffb3; /* 블러 위에서도 읽히게 */
+}
+.doc-open-btn {
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1179,26 +1182,7 @@ textarea {
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--e2);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .3s var(--ft-ease), transform .42s var(--spring-pop);
-}
-.doc-card.is-revealed .doc-open-btn {
-  opacity: 1;
   pointer-events: auto;
-  transform: translate(-50%, -50%) scale(1);
-}
-.doc-grid .doc-thumb {
-  position: relative;
-  aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
-  border-radius: 0; /* 모서리는 .doc-plate 가 맡는다 */
-  background: var(--thumb-paper);
-  box-shadow: none; /* 그림자도 .doc-plate 가 맡는다 */
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted-2);
 }
 /* 카드 캡션 — 카테고리는 색 점 + 이름 한 줄(없으면 '미분류')로 보여 주고,
    더보기(⋯)를 같은 줄에 세로 중앙으로 맞춘다. */

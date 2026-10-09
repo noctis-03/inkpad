@@ -1281,17 +1281,20 @@ export function Library() {
                                 setRevealKey(null)
                               }}
                             />
-                            <button
-                              className="doc-open-btn"
-                              aria-label="실행"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setRevealKey(null)
-                                navigate({ name: 'app', appId: i.a.id })
-                              }}
-                            >
-                              <Icon name="play" size={15} /> 실행
-                            </button>
+                            <div className="doc-open-panel">
+                              <span className="doc-open-meta">{appMetaText(i.a)}</span>
+                              <button
+                                className="doc-open-btn"
+                                aria-label="실행"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRevealKey(null)
+                                  navigate({ name: 'app', appId: i.a.id })
+                                }}
+                              >
+                                <Icon name="play" size={15} /> 실행
+                              </button>
+                            </div>
                           </>
                         )}
                       </div>
@@ -1353,17 +1356,20 @@ export function Library() {
                                 setRevealKey(null)
                               }}
                             />
-                            <button
-                              className="doc-open-btn"
-                              aria-label="열기"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setRevealKey(null)
-                                navigate({ name: 'file', fileId: i.f.id })
-                              }}
-                            >
-                              <Icon name="external" size={15} /> 열기
-                            </button>
+                            <div className="doc-open-panel">
+                              <span className="doc-open-meta">{fileMetaText(i.f)}</span>
+                              <button
+                                className="doc-open-btn"
+                                aria-label="열기"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRevealKey(null)
+                                  navigate({ name: 'file', fileId: i.f.id })
+                                }}
+                              >
+                                <Icon name="external" size={15} /> 열기
+                              </button>
+                            </div>
                           </>
                         )}
                       </div>
@@ -1434,17 +1440,20 @@ export function Library() {
                                 setRevealKey(null)
                               }}
                             />
-                            <button
-                              className="doc-open-btn"
-                              aria-label="열기"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setRevealKey(null)
-                                open(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'))
-                              }}
-                            >
-                              <Icon name="external" size={15} /> 열기
-                            </button>
+                            <div className="doc-open-panel">
+                              <span className="doc-open-meta">{docMetaText(i.d)}</span>
+                              <button
+                                className="doc-open-btn"
+                                aria-label="열기"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRevealKey(null)
+                                  open(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'))
+                                }}
+                              >
+                                <Icon name="external" size={15} /> 열기
+                              </button>
+                            </div>
                           </>
                         )}
                       </div>
