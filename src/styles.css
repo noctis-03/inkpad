@@ -1115,11 +1115,13 @@ textarea {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 7px;
+  width: 10px;
   z-index: 2;
   pointer-events: none;
-  border-left: 1px solid var(--line);
-  background: repeating-linear-gradient(180deg, var(--thumb-paper) 0 3px, var(--line) 3px 4px);
+  border-left: 1px solid var(--line-2);
+  background:
+    repeating-linear-gradient(180deg, #0000000d 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(180deg, var(--thumb-paper) 0 3px, var(--line) 3px 4px);
 }
 .doc-thumb img {
   width: 100%;

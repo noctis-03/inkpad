@@ -252,11 +252,10 @@ export function Library() {
   }, [section])
 
   /**
-   * 동기화 라벨은 조용할 때 숨긴다 (C-8). '동기화됨'은 언제나 숨기고,
-   * 클라우드를 쓰지 않는 기기에는 '클라우드 없음'도 숨긴다.
-   * 올리기 필요·새 버전처럼 사용자 행동이 필요한 상태만 보인다.
+   * 동기화 라벨. '동기화됨'도 보여 준다(사용자 요청) — 클라우드를 쓰지 않는
+   * 기기에는 '클라우드 없음'만 숨긴다.
    */
-  const pillVisible = (st: CardSyncState) => st !== 'same' && !(st === 'new' && cloudOff)
+  const pillVisible = (st: CardSyncState) => !(st === 'new' && cloudOff)
   /** 노트 카드 좌측 하단에 얹는 동기화 라벨 (그리드 전용) */
   const syncPillFor = (id: ID) => {
     const st = syncStates.get(id)
