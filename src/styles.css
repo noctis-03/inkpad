@@ -4621,6 +4621,7 @@ details.adv > summary::marker {
 .board-empty {
   position: absolute;
   inset: 0;
+  padding-bottom: 210px;
   display: flex;
   flex-direction: column;
   align-items: center;
