@@ -16,7 +16,7 @@ import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
-import { categoryColor, formatDate } from '../../shared/util'
+import { categoryColor, categoryTag, formatDate } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import {
   createFolder,
@@ -1239,8 +1239,11 @@ export function Library() {
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
-                        <div className="doc-stack">
-                          <span className="doc-stack-meta">{appMetaText(i.a)}</span>
+                        <div
+                          className="doc-stack"
+                          style={{ background: categoryTag(i.a.category).background, borderTopColor: categoryTag(i.a.category).borderColor }}
+                        >
+                          <span className="doc-stack-meta" style={{ color: categoryTag(i.a.category).color }}>{appMetaText(i.a)}</span>
                         </div>
                       )}
                       <div className="doc-thumb">
@@ -1287,8 +1290,11 @@ export function Library() {
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
-                        <div className="doc-stack">
-                          <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
+                        <div
+                          className="doc-stack"
+                          style={{ background: categoryTag(i.f.category).background, borderTopColor: categoryTag(i.f.category).borderColor }}
+                        >
+                          <span className="doc-stack-meta" style={{ color: categoryTag(i.f.category).color }}>{fileMetaText(i.f)}</span>
                         </div>
                       )}
                       <div className="doc-thumb">
@@ -1336,8 +1342,11 @@ export function Library() {
                   >
                     <div className="doc-plate">
                       {prefs.view === 'grid' && (
-                        <div className="doc-stack">
-                          <span className="doc-stack-meta">{docMetaText(i.d)}</span>
+                        <div
+                          className="doc-stack"
+                          style={{ background: categoryTag(i.d.category).background, borderTopColor: categoryTag(i.d.category).borderColor }}
+                        >
+                          <span className="doc-stack-meta" style={{ color: categoryTag(i.d.category).color }}>{docMetaText(i.d)}</span>
                         </div>
                       )}
                       <div className="doc-thumb">

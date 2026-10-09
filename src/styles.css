@@ -1100,25 +1100,27 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 겹침 — 미리보기 카드 아래에 같은 크기의 카드를 한 장 겹쳐
-   살짝 아래로 삐져나오게 하고, 그 띠에 쪽수·날짜를 앉힌다 (시안). */
+/* 카드 겹침 — 미리보기 카드 위에 같은 크기의 카드를 한 장 겹쳐
+   살짝 위로 삐져나오게 하고, 그 띠에 쪽수·날짜를 앉힌다 (시안).
+   띠는 카테고리 색(연한 파스텔 바탕 + 윗변 강조선)을 따른다. */
 .doc-plate {
   position: relative;
 }
 .doc-grid .doc-plate {
-  margin-bottom: 20px; /* 삐져나온 띠만큼 캡션 자리를 비워 둔다 */
+  margin-top: 20px; /* 위로 삐져나온 띠만큼 카드 위 자리를 비워 둔다 */
 }
 .doc-grid .doc-stack {
   position: absolute;
   inset: 0;
-  transform: translateY(18px);
+  transform: translateY(-18px);
   border-radius: var(--r-lg);
   background: var(--thumb-paper);
   box-shadow: var(--e1);
+  border-top: 2px solid transparent;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: center;
-  padding-bottom: 3px;
+  padding-top: 2px;
 }
 .doc-grid .doc-stack-meta {
   max-width: 100%;
