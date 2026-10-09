@@ -292,6 +292,17 @@ export function Library() {
   /** 앱·파일 행의 동기화 라벨 */
   const rowPill = (st: CardSyncState, overlay?: boolean) => (pillVisible(st) ? <SyncPill state={st} overlay={overlay} /> : null)
 
+  /**
+   * 카드 한 줄 메타 — 노트는 쪽수·날짜, 앱은 'HTML 앱'·날짜, 파일은 확장자·날짜.
+   * 격자 보기에서는 미리보기 아래 겹친 카드 띠에, 목록 보기에서는 캡션 줄에 앉는다.
+   */
+  const docMetaText = (d: DocumentMeta) =>
+    `${d.mode === 'infinite' ? '무한' : `${d.pageOrder.length}쪽`} · ${
+      section.kind === 'trash' && d.deletedAt ? `삭제 ${formatDate(d.deletedAt)}` : formatDate(d.updatedAt)
+    }`
+  const appMetaText = (a: HtmlApp) => `HTML 앱 · ${formatDate(a.updatedAt)}`
+  const fileMetaText = (f: FileRow) => `${extOf(f.name).toUpperCase() || '파일'} · ${formatDate(f.updatedAt)}`
+
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
   useEffect(() => {
     const onApps = () => void refresh()
@@ -1226,23 +1237,24 @@ export function Library() {
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
                     onClick={() => navigate({ name: 'app', appId: i.a.id })}
                   >
-                    <div className="doc-thumb">
-                      <Icon name="app" size={36} />
-                      {rowPill(rowSyncState(i.a), true)}
+                    <div className="doc-plate">
+                      {prefs.view === 'grid' && (
+                        <div className="doc-stack">
+                          <span className="doc-stack-meta">{appMetaText(i.a)}</span>
+                        </div>
+                      )}
+                      <div className="doc-thumb">
+                        <Icon name="app" size={36} />
+                        {rowPill(rowSyncState(i.a), true)}
+                      </div>
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
-                      {i.a.category && (
+                      <div className="doc-cap">
                         <p className="doc-cat-line">
                           <i className="cat-dot" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.a.category}</span>
+                          <span className="doc-cat-name">{i.a.category ?? '미분류'}</span>
                         </p>
-                      )}
-                      <div className="doc-foot">
-                        <p className="doc-meta">
-                          <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
-                        </p>
-                        {rowPill(rowSyncState(i.a))}
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1255,6 +1267,14 @@ export function Library() {
                           <Icon name="more" size={20} />
                         </button>
                       </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">{appMetaText(i.a)}</span>
+                          </p>
+                          {rowPill(rowSyncState(i.a))}
+                        </div>
+                      )}
                     </div>
                   </article>
                 ) : i.kind === 'file' ? (
@@ -1265,25 +1285,24 @@ export function Library() {
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
                     onClick={() => navigate({ name: 'file', fileId: i.f.id })}
                   >
-                    <div className="doc-thumb">
-                      <Icon name="file" size={36} />
-                      {rowPill(rowSyncState(i.f), true)}
+                    <div className="doc-plate">
+                      {prefs.view === 'grid' && (
+                        <div className="doc-stack">
+                          <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
+                        </div>
+                      )}
+                      <div className="doc-thumb">
+                        <Icon name="file" size={36} />
+                        {rowPill(rowSyncState(i.f), true)}
+                      </div>
                     </div>
-                      <div className="doc-info">
-                        <h3 className="doc-title">{i.f.title}</h3>
-                        {i.f.category && (
-                          <p className="doc-cat-line">
-                            <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
-                            <span className="doc-cat-name">{i.f.category}</span>
-                          </p>
-                        )}
-                        <div className="doc-foot">
-                          <p className="doc-meta">
-                            <span className="doc-meta-date">
-                              {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
-                            </span>
-                          </p>
-                          {rowPill(rowSyncState(i.f))}
+                    <div className="doc-info">
+                      <h3 className="doc-title">{i.f.title}</h3>
+                      <div className="doc-cap">
+                        <p className="doc-cat-line">
+                          <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
+                          <span className="doc-cat-name">{i.f.category ?? '미분류'}</span>
+                        </p>
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1296,6 +1315,14 @@ export function Library() {
                           <Icon name="more" size={20} />
                         </button>
                       </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">{fileMetaText(i.f)}</span>
+                          </p>
+                          {rowPill(rowSyncState(i.f))}
+                        </div>
+                      )}
                     </div>
                   </article>
                 ) : (
@@ -1307,34 +1334,30 @@ export function Library() {
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
                     onClick={(e) => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d, e.currentTarget))}
                   >
-                    <div className="doc-thumb">
-                      {thumbs.get(i.d.id) ? (
-                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
-                      ) : (
-                        <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
+                    <div className="doc-plate">
+                      {prefs.view === 'grid' && (
+                        <div className="doc-stack">
+                          <span className="doc-stack-meta">{docMetaText(i.d)}</span>
+                        </div>
                       )}
-                      <span className="doc-edge" aria-hidden="true" />
-                      <span className="doc-gloss" aria-hidden="true" />
-                      {syncPillFor(i.d.id)}
+                      <div className="doc-thumb">
+                        {thumbs.get(i.d.id) ? (
+                          <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
+                        ) : (
+                          <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
+                        )}
+                        <span className="doc-edge" aria-hidden="true" />
+                        <span className="doc-gloss" aria-hidden="true" />
+                        {syncPillFor(i.d.id)}
+                      </div>
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
-                      {i.d.category && (
+                      <div className="doc-cap">
                         <p className="doc-cat-line">
                           <i className="cat-dot" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.d.category}</span>
+                          <span className="doc-cat-name">{i.d.category ?? '미분류'}</span>
                         </p>
-                      )}
-                      <div className="doc-foot">
-                        <p className="doc-meta">
-                          <span className="doc-meta-date">
-                            {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
-                            {section.kind === 'trash' && i.d.deletedAt
-                              ? `삭제 ${formatDate(i.d.deletedAt)}`
-                              : formatDate(i.d.updatedAt)}
-                          </span>
-                        </p>
-                        {syncLabelFor(i.d.id)}
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1347,6 +1370,14 @@ export function Library() {
                           <Icon name="more" size={20} />
                         </button>
                       </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">{docMetaText(i.d)}</span>
+                          </p>
+                          {syncLabelFor(i.d.id)}
+                        </div>
+                      )}
                     </div>
                   </article>
                 )

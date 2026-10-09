@@ -1100,8 +1100,38 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
+/* 카드 겹침 — 미리보기 카드 아래에 같은 크기의 카드를 한 장 겹쳐
+   살짝 아래로 삐져나오게 하고, 그 띠에 쪽수·날짜를 앉힌다 (시안). */
+.doc-plate {
+  position: relative;
+}
+.doc-grid .doc-plate {
+  margin-bottom: 20px; /* 삐져나온 띠만큼 캡션 자리를 비워 둔다 */
+}
+.doc-grid .doc-stack {
+  position: absolute;
+  inset: 0;
+  transform: translateY(18px);
+  border-radius: var(--r-lg);
+  background: var(--thumb-paper);
+  box-shadow: var(--e1);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 3px;
+}
+.doc-grid .doc-stack-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
 .doc-grid .doc-thumb {
   position: relative;
+  z-index: 1; /* 겹친 카드 위에 미리보기가 온다 */
   aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
   border-radius: var(--r-lg);
   background: var(--thumb-paper);
@@ -1112,8 +1142,8 @@ textarea {
   justify-content: center;
   color: var(--muted-2);
 }
-/* 시안(Interactive Motion v2)의 카드 캡션 — 카테고리는 색 점 + 이름 한 줄로 먼저 보여 주고,
-   쪽수·날짜는 그 아래 줄에서 더보기(⋯) 버튼과 같은 높이(28px)에 맞춘다. */
+/* 카드 캡션 — 카테고리는 색 점 + 이름 한 줄(없으면 '미분류')로 보여 주고,
+   더보기(⋯)를 같은 줄에 세로 중앙으로 맞춘다. */
 .cat-dot {
   flex: 0 0 auto;
   width: 7px;
@@ -1133,6 +1163,19 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 캡션 한 줄 — 카테고리(색 점 + 이름)와 더보기(⋯)를 같은 높이에 맞춘다.
+   카테고리가 없으면 '미분류'로 보여 준다. */
+.doc-cap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 2px;
+}
+.doc-cap .doc-cat-line {
+  flex: 1 1 auto;
+  margin: 0;
 }
 /* 페이지 결 — 오른쪽 종이 단면 2겹 */
 .doc-edge {
@@ -1155,8 +1198,8 @@ textarea {
   object-position: top;
 }
 /* (시안 적용) 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
-/* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가
-   세로 중앙에 오게 한다. 왼쪽 날짜, 오른쪽 더보기. */
+/* 목록 보기의 캡션 한 줄 — 왼쪽 쪽수·날짜, 오른쪽 동기화 라벨. 격자 보기에서는
+   쪽수·날짜가 겹친 카드 띠(.doc-stack-meta)로 가므로 이 줄을 그리지 않는다. */
 .doc-foot {
   display: flex;
   flex-wrap: wrap;
