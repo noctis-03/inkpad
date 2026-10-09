@@ -48,33 +48,72 @@ function Select({ k, options }: { k: keyof Settings; options: [string, string][]
   )
 }
 
-/** 모션 단계 세그먼트 (명세 4장) — 슬라이딩 흰 칩 인디케이터(5.2) 적용 */
-function MotionSelect() {
-  const v = useUI((s) => s.settings.motion)
-  const set = useUI((s) => s.setSettings)
+/** 세그먼트 선택 — 슬라이딩 흰 칩 인디케이터(5.2) 적용 */
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label
+}: {
+  value: T
+  options: [T, string][]
+  onChange: (v: T) => void
+  label: string
+}) {
   const ref = useRef<HTMLDivElement>(null)
-  useIndicator(ref, v, 'x')
-  const opts: [Settings['motion'], string][] = [
-    ['auto', '자동'],
-    ['off', '끄기'],
-    ['normal', '보통'],
-    ['rich', '풍부']
-  ]
+  useIndicator(ref, value, 'x')
   return (
-    <div className="seg" ref={ref} role="radiogroup" aria-label="모션">
-      {opts.map(([val, label]) => (
+    <div className="seg" ref={ref} role="radiogroup" aria-label={label}>
+      {options.map(([val, text]) => (
         <button
           key={val}
           data-indicator-key={val}
           role="radio"
-          aria-checked={v === val}
-          className={v === val ? 'is-active' : ''}
-          onClick={() => set({ motion: val })}
+          aria-checked={value === val}
+          className={value === val ? 'is-active' : ''}
+          onClick={() => onChange(val)}
         >
-          {label}
+          {text}
         </button>
       ))}
     </div>
+  )
+}
+
+/** 모션 단계 (명세 4장) */
+function MotionSelect() {
+  const v = useUI((s) => s.settings.motion)
+  const set = useUI((s) => s.setSettings)
+  return (
+    <Segmented
+      value={v}
+      label="모션"
+      onChange={(motion) => set({ motion })}
+      options={[
+        ['auto', '자동'],
+        ['off', '끄기'],
+        ['normal', '보통'],
+        ['rich', '풍부']
+      ]}
+    />
+  )
+}
+
+/** 테마 (다크 모드) */
+function ThemeSelect() {
+  const v = useUI((s) => s.settings.theme ?? 'auto')
+  const set = useUI((s) => s.setSettings)
+  return (
+    <Segmented
+      value={v}
+      label="테마"
+      onChange={(theme) => set({ theme })}
+      options={[
+        ['auto', '자동'],
+        ['light', '라이트'],
+        ['dark', '다크']
+      ]}
+    />
   )
 }
 
@@ -298,6 +337,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
 
       <section className="panel-section">
         <h3>화면</h3>
+        <Row label="테마" hint="자동은 기기의 외관(라이트/다크) 설정을 따릅니다">
+          <ThemeSelect />
+        </Row>
         <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다">
           <MotionSelect />
         </Row>

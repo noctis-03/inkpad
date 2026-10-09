@@ -101,9 +101,10 @@
   color: var(--ink);
 }
 
-/* ── 다크 모드: 먹지(墨紙) — 화면은 어둡게, 종이는 그대로 흰색 ── */
-@media (prefers-color-scheme: dark) {
-  :root {
+/* ── 다크 모드: 먹지(墨紙) — 화면은 어둡게, 종이는 그대로 흰색 ──
+   App.tsx 가 <html data-theme='light'|'dark'> 를 항상 지정한다(설정 > 화면 > 테마).
+   auto 는 기기 외관을 따라 App 이 해석하므로 여기서 미디어쿼리를 쓰지 않는다. */
+:root[data-theme='dark'] {
     color-scheme: dark;
 
     --paper: #14161a;
@@ -166,7 +167,6 @@
     --e3: 0 24px 60px #000000b3;
 
     --tray: #262b32;
-  }
 }
 
 * {

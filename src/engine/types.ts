@@ -43,6 +43,8 @@ export interface Settings {
   largeFileConfirm: 'always' | 'off' | '5' | '10' | '50'
   // 인터랙티브 모션 (MOTION_SPEC 4장). auto = 기기의 '동작 줄이기' 설정을 따름
   motion: 'auto' | 'off' | 'normal' | 'rich'
+  // 테마 (다크 모드). auto = 기기의 외관 설정을 따름
+  theme: 'auto' | 'light' | 'dark'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -67,7 +69,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showHud: false,
   momentum: true,
   largeFileConfirm: 'always',
-  motion: 'auto'
+  motion: 'auto',
+  theme: 'auto'
 }
 
 export interface PenStyle {

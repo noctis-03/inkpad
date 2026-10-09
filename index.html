@@ -14,14 +14,28 @@
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <title>Inkpad</title>
     <script>
-      // 첫 페인트 전에 모션 단계를 정해 깜빡임을 막는다.
-      // 저장된 설정은 IndexedDB(비동기)에 있으므로 여기서는 OS '동작 줄이기'만 우선 반영하고,
-      // 앱이 뜨면 App.tsx 가 저장된 설정으로 덮어쓴다.
+      // 첫 페인트 전에 모션 단계와 테마를 정해 깜빡임을 막는다.
+      // 설정은 localStorage(동기)에 있으므로 저장된 값을 그대로 읽을 수 있다.
+      // 앱이 뜨면 App.tsx 가 다시 계산해 덮어쓴다(시스템 외관 변경·설정 변경 반영).
       (function () {
+        var root = document.documentElement
         try {
-          var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-          document.documentElement.dataset.motion = reduce ? 'off' : 'normal'
-        } catch (e) {}
+          root.dataset.motion = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'off' : 'normal'
+        } catch (e) {
+          root.dataset.motion = 'normal'
+        }
+        try {
+          var theme = 'auto'
+          var raw = localStorage.getItem('inkpad.settings.v2')
+          if (raw) {
+            var s = JSON.parse(raw)
+            if (s && (s.theme === 'light' || s.theme === 'dark')) theme = s.theme
+          }
+          if (theme === 'auto') theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          root.dataset.theme = theme
+        } catch (e) {
+          root.dataset.theme = 'light'
+        }
       })()
     </script>
   </head>

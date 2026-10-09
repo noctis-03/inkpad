@@ -34,6 +34,24 @@ export function App() {
     }
   }, [])
 
+  // 테마 결정 — auto 는 기기 외관을 따르고, 결과를 <html data-theme> 에 반영한다.
+  // 다크 팔레트는 styles.css 의 :root[data-theme='dark'] 블록에 있다.
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => {
+      const pref = useUI.getState().settings.theme ?? 'auto'
+      const theme = pref === 'auto' ? (mq.matches ? 'dark' : 'light') : pref
+      document.documentElement.dataset.theme = theme
+    }
+    apply()
+    mq.addEventListener('change', apply)
+    const unsub = useUI.subscribe(apply) // 설정에서 테마를 바꾸면 즉시 반영
+    return () => {
+      mq.removeEventListener('change', apply)
+      unsub()
+    }
+  }, [])
+
   // 전역 누름 피드백 (명세 5.1)
   useEffect(() => {
     installPress()
