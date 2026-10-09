@@ -1148,23 +1148,6 @@ textarea {
     repeating-linear-gradient(180deg, #0000000d 0 1px, transparent 1px 4px),
     repeating-linear-gradient(180deg, var(--thumb-paper) 0 3px, var(--line) 3px 4px);
 }
-/* 책등 — 왼쪽 제본선. 커버가 감싼 등(진한 띠) + 볼륨 하이라이트 + 종이로 이어지는
-   골(홈) 그림자. 오른쪽 .doc-edge(페이지 결)와 짝을 이룬다. 격자 보기의 노트 카드만. */
-.doc-grid .doc-card:not(.app-card):not(.file-card) .doc-thumb::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 16px;
-  z-index: 2;
-  pointer-events: none;
-  background:
-    /* 등의 볼륨 — 안쪽 모서리 하이라이트 */
-    linear-gradient(90deg, rgba(255, 255, 255, 0.3) 0 1px, rgba(255, 255, 255, 0) 2.5px),
-    /* 등 → 골(홈) → 종이 */
-    linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0, rgba(0, 0, 0, 0.1) 6px, rgba(0, 0, 0, 0.03) 10px, rgba(0, 0, 0, 0) 16px);
-}
 .doc-thumb img {
   width: 100%;
   height: 100%;
