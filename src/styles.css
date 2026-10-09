@@ -1237,8 +1237,10 @@ textarea {
   color: var(--accent);
 }
 .doc-more {
-  flex: 0 0 auto;
-  margin-left: auto;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   width: 30px;
   height: 28px;
   border: 0;
@@ -1409,15 +1411,16 @@ textarea {
 
 /* 캡션 — 카테고리(없으면 '미분류')와 더보기(⋯)를 같은 높이(28px)로 맞춘 한 줄 */
 .doc-cap {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
   margin-top: 2px;
 }
 .doc-cap .doc-cat-line {
   flex: 1 1 auto;
   margin: 0;
+  padding-right: 30px; /* ⋯ 자리 — 28px 행 높이를 없애 제목·카테고리 간격을 좁힌다 */
 }
 
 /* ───────── 메뉴 / 모달 / 시트 ───────── */
