@@ -26,6 +26,7 @@ import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
+import { Menu, MenuItem } from '../library/Library'
 
 export function Editor({ docId }: { docId: ID }) {
   const hostRef = useRef<HTMLElement>(null)
@@ -330,6 +331,7 @@ function fmtBytes(n: number) {
 
 function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
   const view = useUI((s) => s.view)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   return (
     <div className="page-indicator">
       {paged && (
@@ -340,9 +342,38 @@ function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
           / {view.pageCount}
         </span>
       )}
-      <button onClick={() => engine.resetView()} aria-label={paged ? '폭 맞춤' : '원점, 100%'}>
+      {/* 누르면 보기 메뉴 — 무엇이 초기화되는지 글자로 보여 준다 (C-4). 엔진에 있는 동작만 넣는다. */}
+      <button
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect()
+          setMenu((m) => (m ? null : { x: r.right, y: r.bottom }))
+        }}
+        aria-label="보기 옵션"
+        aria-haspopup="menu"
+        aria-expanded={!!menu}
+      >
         {Math.round(view.zoom * 100)}%
       </button>
+      {menu && (
+        <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <MenuItem
+            icon="fit"
+            label={paged ? '폭 맞춤' : '원점으로 (100%)'}
+            onClick={() => {
+              setMenu(null)
+              engine.resetView()
+            }}
+          />
+          <MenuItem
+            icon="grid"
+            label="전체 보기"
+            onClick={() => {
+              setMenu(null)
+              engine.fitAll()
+            }}
+          />
+        </Menu>
+      )}
     </div>
   )
 }
