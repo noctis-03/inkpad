@@ -1545,7 +1545,7 @@ textarea {
   height: 90px;
   border-radius: var(--r-md);
   border: 1px dashed var(--muted-2);
-  background: #ffffff;
+  background: var(--thumb-paper);
   touch-action: none;
 }
 .tester-result {
@@ -1788,8 +1788,8 @@ textarea {
 .thumb {
   width: 100%;
   border-radius: 4px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px #00000026;
+  background: var(--thumb-paper);
+  box-shadow: var(--e1);
   overflow: hidden;
 }
 .thumb img {
