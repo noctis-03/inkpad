@@ -1134,19 +1134,19 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 페이지 결 — 오른쪽 종이 단면 2겹 */
+/* 페이지 결 — 오른쪽 종이 단면 2겹 (조금 쫍게) */
 .doc-edge {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 10px;
+  width: 7px;
   z-index: 2;
   pointer-events: none;
   border-left: 1px solid var(--line-2);
   background:
-    repeating-linear-gradient(180deg, #0000000d 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(180deg, var(--thumb-paper) 0 3px, var(--line) 3px 4px);
+    repeating-linear-gradient(180deg, #0000000d 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(180deg, var(--thumb-paper) 0 2px, var(--line) 2px 3px);
 }
 .doc-thumb img {
   width: 100%;

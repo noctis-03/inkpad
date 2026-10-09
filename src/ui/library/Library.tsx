@@ -288,10 +288,11 @@ export function Library() {
   // 섹션·보기·검색이 바뀌면 오버레이는 닫는다
   useEffect(() => setRevealKey(null), [section, prefs.view, dq])
 
-  /** 격자에서 카드 누름 — 처음엔 오버레이를 열고, 이미 열려 있으면 닫는다. 목록 보기는 곧바로 연다. */
+  /** 격자에서 카드 누름 — 항상 오버레이만 연다(바로 열지 않는다). 닫기는 바깥·베일 누름.
+      토글로 두면 탭 한 번에 클릭이 두 번 들어올 때 곧바로 열려 버려서, 열기만 하도록 고정했다. */
   const cardTap = (key: string, onOpen: () => void) => {
     if (prefs.view !== 'grid') return onOpen()
-    setRevealKey((cur) => (cur === key ? null : key))
+    setRevealKey(key)
   }
   /** 노트 열기 — 편집모드(false) / 뷰어보드(true) */
   const openIn = (d: DocumentMeta, card: HTMLElement | null | undefined, viewOnly: boolean) => {

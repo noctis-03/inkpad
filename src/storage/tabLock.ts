@@ -12,8 +12,14 @@ channel?.addEventListener('message', (ev: MessageEvent<Msg>) => {
   }
 })
 
-/** 다른 탭이 이미 열고 있으면 false */
-export function acquireDocLock(doc: string, timeoutMs = 250): Promise<boolean> {
+/**
+ * 편집 잠금. 다른 탭이 이미 열고 있으면 false.
+ * readOnly(뷰어보드)로 열면 애초에 잠그지 않는다 — 편집할 수 없으니 다른 탭의 편집도 막지 않는다.
+ * 읽기 전용 판정은 이 한 곳(!lock)에서만 나온다 (탭 충돌 · 뷰어보드 공통 경로).
+ */
+export function acquireDocLock(doc: string, opts?: { readOnly?: boolean; timeoutMs?: number }): Promise<boolean> {
+  if (opts?.readOnly) return Promise.resolve(false) // 읽기 전용 — 잠금 없음
+  const timeoutMs = opts?.timeoutMs ?? 250
   if (!channel) {
     open.add(doc)
     return Promise.resolve(true)

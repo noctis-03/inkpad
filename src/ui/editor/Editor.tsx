@@ -102,17 +102,16 @@ export function Editor({ docId }: { docId: ID }) {
     pdf.assetProvider = (assetId) => ensureAssetLocal(assetId)
     pdf.onAssetError = (_assetId, message) => useUI.getState().toast(message, 'error')
     ;(async () => {
-      // 뷰어보드로 열기 — 편집 도구 없이 보기 전용으로 연다 (라이브러리 카드가 1회 전달)
+      // 뷰어보드 의도(1회) — 읽기 전용 판정은 acquireDocLock 한 곳으로 합쳐진다 (탭 충돌과 같은 경로)
       const wantView = useUI.getState().viewOnly
       if (wantView) useUI.setState({ viewOnly: false })
       try {
-        const [loaded, lock] = await Promise.all([loadDocument(docId), acquireDocLock(docId)])
+        const [loaded, lock] = await Promise.all([loadDocument(docId), acquireDocLock(docId, { readOnly: wantView })])
         if (disposed) return
         if (!lock) {
           setReadOnly(true)
-          toast('이 문서는 다른 탭에서 열려 있어 읽기 전용으로 엽니다.', 'info')
+          if (!wantView) toast('이 문서는 다른 탭에서 열려 있어 읽기 전용으로 엽니다.', 'info')
         }
-        if (wantView) setReadOnly(true)
         setDoc(loaded.doc)
         setPages(loaded.pages)
         const st = useUI.getState()
