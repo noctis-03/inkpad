@@ -1098,7 +1098,7 @@ export function Library() {
             </button>
             <button
               data-indicator-key="recent"
-              className={'tree-item tree-recent' + (recentDocs.length ? ' is-shown' : '') + (recentActive ? ' is-active' : '')}
+              className={'tree-item tree-recent' + (section.kind === 'all' ? ' is-shown' : '') + (recentActive ? ' is-active' : '')}
               onClick={() => {
                 setSection({ kind: 'all' })
                 setRecent(loadRecentDocs())
