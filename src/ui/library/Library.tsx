@@ -6,6 +6,7 @@ import { settle } from '../motion/settle'
 import { CountUp } from '../motion/CountUp'
 import { SPRING, dur, motionLevel } from '../motion/motion'
 import { Icon } from '../Icon'
+import { Segmented } from '../Segmented'
 import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
@@ -15,7 +16,7 @@ import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
-import { categoryColor, categoryTag, formatDate } from '../../shared/util'
+import { categoryColor, formatDate } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import {
   createFolder,
@@ -869,11 +870,26 @@ export function Library() {
         <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
           <Icon name="sidebar" />
         </button>
-        <h1 key={title} className="library-title">{title}</h1>
+        <h1 key={title} className="library-title">
+          <span className="title-text">{title}</span>
+          <span className="title-count">
+            <CountUp value={recentActive ? recentDocs.length : items.length} />
+          </span>
+        </h1>
         <div className="search-box">
           <Icon name="search" size={18} />
           <input id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
+        <Segmented
+          className="view-seg"
+          value={prefs.view}
+          options={[
+            ['grid', '격자'],
+            ['list', '목록']
+          ]}
+          onChange={(v) => setPrefs({ view: v })}
+          label="보기 방식"
+        />
         <select
           className="sort-select"
           value={prefs.sort}
@@ -884,13 +900,6 @@ export function Library() {
           <option value="created">만든 날</option>
           <option value="title">제목</option>
         </select>
-        <button
-          className="tb-btn"
-          onClick={() => setPrefs({ view: prefs.view === 'grid' ? 'list' : 'grid' })}
-          aria-label={prefs.view === 'grid' ? '리스트 보기' : '그리드 보기'}
-        >
-          <Icon name={prefs.view === 'grid' ? 'list' : 'grid'} />
-        </button>
         <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
           <Icon name="gear" />
         </button>
@@ -1089,9 +1098,6 @@ export function Library() {
                     onClick={() => navigate({ name: 'app', appId: i.a.id })}
                   >
                     <div className="doc-thumb">
-                      {i.a.category && (
-                        <span className="doc-tag" style={categoryTag(i.a.category)}>{i.a.category}</span>
-                      )}
                       <Icon name="app" size={36} />
                       {rowPill(rowSyncState(i.a), true)}
                     </div>
@@ -1099,7 +1105,12 @@ export function Library() {
                       <h3 className="doc-title">{i.a.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.a.category && <span className="doc-cat-text" style={categoryTag(i.a.category)}>{i.a.category}</span>}
+                          {i.a.category && (
+                            <>
+                              <i className="cat-dot" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
+                              <span className="doc-cat-name">{i.a.category}</span> ·{' '}
+                            </>
+                          )}
                           <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
                         </p>
                         {rowPill(rowSyncState(i.a))}
@@ -1126,9 +1137,6 @@ export function Library() {
                     onClick={() => navigate({ name: 'file', fileId: i.f.id })}
                   >
                     <div className="doc-thumb">
-                      {i.f.category && (
-                        <span className="doc-tag" style={categoryTag(i.f.category)}>{i.f.category}</span>
-                      )}
                       <Icon name="file" size={36} />
                       {rowPill(rowSyncState(i.f), true)}
                     </div>
@@ -1136,7 +1144,12 @@ export function Library() {
                       <h3 className="doc-title">{i.f.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.f.category && <span className="doc-cat-text" style={categoryTag(i.f.category)}>{i.f.category}</span>}
+                          {i.f.category && (
+                            <>
+                              <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
+                              <span className="doc-cat-name">{i.f.category}</span> ·{' '}
+                            </>
+                          )}
                           <span className="doc-meta-date">
                             {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
                           </span>
@@ -1166,9 +1179,6 @@ export function Library() {
                     onClick={(e) => (section.kind === 'trash' ? setMenu({ doc: i.d, x: 0, y: 0 }) : open(i.d, e.currentTarget))}
                   >
                     <div className="doc-thumb">
-                      {i.d.category && (
-                        <span className="doc-tag" style={categoryTag(i.d.category)}>{i.d.category}</span>
-                      )}
                       {thumbs.get(i.d.id) ? (
                         <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
                       ) : (
@@ -1182,7 +1192,12 @@ export function Library() {
                       <h3 className="doc-title">{i.d.title}</h3>
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.d.category && <span className="doc-cat-text" style={categoryTag(i.d.category)}>{i.d.category}</span>}
+                          {i.d.category && (
+                            <>
+                              <i className="cat-dot" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
+                              <span className="doc-cat-name">{i.d.category}</span> ·{' '}
+                            </>
+                          )}
                           <span className="doc-meta-date">
                             {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
                             {section.kind === 'trash' && i.d.deletedAt

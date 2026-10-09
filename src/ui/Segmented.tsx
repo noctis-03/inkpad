@@ -9,17 +9,19 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
-  label
+  label,
+  className
 }: {
   value: T
   options: [T, string][]
   onChange: (v: T) => void
   label: string
+  className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useIndicator(ref, value, 'x')
   return (
-    <div className="seg" ref={ref} role="radiogroup" aria-label={label}>
+    <div className={'seg' + (className ? ' ' + className : '')} ref={ref} role="radiogroup" aria-label={label}>
       {options.map(([val, text]) => (
         <button
           key={val}

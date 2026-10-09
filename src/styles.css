@@ -757,8 +757,8 @@ textarea {
 .library-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 10px;
+  padding: 10px 14px;
   min-height: 60px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -798,6 +798,13 @@ textarea {
 .library-header #new-doc-btn {
   flex-shrink: 0;
 }
+/* 시안(Interactive Motion v2) 상단 바 — 아이콘 버튼은 40px·라운드 12 */
+.library-header .tb-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border-radius: var(--r-lg);
+}
 .rev-message {
   margin: 2px 0 4px;
   font-size: var(--fs-sm);
@@ -807,26 +814,45 @@ textarea {
   white-space: nowrap;
 }
 .library-title {
-  margin: 0 8px 0 0;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   font-size: var(--fs-xl);
   font-weight: 700;
+  letter-spacing: -.01em;
   white-space: nowrap;
+}
+.library-title .title-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 30vw;
+}
+.title-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .search-box {
   flex: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 360px;
+  max-width: 300px;
   min-width: 120px;
   height: 38px;
-  padding: 0 10px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--tray);
   color: var(--muted);
+  transition: background .25s, box-shadow .35s var(--ft-ease), max-width .45s var(--ft-spring), color .2s;
+}
+.search-box:focus-within {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 10px 28px -12px #1f293740;
+  max-width: 400px;
+  color: var(--ink);
 }
 .search-box input {
   flex: 1;
@@ -839,10 +865,33 @@ textarea {
 }
 .sort-select {
   height: 38px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  padding: 0 8px;
+  border-radius: 12px;
+  border: 0;
+  background: var(--tray);
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 13px;
+}
+/* 상단 바의 격자/목록 세그먼트 — 시안의 .seg 축소판 (선택 칩은 인디케이터가 얹는다) */
+.library-header .seg {
+  flex: none;
+  gap: 0;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--tray);
+}
+.library-header .seg button {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.library-header .seg button.is-active {
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
 }
 .library-body {
   flex: 1;
@@ -850,7 +899,7 @@ textarea {
   min-height: 0;
 }
 .folder-tree {
-  flex: 0 0 240px;
+  flex: 0 0 220px;
   padding: 10px 8px;
   border-right: 1px solid var(--line);
   overflow-y: auto;
@@ -863,20 +912,23 @@ textarea {
 .tree-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  min-height: 44px;
-  padding: 0 8px 0 12px;
+  height: 40px;
+  padding: 0 10px;
   border: 0;
-  border-radius: var(--r-md);
+  border-radius: 10px;
   background: transparent;
-  font-size: 15px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
+  color: var(--muted);
 }
+/* 시안의 사이드바 — 선택 배경은 흰 인디케이터 칩(.motion-ind)이 대신 얹는다 */
 .tree-item.is-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
 }
 .tree-item.folder {
   padding-right: 4px;
@@ -887,11 +939,11 @@ textarea {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 44px;
+  height: 40px;
   border: 0;
   background: transparent;
   text-align: left;
-  font-size: 15px;
+  font-size: 14px;
   cursor: pointer;
   color: inherit;
 }
@@ -900,27 +952,35 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 사이드바 카테고리 점 — 태그(.doc-cat-text)와 같은 색으로 맞춘다 */
+/* 사이드바 카테고리 색 점 — 시안처럼 선택되면 살짝 커진다 */
 .tree-cat-dot {
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  margin: 0 5px 0 4px;
+  width: 9px;
+  height: 9px;
+  margin: 0 5px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px #00000014;
+  transition: transform .35s var(--spring-pop);
+}
+.tree-item.is-active .tree-cat-dot {
+  transform: scale(1.35);
 }
 .tree-item .count {
   margin-left: auto;
-  font-size: var(--fs-sm);
+  font-size: 11px;
+  font-weight: 400;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .tree-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 14px 4px 4px 12px;
-  font-size: var(--fs-sm);
+  margin: 0;
+  padding: 16px 10px 6px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: .04em;
   color: var(--muted);
 }
 .tree-item.trash {
@@ -991,9 +1051,9 @@ textarea {
   color: var(--muted);
   text-align: center;
 }
-/* ───────── 변경안 A · 책등 있는 노트 ─────────
-   미리보기 위 오버레이(배지·카테고리 칩·동기화 점)를 걷어내고
-   정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 미리보기 위 좌측 상단 태그로. */
+/* ───────── 시안 · 책등 있는 노트 ─────────
+   미리보기 위 오버레이(배지·카테고리 칩)를 걷어내고
+   정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 캡션의 색 점 + 이름. */
 .doc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1016,32 +1076,18 @@ textarea {
   justify-content: center;
   color: var(--muted-2);
 }
-/* 카테고리 태그 — 카드(미리보기) 좌측 상단에 얹는다.
-   목록형 캡션의 .doc-cat-text 와 같은 디자인(모서리 라운드)으로 맞춘다.
-   글자색·테두리·바탕(파스텔)은 카테고리 색을 인라인으로 주입한다( categoryTag ).
-   아래 회색 값은 인라인 스타일이 없을 때의 대비책이다 — 파스텔은 흰색과 섞은
-   불투명 색이라 필기 위에서도 읽힌다. 이름 텍스트가 항상 함께 있으므로
-   색만으로 뜻을 전달하지 않는다. */
-.doc-tag {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  z-index: 3;
-  max-width: calc(100% - 12px);
-  padding: 1px 6px;
-  border: 1px solid var(--tag-border);
-  border-radius: 5px;
-  background: var(--surface-3);
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
+/* 시안(Interactive Motion v2)의 카드 캡션 — 미리보기에는 동기화 태그만 얹고
+   카테고리는 캡션의 색 점 + 이름으로 보여 준다. 색은 categoryColor 가 주입한다. */
+.cat-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.doc-cat-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 리스트 보기의 48x60 미리보기에는 얹지 않는다 — 캡션의 .doc-cat-text 로 내려간다 */
-.doc-list .doc-tag {
-  display: none;
 }
 /* 페이지 결 — 오른쪽 종이 단면 2겹 */
 .doc-edge {
@@ -1061,25 +1107,7 @@ textarea {
   object-fit: cover;
   object-position: top;
 }
-/* 캡션의 카테고리 — 리스트 보기 전용 (그리드는 미리보기 위 .doc-tag 로 표시) */
-.doc-cat-text {
-  display: none;
-  flex: 0 1 auto;
-  min-width: 0;
-  padding: 1px 6px;
-  border: 1px solid var(--tag-border);
-  border-radius: 5px;
-  background: var(--surface-3);
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.doc-list .doc-cat-text {
-  display: inline-block;
-}
+/* (시안 적용) 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
 /* 캡션 한 줄 — 왼쪽 날짜, 오른쪽 더보기. align-items:center 로 더보기 버튼
    가운데가 날짜 줄과 같은 높이에 온다. */
 .doc-foot {
@@ -1104,7 +1132,7 @@ textarea {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   margin: 0;
   min-width: 0;
   font-size: 11.5px;
@@ -1117,49 +1145,47 @@ textarea {
 }
 /* 동기화 상태 — 8px 색 점 대신 말 라벨 (색만으로 전달하지 않는다).
    그리드: 카드(미리보기) 좌측 하단에 얹는다 / 리스트: 캡션 안에 인라인으로. */
+/* 시안의 동기화 태그 — 흰 알약 배지 + 상태색 글자·점 */
 .doc-state {
   flex: 0 0 auto;
-  padding: 1px 7px;
+  padding: 2px 8px 2px 6px;
   border-radius: 999px;
   font-size: 10.5px;
   font-weight: 600;
   white-space: nowrap;
-  background: var(--surface-2);
+  background: var(--chip);
   color: var(--muted);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  box-shadow: 0 0 0 1px var(--tag-border);
 }
 .doc-state.is-overlay {
   position: absolute;
   left: 6px;
   bottom: 6px;
   z-index: 3;
-  box-shadow: 0 1px 2px #0000001a, inset 0 0 0 1px var(--line-2);
+  box-shadow: 0 1px 2px #0000001a, 0 0 0 1px var(--tag-border);
 }
 /* 캡션 쪽 라벨은 리스트에서만 (그리드는 미리보기 위 .is-overlay) */
 .doc-state:not(.is-overlay) {
   display: none;
 }
 .doc-list .doc-state:not(.is-overlay) {
-  display: inline-block;
+  display: inline-flex;
   margin-left: auto;
 }
 .doc-list .doc-state.is-overlay {
   display: none;
 }
+.doc-state.s-new {
+  color: var(--muted);
+}
 .doc-state.s-same {
-  background: var(--success-soft);
   color: var(--success-ink);
-  box-shadow: inset 0 0 0 1px var(--success-line);
 }
 .doc-state.s-pending {
-  background: var(--warn-soft);
   color: var(--warn-ink);
-  box-shadow: inset 0 0 0 1px var(--warn-line);
 }
 .doc-state.s-remote-new {
-  background: var(--accent-soft-2);
   color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 .doc-more {
   flex: 0 0 auto;
@@ -1995,7 +2021,7 @@ textarea {
     top: 0;
     bottom: 0;
     left: 0;
-    width: 240px;
+    width: 220px;
     max-width: 84vw;
     box-shadow: var(--e2);
     overscroll-behavior: contain;
@@ -3759,8 +3785,8 @@ textarea {
 }
 .folder-tree .motion-ind {
   background: var(--chip);
-  border-radius: var(--r-md);
-  box-shadow: var(--raise);
+  border-radius: 10px;
+  box-shadow: var(--raise), 0 6px 14px -8px #1f293726;
 }
 .ft-tools .motion-ind,
 .ft-swatches .motion-ind,
