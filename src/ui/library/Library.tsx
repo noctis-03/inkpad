@@ -1201,14 +1201,14 @@ export function Library() {
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.a.title}</h3>
+                      {i.a.category && (
+                        <p className="doc-cat-line">
+                          <i className="cat-dot" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
+                          <span className="doc-cat-name">{i.a.category}</span>
+                        </p>
+                      )}
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.a.category && (
-                            <>
-                              <i className="cat-dot" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
-                              <span className="doc-cat-name">{i.a.category}</span> ·{' '}
-                            </>
-                          )}
                           <span className="doc-meta-date">HTML 앱 · {formatDate(i.a.updatedAt)}</span>
                         </p>
                         {rowPill(rowSyncState(i.a))}
@@ -1238,21 +1238,21 @@ export function Library() {
                       <Icon name="file" size={36} />
                       {rowPill(rowSyncState(i.f), true)}
                     </div>
-                    <div className="doc-info">
-                      <h3 className="doc-title">{i.f.title}</h3>
-                      <div className="doc-foot">
-                        <p className="doc-meta">
-                          {i.f.category && (
-                            <>
-                              <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
-                              <span className="doc-cat-name">{i.f.category}</span> ·{' '}
-                            </>
-                          )}
-                          <span className="doc-meta-date">
-                            {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
-                          </span>
-                        </p>
-                        {rowPill(rowSyncState(i.f))}
+                      <div className="doc-info">
+                        <h3 className="doc-title">{i.f.title}</h3>
+                        {i.f.category && (
+                          <p className="doc-cat-line">
+                            <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
+                            <span className="doc-cat-name">{i.f.category}</span>
+                          </p>
+                        )}
+                        <div className="doc-foot">
+                          <p className="doc-meta">
+                            <span className="doc-meta-date">
+                              {extOf(i.f.name).toUpperCase() || '파일'} · {formatDate(i.f.updatedAt)}
+                            </span>
+                          </p>
+                          {rowPill(rowSyncState(i.f))}
                         <button
                           className="doc-more"
                           aria-label="더보기"
@@ -1288,14 +1288,14 @@ export function Library() {
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
+                      {i.d.category && (
+                        <p className="doc-cat-line">
+                          <i className="cat-dot" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
+                          <span className="doc-cat-name">{i.d.category}</span>
+                        </p>
+                      )}
                       <div className="doc-foot">
                         <p className="doc-meta">
-                          {i.d.category && (
-                            <>
-                              <i className="cat-dot" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
-                              <span className="doc-cat-name">{i.d.category}</span> ·{' '}
-                            </>
-                          )}
                           <span className="doc-meta-date">
                             {i.d.mode === 'infinite' ? '무한' : `${i.d.pageOrder.length}쪽`} ·{' '}
                             {section.kind === 'trash' && i.d.deletedAt

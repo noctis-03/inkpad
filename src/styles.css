@@ -1096,13 +1096,22 @@ textarea {
   justify-content: center;
   color: var(--muted-2);
 }
-/* 시안(Interactive Motion v2)의 카드 캡션 — 미리보기에는 동기화 태그만 얹고
-   카테고리는 캡션의 색 점 + 이름으로 보여 준다. 색은 categoryColor 가 주입한다. */
+/* 시안(Interactive Motion v2)의 카드 캡션 — 카테고리는 색 점 + 이름 한 줄로 먼저 보여 주고,
+   쪽수·날짜는 그 아래 줄에서 더보기(⋯) 버튼과 같은 높이(28px)에 맞춘다. */
 .cat-dot {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: 50%;
+}
+.doc-cat-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 0;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 .doc-cat-name {
   overflow: hidden;
