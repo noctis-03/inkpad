@@ -1100,29 +1100,37 @@ textarea {
   cursor: pointer;
   -webkit-touch-callout: none;
 }
-/* 카드 겹침 없음 — 카드는 한 장뿐이고, 그 상단에 카테고리 색 띠를 두어
-   쪽수·날짜를 앉힌다. 별도 카드 요소·음수 오프셋·겹침이 전혀 없다.
-   띠는 카테고리 파스텔 바탕 + 카테고리 색 글자를 따른다. */
+/* 카드 — 한 장뿐이고, 상단에 카테고리 색 띠를 얹어 쪽수·날짜를 앉힌다.
+   띠는 미리보기 위에 겹쳐 얹히되 반투명이라 뒤 미리보기가 살짝 비친다
+   (배경색은 카테고리 색을 투명과 섞은 인라인 color-mix). */
 .doc-grid .doc-plate {
+  position: relative;
   border-radius: var(--r-lg);
   overflow: hidden; /* 카드 모서리에서 띠·미리보기를 함께 잘라 낸다 */
   background: var(--thumb-paper);
   box-shadow: var(--e1);
 }
 .doc-grid .doc-stack {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2; /* 미리보기 위에 얹힌다 */
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 23px;
+  height: 21px;
   padding: 0 8px;
-  background: var(--thumb-paper); /* 카테고리 파스텔이 인라인 스타일로 덮는다 */
+  background: var(--thumb-paper); /* 카테고리 반투명 색이 인라인 스타일로 덮는다 */
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px); /* 뒤 미리보기 위에서도 글자가 읽히게 */
 }
 .doc-grid .doc-stack-meta {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10px; /* 쪽수·날짜를 한 단계 작게 */
+  font-size: 9.5px; /* 쪽수·날짜를 더 작게 */
   font-weight: 500;
 }
 .doc-grid .doc-thumb {

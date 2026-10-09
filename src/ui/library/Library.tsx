@@ -1241,7 +1241,10 @@ export function Library() {
                       {prefs.view === 'grid' && (
                         <div
                           className="doc-stack"
-                          style={{ background: categoryTag(i.a.category).background, color: categoryTag(i.a.category).color }}
+                          style={{
+                            background: `color-mix(in srgb, ${categoryTag(i.a.category).color} 22%, transparent)`,
+                            color: categoryTag(i.a.category).color
+                          }}
                         >
                           <span className="doc-stack-meta">{appMetaText(i.a)}</span>
                         </div>
@@ -1292,7 +1295,10 @@ export function Library() {
                       {prefs.view === 'grid' && (
                         <div
                           className="doc-stack"
-                          style={{ background: categoryTag(i.f.category).background, color: categoryTag(i.f.category).color }}
+                          style={{
+                            background: `color-mix(in srgb, ${categoryTag(i.f.category).color} 22%, transparent)`,
+                            color: categoryTag(i.f.category).color
+                          }}
                         >
                           <span className="doc-stack-meta">{fileMetaText(i.f)}</span>
                         </div>
@@ -1344,7 +1350,10 @@ export function Library() {
                       {prefs.view === 'grid' && (
                         <div
                           className="doc-stack"
-                          style={{ background: categoryTag(i.d.category).background, color: categoryTag(i.d.category).color }}
+                          style={{
+                            background: `color-mix(in srgb, ${categoryTag(i.d.category).color} 22%, transparent)`,
+                            color: categoryTag(i.d.category).color
+                          }}
                         >
                           <span className="doc-stack-meta">{docMetaText(i.d)}</span>
                         </div>
