@@ -7,7 +7,7 @@ import { trackRecentDoc } from '../../shared/recentDocs'
 import { recallPassword, rememberPassword } from '../../io/passwords'
 import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
-import { hasThumbnail } from '../../io/docThumb'
+import { emitThumbsChanged, hasThumbnail } from '../../io/docThumb'
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
 import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../sync/assets'
@@ -178,6 +178,7 @@ export function Editor({ docId }: { docId: ID }) {
           if (sticky !== null) useUI.getState().dismissToast(sticky)
           if (blob) {
             await putThumbnail(docId, blob)
+            emitThumbsChanged()
             if (!had) useUI.getState().toast('미리보기를 만들었습니다.', 'success')
           }
           await pdf.destroy()

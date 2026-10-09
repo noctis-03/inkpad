@@ -13,6 +13,16 @@ import type { ID, Page, Stroke } from '../shared/model'
 
 const THUMB_W = 320
 
+/** 미리보기가 새로 만들어졌을 때 라이브러리 카드가 즉시 다시 읽도록 알린다 */
+export const THUMBS_EVENT = 'inkpad-thumbs-changed'
+const thumbsChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-thumbs') : null
+if (thumbsChannel) thumbsChannel.onmessage = () => window.dispatchEvent(new Event(THUMBS_EVENT))
+export function emitThumbsChanged() {
+  window.dispatchEvent(new Event(THUMBS_EVENT))
+  thumbsChannel?.postMessage(Date.now())
+}
+
+
 /** 획을 아래 레이어(형광펜) → 위 레이어(펜) 순, 같은 레이어는 z 순으로. */
 const byLayerZ = (a: Stroke, b: Stroke) => (a.layer === b.layer ? a.z - b.z : a.layer === 'under' ? -1 : 1)
 
@@ -112,13 +122,15 @@ async function collectMissingThumbnails(docIds?: ID[]): Promise<ID[]> {
  * 실패는 삼킨다 — 미리보기는 선택 사항이다.
  */
 export async function refreshMissingThumbnails(docIds?: ID[]): Promise<void> {
+  let made = 0
   for (const id of await collectMissingThumbnails(docIds)) {
     try {
-      await regenerateThumbnail(id)
+      if (await regenerateThumbnail(id)) made++
     } catch {
       /* 미리보기는 선택 사항 */
     }
   }
+  if (made) emitThumbsChanged()
 }
 
 /**
@@ -138,7 +150,10 @@ export async function refreshMissingThumbnailsWithToast(docIds?: ID[]): Promise<
     }
   }
   useUI.getState().dismissToast(sticky)
-  if (made) useUI.getState().toast(`미리보기 ${made}개를 만들었습니다.`, 'success')
+  if (made) {
+    useUI.getState().toast(`미리보기 ${made}개를 만들었습니다.`, 'success')
+    emitThumbsChanged() // 라이브러리 카드가 새로고침 없이 즉시 갱신된다
+  }
   return made
 }
 

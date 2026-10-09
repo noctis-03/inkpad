@@ -37,6 +37,7 @@ import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, type CardSyncState } from '../../sync/sync'
+import { THUMBS_EVENT } from '../../io/docThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { confirmTransfer, uploadChoice } from '../../sync/transfer'
@@ -213,6 +214,17 @@ export function Library() {
     if (section.kind !== 'all') setRecentOnly(false)
   }, [section])
 
+  /** 미리보기(썸네일)만 다시 읽는다 — 미리보기 생성 직후 카드에 새로고침 없이 반영 */
+  const refreshThumbs = useCallback(async () => {
+    const th = await getThumbnails()
+    setThumbs((old) => {
+      old.forEach((url) => URL.revokeObjectURL(url))
+      const m = new Map<ID, string>()
+      th.forEach((blob, id) => m.set(id, URL.createObjectURL(blob)))
+      return m
+    })
+  }, [])
+
   const refresh = useCallback(async () => {
     const [d, t, f, th, hid, ap, fls, st] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates()])
     setDocs(d)
@@ -240,9 +252,12 @@ export function Library() {
     const onRemote = () => void refresh()
     window.addEventListener(REMOTE_EVENT, onRemote)
     window.addEventListener(CLOUD_STATES_EVENT, onRemote) // 동기화창에서 클라우드 목록을 새로고침하면 점도 다시 계산
+    const onThumbs = () => void refreshThumbs()
+    window.addEventListener(THUMBS_EVENT, onThumbs)
     return () => {
       window.removeEventListener(REMOTE_EVENT, onRemote)
       window.removeEventListener(CLOUD_STATES_EVENT, onRemote)
+      window.removeEventListener(THUMBS_EVENT, onThumbs)
     }
   }, [refresh])
 
