@@ -24,8 +24,8 @@ const tb = load<{ pos: ToolbarPos; collapsed: boolean }>(LS_TOOLBAR, { pos: 'top
 if (!TOOLBAR_POS.includes(tb.pos)) tb.pos = 'top'
 const blocksLs = load<{ visible: boolean }>(LS_BLOCKS, { visible: true })
 
-export const PEN_COLORS = ['#111827ff', '#2563ebff', '#dc2626ff', '#059669ff', '#7c3aedff', '#ea580cff', '#6b7280ff', '#db2777ff']
-export const HL_COLORS = ['#facc1566', '#4ade8066', '#60a5fa66', '#f472b666', '#fb923c66']
+export const PEN_COLORS = ['#1c1b19ff', '#1f3a7aff', '#2b5bd7ff', '#c4302bff', '#1f7a4dff', '#6a3fbfff', '#d0632bff', '#77736cff']
+export const HL_COLORS = ['#ffd84a66', '#7ee08a66', '#7cc0ff66', '#ff9cc866', '#ffb36b66']
 export const PEN_COLOR_NAMES = ['먹', '파랑', '빨강', '초록', '보라', '주황', '회색', '분홍']
 export const HL_COLOR_NAMES = ['노랑', '연두', '하늘', '분홍', '살구']
 
@@ -44,6 +44,38 @@ const DEFAULT_STYLE: ToolStyle = {
   pen: { color: PEN_COLORS[0], width: PEN_WIDTHS[2] },
   highlighter: { color: HL_COLORS[0], width: HL_WIDTHS[1] },
   eraserSize: ERASER_SIZES[1]
+}
+
+/**
+ * 예전 팔레트 색이 저장된 사용자를 위한 최근접 색 보정 (D-1).
+ * localStorage(inkpad.style.v2)의 선택색이 새 팔레트에 없으면 선택 표시가 사라지므로
+ * 가장 가까운 새 색으로 옮긴다. 이미 그린 획의 색은 그대로다.
+ */
+function nearestOf(hex: string, palette: string[]): string {
+  const ch = (h: string, i: number) => parseInt(h.slice(i, i + 2), 16)
+  const r = ch(hex, 1)
+  const g = ch(hex, 3)
+  const b = ch(hex, 5)
+  let best = palette[0]
+  let bd = Infinity
+  for (const c of palette) {
+    const d = (r - ch(c, 1)) ** 2 + (g - ch(c, 3)) ** 2 + (b - ch(c, 5)) ** 2
+    if (d < bd) {
+      bd = d
+      best = c
+    }
+  }
+  return best
+}
+
+const loadedStyle = load<ToolStyle>(LS_STYLE, DEFAULT_STYLE)
+const initialStyle: ToolStyle = {
+  ...loadedStyle,
+  pen: { ...loadedStyle.pen, color: PEN_COLORS.includes(loadedStyle.pen.color) ? loadedStyle.pen.color : nearestOf(loadedStyle.pen.color, PEN_COLORS) },
+  highlighter: {
+    ...loadedStyle.highlighter,
+    color: HL_COLORS.includes(loadedStyle.highlighter.color) ? loadedStyle.highlighter.color : nearestOf(loadedStyle.highlighter.color, HL_COLORS)
+  }
 }
 
 function load<T>(key: string, def: T): T {
@@ -142,7 +174,7 @@ export const useUI = create<UIState>((set, get) => ({
   tool: 'pen',
   prevTool: 'eraser',
   settings: load(LS_SETTINGS, DEFAULT_SETTINGS),
-  style: load(LS_STYLE, DEFAULT_STYLE),
+  style: initialStyle,
   library: load<LibraryPrefs>(LS_LIBRARY, { view: 'grid', sort: 'updated' }),
   stats: null,
   view: { canUndo: false, canRedo: false, zoom: 1, currentPage: 0, pageCount: 1 },
