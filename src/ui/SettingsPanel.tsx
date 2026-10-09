@@ -5,15 +5,21 @@ import { Icon } from './Icon'
 import { NetUsageSection } from './NetUsageDebug'
 import { useIndicator } from './motion/useIndicator'
 
-function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+/**
+ * 설정 행. asLabel이 true면 <label>로 감싸 컨트롤이 하나뿐인 행(토글·슬라이더·셀렉트)에서
+ * 라벨 클릭이 컨트롤을 향하게 한다. 세그먼트 버튼 묶음처럼 컨트롤이 여러 개인 행은
+ * <div>로 그린다 — <label> 안에 버튼이 여러 개 있으면 라벨 클릭이 첫 번째 버튼을 눌러 버린다 (A-1).
+ */
+function Row({ label, hint, children, asLabel = true }: { label: string; hint?: ReactNode; children: ReactNode; asLabel?: boolean }) {
+  const Tag = asLabel ? 'label' : 'div'
   return (
-    <label className="setting-row">
+    <Tag className="setting-row">
       <span className="setting-label">
         {label}
         {hint && <small>{hint}</small>}
       </span>
       <span className="setting-control">{children}</span>
-    </label>
+    </Tag>
   )
 }
 
@@ -337,10 +343,10 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
 
       <section className="panel-section">
         <h3>화면</h3>
-        <Row label="테마" hint="자동은 기기의 외관(라이트/다크) 설정을 따릅니다">
+        <Row label="테마" hint="자동은 기기의 외관(라이트/다크) 설정을 따릅니다" asLabel={false}>
           <ThemeSelect />
         </Row>
-        <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다">
+        <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다" asLabel={false}>
           <MotionSelect />
         </Row>
       </section>
