@@ -1,7 +1,8 @@
 // 작업보드 프리셋: 프리셋 1개 = Drive 파일 1개 (Inkpad/boards/<id>.json).
 // 앱·기타 파일과 같은 규칙 — 프리셋은 작은 JSON이라 gzip 없이 평문으로 올린다.
-// 여기 담기는 것은 "바로가기의 위치"뿐이고 실제 노트/앱/파일 바이트는 각각의 경로로 동기화된다.
-import { BOARD_PRESET_NAME_MAX, normalizeBoard, type Board, type BoardPreset } from '../shared/board'
+// 담기는 것은 보드 설정(배경화면·시각화 형태·크기·정렬·필터)뿐이고,
+// 노트·앱·파일 내용은 각자의 동기화 경로로 오간다.
+import { BOARD_PRESET_NAME_MAX, cfgOf, normalizeBoard, parseCfg, type Board, type BoardCfg, type BoardPreset } from '../shared/board'
 import type { ID } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
@@ -22,6 +23,8 @@ function fitProp(key: string, value: string) {
 
 const cleanName = (name: string) => (name.trim() || '이름 없는 프리셋').slice(0, BOARD_PRESET_NAME_MAX)
 
+const cfgOfPreset = (p: BoardPreset): BoardCfg => ({ wallpaper: p.wallpaper, visual: p.visual, size: p.size, sort: p.sort, filter: p.filter })
+
 // ───────── 로컬 ─────────
 
 export async function listPresets(): Promise<BoardPreset[]> {
@@ -29,35 +32,19 @@ export async function listPresets(): Promise<BoardPreset[]> {
 }
 export const getPreset = (id: ID) => db.boardPresets.get(id)
 
-/** 지금 보드를 새 프리셋으로 저장 */
+/** 지금 보드 설정을 새 프리셋으로 저장 */
 export async function createPreset(name: string, board: Board): Promise<BoardPreset> {
+  const b = normalizeBoard(board)
   const now = Date.now()
-  const preset: BoardPreset = {
-    id: ulid(),
-    name: cleanName(name),
-    wallpaper: board.wallpaper,
-    snap: board.snap,
-    shortcuts: normalizeBoard(board).shortcuts,
-    createdAt: now,
-    updatedAt: now,
-    pending: 'upsert'
-  }
+  const preset: BoardPreset = { id: ulid(), name: cleanName(name), ...b, createdAt: now, updatedAt: now, pending: 'upsert' }
   await db.boardPresets.add(preset)
   emit()
   return preset
 }
 
-/** 기존 프리셋을 지금 보드로 덮어쓰기 */
+/** 기존 프리셋을 지금 보드 설정으로 덮어쓰기 */
 export async function overwritePreset(id: ID, board: Board): Promise<boolean> {
-  const b = normalizeBoard(board)
-  await db.boardPresets.update(id, {
-    wallpaper: b.wallpaper,
-    snap: b.snap,
-    shortcuts: b.shortcuts,
-    updatedAt: Date.now(),
-    pending: 'upsert',
-    cloudDetachedAt: undefined
-  })
+  await db.boardPresets.update(id, { ...normalizeBoard(board), updatedAt: Date.now(), pending: 'upsert', cloudDetachedAt: undefined })
   emit()
   return tryFlush(id)
 }
@@ -96,10 +83,12 @@ async function boardsFolder(): Promise<string> {
   return id
 }
 
+/** cfg(설정 요약)를 appProperties에 함께 올려, 목록을 본문 없이 그릴 수 있게 한다 */
 const presetProps = (p: BoardPreset) => ({
   presetId: p.id,
   updatedAt: String(p.updatedAt),
-  title: fitProp('title', p.name)
+  title: fitProp('title', p.name),
+  cfg: cfgOf(cfgOfPreset(p))
 })
 
 async function flushOne(id: ID, folderId: string) {
@@ -115,7 +104,17 @@ async function flushOne(id: ID, folderId: string) {
     const m = await drive.getMeta(fileId)
     if (!m || m.trashed) fileId = undefined
   }
-  const payload = { id: p.id, name: p.name, wallpaper: p.wallpaper, snap: p.snap, shortcuts: p.shortcuts, createdAt: p.createdAt, updatedAt: p.updatedAt }
+  const payload = {
+    id: p.id,
+    name: p.name,
+    wallpaper: p.wallpaper,
+    visual: p.visual,
+    size: p.size,
+    sort: p.sort,
+    filter: p.filter,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt
+  }
   const res = await drive.upload(
     new Blob([JSON.stringify(payload)], { type: 'application/json' }),
     { name: `${p.id}.json`, mimeType: 'application/json', appProperties: presetProps(p) },
@@ -164,7 +163,8 @@ export type CloudPresetState = 'installed' | 'update' | 'available' | 'pending' 
 export interface CloudPresetInfo {
   presetId: ID
   name: string
-  shortcutCount: number
+  /** 보드 설정 (클라우드 전용 프리셋은 appProperties.cfg 에서 읽는다) */
+  cfg: BoardCfg
   remoteUpdatedAt?: number
   localUpdatedAt?: number
   driveFileId?: string
@@ -178,7 +178,7 @@ async function localCloudPresets(): Promise<CloudPresetInfo[]> {
     .map((p) => ({
       presetId: p.id,
       name: p.name,
-      shortcutCount: p.shortcuts.length,
+      cfg: cfgOfPreset(p),
       localUpdatedAt: p.updatedAt,
       driveFileId: p.fileId,
       state: (p.cloudDetachedAt && !p.fileId
@@ -210,7 +210,7 @@ export async function listCloudPresets(): Promise<CloudPresetInfo[]> {
     out.push({
       presetId,
       name: r.appProperties?.title || local?.name || '작업보드 프리셋',
-      shortcutCount: local?.shortcuts.length ?? 0,
+      cfg: local ? cfgOfPreset(local) : parseCfg(r.appProperties?.cfg),
       remoteUpdatedAt: remoteAt || undefined,
       localUpdatedAt: local?.updatedAt,
       driveFileId: r.id,
@@ -227,14 +227,7 @@ export async function listCloudPresets(): Promise<CloudPresetInfo[]> {
       const m = await drive.getMeta(p.fileId).catch(() => undefined)
       state = m === null || m?.trashed ? 'cloud-missing' : 'installed'
     }
-    out.push({
-      presetId: p.id,
-      name: p.name,
-      shortcutCount: p.shortcuts.length,
-      localUpdatedAt: p.updatedAt,
-      driveFileId: p.fileId,
-      state
-    })
+    out.push({ presetId: p.id, name: p.name, cfg: cfgOfPreset(p), localUpdatedAt: p.updatedAt, driveFileId: p.fileId, state })
   }
   return out.sort((a, b) => (b.remoteUpdatedAt ?? b.localUpdatedAt ?? 0) - (a.remoteUpdatedAt ?? a.localUpdatedAt ?? 0))
 }
@@ -248,13 +241,10 @@ export async function downloadPreset(presetId: ID): Promise<BoardPreset> {
   if (!r) throw new Error('클라우드에서 프리셋을 찾지 못했습니다.')
   const raw = await drive.download<Record<string, unknown>>(r.id)
   const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || Date.now()
-  const board = normalizeBoard(raw)
   const preset: BoardPreset = {
     id: presetId,
     name: typeof raw.name === 'string' && raw.name.trim() ? cleanName(String(raw.name)) : r.appProperties?.title || '작업보드 프리셋',
-    wallpaper: board.wallpaper,
-    snap: board.snap,
-    shortcuts: board.shortcuts,
+    ...normalizeBoard(raw),
     createdAt: Number(raw.createdAt) || local?.createdAt || remoteAt,
     updatedAt: remoteAt,
     fileId: r.id

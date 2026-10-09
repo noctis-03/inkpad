@@ -1,38 +1,33 @@
-// 작업보드(Work Board) 데이터 모델.
-// 보드 = 윈도우 배경화면처럼 깔리는 판 + 그 위에 사용자가 배치한 '바로가기'(실제 파일이 아니라 위치 정보).
-// 바로가기 배열(위치 포함)이 곧 사용자화 결과이고, 이것을 프리셋으로 저장해 Drive로 공유한다.
+// 작업보드(Work Board) — 노트·앱·파일을 배경화면 위에 '그리드 시각화'로 보여 주는 보드.
+// 바로가기(자유 배치) 개념은 없다. 보드는 설정 한 벌만 갖고, 그 설정을 프리셋으로 저장해 Drive로 공유한다.
 import type { ID } from './model'
 
-export type ShortcutKind = 'doc' | 'app' | 'file'
+export type BoardVisual = 'grid' | 'hex'
+export type BoardSize = 'sm' | 'md' | 'lg'
+export type BoardSort = 'updated' | 'created' | 'title'
+export type BoardFilter = 'all' | 'docs' | 'apps' | 'files'
 
-/** 바로가기 하나 — 어떤 항목을(kind+refId) 보드 어디에(x,y) 두었는지 */
-export interface BoardShortcut {
-  /** 바로가기 자체의 id (같은 항목을 여러 번 놓을 수 있다) */
-  id: string
-  kind: ShortcutKind
-  /** 문서 · 앱 · 기타 파일의 id */
-  refId: ID
-  /** 보드 기준 정규화 좌표 (0..1) — 타일 중심 */
-  x: number
-  y: number
-}
-
-/** 보드 한 장의 상태 (배경 + 배치) */
+/** 보드 설정 — 배경화면 + 시각화 방식 (Drive 프리셋에 담기는 전부) */
 export interface Board {
   /** BOARD_WALLPAPERS 의 key */
   wallpaper: string
-  /** 벌집(허니컴) 격자에 스냅할지 */
-  snap: boolean
-  shortcuts: BoardShortcut[]
+  /** 시각화 형태: 격자 / 벌집 */
+  visual: BoardVisual
+  /** 카드(타일) 크기 */
+  size: BoardSize
+  /** 정렬 */
+  sort: BoardSort
+  /** 표시할 항목 */
+  filter: BoardFilter
 }
 
-/** Drive로 주고받는 프리셋 (보드 한 장 + 이름) */
-export interface BoardPreset {
+/** 보드 설정 요약값 — 타입만 뽑은 것 (프리셋·클라우드 메타에 쓴다) */
+export type BoardCfg = Pick<Board, 'wallpaper' | 'visual' | 'size' | 'sort' | 'filter'>
+
+/** Drive로 주고받는 프리셋 (보드 설정 한 벌 + 이름) */
+export interface BoardPreset extends Board {
   id: ID
   name: string
-  wallpaper: string
-  snap: boolean
-  shortcuts: BoardShortcut[]
   createdAt: number
   updatedAt: number
   /** 클라우드 상태 — 앱·기타 파일과 같은 규칙 (sync/board.ts) */
@@ -42,9 +37,8 @@ export interface BoardPreset {
 }
 
 export const BOARD_PRESET_NAME_MAX = 40
-export const BOARD_MAX_SHORTCUTS = 120
 
-export const DEFAULT_BOARD: Board = { wallpaper: 'mist', snap: false, shortcuts: [] }
+export const DEFAULT_BOARD: Board = { wallpaper: 'mist', visual: 'grid', size: 'md', sort: 'updated', filter: 'all' }
 
 /** 배경화면 목록 — 실제 CSS는 styles.css 의 .board-wall-<key> (라이트/다크 각각) */
 export const BOARD_WALLPAPERS: { key: string; name: string }[] = [
@@ -56,41 +50,73 @@ export const BOARD_WALLPAPERS: { key: string; name: string }[] = [
   { key: 'paper', name: '종이' }
 ]
 
-export const isWallpaper = (k: string) => BOARD_WALLPAPERS.some((w) => w.key === k)
+export const BOARD_VISUALS: { key: BoardVisual; name: string }[] = [
+  { key: 'grid', name: '격자' },
+  { key: 'hex', name: '벌집' }
+]
+export const BOARD_SIZES: { key: BoardSize; name: string }[] = [
+  { key: 'sm', name: '작게' },
+  { key: 'md', name: '보통' },
+  { key: 'lg', name: '크게' }
+]
+export const BOARD_SORTS: { key: BoardSort; name: string }[] = [
+  { key: 'updated', name: '수정일' },
+  { key: 'created', name: '만든 날' },
+  { key: 'title', name: '제목' }
+]
+export const BOARD_FILTERS: { key: BoardFilter; name: string }[] = [
+  { key: 'all', name: '전체' },
+  { key: 'docs', name: '노트' },
+  { key: 'apps', name: '앱' },
+  { key: 'files', name: '파일' }
+]
 
-export const shortcutKey = (kind: ShortcutKind, refId: ID) => `${kind}:${refId}`
-
-const KINDS: ShortcutKind[] = ['doc', 'app', 'file']
-const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5)
+const nameOf = <T extends string>(list: { key: T; name: string }[], key: unknown, fallback: T): T =>
+  list.some((x) => x.key === key) ? (key as T) : fallback
+const labelOf = <T extends string>(list: { key: T; name: string }[], key: unknown, fallback: string) =>
+  list.find((x) => x.key === key)?.name ?? fallback
 
 /**
- * 클라우드에서 받은 값(또는 오래된 로컬 값)을 안전한 보드로 정리한다.
- * 좌표 범위·kind·길이를 모두 방어한다 — 남의 기기 프리셋이 화면을 깨뜨리지 않게.
+ * 클라우드·localStorage에서 읽은 값을 안전한 보드 설정으로 정리한다.
+ * 모르는 값은 기본값으로 떨어뜨린다 — 남의 기기 프리셋이 화면을 깨뜨리지 않게.
  */
 export function normalizeBoard(raw: unknown): Board {
-  const src = (raw ?? {}) as Partial<Board> & { shortcuts?: unknown }
-  const wallpaper = typeof src.wallpaper === 'string' && isWallpaper(src.wallpaper) ? src.wallpaper : DEFAULT_BOARD.wallpaper
-  const snap = src.snap === true
-  const list = Array.isArray(src.shortcuts) ? src.shortcuts : []
-  const shortcuts: BoardShortcut[] = []
-  for (const item of list as BoardShortcut[]) {
-    if (!item || !KINDS.includes(item.kind) || typeof item.refId !== 'string' || !item.refId) continue
-    shortcuts.push({
-      id: typeof item.id === 'string' && item.id ? item.id : shortcutKey(item.kind, item.refId),
-      kind: item.kind,
-      refId: item.refId,
-      x: clamp01(Number(item.x)),
-      y: clamp01(Number(item.y))
-    })
-    if (shortcuts.length >= BOARD_MAX_SHORTCUTS) break
+  const src = (raw ?? {}) as Partial<BoardCfg>
+  return {
+    wallpaper: typeof src.wallpaper === 'string' && BOARD_WALLPAPERS.some((w) => w.key === src.wallpaper) ? src.wallpaper : DEFAULT_BOARD.wallpaper,
+    visual: nameOf(BOARD_VISUALS, src.visual, DEFAULT_BOARD.visual),
+    size: nameOf(BOARD_SIZES, src.size, DEFAULT_BOARD.size),
+    sort: nameOf(BOARD_SORTS, src.sort, DEFAULT_BOARD.sort),
+    filter: nameOf(BOARD_FILTERS, src.filter, DEFAULT_BOARD.filter)
   }
-  return { wallpaper, snap, shortcuts }
 }
 
-export const cloneBoard = (b: Board): Board => normalizeBoard(JSON.parse(JSON.stringify(b)))
+export const cloneBoard = (b: Board): Board => normalizeBoard(b)
 
-// ───────── 벌집(허니컴) 배치 ─────────
-// 애플 워치 앱 그리드와 보드 스냅이 같은 계산을 쓴다 (pointy-top axial).
+/** 설정 → 짧은 문자열 (`mist|grid|md|updated|all`) — Drive appProperties 124바이트 제한 안에 넉넉히 들어간다 */
+export const cfgOf = (c: BoardCfg) => [c.wallpaper, c.visual, c.size, c.sort, c.filter].join('|')
+
+/** 위 문자열을 다시 보드 설정으로 (모르는 값은 기본값) */
+export function parseCfg(cfg?: string): Board {
+  if (!cfg) return cloneBoard(DEFAULT_BOARD)
+  const [wallpaper, visual, size, sort, filter] = cfg.split('|')
+  return normalizeBoard({ wallpaper, visual, size, sort, filter } as BoardCfg)
+}
+
+/** 사람이 읽는 설정 요약 — 프리셋 카드 부제 */
+export const cfgSummary = (c: BoardCfg) => {
+  const b = normalizeBoard(c)
+  return [
+    labelOf(BOARD_VISUALS, b.visual, '격자'),
+    labelOf(BOARD_SIZES, b.size, '보통'),
+    labelOf(BOARD_SORTS, b.sort, '수정일'),
+    labelOf(BOARD_FILTERS, b.filter, '전체'),
+    labelOf(BOARD_WALLPAPERS, b.wallpaper, '안개')
+  ].join(' · ')
+}
+
+// ───────── 벌집(허니컴) 좌표 ─────────
+// 벌집 시각화의 배치 계산. 가운데가 가장 크고 바깥으로 갈수록 작아진다(애플 워치 앱 보관소 느낌).
 
 export interface HexPos {
   q: number
@@ -104,28 +130,7 @@ export const hexToPixel = (q: number, r: number, cell: number) => ({
   y: cell * 1.5 * r
 })
 
-function hexRound(q: number, r: number) {
-  const x = q
-  const z = r
-  const y = -x - z
-  let rx = Math.round(x)
-  let ry = Math.round(y)
-  let rz = Math.round(z)
-  const dx = Math.abs(rx - x)
-  const dy = Math.abs(ry - y)
-  const dz = Math.abs(rz - z)
-  if (dx > dy && dx > dz) rx = -ry - rz
-  else if (dy > dz) ry = -rx - rz
-  else rz = -rx - ry
-  return { q: rx, r: rz }
-}
-
-/** 픽셀 → 가장 가까운 벌집 칸 (보드 스냅용) */
-export function pixelToHex(x: number, y: number, cell: number) {
-  return hexRound(((Math.sqrt(3) / 3) * x - y / 3) / cell, ((2 / 3) * y) / cell)
-}
-
-/** 중심에서 바깥으로 도는 벌집 좌표 count개 (애플 워치 그리드·스냅 격자 공용) */
+/** 중심에서 바깥으로 도는 벌집 좌표 count개 */
 export function hexSpiral(count: number, cell: number): HexPos[] {
   const out: HexPos[] = []
   if (count <= 0) return out
