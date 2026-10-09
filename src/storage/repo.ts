@@ -422,6 +422,11 @@ export async function getThumbnails(): Promise<Map<ID, Blob>> {
   return new Map(rows.map((r) => [r.documentId, r.blob]))
 }
 
+/** 저장된 미리보기를 지운다 — 다시 그릴 게 없을 때 흰(오래된) 사진 대신 아이콘이 보이게 */
+export async function removeThumbnail(documentId: ID) {
+  await db.thumbnails.delete(documentId)
+}
+
 // ───────────────────────── 복제 / 통계 ─────────────────────────
 
 export async function duplicateDocument(id: ID): Promise<DocumentMeta> {

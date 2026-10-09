@@ -32,18 +32,16 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url)
   if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return
 
-  // 앱 화면: 캐시 우선 (오프라인에서도 즉시 실행), 백그라운드에서 갱신
+  // 앱 화면: 네트워크 우선 — 배포 즉시 새 버전이 닿는다(구버전이 남아 기기마다
+  // 다른 증상이 보이는 일 방지). 실패하면 캐시로 (오프라인 실행은 그대로 유지).
   if (req.mode === 'navigate') {
     e.respondWith(
-      caches.match('/', { cacheName: SHELL }).then((hit) => {
-        const net = fetch(req)
-          .then((res) => {
-            if (res.ok) caches.open(SHELL).then((c) => c.put('/', res.clone()))
-            return res
-          })
-          .catch(() => hit)
-        return hit || net
-      })
+      fetch(req)
+        .then((res) => {
+          if (res.ok) caches.open(SHELL).then((c) => c.put('/', res.clone()))
+          return res
+        })
+        .catch(() => caches.match('/', { cacheName: SHELL }).then((hit) => hit || Response.error()))
     )
     return
   }

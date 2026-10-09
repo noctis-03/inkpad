@@ -1677,18 +1677,29 @@ export class Engine {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, c.width, c.height)
     ctx.setTransform(scale, 0, 0, scale, 0, 0)
+    // 흰 종이만 저장하지 않는다 — 그린 게 없으면(원본 미확보 PDF + 필기 없음, 빈 첫 페이지)
+    // null을 돌려준다(io/docThumb.renderPageBlob와 같은 규칙). 흰 사진 카드 방지.
+    let drew = false
     if (page.pdf) {
       const bmp = await this.pdfThumb(page, scale)
-      if (bmp) ctx.drawImage(bmp, 0, 0, w, h)
-    } else if (page.size) drawPattern(ctx, page.background, w, h, scale * 2)
+      if (bmp) {
+        ctx.drawImage(bmp, 0, 0, w, h)
+        drew = true
+      }
+    } else if (page.size) {
+      drawPattern(ctx, page.background, w, h, scale * 2)
+      if (page.background.type !== 'blank') drew = true
+    }
     for (const pass of ['under', 'main'] as const) {
       for (const rec of recs) {
         if (rec.stroke.layer !== pass) continue
         ctx.setTransform(scale, 0, 0, scale, (rec.ox - ox) * scale, (rec.oy - oy) * scale)
         ctx.fillStyle = rec.stroke.color
         ctx.fill(getPath(rec))
+        drew = true
       }
     }
+    if (!drew) return null
     return c
   }
 

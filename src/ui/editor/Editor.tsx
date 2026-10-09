@@ -6,7 +6,7 @@ import { PdfCache } from '../../engine/pdf/pdfCache'
 import { trackRecentDoc } from '../../shared/recentDocs'
 import { recallPassword, rememberPassword } from '../../io/passwords'
 import type { DocumentMeta, ID, Page } from '../../shared/model'
-import { loadDocument, putThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
+import { loadDocument, putThumbnail, removeThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
 import { emitThumbsChanged, hasThumbnail } from '../../io/docThumb'
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
 import { SchemaTooNewError } from '../../storage/migrate'
@@ -174,12 +174,17 @@ export function Editor({ docId }: { docId: ID }) {
           // 비어 있던 미리보기를 채우는 경우에만 진행/완료 토스트를 띄운다(평소엔 조용히 갱신).
           const had = await hasThumbnail(docId)
           const sticky = had ? null : useUI.getState().toast('미리보기를 만드는 중…', 'info', undefined, { sticky: true })
-          const blob = await e.renderDocThumb().catch(() => null)
+          // null = 그릴 게 없음(빈 첫 페이지·원본 미확보), 'error' = 그리다가 실패.
+          // 실패가 아닌 빈 결과인데 옛 미리보기가 남아 있으면 지운다 — 흰 사진 카드 대신 아이콘이 보이게.
+          const blob = await e.renderDocThumb().catch(() => 'error' as const)
           if (sticky !== null) useUI.getState().dismissToast(sticky)
-          if (blob) {
+          if (blob instanceof Blob) {
             await putThumbnail(docId, blob)
             emitThumbsChanged()
             if (!had) useUI.getState().toast('미리보기를 만들었습니다.', 'success')
+          } else if (blob !== 'error' && had) {
+            await removeThumbnail(docId)
+            emitThumbsChanged()
           }
           await pdf.destroy()
         })()
