@@ -1467,22 +1467,22 @@ textarea {
   box-shadow: 0 0 0 1px #0000001f;
 }
 .paper-lined {
-  background-image: linear-gradient(to bottom, #c7d2e0 1px, transparent 1px);
+  background-image: linear-gradient(to bottom, #d3d9e2 1px, transparent 1px);
   background-size: 100% 8px;
   background-position: 0 12px;
 }
 .paper-grid {
-  background-image: linear-gradient(to right, #c7d2e0 1px, transparent 1px), linear-gradient(to bottom, #c7d2e0 1px, transparent 1px);
+  background-image: linear-gradient(to right, #d3d9e2 1px, transparent 1px), linear-gradient(to bottom, #d3d9e2 1px, transparent 1px);
   background-size: 8px 8px;
 }
 .paper-dot {
-  background-image: radial-gradient(circle, #9aa3ad 0.8px, transparent 1.2px);
+  background-image: radial-gradient(circle, #a9b1bc 0.8px, transparent 1.2px);
   background-size: 7px 7px;
 }
 .paper-cornell {
-  background-image: linear-gradient(to right, transparent 14px, #8fa3bf 14px, #8fa3bf 15px, transparent 15px),
-    linear-gradient(to bottom, transparent 48px, #8fa3bf 48px, #8fa3bf 49px, transparent 49px),
-    linear-gradient(to bottom, #c7d2e0 1px, transparent 1px);
+  background-image: linear-gradient(to right, transparent 14px, #9fb0c8 14px, #9fb0c8 15px, transparent 15px),
+    linear-gradient(to bottom, transparent 48px, #9fb0c8 48px, #9fb0c8 49px, transparent 49px),
+    linear-gradient(to bottom, #d3d9e2 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 100% 7px;
 }
 

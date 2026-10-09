@@ -137,14 +137,14 @@ export const PAGE_SIZES = {
 export type PageSizeKey = keyof typeof PAGE_SIZES | 'custom'
 
 export const PAPER_COLOR = '#ffffff'
-export const LINE_COLOR = '#c7d2e0'
+export const LINE_COLOR = '#d3d9e2'
 
 export function makeBackground(type: BackgroundType, spacing = 24): Background {
   switch (type) {
     case 'blank':
       return { type, color: PAPER_COLOR }
     case 'dot':
-      return { type, spacing: spacing * 0.83, color: '#9aa3ad' }
+      return { type, spacing: spacing * 0.83, color: '#a9b1bc' }
     default:
       return { type, spacing, color: LINE_COLOR }
   }
