@@ -403,7 +403,10 @@ export function SyncSection() {
 
   useEffect(() => {
     void db.syncState.get('lastPushAt').then((v) => setLast((v?.value as number) ?? null))
-    if (status !== 'auth-required' && status !== 'disabled') void loadCloud()
+    // 동기화 중에는 목록을 다시 읽지 않는다 — 끝나고 idle로 돌아올 때 한 번만 읽는다.
+    // (예전에는 syncing 진입·이탈마다 읽어 올리기 1회에 목록 새로고침이 3~4번 나갔다)
+    if (status === 'auth-required' || status === 'disabled' || status === 'syncing') return
+    void loadCloud()
   }, [status, loadCloud])
 
   const counts = useMemo(() => countCloud(cloud ?? []), [cloud])
@@ -451,8 +454,7 @@ export function SyncSection() {
 
   const confirmPush = async () => {
     setPreview(null)
-    await pushNow()
-    void loadCloud()
+    await pushNow() // 끝나면 status가 idle로 돌아가 위 effect가 목록을 한 번 새로 읽는다
   }
 
   /** 새 노트를 일괄 올리기에서 뺀다 — 새 파일 행 메뉴의 "일괄 올리기에서 제외" */

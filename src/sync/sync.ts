@@ -366,6 +366,8 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     const cur = await db.documents.get(docId)
     if (!cur) return
     await putDocRecord(docId, remote.id, remote.version) // 앞으로만 (규칙 10)
+    // 방금 올린 파일 표식 — 클라우드 목록이 이 파일 하나만 개별 확인하게 한다 (listCloudNotes)
+    await putSync(`fresh:${docId}`, remote.id)
     await putSync(`base:${docId}`, { blob: base })
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
     await db.syncState.delete(`clouddel:${docId}`) // 클라우드에서 삭제됐던 노트를 다시 올렸다 (지시서 3번)
@@ -445,6 +447,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
   )
   await rememberRevTag(result.id, { device, revKind: mergedRev.kind, conflicts })
   await putDocRecord(docId, result.id, result.version) // 앞으로만 (규칙 10)
+  await putSync(`fresh:${docId}`, result.id) // 방금 올린 파일 표식
   await saveBase(docId, merged)
   await db.syncState.delete(`curRev:${docId}`) // 머지 결과가 곧 이 기기의 현재
   await db.syncState.delete(`revKind:${docId}`)
@@ -584,12 +587,20 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   // 위치 기록이 있는데 목록에 없는 파일은 getMeta로 그 파일만 한 번 더 확인하고,
   // 실제로 살아 있으면(=trashed가 아니면) 목록에 끼워 넣어 "클라우드에서 삭제됨" 오분류를 막는다.
   const listed = new Set(remotes.map((r) => r.id))
+  // 방금 올린 파일(fresh: 표식)만 개별 확인한다. 예전에는 'doc:' 기록이 있는 모든 노트를
+  // "목록에 안 보인다"는 이유로 하나씩 getMeta 했다 — 노트가 많으면 새로고침 1회가
+  // 노트 수만큼 요청을 낳았다(색인 지연이 없어도 매번). 표식은 업로드 직후에만 생기므로
+  // 이 루프는 보통 0~1건이다 (지시서 3번 오판 방지는 그대로 유지).
   for (const kv of await db.syncState.toArray()) {
-    if (!kv.key.startsWith('doc:')) continue
-    const rec = kv.value as FileRecord
-    if (listed.has(rec.fileId)) continue
-    const m = await drive.getMeta(rec.fileId).catch(() => null)
+    if (!kv.key.startsWith('fresh:')) continue
+    const fileId = kv.value as string
+    if (listed.has(fileId)) {
+      await db.syncState.delete(kv.key) // 목록에 보였으니 표식은 임무를 마쳤다
+      continue
+    }
+    const m = await drive.getMeta(fileId).catch(() => null)
     if (m && !m.trashed) remotes.push(m)
+    else if (m) await db.syncState.delete(kv.key) // 휴지통/삭제 — 표식 정리
   }
 
   const pending = await pendingDocs()
