@@ -605,9 +605,13 @@ export function Board() {
   const face = (it: Item, size: number) => {
     if (it.kind === 'doc') {
       const url = thumbs.get(it.d.id)
+      // 미리보기는 블러로 깔고, 그 위에 항목에 맞는 아이콘을 또렷하게 띄운다
       return (
-        <span className="board-item-face" style={url ? { backgroundImage: `url(${url})` } : undefined}>
-          {!url && <Icon name={it.d.mode === 'infinite' ? 'infinite' : 'page'} size={size} />}
+        <span className={'board-item-face' + (url ? ' has-preview' : '')}>
+          {url ? <span className="board-face-preview" style={{ backgroundImage: `url(${url})` }} aria-hidden="true" /> : null}
+          <span className="board-face-icon">
+            <Icon name={it.d.mode === 'infinite' ? 'infinite' : 'page'} size={size} />
+          </span>
         </span>
       )
     }
