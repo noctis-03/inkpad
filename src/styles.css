@@ -1103,7 +1103,7 @@ textarea {
 }
 .doc-grid .doc-thumb {
   position: relative;
-  aspect-ratio: 1 / 1.22; /* 카드 세로길이 축소 — A4 비율보다 살짝 납작하게 */
+  aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
   border-radius: var(--r-lg);
   background: var(--thumb-paper);
   box-shadow: var(--e1);
@@ -1273,7 +1273,7 @@ textarea {
 .doc-list .doc-thumb {
   position: relative;
   width: 48px;
-  height: 60px;
+  height: 64px;
   flex: 0 0 auto;
   border-radius: 6px;
   overflow: hidden;
