@@ -4521,6 +4521,8 @@ details.adv > summary::marker {
   background: none;
   font: inherit;
   color: inherit;
+  /* 중심↔가장자리 배율 변화를 부드럽게 — 팬·줌·정렬·프리셋 불러오기 때 애니메이션된다 */
+  transition: transform 200ms var(--ft-ease);
   cursor: pointer;
   touch-action: none;
 }
