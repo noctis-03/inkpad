@@ -32,6 +32,7 @@ export async function enqueueEverything() {
 
 /** Drive 위치 기록(doc:/asset:/base:)을 비우고 전체 재업로드를 예약한다 */
 export async function resetRemoteRecords() {
+  invalidateFolders()
   await db.transaction('rw', db.syncState, async () => {
     const keys = (await db.syncState.toArray()).map((k) => k.key)
     await db.syncState.bulkDelete(
@@ -41,7 +42,21 @@ export async function resetRemoteRecords() {
   await enqueueEverything()
 }
 
+/** 폴더 ID는 한 번 검증하면 잠깐 재사용한다.
+ *  예전에는 ensureFolders()가 호출될 때마다 root·docs·assets를 getMeta로 다시 확인해
+ *  올리기 1회에 12~18건의 중복 메타 요청이 나갔다. */
+const FOLDER_VERIFY_TTL_MS = 60_000
+let verifiedFolders: { root: string; docs: string; assets: string } | null = null
+let verifiedAt = 0
+
+/** 폴더 검증 캐시를 버린다 — 폴더가 사라졌다는 응답을 받았을 때 등 */
+export function invalidateFolders() {
+  verifiedFolders = null
+  verifiedAt = 0
+}
+
 export async function ensureFolders(): Promise<{ root: string; docs: string; assets: string }> {
+  if (verifiedFolders && Date.now() - verifiedAt < FOLDER_VERIFY_TTL_MS) return verifiedFolders
   const cached = await getSync<string>('rootFolderId')
   let root: string | undefined
   if (cached) {
@@ -56,7 +71,9 @@ export async function ensureFolders(): Promise<{ root: string; docs: string; ass
   const rootChanged = cached !== root
   const docs = await ensureSubFolder(root, 'docs', 'docsFolderId', rootChanged)
   const assets = await ensureSubFolder(root, 'assets', 'assetsFolderId', rootChanged)
-  return { root, docs, assets }
+  verifiedFolders = { root, docs, assets }
+  verifiedAt = Date.now()
+  return verifiedFolders
 }
 
 async function ensureSubFolder(rootId: string, name: string, key: string, forceFind: boolean): Promise<string> {
