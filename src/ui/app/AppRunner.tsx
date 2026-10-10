@@ -63,7 +63,7 @@ export function AppRunner({ appId }: { appId: ID }) {
   return (
     <div className="app-runner">
       <header className="app-runner-bar">
-        <button className="tb-btn" onClick={() => navigate({ name: 'library' })} aria-label="뒤로">
+        <button className="tb-btn" onClick={() => navigate(useUI.getState().returnRoute ?? { name: 'library' })} aria-label="뒤로">
           <Icon name="back" />
         </button>
         <h1 className="app-runner-title">{app?.title ?? ''}</h1>

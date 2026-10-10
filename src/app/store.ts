@@ -146,6 +146,8 @@ interface UIState {
   returnDocId: ID | null
   /** 뷰어보드 열기 — 편집 화면을 보기 전용으로 연다 (편집 화면이 1회 읽고 지운다) */
   viewOnly: boolean
+  /** 노트·앱·파일을 열기 전 화면 — 뒤로가기면 이 화면으로 돌아간다 (작업보드에서 열었으면 작업보드로) */
+  returnRoute: Route | null
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -202,6 +204,7 @@ export const useUI = create<UIState>((set, get) => ({
   docCardRect: null,
   returnDocId: null,
   viewOnly: false,
+  returnRoute: null,
 
   navigate: (route) => {
     const hash =
@@ -215,7 +218,15 @@ export const useUI = create<UIState>((set, get) => ({
               ? '#/board'
               : '#/'
     if (location.hash !== hash) history.pushState(null, '', hash)
-    set({ route, panel: 'none', selection: null })
+    const prev = get().route
+    const opens = route.name === 'editor' || route.name === 'app' || route.name === 'file'
+    set({
+      route,
+      panel: 'none',
+      selection: null,
+      // 노트·앱·파일을 열 때는 열기 전 화면을 기억해 뒤로가기 때 돌아간다 (작업보드 → 노트 → 뒤로 = 작업보드)
+      returnRoute: opens ? prev : null
+    })
   },
   setTool: (t) => {
     const cur = get().tool

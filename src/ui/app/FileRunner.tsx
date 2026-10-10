@@ -64,7 +64,7 @@ export function FileRunner({ fileId }: { fileId: ID }) {
   return (
     <div className="file-runner">
       <header className="app-runner-bar">
-        <button className="tb-btn" onClick={() => navigate({ name: 'library' })} aria-label="뒤로">
+        <button className="tb-btn" onClick={() => navigate(useUI.getState().returnRoute ?? { name: 'library' })} aria-label="뒤로">
           <Icon name="back" />
         </button>
         <h1 className="app-runner-title">{row ? row.title : ''}</h1>

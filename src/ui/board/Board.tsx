@@ -1203,7 +1203,13 @@ export function Board() {
             return (
               <div
                 key={g.id}
-                className={'board-group tone-' + g.tone + (collapsed ? ' is-collapsed' : '') + (groupLive?.id === g.id ? ' is-dragging' : '')}
+                className={
+                  'board-group tone-' +
+                  g.tone +
+                  (collapsed ? ' is-collapsed' : '') +
+                  (groupLive?.id === g.id ? ' is-dragging' : '') +
+                  (groupMenu === g.id ? ' is-menu-open' : '')
+                }
                 style={{
                   left: live.gx * BOARD_CELL,
                   top: live.gy * BOARD_CELL,

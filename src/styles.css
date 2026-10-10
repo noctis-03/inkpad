@@ -4754,9 +4754,12 @@ details.adv > summary::marker {
 .board.is-editing .board-group-head { cursor: grab; }
 .board.is-editing .board-group-head:active { cursor: grabbing; }
 .board-group.is-dragging { background: color-mix(in srgb, var(--tone) 15%, transparent); box-shadow: var(--e2); }
+/* 열린 그룹 메뉴가 바로가기 카드(z 2) 아래로 묻히지 않게 한다 */
+.board-group.is-menu-open { z-index: 3; }
 .board-group-head {
   position: absolute;
-  top: 0;
+  /* 이름 띠를 박스 위쪽 탭으로 올린다 — 박스 안 첫 줄 바로가기 카드와 겹치지 않게 */
+  top: -30px;
   left: 0;
   right: 0;
   height: 30px;
@@ -4764,6 +4767,8 @@ details.adv > summary::marker {
   align-items: center;
   gap: 6px;
   padding: 0 8px 0 10px;
+  border: 1.5px solid color-mix(in srgb, var(--tone) 35%, transparent);
+  border-bottom: 0;
   border-radius: calc(var(--r-2xl) - 1.5px) calc(var(--r-2xl) - 1.5px) 0 0;
   background: color-mix(in srgb, var(--tone) 15%, transparent);
 }
@@ -4790,7 +4795,8 @@ details.adv > summary::marker {
 }
 .board-group-menu {
   position: absolute;
-  top: 34px;
+  /* 이름 띠가 탭(박스 위)으로 옮겨진 만큼 메뉴도 박스 바로 아래에서 펼친다 */
+  top: 4px;
   right: 6px;
   z-index: 5;
   width: 190px;
