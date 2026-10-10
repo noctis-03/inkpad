@@ -108,6 +108,7 @@ async function flushOne(id: ID, folderId: string) {
     wallpaper: p.wallpaper,
     snap: p.snap,
     shortcuts: p.shortcuts,
+    groups: p.groups,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt
   }
