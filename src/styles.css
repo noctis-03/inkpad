@@ -4634,8 +4634,7 @@ details.adv > summary::marker {
   justify-content: center;
   width: 76px;
   height: 76px;
-  /* 사진(썸네일) 면은 둥근 모서리 대신 일자로 — 모서리 곡률 없이 딱 떨어지게 */
-  border-radius: 0;
+  border-radius: var(--r-2xl);
   overflow: hidden;
   background: var(--thumb-paper);
   box-shadow: var(--e1);
