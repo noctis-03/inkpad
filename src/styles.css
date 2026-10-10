@@ -5067,6 +5067,7 @@ details.adv > summary::marker {
   border: 1px solid var(--success-line);
 }
 .tray-row-add {
+  position: relative; /* ::before(누름 영역 확장)가 이 버튼 기준으로만 잡히게 한다 */
   flex: none;
   width: 36px;
   height: 36px;
