@@ -1,5 +1,5 @@
 // 작업보드 — 무한히 펼쳐지는 사각 격자 위에 노트·앱·파일의 '바로가기'를 원하는 자리에 놓고 쓴다.
-// · 보기 모드: 초점 축소(중심은 크게, 가장자리는 작게)로 훑어보고 탭해서 연다.
+// · 보기 모드: 카드를 모두 같은 크기로 보여 주고 탭해서 연다.
 // · 편집 모드: 격자·서랍·그룹 도구가 열리고 카드를 옮기거나 지운다. 되돌리기/다시가 함께 돈다.
 // · 배치는 격자 좌표로 저장되고, 프리셋으로 Drive(Inkpad/boards)에 공유된다.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -40,13 +40,6 @@ const LS_HIDE_MISSING = 'inkpad.board.hideMissing'
 const MIN_Z = 0.25
 const MAX_Z = 2
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
-
-/** 보기 모드 초점 축소 — 중심은 1, 초점 반경 밖은 이 배율까지 작아진다 */
-const FOCUS_MIN_VIEW = 0.88
-/** 초점 반경 — 무대 짧은 변 대비 비율 */
-const FOCUS_SPREAD = 0.62
-/** 부드러운 감쇠 — 양 끝 기울기가 0이라 꺾임 없이 이어진다 */
-const smoothstep = (u: number) => u * u * (3 - 2 * u)
 
 /** 이 배율 이하로 축소되면 그룹 안 항목은 숨고 그룹은 이름 타일로 접힌다 */
 const GROUP_COLLAPSE_Z = 0.5
@@ -816,12 +809,6 @@ export function Board() {
     return out
   }, [shortcuts])
 
-  /** 화면 중심 기준 초점 — 보기 모드에서만 작동한다 (편집 모드 배율 1) */
-  const focus = useMemo(() => {
-    const R = clamp(Math.min(stage.w, stage.h) * FOCUS_SPREAD, 200, 720)
-    return { cx: stage.w / 2, cy: stage.h / 2, R }
-  }, [stage.w, stage.h])
-
   const wide = stage.w >= WIDE_W
 
   // ── 미니맵 (P7) ──
@@ -1305,16 +1292,8 @@ export function Board() {
             const off = dragging ? 0 : (stackIndex.get(sc.id) ?? 0) * 7
             const ix = wx + off
             const iy = wy + off
-            // 보기 모드에서만 초점 축소 — 편집 모드에서는 모든 카드가 원래 크기
-            let s = 1
-            if (!edit && !dragging) {
-              const dist = Math.hypot(view.x + ix * view.z - focus.cx, view.y + iy * view.z - focus.cy)
-              const t = focus.R > 0 ? clamp(dist / focus.R, 0, 1) : 0
-              s = FOCUS_MIN_VIEW + (1 - FOCUS_MIN_VIEW) * smoothstep(1 - t)
-            }
-            const tf = dragging
-              ? `translate(-50%, -50%) scale(1.06) rotate(-3deg)`
-              : `translate(-50%, -50%) scale(${s.toFixed(3)})`
+            // 모든 카드는 같은 크기 — 중심에서 멀어질수록 작아지던 초점 축소는 쓰지 않는다
+            const tf = dragging ? `translate(-50%, -50%) scale(1.06) rotate(-3deg)` : 'translate(-50%, -50%)'
             return (
               <button
                 key={sc.id}
