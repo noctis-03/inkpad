@@ -4743,11 +4743,15 @@ details.adv > summary::marker {
   --tone: var(--accent);
   position: absolute;
   z-index: 1;
-  border-radius: var(--r-2xl);
+  /* 위쪽 모서리는 각지게 — 위에 얹히는 이름 탭(하단 각진 모서리)과 한 줄로 이어져 틈·단차가 없다 */
+  border-radius: 0 0 var(--r-2xl) var(--r-2xl);
   border: 1.5px solid color-mix(in srgb, var(--tone) 35%, transparent);
   background: color-mix(in srgb, var(--tone) 9%, transparent);
   pointer-events: none;
 }
+/* 이름 탭을 쓰지 않는 상태(접힘·박스 안 알약)에서는 네 모서리를 모두 둥글게 */
+.board-group.is-collapsed,
+.board-group.is-label-inside { border-radius: var(--r-2xl); }
 .board.is-editing .board-group-head,
 .board.is-editing .board-group-resize,
 .board.is-editing .board-group-menu { pointer-events: auto; }
