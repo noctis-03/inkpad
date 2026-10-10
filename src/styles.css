@@ -4768,7 +4768,8 @@ details.adv > summary::marker {
   gap: 6px;
   padding: 0 8px 0 10px;
   border: 1.5px solid color-mix(in srgb, var(--tone) 35%, transparent);
-  border-radius: calc(var(--r-2xl) - 1.5px) calc(var(--r-2xl) - 1.5px) 10px 10px;
+  border-bottom: 0;
+  border-radius: calc(var(--r-2xl) - 1.5px) calc(var(--r-2xl) - 1.5px) 0 0;
   background: color-mix(in srgb, var(--tone) 15%, transparent);
 }
 .board-group-head.is-label-inside {
