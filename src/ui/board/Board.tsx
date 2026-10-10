@@ -9,6 +9,11 @@ import { Segmented } from '../Segmented'
 import { confirmDialog, promptDialog } from '../../app/dialogs'
 import {
   BOARD_CELL,
+  BOARD_GROUP_MAX_CELLS,
+  BOARD_GROUP_MIN_CELLS,
+  BOARD_GROUP_NAME_MAX,
+  BOARD_GROUP_TONES,
+  BOARD_MAX_GROUPS,
   BOARD_MAX_SHORTCUTS,
   BOARD_WALLPAPERS,
   cellCenter,
@@ -18,6 +23,7 @@ import {
   packGrid,
   worldToGrid,
   type Board as BoardModel,
+  type BoardGroup,
   type BoardShortcut,
   type ShortcutKind
 } from '../../shared/board'
@@ -80,6 +86,7 @@ export function Board() {
   const [wallMenu, setWallMenu] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [groupLive, setGroupLive] = useState<BoardGroup | null>(null)
   const [carry, setCarry] = useState<{ kind: ShortcutKind; refId: ID; label: string; x: number; y: number } | null>(null)
 
   const stageRef = useRef<HTMLDivElement>(null)
@@ -402,6 +409,117 @@ export function Board() {
     setView({ z, x: r.width / 2 - cxw * z, y: r.height / 2 - cyw * z })
   }
 
+  // ── 그룹 박스 (묶음 시각화 — 항목을 담지 않는다) ──
+  const addGroup = async () => {
+    const n = boardRef.current.groups.length
+    if (n >= BOARD_MAX_GROUPS) {
+      toast(`그룹은 ${BOARD_MAX_GROUPS}개까지 만들 수 있습니다.`, 'error')
+      return
+    }
+    const el = stageRef.current
+    const v = viewRef.current
+    const r = el?.getBoundingClientRect()
+    const wx = r ? (r.width / 2 - v.x) / v.z : 0
+    const wy = r ? (r.height / 2 - v.y) / v.z : 0
+    const gw = 3
+    const gh = 2
+    const gx = Math.round(wx / BOARD_CELL - gw / 2)
+    const gy = Math.round(wy / BOARD_CELL - gh / 2)
+    const name = await promptDialog('새 그룹', {
+      message: '보드 위에 그룹 박스를 놓습니다. 항목을 담지는 않고, 묶음을 시각적으로만 표시합니다.',
+      value: `그룹 ${n + 1}`,
+      ok: '만들기'
+    })
+    if (name === null) return
+    const clean = name.trim().slice(0, BOARD_GROUP_NAME_MAX)
+    setBoard((b) => ({
+      ...b,
+      groups: [
+        ...b.groups,
+        { id: newId(), name: clean || `그룹 ${n + 1}`, gx, gy, gw, gh, tone: BOARD_GROUP_TONES[n % BOARD_GROUP_TONES.length] }
+      ]
+    }))
+    toast(clean ? `"${clean}" 그룹을 만들었습니다.` : '그룹을 만들었습니다.', 'success')
+  }
+
+  const renameGroup = async (g: BoardGroup) => {
+    const name = await promptDialog('그룹 이름', { value: g.name, ok: '바꾸기' })
+    if (name === null) return
+    const clean = name.trim().slice(0, BOARD_GROUP_NAME_MAX)
+    setBoard((b) => ({ ...b, groups: b.groups.map((x) => (x.id === g.id ? { ...x, name: clean || x.name } : x)) }))
+  }
+
+  const removeGroup = (id: string) => setBoard((b) => ({ ...b, groups: b.groups.filter((g) => g.id !== id) }))
+
+  /** 수정모드에서 그룹 박스를 끌어 옮긴다 (박스 안 빈 곳을 잡으면 이동, 항목은 그 위에서 따로 동작) */
+  const beginGroupMove = (g: BoardGroup, e: React.PointerEvent<HTMLDivElement>) => {
+    if (!edit) return
+    e.stopPropagation()
+    const sx = e.clientX
+    const sy = e.clientY
+    const z = viewRef.current.z
+    const snap = boardRef.current.snap
+    let moving = false
+    let next: BoardGroup = { ...g }
+    const move = (ev: PointerEvent) => {
+      if (!moving && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) moving = true
+      if (!moving) return
+      const dx = (ev.clientX - sx) / z / BOARD_CELL
+      const dy = (ev.clientY - sy) / z / BOARD_CELL
+      next = {
+        ...next,
+        gx: snap ? Math.round(g.gx + dx) : +(g.gx + dx).toFixed(2),
+        gy: snap ? Math.round(g.gy + dy) : +(g.gy + dy).toFixed(2)
+      }
+      setGroupLive({ ...next })
+    }
+    const up = () => {
+      cleanup()
+      if (moving) setBoard((b) => ({ ...b, groups: b.groups.map((x) => (x.id === g.id ? { ...x, gx: next.gx, gy: next.gy } : x)) }))
+      setGroupLive(null)
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cleanup)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cleanup)
+  }
+
+  /** 수정모드에서 오른쪽 아래 손잡이로 그룹 박스 크기를 조절한다 */
+  const beginGroupResize = (g: BoardGroup, e: React.PointerEvent<HTMLSpanElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const sx = e.clientX
+    const sy = e.clientY
+    const z = viewRef.current.z
+    const snap = boardRef.current.snap
+    let next: BoardGroup = { ...g }
+    const move = (ev: PointerEvent) => {
+      const dw = (ev.clientX - sx) / z / BOARD_CELL
+      const dh = (ev.clientY - sy) / z / BOARD_CELL
+      const gw = clamp(snap ? Math.round(g.gw + dw) : +(g.gw + dw).toFixed(2), BOARD_GROUP_MIN_CELLS, BOARD_GROUP_MAX_CELLS)
+      const gh = clamp(snap ? Math.round(g.gh + dh) : +(g.gh + dh).toFixed(2), BOARD_GROUP_MIN_CELLS, BOARD_GROUP_MAX_CELLS)
+      next = { ...next, gw, gh }
+      setGroupLive({ ...next })
+    }
+    const up = () => {
+      cleanup()
+      setBoard((b) => ({ ...b, groups: b.groups.map((x) => (x.id === g.id ? { ...x, gw: next.gw, gh: next.gh } : x)) }))
+      setGroupLive(null)
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cleanup)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cleanup)
+  }
+
   // ── 서랍 목록 ──
   const trayItems = useMemo<{ key: string; kind: ShortcutKind; id: ID; label: string; at: number }[]>(() => {
     const q = query.trim().toLowerCase()
@@ -509,6 +627,7 @@ export function Board() {
         <h1 className="board-brand">작업보드</h1>
         <span className="board-count">
           바로가기 {shortcuts.length}개{missing ? ` · 사라짐 ${missing}` : ''}
+          {board.groups.length ? ` · 그룹 ${board.groups.length}` : ''}
         </span>
         <div className="board-actions">
           <button className={'tb-btn' + (board.snap ? ' is-on' : '')} onClick={() => setBoard((b) => ({ ...b, snap: !b.snap }))} aria-label="격자에 붙이기" title="격자에 붙이기">
@@ -523,6 +642,11 @@ export function Board() {
           <button className="tb-btn" onClick={() => setWallMenu((v) => !v)} aria-label="배경화면" title="배경화면">
             <Icon name="wallpaper" />
           </button>
+          {edit && (
+            <button className="tb-btn" onClick={() => void addGroup()} aria-label="그룹 추가" title="그룹 추가">
+              <Icon name="folderPlus" />
+            </button>
+          )}
           <button
             className={'tb-btn' + (edit ? ' is-on' : '')}
             onClick={() => setEdit((v) => !v)}
@@ -544,7 +668,9 @@ export function Board() {
       </header>
 
       {/* 무한 사각 격자 무대 — 빈 곳을 끌면 이동, 핀치/⌘휠로 확대 */}
-      <div className="board-stage" ref={stageRef} onPointerDown={stageDown} style={gridStyle}>
+      <div className="board-stage" ref={stageRef} onPointerDown={stageDown}>
+        {/* 격자 — 수정모드일 때만 보인다 (부드럽게 사라진다) */}
+        <div className="board-grid" style={{ ...gridStyle, opacity: edit ? 1 : 0 }} aria-hidden="true" />
         {shortcuts.length === 0 ? (
           <div className="board-empty">
             <Icon name="board" size={52} />
@@ -565,6 +691,41 @@ export function Board() {
         ) : null}
 
         <div className="board-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})` }}>
+          {/* 그룹 박스 — 안에 담지 않고, 묶음을 시각적으로만 표시한다 */}
+          {board.groups.map((g) => {
+            const live = groupLive?.id === g.id ? groupLive : g
+            return (
+              <div
+                key={g.id}
+                className={'board-group tone-' + g.tone + (groupLive?.id === g.id ? ' is-dragging' : '')}
+                style={{ left: live.gx * BOARD_CELL, top: live.gy * BOARD_CELL, width: live.gw * BOARD_CELL, height: live.gh * BOARD_CELL }}
+                onPointerDown={(e) => beginGroupMove(g, e)}
+              >
+                <span className="board-group-label">{g.name}</span>
+                <span className="board-group-tools">
+                  <button
+                    className="board-group-btn"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => void renameGroup(g)}
+                    aria-label="그룹 이름 바꾸기"
+                    title="이름 바꾸기"
+                  >
+                    <Icon name="edit" size={12} />
+                  </button>
+                  <button
+                    className="board-group-btn is-danger"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => removeGroup(g.id)}
+                    aria-label="그룹 지우기"
+                    title="그룹 지우기"
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                </span>
+                <span className="board-group-resize" onPointerDown={(e) => beginGroupResize(g, e)} aria-hidden="true" />
+              </div>
+            )
+          })}
           {shortcuts.map((sc) => {
             const it = itemOf(sc)
             const dragging = dragPos?.id === sc.id

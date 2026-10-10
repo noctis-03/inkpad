@@ -17,6 +17,20 @@ export interface BoardShortcut {
   gy: number
 }
 
+/** 그룹 박스 — 항목을 '담지' 않고, 묶음을 시각적으로만 표시하는 사각형. 이름을 붙일 수 있다 */
+export interface BoardGroup {
+  id: string
+  name: string
+  /** 좌상단 칸 좌표 */
+  gx: number
+  gy: number
+  /** 칸 단위 크기 */
+  gw: number
+  gh: number
+  /** 색상 키 — BOARD_GROUP_TONES */
+  tone: string
+}
+
 /** 보드 한 장의 상태 */
 export interface Board {
   /** BOARD_WALLPAPERS 의 key */
@@ -24,6 +38,8 @@ export interface Board {
   /** 격자에 붙여 놓기 */
   snap: boolean
   shortcuts: BoardShortcut[]
+  /** 그룹 박스 — 묶음을 시각적으로 표시 (안에 담지는 않는다) */
+  groups: BoardGroup[]
 }
 
 /** Drive로 주고받는 프리셋 (보드 한 장 + 이름) */
@@ -40,8 +56,14 @@ export interface BoardPreset extends Board {
 
 export const BOARD_PRESET_NAME_MAX = 40
 export const BOARD_MAX_SHORTCUTS = 400
+export const BOARD_GROUP_NAME_MAX = 24
+export const BOARD_MAX_GROUPS = 60
+/** 그룹 박스 색 키 — 실제 CSS는 .board-group.tone-<key> */
+export const BOARD_GROUP_TONES: string[] = ['blue', 'green', 'violet', 'amber']
+export const BOARD_GROUP_MIN_CELLS = 2
+export const BOARD_GROUP_MAX_CELLS = 40
 
-export const DEFAULT_BOARD: Board = { wallpaper: 'mist', snap: true, shortcuts: [] }
+export const DEFAULT_BOARD: Board = { wallpaper: 'mist', snap: true, shortcuts: [], groups: [] }
 
 /** 배경화면 목록 — 실제 CSS는 styles.css 의 .board-wall-<key> (라이트/다크 각각) */
 export const BOARD_WALLPAPERS: { key: string; name: string }[] = [
@@ -62,13 +84,19 @@ const coord = (v: unknown) => {
   if (!Number.isFinite(n)) return 0
   return Math.min(LIMIT, Math.max(-LIMIT, n))
 }
+const TONES = new Set<string>(BOARD_GROUP_TONES)
+const groupSize = (v: unknown) => {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return BOARD_GROUP_MIN_CELLS
+  return Math.min(BOARD_GROUP_MAX_CELLS, Math.max(BOARD_GROUP_MIN_CELLS, n))
+}
 
 /**
  * 클라우드·localStorage에서 읽은 값을 안전한 보드로 정리한다.
  * 종류·좌표·개수를 모두 방어한다 — 남의 기기 프리셋이 화면을 깨뜨리지 않게.
  */
 export function normalizeBoard(raw: unknown): Board {
-  const src = (raw ?? {}) as Partial<Board> & { shortcuts?: unknown }
+  const src = (raw ?? {}) as Partial<Board> & { shortcuts?: unknown; groups?: unknown }
   const list = Array.isArray(src.shortcuts) ? src.shortcuts : []
   const shortcuts: BoardShortcut[] = []
   for (const item of list as BoardShortcut[]) {
@@ -82,7 +110,23 @@ export function normalizeBoard(raw: unknown): Board {
     })
     if (shortcuts.length >= BOARD_MAX_SHORTCUTS) break
   }
-  return { wallpaper: isWallpaper(src.wallpaper) ? src.wallpaper : DEFAULT_BOARD.wallpaper, snap: src.snap !== false, shortcuts }
+  const rawGroups = Array.isArray(src.groups) ? src.groups : []
+  const groups: BoardGroup[] = []
+  for (const item of rawGroups as BoardGroup[]) {
+    if (!item || typeof item !== 'object') continue
+    const nm = typeof item.name === 'string' ? item.name.trim().slice(0, BOARD_GROUP_NAME_MAX) : ''
+    groups.push({
+      id: typeof item.id === 'string' && item.id ? item.id : `g:${groups.length}`,
+      name: nm || `그룹 ${groups.length + 1}`,
+      gx: coord(item.gx),
+      gy: coord(item.gy),
+      gw: groupSize(item.gw),
+      gh: groupSize(item.gh),
+      tone: TONES.has(item.tone) ? item.tone : BOARD_GROUP_TONES[0]
+    })
+    if (groups.length >= BOARD_MAX_GROUPS) break
+  }
+  return { wallpaper: isWallpaper(src.wallpaper) ? src.wallpaper : DEFAULT_BOARD.wallpaper, snap: src.snap !== false, shortcuts, groups }
 }
 
 export const cloneBoard = (b: Board): Board => normalizeBoard(b)

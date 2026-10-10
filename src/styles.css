@@ -4523,6 +4523,7 @@ details.adv > summary::marker {
   color: inherit;
   /* 중심↔가장자리 배율 변화를 부드럽게 — 팬·줌·정렬·프리셋 불러오기 때 애니메이션된다 */
   transition: transform 200ms var(--ft-ease);
+  z-index: 2;
   cursor: pointer;
   touch-action: none;
 }
@@ -4587,6 +4588,81 @@ details.adv > summary::marker {
   box-shadow: var(--e1);
 }
 .board-item .board-item-remove { z-index: 2; }
+
+/* ── 격자 오버레이 — 수정모드에서만 보인다 (부드럽게 사라진다) ── */
+.board-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ft-ease);
+}
+
+/* ── 그룹 박스 (묶음 시각화 — 항목을 담지 않는다) ── */
+.board-group {
+  --g: var(--accent);
+  position: absolute;
+  z-index: 1;
+  border-radius: var(--r-xl);
+  border: 1.5px dashed color-mix(in srgb, var(--g) 60%, transparent);
+  background: color-mix(in srgb, var(--g) 8%, transparent);
+  pointer-events: none;
+  transition: border-color var(--dur-fast) var(--ft-ease), background var(--dur-fast) var(--ft-ease);
+}
+.board.is-editing .board-group { pointer-events: auto; cursor: grab; }
+.board.is-editing .board-group:active { cursor: grabbing; }
+.board-group.is-dragging { background: color-mix(in srgb, var(--g) 15%, transparent); box-shadow: var(--e2); }
+.board-group.tone-blue { --g: var(--accent); }
+.board-group.tone-green { --g: var(--success); }
+.board-group.tone-violet { --g: var(--app); }
+.board-group.tone-amber { --g: var(--warn); }
+.board-group-label {
+  position: absolute;
+  top: -13px;
+  left: 10px;
+  max-width: calc(100% - 66px);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--g) 38%, transparent);
+  box-shadow: var(--e1);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-group-tools { position: absolute; top: -12px; right: 8px; display: none; gap: 4px; }
+.board.is-editing .board-group-tools { display: flex; }
+.board-group-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.board-group-btn.is-danger { color: var(--danger); }
+.board-group-resize {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1.5px solid color-mix(in srgb, var(--g) 60%, transparent);
+  display: none;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.board.is-editing .board-group-resize { display: block; }
 
 /* ── 빈 상태 · 줌 HUD ── */
 .board-empty {
@@ -4798,7 +4874,7 @@ details.adv > summary::marker {
 
 /* ── 벽지가 어두워도 판(서랍·팝오버·HUD·라벨)은 밝은 면이므로 글자는 항상 잉크색 ──
    반대로 벽지 위에 바로 놓이는 글자(상단 제목·개수·빈 상태)는 inherit 으로 벽지 색을 따른다. */
-.board-drawer, .board-pop, .board-hud, .board-item-label { color: var(--ink); }
+.board-drawer, .board-pop, .board-hud, .board-item-label, .board-group-label { color: var(--ink); }
 .board-actions .tb-btn { color: var(--ink); }
 .board-count { color: inherit; opacity: .72; }
 .board-empty { color: inherit; }
