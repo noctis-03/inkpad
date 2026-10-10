@@ -4743,15 +4743,15 @@ details.adv > summary::marker {
   --tone: var(--accent);
   position: absolute;
   z-index: 1;
-  /* 위쪽 모서리는 각지게 — 위에 얹히는 이름 탭(하단 각진 모서리)과 한 줄로 이어져 틈·단차가 없다 */
-  border-radius: 0 0 var(--r-2xl) var(--r-2xl);
+  /* 둥근 모서리 없이 직사각형 — 위에 얹히는 이름 띠와 합쳐 하나의 사각형이 된다 */
+  border-radius: 0;
   border: 1.5px solid color-mix(in srgb, var(--tone) 35%, transparent);
   background: color-mix(in srgb, var(--tone) 9%, transparent);
   pointer-events: none;
 }
-/* 이름 탭을 쓰지 않는 상태(접힘·박스 안 알약)에서는 네 모서리를 모두 둥글게 */
+/* 접힘·이름표 안쪽 표시 상태도 같은 직사각형 */
 .board-group.is-collapsed,
-.board-group.is-label-inside { border-radius: var(--r-2xl); }
+.board-group.is-label-inside { border-radius: 0; }
 .board.is-editing .board-group-head,
 .board.is-editing .board-group-resize,
 .board.is-editing .board-group-menu { pointer-events: auto; }
@@ -4775,7 +4775,7 @@ details.adv > summary::marker {
   padding: 0 8px 0 10px;
   border: 1.5px solid color-mix(in srgb, var(--tone) 35%, transparent);
   border-bottom: 0;
-  border-radius: calc(var(--r-2xl) - 1.5px) calc(var(--r-2xl) - 1.5px) 0 0;
+  border-radius: 0;
   background: color-mix(in srgb, var(--tone) 15%, transparent);
 }
 .board-group-head.is-label-inside {
@@ -4789,7 +4789,7 @@ details.adv > summary::marker {
   min-height: 26px;
   padding: 2px 4px 2px 10px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--tone) 22%, var(--panel));
   box-shadow: var(--e1);
   z-index: 3;
