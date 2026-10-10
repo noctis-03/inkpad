@@ -4521,10 +4521,11 @@ details.adv > summary::marker {
   background: none;
   font: inherit;
   color: inherit;
-  cursor: grab;
+  cursor: pointer;
   touch-action: none;
 }
-.board-item:active { cursor: grabbing; }
+.board.is-editing .board-item { cursor: grab; }
+.board.is-editing .board-item:active { cursor: grabbing; }
 .board-item.is-dragging { z-index: 9; }
 .board-item.is-dragging .board-item-face { transform: scale(1.07) rotate(-1.5deg); box-shadow: 0 14px 24px #00000040; }
 .board-item.is-missing { opacity: .62; }
