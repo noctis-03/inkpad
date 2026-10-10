@@ -4533,12 +4533,12 @@ details.adv > summary::marker {
   align-items: center;
   justify-content: center;
   width: 84px;
-  height: 100px;
+  height: 84px;
   border-radius: 8px;
   border: 1px solid #00000018;
   background-color: #fff;
   background-size: cover;
-  background-position: center;
+  background-position: top center;
   color: var(--muted);
   box-shadow: var(--e1);
   overflow: hidden;
@@ -4680,11 +4680,11 @@ details.adv > summary::marker {
 .board-card:active { cursor: grabbing; }
 .board-card-thumb {
   width: 48px;
-  height: 58px;
+  height: 48px;
   border-radius: 6px;
   background-color: #fff;
   background-size: cover;
-  background-position: center;
+  background-position: top center;
   border: 1px solid #00000018;
   box-shadow: var(--e1);
 }
