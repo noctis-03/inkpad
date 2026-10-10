@@ -4768,10 +4768,27 @@ details.adv > summary::marker {
   gap: 6px;
   padding: 0 8px 0 10px;
   border: 1.5px solid color-mix(in srgb, var(--tone) 35%, transparent);
-  border-bottom: 0;
-  border-radius: calc(var(--r-2xl) - 1.5px) calc(var(--r-2xl) - 1.5px) 0 0;
+  border-radius: calc(var(--r-2xl) - 1.5px) calc(var(--r-2xl) - 1.5px) 10px 10px;
   background: color-mix(in srgb, var(--tone) 15%, transparent);
 }
+.board-group-head.is-label-inside {
+  /* 박스가 무대 맨 위에 붙어 탭이 잘릴 때 — 이름을 박스 안쪽 알약(필)으로 띄워 항상 보이게 한다 */
+  top: 6px;
+  left: 6px;
+  right: auto;
+  width: auto;
+  max-width: calc(100% - 12px);
+  height: auto;
+  min-height: 26px;
+  padding: 2px 4px 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 22%, var(--panel));
+  box-shadow: var(--e1);
+  z-index: 3;
+}
+.board-group-head.is-label-inside .board-group-more { width: 24px; height: 24px; }
+.board-group-head.is-label-inside ~ .board-group-menu { top: 40px; }
 .board-group-name {
   font-size: var(--fs-sm);
   font-weight: 700;

@@ -1200,6 +1200,8 @@ export function Board() {
             const live = groupLive?.id === g.id ? groupLive : g
             const n = groupCounts.get(g.id) ?? 0
             const bigName = view.z < 1 ? (1 / view.z).toFixed(2) : '1'
+            // 박스 상단이 무대 맨 위에 닿으면 위쪽 탭이 잘리므로 이름을 박스 안쪽 알약으로 띄운다
+            const labelInside = !collapsed && view.y + live.gy * BOARD_CELL * view.z < 30 * view.z + 6
             return (
               <div
                 key={g.id}
@@ -1208,7 +1210,8 @@ export function Board() {
                   g.tone +
                   (collapsed ? ' is-collapsed' : '') +
                   (groupLive?.id === g.id ? ' is-dragging' : '') +
-                  (groupMenu === g.id ? ' is-menu-open' : '')
+                  (groupMenu === g.id ? ' is-menu-open' : '') +
+                  (labelInside ? ' is-label-inside' : '')
                 }
                 style={{
                   left: live.gx * BOARD_CELL,
