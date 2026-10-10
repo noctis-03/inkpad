@@ -1135,20 +1135,6 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 페이지 결 — 오른쪽 종이 단면 2겹 (조금 쫍게) */
-.doc-edge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 7px;
-  z-index: 2;
-  pointer-events: none;
-  border-left: 1px solid var(--line-2);
-  background:
-    repeating-linear-gradient(180deg, #0000000d 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(180deg, var(--thumb-paper) 0 2px, var(--line) 2px 3px);
-}
 .doc-thumb img {
   width: 100%;
   height: 100%;
@@ -1282,10 +1268,6 @@ textarea {
   align-items: center;
   justify-content: center;
   color: var(--muted-2);
-}
-/* 리스트 보기: 캡션을 한 줄로 눕히고 책등·페이지 결은 숨긴다 */
-.doc-list .doc-edge {
-  display: none;
 }
 .doc-list .doc-info {
   flex: 1;
