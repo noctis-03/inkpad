@@ -35,7 +35,7 @@ const MAX_Z = 2
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 
 /** 중심에 있는 바로가기 = 1, 초점 반경 밖 = 이 배율까지 작아진다 */
-const FOCUS_MIN = 0.5
+const FOCUS_MIN = 0.7
 /** 초점 반경 — 무대 짧은 변 대비 비율 (중심에서 이만큼 떨어지면 최소 배율) */
 const FOCUS_SPREAD = 0.62
 /** 부드러운 감쇠 — 양 끝에서 기울기가 0이라 꺾임 없이 이어지고, 중심은 넓게 원래 크기를 지킨다 */
@@ -295,13 +295,20 @@ export function Board() {
     setBoard((b) => ({ ...b, shortcuts: [...b.shortcuts, { id: newId(), kind, refId, ...g }] }))
   }
 
-  /** 놓인 카드 조작 — 탭이면 열기. 위치 이동은 수정모드일 때만 (6px 이상 끌면 이동) */
+  /** 놓인 카드 조작 — 탭이면 열기. 수정모드에서만 카드를 옮기고, 그 밖에는 카드를 잡아 끌어도 화면이 움직인다 */
   const beginMove = (sc: BoardShortcut, e: React.PointerEvent<HTMLButtonElement>) => {
     e.stopPropagation()
-    const canMove = edit // 수정모드에서만 위치를 옮길 수 있다
+    const canMove = edit // 수정모드에서만 카드 위치를 옮길 수 있다
     const sx = e.clientX
     const sy = e.clientY
     let moving = false
+
+    // 수정모드가 아니면 카드 위에서 시작한 끌기도 화면 이동(팬)으로 이어 준다
+    if (!canMove) {
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      armGesture()
+    }
+
     const move = (ev: PointerEvent) => {
       if (!moving && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) moving = true
       if (moving && canMove) setDragPos({ id: sc.id, ...toWorld(ev.clientX, ev.clientY) })
@@ -312,7 +319,7 @@ export function Board() {
         open(sc)
         return
       }
-      if (!canMove) return // 수정모드가 아니면 위치 고정 — 끌어도 제자리
+      if (!canMove) return // 수정모드가 아니면 위치 고정 — 화면만 움직였다
       const w = toWorld(ev.clientX, ev.clientY)
       const g = worldToGrid(w.x, w.y, boardRef.current.snap)
       setBoard((b) => ({ ...b, shortcuts: b.shortcuts.map((s) => (s.id === sc.id ? { ...s, ...g } : s)) }))
