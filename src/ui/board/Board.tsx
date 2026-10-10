@@ -273,15 +273,16 @@ export function Board() {
     setBoard((b) => ({ ...b, shortcuts: [...b.shortcuts, { id: newId(), kind, refId, ...g }] }))
   }
 
-  /** 놓인 카드 끌어 옮기기 — 탭이면 열기, 6px 이상 움직이면 이동 */
+  /** 놓인 카드 조작 — 탭이면 열기. 위치 이동은 수정모드일 때만 (6px 이상 끌면 이동) */
   const beginMove = (sc: BoardShortcut, e: React.PointerEvent<HTMLButtonElement>) => {
     e.stopPropagation()
+    const canMove = edit // 수정모드에서만 위치를 옮길 수 있다
     const sx = e.clientX
     const sy = e.clientY
     let moving = false
     const move = (ev: PointerEvent) => {
       if (!moving && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) moving = true
-      if (moving) setDragPos({ id: sc.id, ...toWorld(ev.clientX, ev.clientY) })
+      if (moving && canMove) setDragPos({ id: sc.id, ...toWorld(ev.clientX, ev.clientY) })
     }
     const up = (ev: PointerEvent) => {
       cleanup()
@@ -289,6 +290,7 @@ export function Board() {
         open(sc)
         return
       }
+      if (!canMove) return // 수정모드가 아니면 위치 고정 — 끌어도 제자리
       const w = toWorld(ev.clientX, ev.clientY)
       const g = worldToGrid(w.x, w.y, boardRef.current.snap)
       setBoard((b) => ({ ...b, shortcuts: b.shortcuts.map((s) => (s.id === sc.id ? { ...s, ...g } : s)) }))
@@ -466,7 +468,7 @@ export function Board() {
   }
 
   return (
-    <div className={'board board-wall-' + board.wallpaper} data-zoom={view.z < 0.55 ? 'far' : undefined}>
+    <div className={'board board-wall-' + board.wallpaper + (edit ? ' is-editing' : '')} data-zoom={view.z < 0.55 ? 'far' : undefined}>
       <header className="board-topbar">
         <h1 className="board-brand">작업보드</h1>
         <span className="board-count">
@@ -485,7 +487,12 @@ export function Board() {
           <button className="tb-btn" onClick={() => setWallMenu((v) => !v)} aria-label="배경화면" title="배경화면">
             <Icon name="wallpaper" />
           </button>
-          <button className={'tb-btn' + (edit ? ' is-on' : '')} onClick={() => setEdit((v) => !v)} aria-label="편집" title={edit ? '편집 끝내기' : '편집 (지우기)'}>
+          <button
+            className={'tb-btn' + (edit ? ' is-on' : '')}
+            onClick={() => setEdit((v) => !v)}
+            aria-label="편집"
+            title={edit ? '편집 끝내기' : '편집 (배치·서랍)'}
+          >
             <Icon name={edit ? 'check' : 'edit'} />
           </button>
           <button className="tb-btn" onClick={() => void savePreset()} aria-label="프리셋으로 저장" title="프리셋으로 저장">
@@ -507,10 +514,16 @@ export function Board() {
             <Icon name="board" size={52} />
             <h2>작업보드가 비어 있습니다</h2>
             <p>
-              아래 <b>카드 서랍</b>에서 카드를 끌어다 놓으면 그 자리에 바로가기가 생깁니다. 빈 곳을 끌면 보드가 움직이고, 벌려서(핀치) 확대할 수 있습니다.
+              오른쪽 위 <b>편집</b>을 켜면 아래 <b>카드 서랍</b>이 열립니다. 카드를 보드로 끌어다 놓으면 그 자리에 바로가기가 생기고, 놓인 카드도 편집 중에만 옮길 수 있습니다. 빈 곳을 끌면 보드가 움직이고, 벌려서(핀치) 확대할 수 있습니다.
             </p>
-            <button className="primary-btn" onClick={() => setDrawer(true)}>
-              <Icon name="plus" size={18} /> 카드 서랍 열기
+            <button
+              className="primary-btn"
+              onClick={() => {
+                setEdit(true)
+                setDrawer(true)
+              }}
+            >
+              <Icon name="plus" size={18} /> 편집 시작
             </button>
           </div>
         ) : null}
@@ -573,7 +586,7 @@ export function Board() {
       </div>
 
       {/* 줌 컨트롤 (무한 캔버스) */}
-      <div className={'board-hud' + (drawer ? ' with-drawer' : '')}>
+      <div className={'board-hud' + (edit && drawer ? ' with-drawer' : '')}>
         <button className="tb-btn" onClick={() => zoomBy(1 / 1.25)} aria-label="축소">
           <Icon name="minus" size={18} />
         </button>
@@ -586,66 +599,68 @@ export function Board() {
         </button>
       </div>
 
-      {/* 카드 서랍 — 카드를 보드로 끌어다 놓는다 */}
-      <section className={'board-drawer' + (drawer ? ' is-open' : '')} aria-label="카드 서랍">
-        <button className="board-drawer-head" onClick={() => setDrawer((v) => !v)} aria-expanded={drawer}>
-          <Icon name={drawer ? 'chevronDown' : 'chevronRight'} size={16} />
-          <b>카드 서랍</b>
-          <span className="board-drawer-sub">
-            노트 {docs.length} · 앱 {apps.length} · 파일 {files.length}
-          </span>
-          <span className="board-drawer-hint">카드를 보드로 끌어다 놓으세요</span>
-        </button>
-        {drawer && (
-          <div className="board-drawer-body">
-            <div className="board-drawer-tools">
-              <Segmented
-                className="board-tray-seg"
-                value={tray}
-                options={[
-                  ['doc', '노트'],
-                  ['app', '앱'],
-                  ['file', '파일'],
-                  ['all', '전체']
-                ]}
-                onChange={(v) => setTray(v)}
-                label="서랍 항목"
-              />
-              <span className="board-drawer-search">
-                <Icon name="search" size={15} />
-                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="카드 검색" aria-label="카드 검색" />
-              </span>
+      {/* 카드 서랍 — 수정모드일 때만 뜬다. 카드를 보드로 끌어다 놓는다 */}
+      {edit && (
+        <section className={'board-drawer' + (drawer ? ' is-open' : '')} aria-label="카드 서랍">
+          <button className="board-drawer-head" onClick={() => setDrawer((v) => !v)} aria-expanded={drawer}>
+            <Icon name={drawer ? 'chevronDown' : 'chevronRight'} size={16} />
+            <b>카드 서랍</b>
+            <span className="board-drawer-sub">
+              노트 {docs.length} · 앱 {apps.length} · 파일 {files.length}
+            </span>
+            <span className="board-drawer-hint">카드를 보드로 끌어다 놓으세요</span>
+          </button>
+          {drawer && (
+            <div className="board-drawer-body">
+              <div className="board-drawer-tools">
+                <Segmented
+                  className="board-tray-seg"
+                  value={tray}
+                  options={[
+                    ['doc', '노트'],
+                    ['app', '앱'],
+                    ['file', '파일'],
+                    ['all', '전체']
+                  ]}
+                  onChange={(v) => setTray(v)}
+                  label="서랍 항목"
+                />
+                <span className="board-drawer-search">
+                  <Icon name="search" size={15} />
+                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="카드 검색" aria-label="카드 검색" />
+                </span>
+              </div>
+              <div className="board-drawer-strip">
+                {trayItems.length === 0 ? (
+                  <span className="board-drawer-none">카드가 없습니다</span>
+                ) : (
+                  trayItems.map((x) => {
+                    const n = placedKeys.get(x.key) ?? 0
+                    return (
+                      <div
+                        key={x.key}
+                        className={'board-card kind-' + x.kind + (n ? ' is-placed' : '')}
+                        onPointerDown={(e) => beginCarry(e, x.kind, x.id, x.label)}
+                        title={`${x.label} — 보드로 끌어다 놓기${n ? ` (보드에 ${n}개)` : ''}`}
+                      >
+                        {x.kind === 'doc' && thumbs.get(x.id) ? (
+                          <span className="board-card-thumb" style={{ backgroundImage: `url(${thumbs.get(x.id)})` }} />
+                        ) : (
+                          <span className={'board-card-thumb is-icon kind-' + x.kind}>
+                            <Icon name={x.kind === 'doc' ? 'page' : x.kind === 'app' ? 'app' : 'file'} size={16} />
+                          </span>
+                        )}
+                        <span className="board-card-name">{x.label}</span>
+                        {n ? <span className="board-card-badge">{n}</span> : null}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
             </div>
-            <div className="board-drawer-strip">
-              {trayItems.length === 0 ? (
-                <span className="board-drawer-none">카드가 없습니다</span>
-              ) : (
-                trayItems.map((x) => {
-                  const n = placedKeys.get(x.key) ?? 0
-                  return (
-                    <div
-                      key={x.key}
-                      className={'board-card kind-' + x.kind + (n ? ' is-placed' : '')}
-                      onPointerDown={(e) => beginCarry(e, x.kind, x.id, x.label)}
-                      title={`${x.label} — 보드로 끌어다 놓기${n ? ` (보드에 ${n}개)` : ''}`}
-                    >
-                      {x.kind === 'doc' && thumbs.get(x.id) ? (
-                        <span className="board-card-thumb" style={{ backgroundImage: `url(${thumbs.get(x.id)})` }} />
-                      ) : (
-                        <span className={'board-card-thumb is-icon kind-' + x.kind}>
-                          <Icon name={x.kind === 'doc' ? 'page' : x.kind === 'app' ? 'app' : 'file'} size={16} />
-                        </span>
-                      )}
-                      <span className="board-card-name">{x.label}</span>
-                      {n ? <span className="board-card-badge">{n}</span> : null}
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
 
       {/* 서랍에서 끌고 있는 카드 고스트 */}
       {carry && (
