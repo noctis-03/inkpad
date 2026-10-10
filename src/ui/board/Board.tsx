@@ -34,6 +34,13 @@ const MIN_Z = 0.25
 const MAX_Z = 2
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 
+/** 중심에 있는 바로가기 = 1, 초점 반경 밖 = 이 배율까지 작아진다 */
+const FOCUS_MIN = 0.5
+/** 초점 반경 — 무대 짧은 변 대비 비율 (중심에서 이만큼 떨어지면 최소 배율) */
+const FOCUS_SPREAD = 0.62
+/** 부드러운 감쇠 — 양 끝에서 기울기가 0이라 꺾임 없이 이어지고, 중심은 넓게 원래 크기를 지킨다 */
+const smoothstep = (u: number) => u * u * (3 - 2 * u)
+
 function loadBoard(): BoardModel {
   try {
     const raw = localStorage.getItem(LS_BOARD)
@@ -65,6 +72,7 @@ export function Board() {
   const [files, setFiles] = useState<FileRow[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [view, setView] = useState({ x: 0, y: 0, z: 1 })
+  const [stage, setStage] = useState({ w: 0, h: 0 })
   const [edit, setEdit] = useState(false)
   const [drawer, setDrawer] = useState(true)
   const [tray, setTray] = useState<TrayFilter>('doc')
@@ -122,6 +130,20 @@ export function Board() {
     if (!r.width) return
     centered.current = true
     setView({ x: Math.round(r.width / 2), y: Math.round(r.height / 2), z: 1 })
+  }, [])
+
+  /** 무대 크기를 추적 — 화면 중심 기준으로 가장자리 바로가기를 작게 그리는 데 쓴다 */
+  useLayoutEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const measure = () => {
+      const r = el.getBoundingClientRect()
+      setStage((s) => (s.w === r.width && s.h === r.height ? s : { w: r.width, h: r.height }))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [])
 
   // ── 팬 / 핀치 줌 (무한 캔버스) ──
@@ -427,6 +449,13 @@ export function Board() {
     return out
   }, [shortcuts])
 
+  // 화면 중심 기준 초점 — 중심은 원래 크기, 끝으로 갈수록 작아진다.
+  // 배율이 곧 '중심에서 얼마나 떨어졌는가'이므로 팬·줌할 때마다 부드럽게 이어진다(카드의 transition).
+  const focus = useMemo(() => {
+    const R = clamp(Math.min(stage.w, stage.h) * FOCUS_SPREAD, 200, 720)
+    return { cx: stage.w / 2, cy: stage.h / 2, R }
+  }, [stage.w, stage.h])
+
   const savePreset = async () => {
     const name = await promptDialog('프리셋으로 저장', {
       value: `작업보드 ${new Date().getMonth() + 1}/${new Date().getDate()}`,
@@ -535,11 +564,17 @@ export function Board() {
             const wx = dragging ? dragPos!.x : cellCenter(sc.gx)
             const wy = dragging ? dragPos!.y : cellCenter(sc.gy)
             const off = dragging ? 0 : (stackIndex.get(sc.id) ?? 0) * 7
+            // 화면에서 중심에서 얼마나 떨어졌는지로 배율을 정한다 — 중심 1, 끝으로 갈수록 FOCUS_MIN 까지 작아진다
+            const ix = wx + off
+            const iy = wy + off
+            const dist = Math.hypot(view.x + ix * view.z - focus.cx, view.y + iy * view.z - focus.cy)
+            const t = focus.R > 0 ? clamp(dist / focus.R, 0, 1) : 0
+            const s = dragging ? 1 : FOCUS_MIN + (1 - FOCUS_MIN) * smoothstep(1 - t)
             return (
               <button
                 key={sc.id}
                 className={'board-item kind-' + sc.kind + (dragging ? ' is-dragging' : '') + (it ? '' : ' is-missing')}
-                style={{ left: wx + off, top: wy + off }}
+                style={{ left: ix, top: iy, transform: `translate(-50%, -50%) scale(${s.toFixed(3)})` }}
                 onPointerDown={(e) => beginMove(sc, e)}
                 onContextMenu={(e) => {
                   e.preventDefault()
