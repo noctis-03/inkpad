@@ -1121,7 +1121,11 @@ export function Board() {
               ['view', '보기'],
               ['edit', '편집']
             ]}
-            onChange={(v) => setEdit(v === 'edit')}
+            onChange={(v) => {
+              const on = v === 'edit'
+              setEdit(on)
+              if (on) setPanelOpen(true) // 편집을 켜면 카드 서랍(노트)을 바로 연다
+            }}
             label="보기/편집 모드"
           />
         </div>
@@ -1156,6 +1160,14 @@ export function Board() {
           <button className="bet-btn" onClick={() => void addGroup()} aria-label="그룹 추가">
             <Icon name="folderPlus" size={17} />
             <span>그룹</span>
+          </button>
+          <button
+            className={'bet-btn' + (panelOpen ? ' is-on' : '')}
+            onClick={() => setPanelOpen((v) => !v)}
+            aria-label="카드 서랍 — 노트·앱·파일"
+          >
+            <Icon name="page" size={17} />
+            <span>서랍</span>
           </button>
           <span className="bet-sep" />
           <button className="primary-btn bet-done" onClick={() => setEdit(false)}>
