@@ -47,6 +47,11 @@ const FOCUS_SPREAD = 0.62
 /** 부드러운 감쇠 — 양 끝에서 기울기가 0이라 꺾임 없이 이어지고, 중심은 넓게 원래 크기를 지킨다 */
 const smoothstep = (u: number) => u * u * (3 - 2 * u)
 
+/** 이 배율 이하로 축소되면 그룹 안 항목은 숨기고 그룹은 이름 타일로 접는다 */
+const GROUP_COLLAPSE_Z = 0.5
+/** 줌 버튼 한 번에 움직이는 배율 폭 (10%p) */
+const ZOOM_STEP = 0.1
+
 function loadBoard(): BoardModel {
   try {
     const raw = localStorage.getItem(LS_BOARD)
@@ -87,6 +92,7 @@ export function Board() {
   const [showPresets, setShowPresets] = useState(false)
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null)
   const [groupLive, setGroupLive] = useState<BoardGroup | null>(null)
+  const [worldAnim, setWorldAnim] = useState(false)
   const [carry, setCarry] = useState<{ kind: ShortcutKind; refId: ID; label: string; x: number; y: number } | null>(null)
 
   const stageRef = useRef<HTMLDivElement>(null)
@@ -94,6 +100,7 @@ export function Board() {
   const viewRef = useRef(view)
   const thumbUrls = useRef<string[]>([])
   const centered = useRef(false)
+  const animTimer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     boardRef.current = board
@@ -220,6 +227,7 @@ export function Board() {
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      setWorldAnim(false) // 휠은 연속 입력이라 즉시 반영한다
       const v = viewRef.current
       if (e.ctrlKey || e.metaKey) {
         const r = el.getBoundingClientRect()
@@ -238,20 +246,45 @@ export function Board() {
 
   const stageDown = (e: React.PointerEvent) => {
     if (e.target !== stageRef.current) return // 카드에서 시작한 포인터는 카드가 처리한다
+    setWorldAnim(false) // 팬은 즉시 반응해야 한다
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     armGesture()
   }
 
-  const zoomBy = (factor: number) => {
-    const el = stageRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const v = viewRef.current
-    const cx = r.width / 2
-    const cy = r.height / 2
-    const z = clamp(v.z * factor, MIN_Z, MAX_Z)
-    const k = z / v.z
-    setView({ z, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k })
+  /** 월드 변환을 부드럽게 이어 주는 동안만 transition 을 켠다 (팬·핀치는 즉시) */
+  const withWorldAnim = (fn: () => void) => {
+    setWorldAnim(true)
+    requestAnimationFrame(() => {
+      fn()
+      if (animTimer.current) clearTimeout(animTimer.current)
+      animTimer.current = window.setTimeout(() => setWorldAnim(false), 320)
+    })
+  }
+
+  /** 화면 중심을 고정한 채 배율만 바꾼다 */
+  const zoomTo = (next: number, animate = true) => {
+    const run = () => {
+      const el = stageRef.current
+      if (!el) return
+      const v = viewRef.current
+      const z = clamp(next, MIN_Z, MAX_Z)
+      const k = z / v.z
+      const r = el.getBoundingClientRect()
+      const cx = r.width / 2
+      const cy = r.height / 2
+      setView({ z, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k })
+    }
+    if (animate) withWorldAnim(run)
+    else run()
+  }
+
+  /** 줌 버튼 — 10%p 씩 */
+  const zoomStep = (delta: number) => zoomTo(viewRef.current.z + delta)
+
+  /** 배율 수치 클릭 — 100% 로 */
+  const zoomReset = () => {
+    if (Math.abs(viewRef.current.z - 1) < 0.001) return
+    zoomTo(1)
   }
 
   const toWorld = useCallback((cx: number, cy: number) => {
@@ -305,6 +338,7 @@ export function Board() {
   /** 놓인 카드 조작 — 탭이면 열기. 수정모드에서만 카드를 옮기고, 그 밖에는 카드를 잡아 끌어도 화면이 움직인다 */
   const beginMove = (sc: BoardShortcut, e: React.PointerEvent<HTMLButtonElement>) => {
     e.stopPropagation()
+    setWorldAnim(false)
     const canMove = edit // 수정모드에서만 카드 위치를 옮길 수 있다
     const sx = e.clientX
     const sy = e.clientY
@@ -380,33 +414,35 @@ export function Board() {
 
   /** 보드의 모든 바로가기가 화면에 들어오게 맞춤 */
   const fit = () => {
-    const el = stageRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const list = boardRef.current.shortcuts
-    if (!list.length) {
-      setView({ x: Math.round(r.width / 2), y: Math.round(r.height / 2), z: 1 })
-      return
-    }
-    const pad = BOARD_CELL
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const s of list) {
-      const cx = cellCenter(s.gx)
-      const cy = cellCenter(s.gy)
-      minX = Math.min(minX, cx)
-      maxX = Math.max(maxX, cx)
-      minY = Math.min(minY, cy)
-      maxY = Math.max(maxY, cy)
-    }
-    const w = maxX - minX + pad * 2
-    const h = maxY - minY + pad * 2
-    const z = clamp(Math.min(r.width / w, r.height / h), MIN_Z, 1.3)
-    const cxw = (minX + maxX) / 2
-    const cyw = (minY + maxY) / 2
-    setView({ z, x: r.width / 2 - cxw * z, y: r.height / 2 - cyw * z })
+    withWorldAnim(() => {
+      const el = stageRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const list = boardRef.current.shortcuts
+      if (!list.length) {
+        setView({ x: Math.round(r.width / 2), y: Math.round(r.height / 2), z: 1 })
+        return
+      }
+      const pad = BOARD_CELL
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const s of list) {
+        const cx = cellCenter(s.gx)
+        const cy = cellCenter(s.gy)
+        minX = Math.min(minX, cx)
+        maxX = Math.max(maxX, cx)
+        minY = Math.min(minY, cy)
+        maxY = Math.max(maxY, cy)
+      }
+      const w = maxX - minX + pad * 2
+      const h = maxY - minY + pad * 2
+      const z = clamp(Math.min(r.width / w, r.height / h), MIN_Z, 1.3)
+      const cxw = (minX + maxX) / 2
+      const cyw = (minY + maxY) / 2
+      setView({ z, x: r.width / 2 - cxw * z, y: r.height / 2 - cyw * z })
+    })
   }
 
   // ── 그룹 박스 (묶음 시각화 — 항목을 담지 않는다) ──
@@ -539,6 +575,24 @@ export function Board() {
     }
     return m
   }, [shortcuts])
+
+  // 50% 이하로 축소되면 그룹은 이름 타일로 접히고, 그 안의 항목은 숨는다
+  const collapsed = view.z <= GROUP_COLLAPSE_Z
+  const groupedIds = useMemo(() => {
+    const m = new Map<string, string>() // 바로가기 id → 그룹 id
+    for (const sc of shortcuts) {
+      const cx = sc.gx + 0.5
+      const cy = sc.gy + 0.5
+      const g = board.groups.find((gr) => cx >= gr.gx && cx <= gr.gx + gr.gw && cy >= gr.gy && cy <= gr.gy + gr.gh)
+      if (g) m.set(sc.id, g.id)
+    }
+    return m
+  }, [shortcuts, board.groups])
+  const groupCounts = useMemo(() => {
+    const m = new Map<string, number>()
+    groupedIds.forEach((gid) => m.set(gid, (m.get(gid) ?? 0) + 1))
+    return m
+  }, [groupedIds])
 
   // ── 격자 배경 (무한 격자) ──
   const gridStyle = useMemo(() => {
@@ -694,18 +748,31 @@ export function Board() {
           </div>
         ) : null}
 
-        <div className="board-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})` }}>
+        <div
+          className="board-world"
+          style={{
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
+            transition: worldAnim ? 'transform 260ms var(--ft-ease)' : 'none'
+          }}
+        >
           {/* 그룹 박스 — 안에 담지 않고, 묶음을 시각적으로만 표시한다 */}
           {board.groups.map((g) => {
             const live = groupLive?.id === g.id ? groupLive : g
+            const n = groupCounts.get(g.id) ?? 0
             return (
               <div
                 key={g.id}
-                className={'board-group tone-' + g.tone + (groupLive?.id === g.id ? ' is-dragging' : '')}
+                className={'board-group tone-' + g.tone + (collapsed ? ' is-collapsed' : '') + (groupLive?.id === g.id ? ' is-dragging' : '')}
                 style={{ left: live.gx * BOARD_CELL, top: live.gy * BOARD_CELL, width: live.gw * BOARD_CELL, height: live.gh * BOARD_CELL }}
                 onPointerDown={(e) => beginGroupMove(g, e)}
               >
                 <span className="board-group-label">{g.name}</span>
+                {collapsed && (
+                  <>
+                    <span className="board-group-big-name">{g.name}</span>
+                    {n ? <span className="board-group-big-count">항목 {n}개</span> : null}
+                  </>
+                )}
                 <span className="board-group-tools">
                   <button
                     className="board-group-btn"
@@ -731,6 +798,7 @@ export function Board() {
             )
           })}
           {shortcuts.map((sc) => {
+            if (collapsed && groupedIds.has(sc.id)) return null // 축소되면 그룹이 항목을 대신한다
             const it = itemOf(sc)
             const dragging = dragPos?.id === sc.id
             const wx = dragging ? dragPos!.x : cellCenter(sc.gx)
@@ -794,11 +862,13 @@ export function Board() {
 
       {/* 줌 컨트롤 (무한 캔버스) */}
       <div className={'board-hud' + (edit && drawer ? ' with-drawer' : '')}>
-        <button className="tb-btn" onClick={() => zoomBy(1 / 1.25)} aria-label="축소">
+        <button className="tb-btn" onClick={() => zoomStep(-ZOOM_STEP)} disabled={view.z <= MIN_Z} aria-label="축소 (10%)">
           <Icon name="minus" size={18} />
         </button>
-        <b className="board-hud-zoom">{Math.round(view.z * 100)}%</b>
-        <button className="tb-btn" onClick={() => zoomBy(1.25)} aria-label="확대">
+        <button className="board-hud-zoom" onClick={zoomReset} aria-label="배율 100%로" title="눌러서 100%로">
+          {Math.round(view.z * 100)}%
+        </button>
+        <button className="tb-btn" onClick={() => zoomStep(ZOOM_STEP)} disabled={view.z >= MAX_Z} aria-label="확대 (10%)">
           <Icon name="plus" size={18} />
         </button>
         <button className="tb-btn" onClick={fit} disabled={!shortcuts.length} aria-label="화면에 맞춤">
