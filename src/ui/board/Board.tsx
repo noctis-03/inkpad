@@ -41,6 +41,8 @@ const MIN_Z = 0.25
 const MAX_Z = 2
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 
+/** 그룹 박스 안쪽 맨 위 '이름 칸' 높이(px) — 박스 하나 안에 들어간다 */
+const GROUP_HEAD_H = 30
 /** 이 배율 이하로 축소되면 그룹 안 항목은 숨고 그룹은 이름 타일로 접힌다 */
 const GROUP_COLLAPSE_Z = 0.5
 /** 줌 버튼 한 번에 움직이는 배율 폭 (10%p) */
@@ -1165,7 +1167,8 @@ export function Board() {
 
       {/* 무한 사각 격자 무대 */}
       <div className="board-stage" ref={stageRef} onPointerDown={stageDown}>
-        <div className="board-grid" style={{ ...gridStyle, opacity: edit ? 1 : 0 }} aria-hidden="true" />
+        {/* 격자는 보기·편집 모두에서 보인다 */}
+        <div className="board-grid" style={gridStyle} aria-hidden="true" />
 
         {shortcuts.length === 0 ? (
           <div className="board-empty">
@@ -1200,7 +1203,8 @@ export function Board() {
             const n = groupCounts.get(g.id) ?? 0
             const bigName = view.z < 1 ? (1 / view.z).toFixed(2) : '1'
             // 박스 상단이 무대 맨 위에 닿으면 위쪽 탭이 잘리므로 이름을 박스 안쪽 알약으로 띄운다
-            const labelInside = !collapsed && view.y + live.gy * BOARD_CELL * view.z < 30 * view.z + 6
+            const boxTop = live.gy * BOARD_CELL - (collapsed ? 0 : GROUP_HEAD_H)
+            const labelInside = !collapsed && view.y + boxTop * view.z < 30 * view.z + 6
             return (
               <div
                 key={g.id}
@@ -1214,9 +1218,10 @@ export function Board() {
                 }
                 style={{
                   left: live.gx * BOARD_CELL,
-                  top: live.gy * BOARD_CELL,
+                  /* 이름 칸까지 포함한 '박스 하나' — 위로 GROUP_HEAD_H 만큼 늘려 잡는다 */
+                  top: live.gy * BOARD_CELL - (collapsed ? 0 : GROUP_HEAD_H),
                   width: live.gw * BOARD_CELL,
-                  height: live.gh * BOARD_CELL,
+                  height: live.gh * BOARD_CELL + (collapsed ? 0 : GROUP_HEAD_H),
                   ['--tone' as string]: `var(${TONE_VAR[g.tone] ?? '--accent'})`
                 }}
               >
