@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
@@ -54,6 +54,14 @@ type Section =
   | { kind: 'trash' }
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
+
+/** 같은 사이드바 항목인지 — 같으면 '한 번 더 누른' 것으로 보고 최근 열람을 토글한다 */
+function sameSection(a: Section, b: Section): boolean {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'category' && b.kind === 'category') return a.name === b.name
+  if (a.kind === 'folder' && b.kind === 'folder') return a.id === b.id
+  return true
+}
 
 /**
  * 카드 캡션의 동기화 상태 라벨 (변경안 A).
@@ -197,9 +205,8 @@ export function Library() {
   const recentActive = recentOnly && recentScope
   // 사이드바 선택 항목 슬라이딩 인디케이터 (5.2, 세로)
   const treeRef = useRef<HTMLElement>(null)
-  const treeActiveKey = recentActive
-    ? 'recent'
-    : section.kind === 'all'
+  const treeActiveKey =
+    section.kind === 'all'
       ? 'all'
       : section.kind === 'category'
         ? `cat:${section.name}`
@@ -373,27 +380,21 @@ export function Library() {
     return recentDocs
   }, [recentDocs, section, folders])
 
-  /** '최근 열람한 노트' 항목 — 지금 고른 항목 바로 아래에서 펼쳐진다 */
-  const recentButton = (scope: string) => (
-    <button
-      key={scope + ':recent'}
-      data-indicator-key="recent"
-      className={'tree-item tree-recent' + (recentActive ? ' is-active' : '')}
-      onClick={() => {
-        setRecent(loadRecentDocs()) // 노트를 열었다 돌아온 사이 늘어난 기록을 반영
-        setRecentOnly((v) => !v)
-      }}
-    >
-      <Icon name="restore" size={18} /> 최근 열람한 노트 <span className="count">{scopedRecentDocs.length}</span>
-    </button>
-  )
-
-  /** '전체' 버튼 — 항상 전체 문서를 보여 준다. 최근 열람은 아래 '최근 열람한 노트' 항목이 맡는다. */
-  const onAllClick = () => {
-    setSection({ kind: 'all' })
-    setRecentOnly(false)
-    setRecent(loadRecentDocs()) // 노트를 열었다 돌아온 사이 늘어난 기록을 반영
+  /**
+   * 사이드바 항목 고르기 — 이미 고른 항목을 한 번 더 누르면 그 항목 범위의
+   * '최근 열람한 노트'를 보여 준다 (예: '전체'를 누르고 한 번 더 누르면 최근 열람).
+   */
+  const pickSection = (next: Section) => {
+    if (sameSection(section, next)) {
+      setRecent(loadRecentDocs()) // 노트를 열었다 돌아온 사이 늘어난 기록을 반영
+      setRecentOnly((v) => !v)
+      return
+    }
+    setSection(next)
   }
+
+  /** 최근 열람 모드일 때 그 항목 옆에 붙는 표식 */
+  const recentTag = <span className="tree-recent-tag">최근</span>
 
   const visible = useMemo(() => {
     if (recentActive) {
@@ -1123,19 +1124,22 @@ export function Library() {
           <nav className="folder-tree" aria-label="폴더" ref={treeRef}>
             <button
               data-indicator-key="all"
-              className={'tree-item' + (section.kind === 'all' && !recentActive ? ' is-active' : '')}
-              onClick={onAllClick}
+              className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')}
+              onClick={() => pickSection({ kind: 'all' })}
             >
-              <Icon name="grid" size={18} /> 전체{' '}
+              <Icon name="grid" size={18} /> 전체 {section.kind === 'all' && recentActive && recentTag}
               <span className="count">
                 <CountUp value={docs.length + apps.length + files.length} />
               </span>
             </button>
-            {section.kind === 'all' && recentButton('all')}
-            <button data-indicator-key="notes" className={'tree-item' + (section.kind === 'notes' && !recentActive ? ' is-active' : '')} onClick={() => setSection({ kind: 'notes' })}>
-              <Icon name="notebook" size={18} /> 모든 노트 <span className="count"><CountUp value={docs.length} /></span>
+            <button
+              data-indicator-key="notes"
+              className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')}
+              onClick={() => pickSection({ kind: 'notes' })}
+            >
+              <Icon name="notebook" size={18} /> 모든 노트 {section.kind === 'notes' && recentActive && recentTag}{' '}
+              <span className="count"><CountUp value={docs.length} /></span>
             </button>
-            {section.kind === 'notes' && recentButton('notes')}
             <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
               <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
             </button>
@@ -1144,29 +1148,28 @@ export function Library() {
             </button>
             <div className="tree-label">카테고리</div>
             {shownCategories.map((c) => (
-              <Fragment key={c}>
-                <button
-                  data-indicator-key={'cat:' + c}
-                  className={'tree-item' + (section.kind === 'category' && section.name === c && !recentActive ? ' is-active' : '')}
-                  onClick={() => setSection({ kind: 'category', name: c })}
-                >
-                  <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
-                  <span className="tree-name">{c}</span>
-                  <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
-                </button>
-                {section.kind === 'category' && section.name === c && recentButton('cat:' + c)}
-              </Fragment>
+              <button
+                key={c}
+                data-indicator-key={'cat:' + c}
+                className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
+                onClick={() => pickSection({ kind: 'category', name: c })}
+              >
+                <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+                <span className="tree-name">{c}</span>
+                {section.kind === 'category' && section.name === c && recentActive && recentTag}
+                <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
+              </button>
             ))}
             <button
               data-indicator-key="uncategorized"
-              className={'tree-item' + (section.kind === 'uncategorized' && !recentActive ? ' is-active' : '')}
-              onClick={() => setSection({ kind: 'uncategorized' })}
+              className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
+              onClick={() => pickSection({ kind: 'uncategorized' })}
             >
               <span className="tree-cat-dot" style={{ background: categoryColor(null) }} aria-hidden="true" />
               <span className="tree-name">미분류</span>
+              {section.kind === 'uncategorized' && recentActive && recentTag}
               <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
             </button>
-            {section.kind === 'uncategorized' && recentButton('uncategorized')}
             <div className="tree-label">
               폴더
               <button className="icon-mini" onClick={() => onNewFolder(null)} aria-label="새 폴더">
@@ -1177,13 +1180,13 @@ export function Library() {
               folders={folders}
               parentId={null}
               depth={0}
-              activeId={recentActive ? null : currentFolderId}
+              activeId={currentFolderId}
               docs={docs}
               apps={apps}
               files={files}
-              onSelect={(id) => setSection({ kind: 'folder', id })}
+              recentActive={recentActive}
+              onSelect={(id) => pickSection({ kind: 'folder', id })}
               onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
-              recentSlot={(id) => (section.kind === 'folder' && section.id === id ? recentButton('folder:' + id) : null)}
             />
             <button data-indicator-key="trash" className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
               <Icon name="trash" size={18} /> 휴지통 <span className="count"><CountUp value={trash.length} /></span>
@@ -1638,8 +1641,8 @@ function FolderTree(props: {
   files: FileRow[]
   onSelect: (id: ID) => void
   onMenu: (f: Folder, x: number, y: number) => void
-  /** 고른 폴더 바로 아래에 끼워 넣을 항목 (최근 열람한 노트) */
-  recentSlot?: (id: ID) => React.ReactNode
+  /** 고른 폴더에서 '최근 열람' 모드일 때 폴더 이름 옆에 표식을 붙인다 */
+  recentActive?: boolean
 }) {
   const children = props.folders.filter((f) => f.parentId === props.parentId)
   if (!children.length) return null
@@ -1650,6 +1653,7 @@ function FolderTree(props: {
           <div className={'tree-item folder' + (props.activeId === f.id ? ' is-active' : '')} data-indicator-key={'folder:' + f.id} style={{ paddingLeft: 12 + props.depth * 16 }}>
             <button className="tree-main" onClick={() => props.onSelect(f.id)}>
               <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
+              {props.recentActive && props.activeId === f.id && <span className="tree-recent-tag">최근</span>}
               <span className="count">
                 {props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length +
                   props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length +
@@ -1667,7 +1671,6 @@ function FolderTree(props: {
               <Icon name="more" size={16} />
             </button>
           </div>
-          {props.recentSlot?.(f.id)}
           <FolderTree {...props} parentId={f.id} depth={props.depth + 1} />
         </div>
       ))}

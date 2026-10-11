@@ -1006,27 +1006,19 @@ textarea {
 .tree-item.trash {
   margin-top: 14px;
 }
-/* '최근 열람한 노트' 항목 — 지금 고른 항목 바로 아래에서 펼쳐지고,
-   그 항목에 속한 최근 노트만 보여 준다 (전체·모든 노트·카테고리·미분류·폴더).
-   항목을 바꾸면 이 항목도 새 항목 아래로 옮겨 가며 다시 펼쳐진다.
-   is-active = 최근 열람 모드로 보고 있는 중. */
-.tree-item.tree-recent {
-  height: 40px;
-  padding-left: 34px; /* 하위 항목처럼 한 단계 들여쓰기 */
-  font-size: 13px;
-  animation: tree-recent-in .45s var(--ft-spring) both;
-}
-@keyframes tree-recent-in {
-  from {
-    height: 0;
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    height: 40px;
-    opacity: 1;
-    transform: none;
-  }
+/* '최근 열람한 노트' — 별도 항목이 아니라, 이미 고른 항목을 한 번 더 누르면
+   그 항목 범위의 최근 노트가 나온다 (예: '전체'를 누르고 한 번 더).
+   그때 고른 항목 이름 옆에 붙는 표식. */
+.tree-recent-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--muted-2);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .02em;
 }
 .library-main {
   flex: 1;
