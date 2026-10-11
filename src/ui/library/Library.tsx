@@ -6,6 +6,7 @@ import { settle } from '../motion/settle'
 import { CountUp } from '../motion/CountUp'
 import { SPRING, dur, motionLevel } from '../motion/motion'
 import { Icon } from '../Icon'
+import { refreshAllThumbnailsWithToast } from '../../io/docThumb'
 import { Segmented } from '../Segmented'
 import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { NewDocumentSheet } from './NewDocumentSheet'
@@ -1097,6 +1098,7 @@ export function Library() {
         <button className="tb-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
           <Icon name="board" />
         </button>
+        <ThumbRefreshButton />
         <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
           <Icon name="gear" />
         </button>
@@ -1759,5 +1761,30 @@ function CategoryPicker({
         </div>
       </div>
     </div>
+  )
+}
+
+/** 미리보기 일괄 새로고침 — 만들 수 있는 카드 미리보기를 한 번에 다시 만든다.
+ * 원본이 없어 만들 수 없는 PDF 노트는 자동으로 건너뛰고, 원본을 받으면 다음 실행부터 대상이 된다. */
+function ThumbRefreshButton() {
+  const [busy, setBusy] = useState(false)
+  const toast = useUI((s) => s.toast)
+  return (
+    <button
+      className={'tb-btn thumb-refresh' + (busy ? ' spinning' : '')}
+      disabled={busy}
+      aria-label="미리보기 새로고침"
+      title="카드 미리보기 새로고침 — 만들 수 있는 미리보기를 한 번에 다시 만듭니다"
+      onClick={() => {
+        setBusy(true)
+        void refreshAllThumbnailsWithToast()
+          .then((n) => {
+            if (!n) toast('새로 만들 미리보기가 없습니다. 원본이 없는 PDF 노트는 원본을 받은 뒤 만들 수 있어요.', 'info')
+          })
+          .finally(() => setBusy(false))
+      }}
+    >
+      <Icon name="replace" />
+    </button>
   )
 }

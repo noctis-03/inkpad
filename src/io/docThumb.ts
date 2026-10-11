@@ -157,4 +157,43 @@ export async function refreshMissingThumbnailsWithToast(docIds?: ID[]): Promise<
   return made
 }
 
+/**
+ * 미리보기 새로고침 버튼용 — 대상을 골라 한 번에 다시 만들고 진행·완료 토스트를 띄운다.
+ * 대상: 미리보기가 없거나, 미리보기를 만든 뒤 노트가 바뀌었거나, PDF 노트 중 원본이 이 기기에
+ * 확보된 것(원본 도착 전에 만든 필기-only 미리보기를 실제 모습으로 되살린다).
+ * 만들 수 없는 노트(PDF 원본 미확보 + 그릴 게 없음, 무한 캔버스)는 renderPageBlob이 null을
+ * 돌려 자동으로 건너뛴다 — 실패로 세지 않는다. 만들어진 개수를 돌려준다.
+ */
+export async function refreshAllThumbnailsWithToast(docIds?: ID[]): Promise<number> {
+  const have = new Map<ID, ThumbRow>((await db.thumbnails.toArray()).map((r) => [r.documentId, r]))
+  const docs = (await db.documents.toArray()).filter((d) => !d.deletedAt && (!docIds || docIds.includes(d.id)))
+  const targets: ID[] = []
+  for (const d of docs) {
+    const t = have.get(d.id)
+    if (!t || t.updatedAt < d.updatedAt) {
+      targets.push(d.id) // 없거나 노트가 그 이후에 바뀐 미리보기
+      continue
+    }
+    // 최신이어도 PDF 노트는 원본이 지금 이 기기에 있으면 다시 만든다
+    const pdfAssetIds = (await db.pages.where('documentId').equals(d.id).toArray()).filter((p) => p.pdf).map((p) => p.pdf!.assetId)
+    if (pdfAssetIds.length && (await db.assets.filter((a) => pdfAssetIds.includes(a.id) && !!a.blob).count())) targets.push(d.id)
+  }
+  if (!targets.length) return 0
+  const sticky = useUI.getState().toast(`미리보기를 만드는 중… (${targets.length}개)`, 'info', undefined, { sticky: true })
+  let made = 0
+  for (const id of targets) {
+    try {
+      if (await regenerateThumbnail(id)) made++
+    } catch {
+      /* 미리보기는 선택 사항 */
+    }
+  }
+  useUI.getState().dismissToast(sticky)
+  if (made) {
+    useUI.getState().toast(`미리보기 ${made}개를 다시 만들었습니다.`, 'success')
+    emitThumbsChanged() // 라이브러리 카드가 새로고침 없이 즉시 갱신된다
+  }
+  return made
+}
+
 export type { ThumbRow }
