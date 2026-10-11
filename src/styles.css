@@ -5156,32 +5156,90 @@ details.adv > summary::marker {
 
 /* ── 작업보드: 서랍 카테고리 · 정렬 메뉴 · 끊긴 카드 받기 ── */
 
-/* 서랍 카테고리 필터 — 칩 줄 대신 패널의 다른 입력칸과 같은 결의 선택 필드 */
-.tray-filter {
+/* 서랍 카테고리 필터 — 카테고리 색을 그대로 쓰는 커스텀 드롭다운.
+   섹션 머리의 작은 사각형과 같은 색을 트리거로 끌어올려 '지금 어느 카테고리인지'를 색으로 읽게 한다. */
+.tray-catpick { position: relative; }
+.catpick-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  width: 100%;
   height: 38px;
-  padding: 0 12px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--tray);
-  color: var(--muted);
-  transition: background .25s, box-shadow .35s var(--ft-ease), color .2s;
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ft-ease), box-shadow var(--dur-fast) var(--ft-ease);
 }
-.tray-filter:focus-within { background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--ink); }
-.tray-filter select {
+.catpick-btn:hover,
+.catpick-btn.is-open { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft-2); }
+.catpick-btn:focus-visible { outline: 2px solid var(--focus-outline); outline-offset: 2px; }
+.catpick-dot { flex: none; width: 9px; height: 9px; border-radius: 3px; background: var(--accent); }
+.catpick-dot.is-all { background: conic-gradient(from 210deg, var(--accent), var(--app), var(--success), var(--warn), var(--accent)); }
+.catpick-name {
   flex: 1;
   min-width: 0;
-  appearance: none;
-  -webkit-appearance: none;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.catpick-count {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.catpick-chev { flex: none; display: grid; place-items: center; color: var(--muted-2); transition: transform var(--dur-base) var(--ft-ease); }
+.catpick-btn.is-open .catpick-chev { transform: rotate(180deg); }
+.catpick-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 7;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--e2);
+}
+.catpick-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
   border: 0;
-  background: transparent;
-  outline: none;
+  border-radius: var(--r-md);
+  background: none;
   font: inherit;
   font-size: var(--fs-sm);
   color: var(--ink-2);
+  text-align: left;
   cursor: pointer;
 }
+.catpick-item:hover { background: var(--hover); }
+.catpick-item.is-on { background: var(--accent-soft-2); color: var(--accent-ink); font-weight: 700; }
+.catpick-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catpick-item-count { flex: none; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.catpick-item.is-on .catpick-item-count { color: var(--accent-ink); }
+.catpick-check { flex: none; display: grid; place-items: center; color: var(--accent); opacity: 0; }
+.catpick-item.is-on .catpick-check { opacity: 1; }
+.catpick-sep { height: 1px; margin: 5px 8px; background: var(--line); }
 
 /* 카테고리 섹션 — 넓은 패널은 세로 목록, 좁은 서랍은 가로 타일 줄 */
 .tray-cat { display: flex; flex-direction: column; gap: 3px; padding-bottom: 12px; }
@@ -5224,26 +5282,65 @@ details.adv > summary::marker {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+/* '전체 놓기' — 평소엔 아이콘 하나로 물러나 제목이 주인이 되고,
+   호버/포커스에서 라벨이 옆으로 펼쳐져 무슨 동작인지 정확히 알려준다. */
 .tray-cat-add {
   margin-left: auto;
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0;
+  width: 30px;
   height: 30px;
-  padding: 0 12px;
-  border-radius: var(--r-md);
+  padding: 0 0 0 7.5px;
+  border-radius: 999px;
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
   color: var(--accent-ink);
   font: inherit;
   font-size: var(--fs-xs);
   font-weight: 700;
+  overflow: hidden;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ft-ease), border-color var(--dur-fast) var(--ft-ease);
+  transition: width var(--dur-base) var(--ft-spring), gap var(--dur-base) var(--ft-spring),
+    padding var(--dur-base) var(--ft-spring), background var(--dur-fast) var(--ft-ease),
+    border-color var(--dur-fast) var(--ft-ease);
 }
-.tray-cat-add:hover { background: var(--accent-soft-2); border-color: var(--accent-line-2); }
+.tray-cat-add-ic { flex: none; display: grid; place-items: center; }
+.tray-cat-add-lab { white-space: nowrap; opacity: 0; transition: opacity var(--dur-fast) linear; }
+.tray-cat-add:hover,
+.tray-cat-add:focus-visible {
+  width: 104px;
+  gap: 6px;
+  padding: 0 12px 0 7.5px;
+  background: var(--accent-soft-2);
+  border-color: var(--accent-line-2);
+}
+.tray-cat-add:hover .tray-cat-add-lab,
+.tray-cat-add:focus-visible .tray-cat-add-lab { opacity: 1; }
 .tray-cat-add:active { transform: scale(.97); }
+/* 터치 기기에는 호버가 없으니 라벨을 늘 펼쳐 둔다 */
+@media (hover: none) {
+  .tray-cat-add { width: auto; gap: 6px; padding: 0 11px 0 7.5px; }
+  .tray-cat-add-lab { opacity: 1; }
+}
+/* 모두 놓은 카테고리 — 같은 자리에서 완료로 바뀌어 반복 클릭을 막는다 */
+.tray-cat-done {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--success-line);
+  background: var(--success-soft);
+  color: var(--success-ink);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .tray-cat-rows { display: flex; flex-direction: column; gap: 2px; }
 .board-drawer .tray-list { flex-direction: column; overflow-x: hidden; }
 .board-drawer .tray-cat-rows { flex-direction: row; flex-wrap: wrap; gap: 8px; }

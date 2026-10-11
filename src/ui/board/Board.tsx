@@ -136,10 +136,13 @@ export function Board() {
     }
   })
   const [trayCat, setTrayCat] = useState<string>(CAT_ALL)
+  const [catOpen, setCatOpen] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [cloudMissing, setCloudMissing] = useState<Set<string>>(() => new Set())
 
   const stageRef = useRef<HTMLDivElement>(null)
+  const catWrapRef = useRef<HTMLDivElement>(null)
+  const catBtnRef = useRef<HTMLButtonElement>(null)
   const boardRef = useRef(board)
   const viewRef = useRef(view)
   const stageSizeRef = useRef(stage)
@@ -1327,6 +1330,43 @@ export function Board() {
   const visibleCount = trayRows.filter((x) => inCat(x) && matchesQ(x)).length
   /** 고른 카테고리가 사라졌으면 전체로 되돌린다 (select 값이 빈 채로 남지 않게) */
   const catValue = trayCat === CAT_ALL || trayCats.some((c) => c.key === trayCat) ? trayCat : CAT_ALL
+  /** 드롭박스 트리거에 보이는 '지금 고른 카테고리'의 이름·개수 */
+  const catPick =
+    catValue === CAT_ALL
+      ? { name: '전체 카테고리', count: trayRows.length }
+      : (() => {
+          const c = trayCats.find((x) => x.key === catValue)
+          return { name: c?.name ?? '미분류', count: c?.count ?? 0 }
+        })()
+  const pickCat = (key: string) => {
+    setTrayCat(key)
+    setCatOpen(false)
+  }
+  /** 카테고리별 '놓인 수 / 전체' — 전체 놓기 버튼의 상태(할 일 있음 / 다 놓음)를 가른다 */
+  const catPlaced = (catKey: string) => {
+    const rows = trayRows.filter((x) => (x.cat ?? CAT_NONE) === catKey)
+    return { placed: rows.filter((x) => (placedKeys.get(x.key) ?? 0) > 0).length, total: rows.length }
+  }
+
+  // 카테고리 드롭박스 — 바깥을 누르거나 Esc를 누르면 닫는다
+  useEffect(() => {
+    if (!catOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (catWrapRef.current?.contains(e.target as Node)) return
+      setCatOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setCatOpen(false)
+      catBtnRef.current?.focus()
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [catOpen])
 
   const trayBody = (
     <>
@@ -1343,6 +1383,7 @@ export function Board() {
           onChange={(v) => {
             setTray(v)
             setTrayCat(CAT_ALL)
+            setCatOpen(false)
           }}
           label="서랍 항목"
         />
@@ -1351,41 +1392,107 @@ export function Board() {
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="제목으로 찾기" aria-label="카드 검색" />
         </span>
         {trayCats.length > 0 && (
-          <label className="tray-filter">
-            <Icon name="tag" size={15} />
-            <select value={catValue} onChange={(e) => setTrayCat(e.target.value)} aria-label="카테고리 필터">
-              <option value={CAT_ALL}>전체 카테고리 ({trayRows.length})</option>
-              {trayCats.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.name} ({c.count})
-                </option>
-              ))}
-            </select>
-            <Icon name="chevronDown" size={13} />
-          </label>
+          <div className="tray-catpick" ref={catWrapRef}>
+            <button
+              type="button"
+              ref={catBtnRef}
+              className={'catpick-btn' + (catOpen ? ' is-open' : '')}
+              onClick={() => setCatOpen((v) => !v)}
+              aria-haspopup="listbox"
+              aria-expanded={catOpen}
+              aria-label={`카테고리 필터 — ${catPick.name}, ${catPick.count}개`}
+            >
+              <span
+                className={'catpick-dot' + (catValue === CAT_ALL ? ' is-all' : '')}
+                style={catValue === CAT_ALL ? undefined : { background: `var(${catTone(catPick.name)})` }}
+                aria-hidden="true"
+              />
+              <span className="catpick-name">{catPick.name}</span>
+              <span className="catpick-count">{catPick.count}</span>
+              <span className="catpick-chev">
+                <Icon name="chevronDown" size={14} />
+              </span>
+            </button>
+            {catOpen && (
+              <div className="catpick-pop" role="listbox" aria-label="카테고리">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={catValue === CAT_ALL}
+                  autoFocus={catValue === CAT_ALL}
+                  className={'catpick-item' + (catValue === CAT_ALL ? ' is-on' : '')}
+                  onClick={() => pickCat(CAT_ALL)}
+                >
+                  <span className="catpick-dot is-all" aria-hidden="true" />
+                  <span className="catpick-item-name">전체 카테고리</span>
+                  <span className="catpick-item-count">{trayRows.length}</span>
+                  <span className="catpick-check">
+                    <Icon name="check" size={14} />
+                  </span>
+                </button>
+                <div className="catpick-sep" aria-hidden="true" />
+                {trayCats.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    role="option"
+                    aria-selected={catValue === c.key}
+                    autoFocus={catValue === c.key}
+                    className={'catpick-item' + (catValue === c.key ? ' is-on' : '')}
+                    onClick={() => pickCat(c.key)}
+                  >
+                    <span className="catpick-dot" style={{ background: `var(${catTone(c.name)})` }} aria-hidden="true" />
+                    <span className="catpick-item-name">{c.name}</span>
+                    <span className="catpick-item-count">{c.count}</span>
+                    <span className="catpick-check">
+                      <Icon name="check" size={14} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
       <div className="tray-list">
         {visibleCount === 0 ? (
           <span className="tray-none">카드가 없습니다</span>
         ) : (
-          catSections.map((s) => (
-            <section className="tray-cat" key={s.key || CAT_NONE}>
-              <div className="tray-cat-head">
-                <span className="tray-cat-dot" style={{ background: `var(${catTone(s.name)})` }} aria-hidden="true" />
-                <span className="tray-cat-name" title={s.name}>
-                  {s.name}
-                </span>
-                <span className="tray-cat-count">{s.rows.length}</span>
-                {tray === 'doc' && (
-                  <button className="tray-cat-add" onClick={() => placeCategory(s.cat)} title="이 카테고리의 노트를 보드에 한 번에 놓습니다">
-                    <Icon name="plus" size={12} /> 전체 놓기
-                  </button>
-                )}
-              </div>
-              <div className="tray-cat-rows">{s.rows.map(trayRow)}</div>
-            </section>
-          ))
+          catSections.map((s) => {
+            const { placed, total } = catPlaced(s.key)
+            const allPlaced = total > 0 && placed >= total
+            return (
+              <section className="tray-cat" key={s.key || CAT_NONE}>
+                <div className="tray-cat-head">
+                  <span className="tray-cat-dot" style={{ background: `var(${catTone(s.name)})` }} aria-hidden="true" />
+                  <span className="tray-cat-name" title={s.name}>
+                    {s.name}
+                  </span>
+                  <span className="tray-cat-count">{s.rows.length}</span>
+                  {tray === 'doc' &&
+                    (allPlaced ? (
+                      <span className="tray-cat-done" title={`${s.name} 노트 ${total}장이 모두 보드에 있습니다`}>
+                        <Icon name="check" size={11} />
+                        {total}개 놓음
+                      </span>
+                    ) : (
+                      <button
+                        className="tray-cat-add"
+                        onClick={() => placeCategory(s.cat)}
+                        title={`${s.name} 노트 ${total - placed}장을 보드에 놓습니다`}
+                        aria-label={`${s.name} 노트 ${total - placed}장을 보드에 모두 놓기`}
+                      >
+                        <span className="tray-cat-add-ic">
+                          <Icon name="plus" size={15} />
+                        </span>
+                        <span className="tray-cat-add-lab">전체 놓기</span>
+                      </button>
+                    ))}
+                </div>
+                <div className="tray-cat-rows">{s.rows.map(trayRow)}</div>
+              </section>
+            )
+          })
         )}
       </div>
       <p className="hint">끌어서 원하는 칸에 놓거나 ＋를 누르세요</p>
