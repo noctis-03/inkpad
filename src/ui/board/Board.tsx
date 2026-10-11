@@ -125,6 +125,7 @@ export function Board() {
   const [droppedId, setDroppedId] = useState<string | null>(null)
   const [groupLive, setGroupLive] = useState<BoardGroup | null>(null)
   const [worldAnim, setWorldAnim] = useState(false)
+  const [worldFly, setWorldFly] = useState(false)
   const [carry, setCarry] = useState<{ kind: ShortcutKind; refId: ID; label: string; x: number; y: number } | null>(null)
   const [reconnectFor, setReconnectFor] = useState<BoardShortcut | null>(null)
   const [presetName, setPresetName] = useState('내 보드')
@@ -389,6 +390,20 @@ export function Board() {
       fn()
       if (animTimer.current) clearTimeout(animTimer.current)
       animTimer.current = window.setTimeout(() => setWorldAnim(false), 320)
+    })
+  }
+
+  /** 카메라를 조금 더 길게 밀어 '날아가는' 느낌을 주는 이동 — 그룹 캡슐이 쓴다 */
+  const flyTo = (fn: () => void) => {
+    setWorldFly(true)
+    setWorldAnim(true)
+    requestAnimationFrame(() => {
+      fn()
+      if (animTimer.current) clearTimeout(animTimer.current)
+      animTimer.current = window.setTimeout(() => {
+        setWorldAnim(false)
+        setWorldFly(false)
+      }, 480)
     })
   }
 
@@ -1019,6 +1034,41 @@ export function Board() {
   }, [shortcuts])
 
   const collapsed = view.z <= GROUP_COLLAPSE_Z
+
+  /** 그룹 캡슐 → 그 그룹 상자가 화면에 꽉 차게 카메라를 옮긴다 */
+  const focusGroup = (g: { gx: number; gy: number; gw: number; gh: number }) => {
+    const el = stageRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const head = viewRef.current.z <= GROUP_COLLAPSE_Z ? 0 : GROUP_HEAD_H
+    const left = g.gx * BOARD_CELL
+    const right = (g.gx + g.gw) * BOARD_CELL
+    const top = g.gy * BOARD_CELL - head
+    const bottom = (g.gy + g.gh) * BOARD_CELL
+    const pad = 1.7 // 상자 둘레에 숨 쉴 여백
+    const z = clamp(Math.min(r.width / ((right - left) * pad), r.height / ((bottom - top) * pad)), MIN_Z, MAX_Z)
+    flyTo(() =>
+      setView({ z, x: r.width / 2 - ((left + right) / 2) * z, y: r.height / 2 - ((top + bottom) / 2) * z })
+    )
+  }
+
+  /** 지금 화면 중심에 들어와 있는 그룹 — 캡슐에 표시해 '어디쯤인지'를 알려준다 */
+  const activeGroupId = useMemo(() => {
+    if (!stage.w || !stage.h) return null
+    const wx = (stage.w / 2 - view.x) / view.z
+    const wy = (stage.h / 2 - view.y) / view.z
+    const head = view.z <= GROUP_COLLAPSE_Z ? 0 : GROUP_HEAD_H
+    for (const g of board.groups) {
+      if (
+        wx >= g.gx * BOARD_CELL &&
+        wx <= (g.gx + g.gw) * BOARD_CELL &&
+        wy >= g.gy * BOARD_CELL - head &&
+        wy <= (g.gy + g.gh) * BOARD_CELL
+      )
+        return g.id
+    }
+    return null
+  }, [stage, view, board.groups])
   const groupedIds = useMemo(() => {
     const m = new Map<string, string>()
     for (const sc of shortcuts) {
@@ -1539,6 +1589,28 @@ export function Board() {
         </div>
       </header>
 
+      {/* ── 그룹 캡슐 바 (보기 모드) — 누르면 그 그룹 상자로 날아간다 ── */}
+      {!edit && board.groups.length > 0 && (
+        <nav className="board-groupbar" aria-label="그룹으로 이동">
+          {board.groups.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className={'gb-chip tone-' + g.tone + (activeGroupId === g.id ? ' is-on' : '')}
+              style={{ ['--tone' as string]: `var(${TONE_VAR[g.tone] ?? '--accent'})` }}
+              onClick={() => focusGroup(g)}
+              title={`${g.name} 그룹으로 이동`}
+              aria-label={`${g.name} 그룹으로 이동`}
+              aria-current={activeGroupId === g.id ? 'true' : undefined}
+            >
+              <span className="gb-dot" aria-hidden="true" />
+              <span className="gb-name">{g.name}</span>
+              {groupCounts.get(g.id) ? <span className="gb-count">{groupCounts.get(g.id)}</span> : null}
+            </button>
+          ))}
+        </nav>
+      )}
+
       {/* ── 편집 툴바 (P3) ── */}
       {edit && (
         <div className={'board-edit-toolbar' + (wide && panelOpen ? ' with-panel' : '')} role="toolbar" aria-label="편집 도구">
@@ -1611,7 +1683,11 @@ export function Board() {
           className="board-world"
           style={{
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
-            transition: worldAnim ? 'transform 260ms var(--ft-ease)' : 'none'
+            transition: worldFly
+              ? 'transform 440ms var(--ft-fly)'
+              : worldAnim
+                ? 'transform 260ms var(--ft-ease)'
+                : 'none'
           }}
         >
           {/* 그룹 박스 */}

@@ -88,6 +88,7 @@
   --spring-pop: cubic-bezier(.34, 1.56, .64, 1);
   --ft-spring: cubic-bezier(.2, .9, .25, 1.05);
   --ft-ease: cubic-bezier(.2, .8, .2, 1);
+  --ft-fly: cubic-bezier(.22, .72, .18, 1); /* 그룹으로 날아갈 때 — 길게 미끄러져 멎는다 */
   --dur-fast: 120ms;
   --dur-base: 280ms;
   --dur-slow: 520ms;
@@ -5397,3 +5398,85 @@ details.adv > summary::marker {
 
 /* 동기화 클라우드 목록의 카테고리 칩 */
 .cloud-chip.cat .dot { background: var(--app); }
+
+
+/* ── 작업보드: 그룹 캡슐 바 (보기 모드) ── */
+/* 상단바 바로 아래, 그룹마다 알약 하나. 누르면 그 그룹 상자로 카메라가 날아간다.
+   빈 곳은 pointer-events 를 비워 두어 칩 사이로도 무대를 끌 수 있게 한다. */
+.board-groupbar {
+  position: absolute;
+  top: calc(var(--safe-top) + var(--toolbar-h) + 6px);
+  left: 0;
+  right: 0;
+  z-index: 9;
+  display: flex;
+  gap: 8px;
+  padding: 2px 14px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+.board-groupbar::-webkit-scrollbar { display: none; }
+.gb-chip {
+  pointer-events: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--raise);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ft-ease), border-color var(--dur-fast) var(--ft-ease),
+    color var(--dur-fast) var(--ft-ease), transform var(--dur-fast) var(--ft-ease);
+}
+.gb-chip:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--tone, var(--accent)) 42%, var(--line));
+  color: var(--ink);
+}
+.gb-chip.is-on {
+  background: color-mix(in srgb, var(--tone, var(--accent)) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--tone, var(--accent)) 48%, transparent);
+  color: var(--ink);
+}
+.gb-chip:active { transform: scale(.97); }
+.gb-chip:focus-visible { outline: 2px solid var(--focus-outline); outline-offset: 2px; }
+.gb-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--tone, var(--accent));
+  transition: box-shadow var(--dur-fast) var(--ft-ease);
+}
+.gb-chip.is-on .gb-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, var(--accent)) 24%, transparent); }
+.gb-name { max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gb-count {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gb-chip.is-on .gb-count {
+  background: color-mix(in srgb, var(--tone, var(--accent)) 18%, var(--surface));
+  color: var(--ink-2);
+}
+@media (max-width: 600px) {
+  .gb-name { max-width: 96px; }
+}
