@@ -4801,7 +4801,7 @@ details.adv > summary::marker {
   top: 34px;
   right: 6px;
   z-index: 5;
-  width: 190px;
+  width: 216px;
   padding: 6px;
   border-radius: var(--r-lg);
   background: var(--surface);
@@ -5239,6 +5239,7 @@ details.adv > summary::marker {
 .board-group-sort-row { display: flex; gap: 6px; }
 .board-group-sort-row button {
   flex: 1;
+  min-width: 0;
   justify-content: center;
   min-height: 30px;
   padding: 0 4px;
@@ -5248,6 +5249,7 @@ details.adv > summary::marker {
   font: inherit;
   font-size: var(--fs-xs);
   font-weight: 600;
+  white-space: nowrap;
   color: var(--ink-2);
   cursor: pointer;
 }
