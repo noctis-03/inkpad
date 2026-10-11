@@ -5091,6 +5091,7 @@ details.adv > summary::marker {
   background: var(--surface);
   border: 1px solid var(--line);
   box-shadow: var(--e2);
+}
 
 .board-more { width: 264px; }
 .board-pop-title { font-size: var(--fs-xs); color: var(--muted); margin: 2px 4px 8px; }
@@ -5215,6 +5216,11 @@ details.adv > summary::marker {
   border-radius: var(--r-xl);
   background: var(--surface);
   box-shadow: var(--e2);
+  animation: catpick-in var(--dur-fast) var(--ft-ease) both;
+}
+@keyframes catpick-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
 .catpick-item {
   display: flex;
