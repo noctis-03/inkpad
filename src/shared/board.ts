@@ -15,6 +15,8 @@ export interface BoardShortcut {
   refId: ID
   gx: number
   gy: number
+  /** 항목 표시 이름 — 연결이 끊긴 카드가 무엇이었는지 보여 주는 데 쓴다. 프리셋과 함께 Drive로 공유된다 */
+  label?: string
 }
 
 /** 그룹 박스 — 항목을 '담지' 않고, 묶음을 시각적으로만 표시하는 사각형. 이름을 붙일 수 있다 */
@@ -56,6 +58,8 @@ export interface BoardPreset extends Board {
 
 export const BOARD_PRESET_NAME_MAX = 40
 export const BOARD_MAX_SHORTCUTS = 400
+/** 바로가기 표시 이름 길이 제한 */
+export const BOARD_LABEL_MAX = 80
 export const BOARD_GROUP_NAME_MAX = 24
 export const BOARD_MAX_GROUPS = 60
 /** 그룹 박스 색 키 — 실제 CSS는 .board-group.tone-<key> */
@@ -101,12 +105,14 @@ export function normalizeBoard(raw: unknown): Board {
   const shortcuts: BoardShortcut[] = []
   for (const item of list as BoardShortcut[]) {
     if (!item || !KINDS.includes(item.kind) || typeof item.refId !== 'string' || !item.refId) continue
+    const label = typeof item.label === 'string' ? item.label.trim().slice(0, BOARD_LABEL_MAX) : ''
     shortcuts.push({
       id: typeof item.id === 'string' && item.id ? item.id : `${item.kind}:${item.refId}`,
       kind: item.kind,
       refId: item.refId,
       gx: coord(item.gx),
-      gy: coord(item.gy)
+      gy: coord(item.gy),
+      ...(label ? { label } : {})
     })
     if (shortcuts.length >= BOARD_MAX_SHORTCUTS) break
   }

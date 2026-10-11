@@ -5150,3 +5150,96 @@ details.adv > summary::marker {
     animation: none !important;
   }
 }
+
+/* ── 작업보드: 서랍 카테고리 · 정렬 메뉴 · 끊긴 카드 받기 ── */
+
+/* 서랍 카테고리 칩 */
+.tray-cats { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: none; }
+.tray-cats::-webkit-scrollbar { display: none; }
+.tray-cat-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tray-cat-chip b { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 600; }
+.tray-cat-chip.on { background: var(--btn-bg); border-color: var(--ink); color: var(--btn-fg); }
+.tray-cat-chip.on b { color: var(--muted-2); }
+
+/* 카테고리 섹션 — 넓은 패널은 세로 목록, 좁은 서랍은 가로 타일 줄 */
+.tray-cat { display: flex; flex-direction: column; gap: 2px; }
+.tray-cat-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 4px;
+  background: var(--panel);
+}
+.tray-cat-name { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); }
+.tray-cat-head b { font-size: var(--fs-xs); color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.tray-cat-add {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+.tray-cat-rows { display: flex; flex-direction: column; gap: 2px; }
+.board-drawer .tray-list { flex-direction: column; overflow-x: hidden; }
+.board-drawer .tray-cat-rows { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+
+/* 연결 끊긴 카드 — 무엇이 끊겼는지 보여 주고 바로 받는다 */
+.board-face.is-missing { flex-direction: column; gap: 3px; padding: 6px; }
+.board-missing-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger-line-2) 45%, transparent);
+  color: var(--muted-2);
+}
+.board-missing-text { max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-missing-sub { font-size: 10px; font-weight: 600; color: var(--muted); }
+.board-missing-sub.is-absent { color: var(--danger-ink); }
+.board-relink { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.board-relink-btn { display: inline-flex; align-items: center; gap: 4px; }
+.board-relink-btn.is-dl { border-color: var(--accent-line); background: var(--accent-soft-2); color: var(--accent-ink); }
+
+/* 정렬 메뉴 팝오버 — 편집 툴바 아래 가운데 */
+.board-sort {
+  top: calc(var(--safe-top) + var(--toolbar-h) + 72px);
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 224px;
+}
+
+/* 작은 스피너 (받기 버튼 안) */
+.spinner.sm { width: 14px; height: 14px; border-width: 2px; }
+
+/* 동기화 클라우드 목록의 카테고리 칩 */
+.cloud-chip.cat .dot { background: var(--app); }

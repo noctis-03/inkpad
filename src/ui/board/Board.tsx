@@ -29,8 +29,10 @@ import {
 } from '../../shared/board'
 import { extOf, type DocumentMeta, type HtmlApp, type ID } from '../../shared/model'
 import { getThumbnails, listDocuments } from '../../storage/repo'
-import { listApps } from '../../sync/apps'
-import { listFiles } from '../../sync/files'
+import { listApps, installApp } from '../../sync/apps'
+import { listFiles, addFileFromCloud } from '../../sync/files'
+import { downloadMissingDoc } from '../../sync/sync'
+import { AuthRequiredError } from '../../sync/token'
 import { createPreset, uploadPreset } from '../../sync/board'
 import { BoardPresetsSheet } from '../BoardPresetsSheet'
 import type { FileRow } from '../../storage/db'
@@ -51,6 +53,11 @@ const ZOOM_STEP = 0.1
 const UNDO_MAX = 50
 /** 카드 서랍이 오른쪽 패널로 바뀌는 무대 폭 */
 const WIDE_W = 900
+/** 서랍 카테고리 필터의 예약 키 — 실제 카테고리 이름과 겹치지 않게 */
+const CAT_ALL = '__all__'
+const CAT_NONE = '__none__'
+/** 종류별 표시 이름 */
+const KIND_LABEL: Record<ShortcutKind, string> = { doc: '노트', app: '앱', file: '파일' }
 
 function loadBoard(): BoardModel {
   try {
@@ -122,6 +129,10 @@ export function Board() {
       return false
     }
   })
+  const [trayCat, setTrayCat] = useState<string>(CAT_ALL)
+  const [sortMenu, setSortMenu] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [cloudMissing, setCloudMissing] = useState<Set<string>>(() => new Set())
 
   const stageRef = useRef<HTMLDivElement>(null)
   const boardRef = useRef(board)
@@ -359,6 +370,7 @@ export function Board() {
     setWorldAnim(false) // 팬은 즉시 반응해야 한다
     setWallMenu(false)
     setMoreMenu(false)
+    setSortMenu(false)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     armGesture()
   }
@@ -440,7 +452,58 @@ export function Board() {
   const shortcuts = board.shortcuts
   const missing = shortcuts.filter((s) => !itemOf(s)).length
 
+  // 항목 목록이 바뀌면 바로가기 표시 이름을 최신으로 맞춘다 — 연결이 끊긴 뒤에도 무엇이었는지
+  // 보여 주기 위함이다(프리셋에 이름이 함께 저장된다). 로컬 DB에서 읽은 이름만 반영하며 네트워크는 쓰지 않는다.
+  useEffect(() => {
+    setBoard((b) => {
+      let changed = false
+      const shortcuts = b.shortcuts.map((s) => {
+        const it = itemOf(s)
+        if (!it) return s
+        const t = it.kind === 'doc' ? it.d.title : it.kind === 'app' ? it.a.title : it.f.title
+        if (s.label === t) return s
+        changed = true
+        return { ...s, label: t }
+      })
+      return changed ? { ...b, shortcuts } : b
+    })
+  }, [itemOf, board])
+
+  /** 연결 끊긴 바로가기를 클라우드에서 받아 온다 — 카드의 받기(또는 카드 자체)를 눌렀을 때만 네트워크를 쓴다 */
+  const downloadMissing = async (sc: BoardShortcut) => {
+    if (downloadingId) return
+    if (!navigator.onLine) {
+      toast('오프라인입니다. 연결된 뒤 다시 눌러 주세요.', 'error')
+      return
+    }
+    setDownloadingId(sc.id)
+    try {
+      if (sc.kind === 'doc') {
+        const r = await downloadMissingDoc(sc.refId)
+        if (r === 'applied') toast(`"${sc.label || '노트'}"을(를) 받아 연결했습니다.`, 'success')
+        else {
+          setCloudMissing((m) => new Set(m).add(sc.id))
+          toast(`"${sc.label || '바로가기'}"을(를) 클라우드에서 찾지 못했습니다. 다른 기기에서 올렸는지 확인해 주세요.`, 'error')
+        }
+      } else if (sc.kind === 'app') {
+        await installApp(sc.refId)
+        toast(`"${sc.label || '앱'}"을(를) 받아 설치했습니다.`, 'success')
+      } else {
+        await addFileFromCloud(sc.refId)
+        toast(`"${sc.label || '파일'}"을(를) 받았습니다.`, 'success')
+      }
+      await refresh() // 로컬 DB를 다시 읽어 카드를 곧바로 되살린다 — 네트워크 호출 아님
+    } catch (e) {
+      if (e instanceof AuthRequiredError) toast('Drive 동기화에 로그인이 필요합니다. 설정 > 동기화에서 로그인해 주세요.', 'error')
+      else toast(e instanceof Error ? e.message : '받지 못했습니다.', 'error')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
   const open = (sc: BoardShortcut) => {
+    // 연결이 끊긴 카드 — 열 수 없으니 누르면 클라우드에서 바로 받아 온다
+    if (!itemOf(sc)) return void downloadMissing(sc)
     if (sc.kind === 'doc') return navigate({ name: 'editor', docId: sc.refId })
     if (sc.kind === 'app') return navigate({ name: 'app', appId: sc.refId })
     navigate({ name: 'file', fileId: sc.refId })
@@ -454,20 +517,17 @@ export function Board() {
     toast(`‘${nm}’ 바로가기를 지웠습니다`, 'info', { label: '되돌리기', run: undo })
   }
 
-  const addAt = (kind: ShortcutKind, refId: ID, wx: number, wy: number) => {
+  const addAt = (kind: ShortcutKind, refId: ID, wx: number, wy: number, label?: string) => {
     if (boardRef.current.shortcuts.length >= BOARD_MAX_SHORTCUTS) {
       toast(`바로가기는 ${BOARD_MAX_SHORTCUTS}개까지 놓을 수 있습니다.`, 'error')
       return
     }
     const g = worldToGrid(wx, wy, boardRef.current.snap)
-    commit((b) => ({ ...b, shortcuts: [...b.shortcuts, { id: newId(), kind, refId, ...g }] }))
+    commit((b) => ({ ...b, shortcuts: [...b.shortcuts, { id: newId(), kind, refId, label, ...g }] }))
   }
 
-  /** 화면 중심에서 가장 가까운 빈 칸 (서랍의 ＋ 버튼) */
-  const nearestEmptyCell = () => {
-    const occ = new Set(boardRef.current.shortcuts.map((s) => `${Math.round(s.gx)},${Math.round(s.gy)}`))
-    const c = centerWorld()
-    const g0 = worldToGrid(c.x, c.y, true)
+  /** 점유 집합에서 기준 칸에 가장 가까운 빈 칸 (나선 탐색) */
+  const nextEmptyCellFrom = (occ: Set<string>, g0: { gx: number; gy: number }) => {
     for (let r = 0; r < 60; r++) {
       for (let dx = -r; dx <= r; dx++) {
         for (let dy = -r; dy <= r; dy++) {
@@ -481,19 +541,53 @@ export function Board() {
     return g0
   }
 
+  /** 화면 중심에서 가장 가까운 빈 칸 (서랍의 ＋ 버튼) */
+  const nearestEmptyCell = () => {
+    const occ = new Set(boardRef.current.shortcuts.map((s) => `${Math.round(s.gx)},${Math.round(s.gy)}`))
+    const c = centerWorld()
+    return nextEmptyCellFrom(occ, worldToGrid(c.x, c.y, true))
+  }
+
+  /** 카테고리의 노트를 보드에 모두 놓는다 — 이미 놓인 노트는 건너뛰고, 되돌리기는 한 번에 */
+  const placeCategory = (cat: string | null) => {
+    const cur = boardRef.current
+    const placed = new Set(cur.shortcuts.filter((s) => s.kind === 'doc').map((s) => s.refId))
+    const todo = docs.filter((d) => (d.category ?? null) === cat && !placed.has(d.id))
+    if (!todo.length) {
+      toast(`"${cat ?? '미분류'}" 카테고리의 노트는 모두 보드에 놓여 있습니다.`, 'info')
+      return
+    }
+    if (cur.shortcuts.length + todo.length > BOARD_MAX_SHORTCUTS) {
+      toast(`바로가기는 ${BOARD_MAX_SHORTCUTS}개까지 놓을 수 있습니다. 남은 칸 ${BOARD_MAX_SHORTCUTS - cur.shortcuts.length}개`, 'error')
+      return
+    }
+    // 화면 중심 주변의 빈 칸을 나선으로 채운다
+    const occ = new Set(cur.shortcuts.map((s) => `${Math.round(s.gx)},${Math.round(s.gy)}`))
+    const c = centerWorld()
+    const g0 = worldToGrid(c.x, c.y, true)
+    const additions: BoardShortcut[] = []
+    for (const d of todo) {
+      const cell = nextEmptyCellFrom(occ, g0)
+      occ.add(`${cell.gx},${cell.gy}`)
+      additions.push({ id: newId(), kind: 'doc', refId: d.id, label: d.title, ...cell })
+    }
+    commit((b) => ({ ...b, shortcuts: [...b.shortcuts, ...additions] }))
+    toast(`"${cat ?? '미분류'}" 노트 ${todo.length}장을 보드에 놓았습니다.`, 'success')
+  }
+
   const placeFromPanel = (kind: ShortcutKind, refId: ID, label: string) => {
     if (boardRef.current.shortcuts.length >= BOARD_MAX_SHORTCUTS) {
       toast(`바로가기는 ${BOARD_MAX_SHORTCUTS}개까지 놓을 수 있습니다.`, 'error')
       return
     }
     const g = nearestEmptyCell()
-    commit((b) => ({ ...b, shortcuts: [...b.shortcuts, { id: newId(), kind, refId, ...g }] }))
+    commit((b) => ({ ...b, shortcuts: [...b.shortcuts, { id: newId(), kind, refId, label, ...g }] }))
     toast(`"${label}"을(를) 보드에 놓았습니다.`, 'success')
   }
 
   /** 연결이 끊긴 바로가기에 새 항목을 이어 준다 — 자리는 그대로 (P8) */
   const relink = (sc: BoardShortcut, kind: ShortcutKind, refId: ID, label: string) => {
-    commit((b) => ({ ...b, shortcuts: b.shortcuts.map((s) => (s.id === sc.id ? { ...s, kind, refId } : s)) }))
+    commit((b) => ({ ...b, shortcuts: b.shortcuts.map((s) => (s.id === sc.id ? { ...s, kind, refId, label } : s)) }))
     toast(`"${label}"(으)로 다시 연결했습니다.`, 'success')
     setReconnectFor(null)
   }
@@ -569,7 +663,7 @@ export function Board() {
       cleanup()
       if (insideStage(ev.clientX, ev.clientY)) {
         const w = toWorld(ev.clientX, ev.clientY)
-        addAt(kind, refId, w.x, w.y)
+        addAt(kind, refId, w.x, w.y, label)
         toast(`"${label}"을(를) 보드에 놓았습니다.`, 'success')
       }
       setDropCell(null)
@@ -591,6 +685,40 @@ export function Board() {
     if (!n) return
     const pos = packGrid(n)
     commit((b) => ({ ...b, snap: true, shortcuts: b.shortcuts.map((s, i) => ({ ...s, ...pos[i] })) }))
+    requestAnimationFrame(() => fit())
+  }
+
+  /** 바로가기를 기준대로 정렬해 가지런한 격자로 배치한다 — 연결 끊긴 항목은 맨 뒤 */
+  const sortItems = (by: 'title' | 'updated' | 'kind') => {
+    const list = boardRef.current.shortcuts
+    if (list.length < 2) return
+    const rank: Record<ShortcutKind, number> = { doc: 0, app: 1, file: 2 }
+    const meta = new Map(
+      list.map((s) => {
+        const it = itemOf(s)
+        return [
+          s.id,
+          it
+            ? {
+                title: (it.kind === 'doc' ? it.d.title : it.kind === 'app' ? it.a.title : it.f.title).toLowerCase(),
+                at: updatedOf(it),
+                r: rank[it.kind]
+              }
+            : { title: '\uffff' + s.refId, at: 0, r: 9 } // 끊긴 항목은 맨 뒤
+        ]
+      })
+    )
+    const sorted = [...list].sort((a, b) => {
+      const ia = meta.get(a.id)!
+      const ib = meta.get(b.id)!
+      if (by === 'updated') return ib.at - ia.at
+      if (by === 'kind') return ia.r - ib.r || ia.title.localeCompare(ib.title, 'ko')
+      return ia.title.localeCompare(ib.title, 'ko')
+    })
+    const pos = packGrid(sorted.length)
+    commit((b) => ({ ...b, snap: true, shortcuts: sorted.map((s, i) => ({ ...s, ...pos[i] })) }))
+    setSortMenu(false)
+    toast(by === 'title' ? '이름순으로 정렬했습니다.' : by === 'updated' ? '최근 수정순으로 정렬했습니다.' : '종류별로 정렬했습니다.', 'info')
     requestAnimationFrame(() => fit())
   }
 
@@ -741,16 +869,30 @@ export function Board() {
     window.addEventListener('pointercancel', cleanup)
   }
 
-  // ── 서랍/패널 목록 ──
-  const trayItems = useMemo<{ key: string; kind: ShortcutKind; id: ID; label: string; at: number }[]>(() => {
-    const q = query.trim().toLowerCase()
-    const out: { key: string; kind: ShortcutKind; id: ID; label: string; at: number }[] = []
-    if (tray === 'doc' || tray === 'all') for (const d of docs) out.push({ key: `doc:${d.id}`, kind: 'doc', id: d.id, label: d.title, at: d.updatedAt })
-    if (tray === 'app' || tray === 'all') for (const a of apps) out.push({ key: `app:${a.id}`, kind: 'app', id: a.id, label: a.title, at: a.updatedAt })
-    if (tray === 'file' || tray === 'all') for (const f of files) out.push({ key: `file:${f.id}`, kind: 'file', id: f.id, label: f.name, at: f.updatedAt })
-    const list = q ? out.filter((x) => x.label.toLowerCase().includes(q)) : out
-    return list.sort((a, b) => b.at - a.at)
-  }, [docs, apps, files, tray, query])
+  // ── 서랍/패널 목록 (카테고리별 구분) ──
+  type TrayRow = { key: string; kind: ShortcutKind; id: ID; label: string; at: number; cat: string | null }
+  const trayRows = useMemo<TrayRow[]>(() => {
+    const out: TrayRow[] = []
+    if (tray === 'doc' || tray === 'all') for (const d of docs) out.push({ key: `doc:${d.id}`, kind: 'doc', id: d.id, label: d.title, at: d.updatedAt, cat: d.category ?? null })
+    if (tray === 'app' || tray === 'all') for (const a of apps) out.push({ key: `app:${a.id}`, kind: 'app', id: a.id, label: a.title, at: a.updatedAt, cat: a.category ?? null })
+    if (tray === 'file' || tray === 'all') for (const f of files) out.push({ key: `file:${f.id}`, kind: 'file', id: f.id, label: f.name, at: f.updatedAt, cat: f.category ?? null })
+    return out.sort((a, b) => b.at - a.at)
+  }, [docs, apps, files, tray])
+
+  /** 현재 종류 범위의 카테고리 목록 — 가나다순, 미분류는 맨 뒤 */
+  const trayCats = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const x of trayRows) {
+      const k = x.cat ?? CAT_NONE
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    const out: { key: string; name: string; cat: string | null; count: number }[] = [...counts.keys()]
+      .filter((k) => k !== CAT_NONE)
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map((k) => ({ key: k, name: k, cat: k, count: counts.get(k) ?? 0 }))
+    if (counts.has(CAT_NONE)) out.push({ key: CAT_NONE, name: '미분류', cat: null, count: counts.get(CAT_NONE) ?? 0 })
+    return out
+  }, [trayRows])
 
   const placedKeys = useMemo(() => {
     const m = new Map<string, number>()
@@ -1061,6 +1203,17 @@ export function Board() {
   }
 
   // ── 서랍/패널 본문 ──
+  const q = query.trim().toLowerCase()
+  const matchesQ = (x: TrayRow) => !q || x.label.toLowerCase().includes(q)
+  const inCat = (x: TrayRow) => trayCat === CAT_ALL || (x.cat ?? CAT_NONE) === trayCat
+  const catSections: { key: string; name: string; cat: string | null; rows: TrayRow[] }[] =
+    trayCat === CAT_ALL
+      ? trayCats.map((c) => ({ ...c, rows: trayRows.filter((x) => (x.cat ?? CAT_NONE) === c.key && matchesQ(x)) })).filter((s) => s.rows.length > 0)
+      : trayCats
+          .filter((c) => c.key === trayCat)
+          .map((c) => ({ key: c.key, name: c.name, cat: c.cat, rows: trayRows.filter((x) => (x.cat ?? CAT_NONE) === c.key && matchesQ(x)) }))
+  const visibleCount = trayRows.filter((x) => inCat(x) && matchesQ(x)).length
+
   const trayBody = (
     <>
       <div className="tray-tools">
@@ -1073,16 +1226,54 @@ export function Board() {
             ['file', '파일'],
             ['all', '전체']
           ]}
-          onChange={(v) => setTray(v)}
+          onChange={(v) => {
+            setTray(v)
+            setTrayCat(CAT_ALL)
+          }}
           label="서랍 항목"
         />
         <span className="search-box board-tray-search">
           <Icon name="search" size={15} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="제목으로 찾기" aria-label="카드 검색" />
         </span>
+        {trayCats.length > 0 && (
+          <div className="tray-cats" role="group" aria-label="카테고리 필터">
+            <button className={'tray-cat-chip' + (trayCat === CAT_ALL ? ' on' : '')} onClick={() => setTrayCat(CAT_ALL)}>
+              전체 <b>{trayRows.length}</b>
+            </button>
+            {trayCats.map((c) => (
+              <button
+                key={c.key}
+                className={'tray-cat-chip' + (trayCat === c.key ? ' on' : '')}
+                aria-pressed={trayCat === c.key}
+                title={trayCat === c.key ? '카테고리 필터 해제' : `${c.name} 카테고리만 보기`}
+                onClick={() => setTrayCat(trayCat === c.key ? CAT_ALL : c.key)}
+              >
+                {c.name} <b>{c.count}</b>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="tray-list">
-        {trayItems.length === 0 ? <span className="tray-none">카드가 없습니다</span> : trayItems.map(trayRow)}
+        {visibleCount === 0 ? (
+          <span className="tray-none">카드가 없습니다</span>
+        ) : (
+          catSections.map((s) => (
+            <section className="tray-cat" key={s.key || CAT_NONE}>
+              <div className="tray-cat-head">
+                <span className="tray-cat-name">{s.name}</span>
+                <b>{s.rows.length}</b>
+                {tray === 'doc' && (
+                  <button className="tray-cat-add" onClick={() => placeCategory(s.cat)} title="이 카테고리의 노트를 보드에 한 번에 놓습니다">
+                    <Icon name="plus" size={12} /> 전체 놓기
+                  </button>
+                )}
+              </div>
+              <div className="tray-cat-rows">{s.rows.map(trayRow)}</div>
+            </section>
+          ))
+        )}
       </div>
       <p className="hint">끌어서 원하는 칸에 놓거나 ＋를 누르세요</p>
     </>
@@ -1113,6 +1304,7 @@ export function Board() {
             onChange={(v) => {
               const on = v === 'edit'
               setEdit(on)
+              setSortMenu(false)
               if (on) setPanelOpen(true) // 편집을 켜면 카드 서랍(노트)을 바로 연다
             }}
             label="보기/편집 모드"
@@ -1142,7 +1334,13 @@ export function Board() {
             <Icon name="grid" size={17} />
             <span>격자</span>
           </button>
-          <button className="bet-btn" onClick={arrange} disabled={!shortcuts.length} aria-label="가지런히 정렬">
+          <button
+            className={'bet-btn' + (sortMenu ? ' is-on' : '')}
+            onClick={() => setSortMenu((v) => !v)}
+            disabled={!shortcuts.length}
+            aria-label="정렬"
+            aria-expanded={sortMenu}
+          >
             <Icon name="blocks" size={17} />
             <span>정렬</span>
           </button>
@@ -1161,6 +1359,32 @@ export function Board() {
           <span className="bet-sep" />
           <button className="primary-btn bet-done" onClick={() => setEdit(false)}>
             완료
+          </button>
+        </div>
+      )}
+
+      {/* 정렬 메뉴 */}
+      {sortMenu && edit && (
+        <div className="board-pop board-sort" role="menu" aria-label="정렬">
+          <div className="board-pop-title">정렬 — 고르면 가지런히 배치합니다</div>
+          <button className="board-pop-row" onClick={() => sortItems('title')}>
+            <Icon name="sort" size={16} /> 이름순 (가나다)
+          </button>
+          <button className="board-pop-row" onClick={() => sortItems('updated')}>
+            <Icon name="edit" size={16} /> 최근 수정순
+          </button>
+          <button className="board-pop-row" onClick={() => sortItems('kind')}>
+            <Icon name="blocks" size={16} /> 종류별 (노트·앱·파일)
+          </button>
+          <div className="board-pop-sep" />
+          <button
+            className="board-pop-row"
+            onClick={() => {
+              setSortMenu(false)
+              arrange()
+            }}
+          >
+            <Icon name="grid" size={16} /> 지금 순서대로 가지런히
           </button>
         </div>
       )}
@@ -1316,7 +1540,13 @@ export function Board() {
                     danger: true
                   }).then((ok) => ok && removeShortcut(sc, titleOf(it)))
                 }}
-                title={it ? `${titleOf(it)} — 끌어서 옮기기` : '연결 끊김'}
+                title={
+                  it
+                    ? `${titleOf(it)} — 끌어서 옮기기`
+                    : sc.label
+                      ? `${sc.label} — 연결 끊김 · 눌러서 클라우드에서 받기`
+                      : '연결 끊김 · 눌러서 클라우드에서 받기'
+                }
               >
                 {it ? (
                   <>
@@ -1329,9 +1559,24 @@ export function Board() {
                 ) : (
                   <>
                     <span className="board-face is-missing">
-                      <span className="board-missing-text">연결 끊김</span>
+                      <span className="board-missing-icon" aria-hidden="true">
+                        <Icon name={sc.kind === 'doc' ? 'page' : sc.kind === 'app' ? 'app' : 'file'} size={16} />
+                      </span>
+                      <span className="board-missing-text">{sc.label?.trim() || '연결 끊김'}</span>
+                      <span className={'board-missing-sub' + (cloudMissing.has(sc.id) ? ' is-absent' : '')}>
+                        {cloudMissing.has(sc.id) ? '클라우드에 없음' : sc.label?.trim() ? `연결 끊김 · ${KIND_LABEL[sc.kind]}` : KIND_LABEL[sc.kind]}
+                      </span>
                     </span>
                     <span className="board-relink">
+                      <button
+                        className="board-relink-btn is-dl"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        disabled={downloadingId === sc.id}
+                        onClick={() => void downloadMissing(sc)}
+                        title="클라우드에서 받아 다시 연결합니다"
+                      >
+                        {downloadingId === sc.id ? <span className="spinner sm" /> : <Icon name="cloudDown" size={12} />} 받기
+                      </button>
                       <button
                         className="board-relink-btn"
                         onPointerDown={(e) => e.stopPropagation()}

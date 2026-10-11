@@ -31,6 +31,10 @@ function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
 }
 
+/** 카테고리 필터의 예약 키 — 실제 카테고리 이름과 겹치지 않게 */
+const CAT_ALL = '__all__'
+const CAT_NONE = '__none__'
+
 /**
  * 상태 표시의 단일 출처 — 문구·톤·아이콘을 한곳에 모았다 (개선 1·구현 메모 ②).
  * 오프라인은 회색, 오류만 빨강으로 나눠 단순 오프라인이 오류처럼 보이지 않게 한다.
@@ -209,6 +213,7 @@ function CloudList({
   onDelete,
   onExclude,
   onPullAll,
+  onPullCategory,
   onPushPreview
 }: {
   cloud: CloudNoteInfo[] | null
@@ -219,20 +224,38 @@ function CloudList({
   onDelete: (info: CloudNoteInfo) => void
   onExclude: (info: CloudNoteInfo) => void
   onPullAll: () => void
+  onPullCategory: (cat: string | null) => void
   onPushPreview: () => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<GroupKey | 'all'>('all')
+  const [catFilter, setCatFilter] = useState<string>(CAT_ALL)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ fresh: true, gone: true })
+
+  // 카테고리 목록 — 클라우드 노트의 category (없으면 미분류). 가나다순, 미분류는 맨 뒤
+  const cats = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const n of cloud ?? []) {
+      const k = n.category || CAT_NONE
+      m.set(k, (m.get(k) ?? 0) + 1)
+    }
+    const out: { key: string; name: string; cat: string | null; count: number }[] = [...m.keys()]
+      .filter((k) => k !== CAT_NONE)
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map((k) => ({ key: k, name: k, cat: k, count: m.get(k) ?? 0 }))
+    if (m.has(CAT_NONE)) out.push({ key: CAT_NONE, name: '미분류', cat: null, count: m.get(CAT_NONE) ?? 0 })
+    return out
+  }, [cloud])
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (cloud ?? []).filter((n) => {
       if (filter !== 'all' && STATE_META[n.state].group !== filter) return false
+      if (catFilter !== CAT_ALL && (n.category || CAT_NONE) !== catFilter) return false
       if (!q) return true
       return `${n.title} ${n.category ?? ''} ${n.device ?? ''}`.toLowerCase().includes(q)
     })
-  }, [cloud, filter, query])
+  }, [cloud, filter, catFilter, query])
 
   // 아직 못 받아 온 상태 — 빈 공간 대신 같은 골격의 스켈레톤
   if (cloud === null) {
@@ -264,6 +287,10 @@ function CloudList({
   }
 
   const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => STATE_META[n.state].group === g.key) })).filter((g) => g.items.length > 0)
+  // 고른 카테고리 안의 "받을 것" — 카테고리 단위 받기 버튼이 쓴다
+  const catValue = catFilter === CAT_NONE ? null : catFilter
+  const catName = cats.find((c) => c.key === catFilter)?.name ?? '카테고리'
+  const recvCatCount = (cloud ?? []).filter((n) => n.state === 'remote-new' && (n.category || CAT_NONE) === catFilter).length
 
   return (
     <div className="cloud-panel">
@@ -291,6 +318,25 @@ function CloudList({
         })}
       </div>
 
+      {/* 카테고리별 필터 — 고르면 목록이 그 카테고리로 좇혀 보이고, 받을 것 머리글의 받기도 카테고리 단위가 된다 */}
+      {cats.length > 0 && (
+        <div className="cloud-chips" role="group" aria-label="카테고리별 필터">
+          {cats.map((c) => (
+            <button
+              key={c.key}
+              className={'cloud-chip cat' + (catFilter === c.key ? ' on' : '')}
+              aria-pressed={catFilter === c.key}
+              title={catFilter === c.key ? '카테고리 필터 해제' : `${c.name} 카테고리만 보기`}
+              onClick={() => setCatFilter(catFilter === c.key ? CAT_ALL : c.key)}
+            >
+              <i className="dot" />
+              {c.name}
+              <span>{c.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {groups.length === 0 && (
         <div className="cloud-empty">
           <span className="big">
@@ -301,6 +347,7 @@ function CloudList({
             className="sync-link"
             onClick={() => {
               setFilter('all')
+              setCatFilter(CAT_ALL)
               setQuery('')
             }}
           >
@@ -321,11 +368,21 @@ function CloudList({
                 <b>{g.items.length}</b>
               </button>
               {/* 그룹 자리에서 바로 처리하는 일괄 동작 (개선 9) */}
-              {g.key === 'recv' && (
-                <button className="cloud-bulk" disabled={busy} onClick={onPullAll}>
-                  <Icon name="download" size={13} /> 모두 받기
-                </button>
-              )}
+              {g.key === 'recv' &&
+                (catFilter === CAT_ALL ? (
+                  <button className="cloud-bulk" disabled={busy} onClick={onPullAll}>
+                    <Icon name="download" size={13} /> 모두 받기
+                  </button>
+                ) : (
+                  <button
+                    className="cloud-bulk"
+                    disabled={busy || recvCatCount === 0}
+                    onClick={() => onPullCategory(catValue)}
+                    title={`${catName} 카테고리의 받을 것을 한 번에 내려받습니다`}
+                  >
+                    <Icon name="download" size={13} /> {catName} 받기 ({recvCatCount})
+                  </button>
+                ))}
               {g.key === 'push' && counts.bulkPush > 0 && (
                 <button className="cloud-bulk" disabled={busy} onClick={onPushPreview}>
                   <Icon name="upload" size={13} /> 미리보기
@@ -362,6 +419,7 @@ export function SyncSection() {
   const [preview, setPreview] = useState<PushPlan | null>(null)
   const [pullPlan, setPullPlan] = useState<PullPlan | null>(null)
   const [pullPreview, setPullPreview] = useState<PullPlan | null>(null)
+  const [pullCat, setPullCat] = useState<string | null>(null)
 
   useEffect(() => {
     const un = onSyncStatus((s) => {
@@ -537,6 +595,31 @@ export function SyncSection() {
     }
   }
 
+  /** 카테고리 단위 받기 — 그 카테고리의 "받을 것"(새 노트·새 버전)을 한 번에 내려받는다 */
+  const pullCategory = async (cat: string | null) => {
+    const targets = (cloud ?? []).filter((n) => n.state === 'remote-new' && n.fileId && (n.category ?? null) === cat)
+    if (!targets.length) {
+      toast('그 카테고리에서 받을 노트가 없습니다.', 'info')
+      return
+    }
+    if (!(await confirmDialog('카테고리 받기', { message: `"${cat ?? '미분류'}" 노트 ${targets.length}장을 클라우드에서 받아옵니다.`, ok: '받기' }))) return
+    setPullCat(cat ?? CAT_NONE)
+    try {
+      let n = 0
+      for (const t of targets) {
+        try {
+          if ((await downloadCloudNote(t)) === 'applied') n++
+        } catch (e) {
+          console.warn('[sync] 카테고리 받기 실패', t.docId, e)
+        }
+      }
+      toast(n ? `"${cat ?? '미분류'}" 노트 ${n}장을 받았습니다.` : '받은 노트가 없습니다.', n ? 'success' : 'info')
+      await loadCloud()
+    } finally {
+      setPullCat(null)
+    }
+  }
+
   if (status === 'auth-required' || status === 'disabled') {
     return (
       <section className="panel-section" id="sync-settings">
@@ -647,12 +730,13 @@ export function SyncSection() {
       <CloudList
         cloud={cloud}
         counts={counts}
-        busy={loading || status === 'syncing'}
+        busy={loading || status === 'syncing' || !!pullCat}
         busyId={busyId}
         onPrimary={onPrimary}
         onDelete={(c) => void deleteOne(c)}
         onExclude={(c) => void excludeOne(c)}
         onPullAll={() => void doPull()}
+        onPullCategory={(c) => void pullCategory(c)}
         onPushPreview={() => void doPush()}
       />
 

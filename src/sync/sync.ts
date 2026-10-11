@@ -737,6 +737,18 @@ export async function downloadCloudNote(
 }
 
 /**
+ * 보드의 연결 끊긴 노트 바로가기를 클라우드에서 찾아 받는다.
+ * 이 기기에 위치 기록(fileId)이 없어도 파일 이름이 docId.json 이므로 이름으로 찾을 수 있다.
+ * 보드 카드의 "받기"를 사용자가 눌렀을 때만 호출된다 — 자동 네트워크 사용은 없다.
+ */
+export async function downloadMissingDoc(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
+  const f = await ensureFolders()
+  const remote = await drive.findByName(`docs/${docId}.json`, f.docs)
+  if (!remote) return 'notfound'
+  return downloadCloudNote({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc })
+}
+
+/**
  * 클라우드 노트 삭제 — Drive 파일을 휴지통으로 옮긴다(30일 보관, 복구 가능).
  * 공용 보관소에서 치우는 것일 뿐이라 각 기기의 로컬 사본은 그대로다.
  * 이후 이 기기에서 그 노트를 다시 고쳐 올리면 새 파일로 올라간다.
