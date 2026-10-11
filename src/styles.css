@@ -5480,3 +5480,45 @@ details.adv > summary::marker {
 @media (max-width: 600px) {
   .gb-name { max-width: 96px; }
 }
+
+/* ── 머지 기록 (동기화 패널 맨 아래) ── */
+.merge-log { margin-top: 4px; }
+.merge-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.merge-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+}
+.merge-row:active { background: var(--surface-2); }
+.merge-row .t {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merge-row .m {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.merge-row .m .bdg { margin: 0; }
+.merge-row .m .bdg.warn {
+  border-color: var(--danger-line);
+  color: var(--danger-ink);
+}

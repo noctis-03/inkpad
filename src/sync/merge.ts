@@ -6,8 +6,24 @@ import type { DocFileV1 } from './pack'
 
 const j = (v: unknown) => JSON.stringify(v)
 
-export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFileV1): { file: DocFileV1; conflicts: number } {
+export type MergeConflictKind = 'page' | 'chunk' | 'block'
+
+/** 충돌 위치 — 확인 다이얼로그와 머지 기록이 읽는다. page는 pageId, chunk는 'pageId|key', block은 blockId */
+export interface MergeConflictDetail {
+  kind: MergeConflictKind
+  id: string
+}
+
+export interface MergeResult {
+  file: DocFileV1
+  conflicts: number
+  /** 덮여 쓰이는 충돌 위치 목록 — 양쪽에서 다르게 고친 것만 담는다(어느 쪽이 이기든 위치는 같다) */
+  details: MergeConflictDetail[]
+}
+
+export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFileV1): MergeResult {
   let conflicts = 0
+  const details: MergeConflictDetail[] = []
 
   // 문서 메타: 이 기기가 바꾼 필드는 ours, 원격이 바꿨으면 theirs
   const doc: DocFileV1['doc'] = { ...theirs.doc, id: ours.doc.id, updatedAt: Math.max(ours.doc.updatedAt, theirs.doc.updatedAt) }
@@ -36,6 +52,7 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
       else {
         pages.push(t) // 양쪽에서 다르게 고침 — 원격 우선, 이 기기 편집은 리비전으로 복구
         conflicts++
+        details.push({ kind: 'page', id })
       }
     } else if (o) {
       if (!bb) pages.push(o) // 원격에 없지만 base에도 없었다 → 원격 삭제의 증거 없음, 유지
@@ -73,6 +90,7 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
       else {
         chunks.push(t) // 양쪽에서 다르게 고침 — 원격 우선, 이 기기 편집은 리비전으로 복구
         conflicts++
+        details.push({ kind: 'chunk', id: k })
       }
     } else if (o) {
       if (bb === undefined) chunks.push(o) // 이 기기의 새 청크
@@ -112,6 +130,7 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
         else {
           chosen = t.updatedAt >= o.updatedAt ? t : o // 양쪽 다 다르면 updatedAt이 큰 쪽(같으면 theirs)
           conflicts++
+          details.push({ kind: 'block', id })
         }
       } else if (o) {
         if (!bb) chosen = o // 이 기기의 새 블록
@@ -129,5 +148,5 @@ export function mergeDocs(base: DocFileV1 | null, ours: DocFileV1, theirs: DocFi
   const assets = [...assetIds].map((id) => theirs.assets.find((a) => a.id === id) ?? ours.assets.find((a) => a.id === id)!)
 
   doc.category = doc.category ?? null // category 없는 옛 파일과의 머지 대비
-  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, ...(blocks ? { blocks } : {}), assets }, conflicts }
+  return { file: { kind: 'inkpad-doc', schemaVersion: 1, doc, pages, chunks, ...(blocks ? { blocks } : {}), assets }, conflicts, details }
 }

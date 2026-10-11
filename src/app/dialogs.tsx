@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import type { MergeConfirmInfo, MergeDecision } from '../sync/sync'
 
 // 브라우저 기본 prompt/confirm 대신 쓰는 앱 내 대화상자 (홈 화면 PWA에서도 일관되게 동작)
 type ConfirmDialog = {
@@ -56,6 +57,25 @@ export function choiceDialog(
   return new Promise<string | null>((resolve) =>
     useDialog.setState({ d: { kind: 'choice', title, message: opts.message, note: opts.note, options: opts.options, resolve } })
   )
+}
+
+/** 머지 확인 — 충돌이 있는 머지를 적용하기 전에 방향을 묻는다 (동기화 패널의 머지 기록과 짝) */
+export async function mergeConfirmDialog(info: MergeConfirmInfo): Promise<MergeDecision> {
+  const counts: Record<string, number> = { page: 0, chunk: 0, block: 0 }
+  for (const d of info.details) counts[d.kind]++
+  const parts = [counts.chunk ? `필기 ${counts.chunk}곳` : '', counts.page ? `페이지 ${counts.page}곳` : '', counts.block ? `블록 ${counts.block}곳` : '']
+    .filter(Boolean)
+    .join(' · ')
+  const v = await choiceDialog('머지 충돌', {
+    message: `“${info.title}” 노트를 다른 기기에서도 고쳤습니다. 겹치지 않은 필기는 양쪽 모두 살고, 겹친 ${info.conflicts}곳${parts ? `(${parts})` : ''}은 한쪽의 내용으로 덮어 씁니다.`,
+    note: '머지 전 이 기기의 모습은 클라우드 버전 기록에 남아 나중에 되돌릴 수 있습니다.',
+    options: [
+      { key: 'theirs', label: '원격 우선으로 합치기', primary: true },
+      { key: 'ours', label: '이 기기 우선으로 합치기' },
+      { key: 'later', label: '나중에' }
+    ]
+  })
+  return v === 'theirs' || v === 'ours' ? v : 'later' // 닫기·Esc도 '나중에'로 — 아무것도 적용되지 않는다
 }
 
 export function askPdfPassword(incorrect: boolean) {

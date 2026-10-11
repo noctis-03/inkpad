@@ -5,6 +5,7 @@
 //     → 마지막 동기화 스냅샷(base)으로 페이지·청크 단위 3-way 머지.
 //       겹치지 않은 편집은 양쪽 다 살고, 겹친 청크는 원격 우선.
 //       머지 전 이 기기 상태는 Drive 리비전으로 남겨 버전 기록에서 복구할 수 있다.
+//       충돌이 있으면 적용 전에 확인 창으로 방향(원격 우선·이 기기 우선·나중에)을 묻는다.
 //  3. 업로드 중에 또 수정됐으면 outbox를 남겨 다음 라운드에서 다시 올린다
 //  4. 삭제는 그 기기의 일 — 클라우드 사본은 남는다. 기기가 지운 노트는 gone 표식으로
 //     받기에서 제외되고(되살리지 않음), 클라우드 목록에는 빨간 점으로 표시되며
@@ -30,7 +31,7 @@ import { indexAssets } from './assets'
 import { loadBase, saveBase } from './base'
 import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
-import { mergeDocs } from './merge'
+import { mergeDocs, type MergeConflictDetail } from './merge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 import { clearPendingIfUnchanged } from './unchanged'
@@ -122,6 +123,60 @@ const emitProgress = (phase: SyncProgress['phase'], done: number, total: number)
 export const REMOTE_EVENT = 'inkpad-remote-changed'
 /** 머지가 일어났을 때 (UI가 "버전 기록 보기" 안내를 띄운다) */
 export const CONFLICT_EVENT = 'inkpad-conflict-resolved'
+
+// ───────── 머지 확인 게이트 ─────────
+// 충돌이 있는 머지는 적용 전에 사용자에게 방향을 묻는다. UI(App)가 setMergeConfirmHook으로
+// 응답자를 등록하고, 등록 전이면(테스트 등) 기존 규칙대로 원격 우선으로 진행한다.
+export type MergeDecision = 'theirs' | 'ours' | 'later'
+
+export interface MergeConfirmInfo {
+  docId: ID
+  title: string
+  /** 겹쳐 덮이는 부분의 수 */
+  conflicts: number
+  details: MergeConflictDetail[]
+}
+
+let mergeConfirmHook: ((info: MergeConfirmInfo) => Promise<MergeDecision>) | null = null
+
+/** 머지 확인 창의 응답자를 등록한다 — App이 뜰 때 한 번 등록한다 */
+export function setMergeConfirmHook(hook: ((info: MergeConfirmInfo) => Promise<MergeDecision>) | null): void {
+  mergeConfirmHook = hook
+}
+
+// ───────── 머지 기록 (기기 로컬 전용) ─────────
+// 이 기기에서 일어난 머지의 이력 — 동기화 패널의 "머지 기록"이 읽는다.
+// syncState에만 남기므로 다른 기기의 기록은 그 기기의 목록이 가진다.
+export interface MergeLogEntry {
+  docId: ID
+  title: string
+  device: string
+  at: number
+  conflicts: number
+  /** 원격 우선 · 이 기기 우선 (충돌 없이 자동으로 합쳐졌으면 conflicts가 0) */
+  decision: 'theirs' | 'ours'
+  details: MergeConflictDetail[]
+}
+
+const MERGE_LOG_KEY = 'mergeLog'
+
+export async function listMergeLog(): Promise<MergeLogEntry[]> {
+  return (await getSync<MergeLogEntry[]>(MERGE_LOG_KEY)) ?? []
+}
+
+export async function clearMergeLog(): Promise<void> {
+  await putSync(MERGE_LOG_KEY, [])
+}
+
+async function logMerge(entry: MergeLogEntry): Promise<void> {
+  try {
+    const log = await listMergeLog()
+    log.unshift(entry)
+    await putSync(MERGE_LOG_KEY, log.slice(0, 50)) // 최근 50건만 — 무한히 남기지 않는다
+  } catch (e) {
+    console.warn('[sync] 머지 기록 남기기 실패 — 동기화는 계속됩니다:', e)
+  }
+}
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-sync') : null
 channel?.addEventListener('message', (ev: MessageEvent<string[]>) => {
   window.dispatchEvent(new CustomEvent(REMOTE_EVENT, { detail: new Set<string>(ev.data) }))
@@ -323,7 +378,8 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
   // 머지로 합친다. 기록이 통째로 지워진 뒤(resetRemoteRecords)에도 마찬가지다 — 머지 없이
   // 덮어쓰면 다른 기기가 방금 올린 상태를 흘린다. base가 없으면 무base 머지 규칙을 따른다.
   if (remote && (!record?.version || remote.version !== record.version || remote.id !== record.fileId)) {
-    await mergePush(docId, remote, f.docs)
+    const done = await mergePush(docId, remote, f.docs)
+    if (!done) return false // 확인 창에서 '나중에' — outbox를 남겨 다음 올리기 때 다시 묻는다
     await db.outbox.bulkDelete(info.seqs)
     return true
   }
@@ -414,13 +470,32 @@ async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
  *  1. 이 기기의 현재 상태를 먼저 올려 Drive 리비전으로 남긴다 (머지 전 모습 복구용)
  *  2. base(마지막 동기화 스냅샷)로 3-way 머지 → 이 기기에 적용하고 허브로 올린다
  */
-async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: string) {
+/** @returns 머지를 끝까지 진행했는지 — 확인 창에서 '나중에'를 고르면 false (outbox가 남는다) */
+async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: string): Promise<boolean> {
   const local = await packDocument(docId)
   const theirs = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
-  if (theirs?.kind !== 'inkpad-doc') return
+  if (theirs?.kind !== 'inkpad-doc') return true
   const base = await loadBase(docId)
-  const { file: merged, conflicts } = mergeDocs(base, local, theirs)
+  const remoteFirst = mergeDocs(base, local, theirs)
   const device = await getDeviceName()
+  const title = (await db.documents.get(docId))?.title || remote.appProperties?.title || '제목 없음'
+
+  // 충돌이 있으면 적용 전에 묻는다 — 겹치지 않은 편집은 어느 쪽을 고르든 모두 산다.
+  // '나중에'면 아무것도 적용·올리지 않고 돌아간다(outbox가 남아 다음 올리기 때 다시 묻는다).
+  let decision: 'theirs' | 'ours' = 'theirs'
+  if (remoteFirst.conflicts > 0) {
+    const answer: MergeDecision = mergeConfirmHook
+      ? await mergeConfirmHook({ docId, title, conflicts: remoteFirst.conflicts, details: remoteFirst.details }).catch(() => 'later') // 창이 실패하면 아무것도 적용하지 않는다 — 다음에 다시
+      : 'theirs'
+    if (answer === 'later') return false
+    decision = answer
+  }
+  // '이 기기 우선' — 같은 3-way 머지에서 양쪽 인자를 바꿔 부르면 겹친 부분을 이 기기 것이 이긴다.
+  const outcome = decision === 'ours' ? mergeDocs(base, theirs, local) : remoteFirst
+  const merged = outcome.file
+  const conflicts = outcome.conflicts
+
+  await logMerge({ docId, title, device, at: Date.now(), conflicts, decision, details: outcome.details })
 
   // 머지 전 이 기기 상태를 리비전으로 남긴다 — 머지에서 밀린 편집의 백업('버려짐').
   // 고정해 두어야 버전 기록에서 내려받아 표식(기기명)을 읽을 수 있고 30일 자동 삭제도 피한다.
@@ -453,6 +528,7 @@ async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: stri
   await db.syncState.delete(`revKind:${docId}`)
   emitRemoteChanged(new Set<string>([docId]))
   window.dispatchEvent(new CustomEvent(CONFLICT_EVENT, { detail: { docId, revisionId: result.version } }))
+  return true
 }
 
 // ───────────────── Drive 파일 → 로컬 ─────────────────

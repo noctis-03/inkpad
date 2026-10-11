@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useUI, type Toast } from './store'
-import { DialogHost } from './dialogs'
+import { DialogHost, mergeConfirmDialog } from './dialogs'
+import { setMergeConfirmHook } from '../sync/sync'
 import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
 import { Editor } from '../ui/editor/Editor'
@@ -16,6 +17,12 @@ export function App() {
   useEffect(() => {
     // 휴지통 30일 정리 (로컬). 서버 쪽은 Phase 2에서 요청 시 lazy 정리
     void purgeExpiredTrash().catch(() => {})
+  }, [])
+
+  // 머지 확인 창 응답자 등록 — 충돌이 있는 머지는 적용 전에 이 창으로 물어본다
+  useEffect(() => {
+    setMergeConfirmHook(mergeConfirmDialog)
+    return () => setMergeConfirmHook(null)
   }, [])
 
   // 모션 단계 결정 (명세 4장) — auto는 OS '동작 줄이기'를 따르고, 결과를 <html data-motion>에 반영한다

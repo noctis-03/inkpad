@@ -14,8 +14,11 @@ import {
   pushNow,
   pushOneNote,
   syncNow,
+  clearMergeLog,
+  listMergeLog,
   type CloudNoteInfo,
   type CloudNoteState,
+  type MergeLogEntry,
   type PullPlan,
   type PushPlan,
   type SyncProgress,
@@ -404,6 +407,73 @@ function CloudList({
   )
 }
 
+// ───────────────── 머지 기록 ─────────────────
+
+/** 이 기기에서 일어난 머지의 이력 — 행을 누르면 그 노트를 열고, 되돌리기는 편집 화면의 버전 기록으로 한다 */
+function MergeLogList() {
+  const [log, setLog] = useState<MergeLogEntry[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const navigate = useUI((s) => s.navigate)
+
+  // 열 때 읽는다 — 머지 기록은 이 기기의 syncState에만 있다
+  useEffect(() => {
+    if (!open) return
+    void listMergeLog().then(setLog)
+  }, [open])
+
+  const clear = async () => {
+    if (
+      !(await confirmDialog('머지 기록 비우기', {
+        message: '이 기기의 머지 기록을 모두 지웁니다. 클라우드 버전 기록은 그대로 남습니다.',
+        ok: '비우기',
+        danger: true
+      }))
+    )
+      return
+    await clearMergeLog()
+    setLog([])
+  }
+
+  return (
+    <div className="merge-log">
+      <div className="cloud-lhead">
+        <span className="tt">
+          머지 기록<span>{log?.length ?? 0}</span>
+        </span>
+        {open && !!log?.length && (
+          <button className="sync-link muted" onClick={() => void clear()}>
+            비우기
+          </button>
+        )}
+        <button className="cloud-icon-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)} aria-label="머지 기록 펼치기">
+          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={16} />
+        </button>
+      </div>
+      {open && (
+        <div className="merge-log-list">
+          {log === null ? (
+            <p className="hint">읽는 중…</p>
+          ) : log.length === 0 ? (
+            <p className="hint">아직 머지 기록이 없습니다. 머지는 이 기기와 클라우드가 다르게 바뀐 노트를 올릴 때 일어납니다.</p>
+          ) : (
+            log.map((e, i) => (
+              <button key={`${e.docId}-${e.at}-${i}`} className="merge-row" onClick={() => navigate({ name: 'editor', docId: e.docId })}>
+                <span className="t">{e.title}</span>
+                <span className="m">
+                  <span className={'bdg' + (e.conflicts ? ' warn' : '')}>{e.conflicts ? `충돌 ${e.conflicts}곳` : '충돌 없음'}</span>
+                  <span>{e.conflicts ? (e.decision === 'ours' ? '이 기기 우선' : '원격 우선') : '자동으로 합침'}</span>
+                  {e.device && <span>{e.device}</span>}
+                  <span>{formatDate(e.at)}</span>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ───────────────── 섹션 ─────────────────
 
 export function SyncSection() {
@@ -739,6 +809,9 @@ export function SyncSection() {
         onPullCategory={(c) => void pullCategory(c)}
         onPushPreview={() => void doPush()}
       />
+
+      {/* 이 기기에서 일어난 머지의 기록 — 확인 창에서 '나중에'를 골랐던 노트를 찾을 때도 쓴다 */}
+      <MergeLogList />
 
       {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 (개선 3) */}
       <DeviceFoot
