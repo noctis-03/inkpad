@@ -19,6 +19,9 @@ export interface BoardShortcut {
   label?: string
 }
 
+/** 그룹 안 항목 정렬 방식 — 'manual'(또는 생략)이면 손으로 놓은 그대로 둔다 */
+export type BoardGroupSort = 'manual' | 'title' | 'updated' | 'kind'
+
 /** 그룹 박스 — 항목을 '담지' 않고, 묶음을 시각적으로만 표시하는 사각형. 이름을 붙일 수 있다 */
 export interface BoardGroup {
   id: string
@@ -31,6 +34,8 @@ export interface BoardGroup {
   gh: number
   /** 색상 키 — BOARD_GROUP_TONES */
   tone: string
+  /** 그룹 안 항목을 어떤 기준으로 정렬해 두었는지 (그룹 메뉴에서 고른다) */
+  sort?: BoardGroupSort
 }
 
 /** 보드 한 장의 상태 */
@@ -89,6 +94,7 @@ const coord = (v: unknown) => {
   return Math.min(LIMIT, Math.max(-LIMIT, n))
 }
 const TONES = new Set<string>(BOARD_GROUP_TONES)
+const SORTS = new Set<string>(['manual', 'title', 'updated', 'kind'])
 const groupSize = (v: unknown) => {
   const n = Number(v)
   if (!Number.isFinite(n)) return BOARD_GROUP_MIN_CELLS
@@ -128,7 +134,8 @@ export function normalizeBoard(raw: unknown): Board {
       gy: coord(item.gy),
       gw: groupSize(item.gw),
       gh: groupSize(item.gh),
-      tone: TONES.has(item.tone) ? item.tone : BOARD_GROUP_TONES[0]
+      tone: TONES.has(item.tone) ? item.tone : BOARD_GROUP_TONES[0],
+      ...(SORTS.has(item.sort as string) ? { sort: item.sort as BoardGroupSort } : {})
     })
     if (groups.length >= BOARD_MAX_GROUPS) break
   }

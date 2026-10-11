@@ -20,7 +20,6 @@ import {
   cloneBoard,
   DEFAULT_BOARD,
   normalizeBoard,
-  packGrid,
   worldToGrid,
   type Board as BoardModel,
   type BoardGroup,
@@ -130,7 +129,6 @@ export function Board() {
     }
   })
   const [trayCat, setTrayCat] = useState<string>(CAT_ALL)
-  const [sortMenu, setSortMenu] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [cloudMissing, setCloudMissing] = useState<Set<string>>(() => new Set())
 
@@ -370,7 +368,6 @@ export function Board() {
     setWorldAnim(false) // 팬은 즉시 반응해야 한다
     setWallMenu(false)
     setMoreMenu(false)
-    setSortMenu(false)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     armGesture()
   }
@@ -679,47 +676,155 @@ export function Board() {
     window.addEventListener('pointercancel', cleanup)
   }
 
-  /** 지금 배치를 가지런한 사각 격자로 정렬 */
-  const arrange = () => {
-    const n = board.shortcuts.length
-    if (!n) return
-    const pos = packGrid(n)
-    commit((b) => ({ ...b, snap: true, shortcuts: b.shortcuts.map((s, i) => ({ ...s, ...pos[i] })) }))
+  // ── 정렬 ──
+  // 보드 전체 정렬은 '카테고리별 묶기' 하나로 통일한다. 이름순·최근 수정순·종류별 같은 세부 정렬은
+  // 그룹 박스 메뉴에서 그룹 안 항목끼리 고른다 (sortGroupItems).
+
+  type SortBy = 'title' | 'updated' | 'kind'
+
+  /** 바로가기 → 카테고리 (연결이 끊긴 항목은 미분류로 본다) */
+  const categoryOf = (sc: BoardShortcut): string | null => {
+    const it = itemOf(sc)
+    if (!it) return null
+    return it.kind === 'doc' ? it.d.category : it.kind === 'app' ? it.a.category : it.f.category
+  }
+
+  /** 항목 비교용 키 — 연결이 끊긴 항목은 늘 맨 뒤로 */
+  const itemKey = (sc: BoardShortcut) => {
+    const it = itemOf(sc)
+    if (!it) return { title: '\uffff' + (sc.label ?? sc.refId), at: 0, rank: 9 }
+    return {
+      title: (it.kind === 'doc' ? it.d.title : it.kind === 'app' ? it.a.title : it.f.title).toLowerCase(),
+      at: updatedOf(it),
+      rank: it.kind === 'doc' ? 0 : it.kind === 'app' ? 1 : 2
+    }
+  }
+  const compareItems = (a: BoardShortcut, b: BoardShortcut, by: SortBy) => {
+    const ia = itemKey(a)
+    const ib = itemKey(b)
+    if (by === 'updated') return ib.at - ia.at
+    if (by === 'kind') return ia.rank - ib.rank || ia.title.localeCompare(ib.title, 'ko')
+    return ia.title.localeCompare(ib.title, 'ko')
+  }
+
+  /**
+   * 보드에 올라와 있는 바로가기를 '카테고리 기준'으로 다시 묶는다.
+   * 카테고리마다 그룹 박스를 자동으로 만들고, 그 안에 카드를 가지런한 격자로 앉힌다.
+   * (세부 정렬은 그룹 메뉴에서 그룹 단위로 고른다)
+   */
+  const groupByCategory = () => {
+    const list = boardRef.current.shortcuts
+    if (!list.length) {
+      toast('보드에 놓인 바로가기가 없습니다. 서랍에서 카드를 먼저 놓아 주세요.', 'info')
+      return
+    }
+    // 1) 카테고리별 묶음 (미분류도 한 묶음)
+    const buckets = new Map<string, BoardShortcut[]>()
+    for (const s of list) {
+      const key = categoryOf(s) ?? CAT_NONE
+      const arr = buckets.get(key)
+      if (arr) arr.push(s)
+      else buckets.set(key, [s])
+    }
+    // 2) 묶음 순서 — 이름 가나다순, 미분류는 맨 뒤
+    const keys = [...buckets.keys()].filter((k) => k !== CAT_NONE).sort((a, b) => a.localeCompare(b, 'ko'))
+    if (buckets.has(CAT_NONE)) keys.push(CAT_NONE)
+
+    // 3) 그룹 박스 크기 — 항목 수에 맞춘 정사각형에 가까운 격자
+    const planned = keys.map((k) => {
+      const items = [...(buckets.get(k) ?? [])].sort((a, b) => compareItems(a, b, 'title'))
+      const cols = Math.min(Math.max(2, Math.ceil(Math.sqrt(items.length))), 8)
+      return {
+        key: k,
+        name: k === CAT_NONE ? '미분류' : k,
+        items,
+        cols,
+        gw: Math.max(cols, BOARD_GROUP_MIN_CELLS),
+        gh: Math.max(Math.ceil(items.length / cols), BOARD_GROUP_MIN_CELLS),
+        gx: 0,
+        gy: 0
+      }
+    })
+
+    // 4) 선반식 배치 — 한 줄에 그룹 3개까지, 넘치면 아랫줄
+    const PER_ROW = 3
+    const GAP = 1
+    let curX = 0
+    let curY = 0
+    let rowH = 0
+    let inRow = 0
+    for (const p of planned) {
+      if (inRow >= PER_ROW) {
+        curX = 0
+        curY += rowH + GAP
+        rowH = 0
+        inRow = 0
+      }
+      p.gx = curX
+      p.gy = curY
+      curX += p.gw + GAP
+      rowH = Math.max(rowH, p.gh)
+      inRow++
+    }
+    // 5) 전체를 원점 가운데로
+    const totalW = Math.max(...planned.map((p) => p.gx + p.gw))
+    const totalH = curY + rowH
+    const offX = Math.round(totalW / 2)
+    const offY = Math.round(totalH / 2)
+
+    const groups: BoardGroup[] = []
+    const pos = new Map<string, { gx: number; gy: number }>()
+    planned.forEach((p, gi) => {
+      groups.push({
+        id: newId(),
+        name: p.name,
+        gx: p.gx - offX,
+        gy: p.gy - offY,
+        gw: p.gw,
+        gh: p.gh,
+        tone: BOARD_GROUP_TONES[gi % BOARD_GROUP_TONES.length],
+        sort: 'title'
+      })
+      p.items.forEach((s, i) => {
+        pos.set(s.id, { gx: p.gx - offX + (i % p.cols), gy: p.gy - offY + Math.floor(i / p.cols) })
+      })
+    })
+
+    commit((b) => ({ ...b, snap: true, groups, shortcuts: b.shortcuts.map((s) => (pos.has(s.id) ? { ...s, ...pos.get(s.id)! } : s)) }))
+    toast(`카테고리 ${planned.length}묶음으로 그룹을 만들고 정렬했습니다.`, 'success')
     requestAnimationFrame(() => fit())
   }
 
-  /** 바로가기를 기준대로 정렬해 가지런한 격자로 배치한다 — 연결 끊긴 항목은 맨 뒤 */
-  const sortItems = (by: 'title' | 'updated' | 'kind') => {
-    const list = boardRef.current.shortcuts
-    if (list.length < 2) return
-    const rank: Record<ShortcutKind, number> = { doc: 0, app: 1, file: 2 }
-    const meta = new Map(
-      list.map((s) => {
-        const it = itemOf(s)
-        return [
-          s.id,
-          it
-            ? {
-                title: (it.kind === 'doc' ? it.d.title : it.kind === 'app' ? it.a.title : it.f.title).toLowerCase(),
-                at: updatedOf(it),
-                r: rank[it.kind]
-              }
-            : { title: '\uffff' + s.refId, at: 0, r: 9 } // 끊긴 항목은 맨 뒤
-        ]
-      })
+  /** 그룹 안에 들어 있는 항목만 골라 그룹 영역 안에서 다시 앉힌다 */
+  const sortGroupItems = (g: BoardGroup, by: SortBy) => {
+    const inside = boardRef.current.shortcuts.filter(
+      (s) => s.gx + 0.5 >= g.gx && s.gx + 0.5 <= g.gx + g.gw && s.gy + 0.5 >= g.gy && s.gy + 0.5 <= g.gy + g.gh
     )
-    const sorted = [...list].sort((a, b) => {
-      const ia = meta.get(a.id)!
-      const ib = meta.get(b.id)!
-      if (by === 'updated') return ib.at - ia.at
-      if (by === 'kind') return ia.r - ib.r || ia.title.localeCompare(ib.title, 'ko')
-      return ia.title.localeCompare(ib.title, 'ko')
+    if (inside.length < 2) {
+      setGroupMenu(null)
+      toast(`"${g.name}" 그룹에 항목이 2개 이상 있어야 정렬할 수 있습니다.`, 'info')
+      return
+    }
+    const cols = Math.max(1, Math.round(g.gw))
+    const pos = new Map<string, { gx: number; gy: number }>()
+    ;[...inside].sort((a, b) => compareItems(a, b, by)).forEach((s, i) => {
+      pos.set(s.id, { gx: g.gx + (i % cols), gy: g.gy + Math.floor(i / cols) })
     })
-    const pos = packGrid(sorted.length)
-    commit((b) => ({ ...b, snap: true, shortcuts: sorted.map((s, i) => ({ ...s, ...pos[i] })) }))
-    setSortMenu(false)
-    toast(by === 'title' ? '이름순으로 정렬했습니다.' : by === 'updated' ? '최근 수정순으로 정렬했습니다.' : '종류별로 정렬했습니다.', 'info')
-    requestAnimationFrame(() => fit())
+    commit((b) => ({
+      ...b,
+      snap: true,
+      groups: b.groups.map((x) => (x.id === g.id ? { ...x, sort: by } : x)),
+      shortcuts: b.shortcuts.map((s) => (pos.has(s.id) ? { ...s, ...pos.get(s.id)! } : s))
+    }))
+    setGroupMenu(null)
+    toast(
+      by === 'title'
+        ? `"${g.name}" 그룹을 이름순으로 정렬했습니다.`
+        : by === 'updated'
+          ? `"${g.name}" 그룹을 최근 수정순으로 정렬했습니다.`
+          : `"${g.name}" 그룹을 종류별로 정렬했습니다.`,
+      'info'
+    )
   }
 
   /** 보드의 모든 바로가기가 화면에 들어오게 맞춤 */
@@ -1213,6 +1318,8 @@ export function Board() {
           .filter((c) => c.key === trayCat)
           .map((c) => ({ key: c.key, name: c.name, cat: c.cat, rows: trayRows.filter((x) => (x.cat ?? CAT_NONE) === c.key && matchesQ(x)) }))
   const visibleCount = trayRows.filter((x) => inCat(x) && matchesQ(x)).length
+  /** 고른 카테고리가 사라졌으면 전체로 되돌린다 (select 값이 빈 채로 남지 않게) */
+  const catValue = trayCat === CAT_ALL || trayCats.some((c) => c.key === trayCat) ? trayCat : CAT_ALL
 
   const trayBody = (
     <>
@@ -1237,22 +1344,18 @@ export function Board() {
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="제목으로 찾기" aria-label="카드 검색" />
         </span>
         {trayCats.length > 0 && (
-          <div className="tray-cats" role="group" aria-label="카테고리 필터">
-            <button className={'tray-cat-chip' + (trayCat === CAT_ALL ? ' on' : '')} onClick={() => setTrayCat(CAT_ALL)}>
-              전체 <b>{trayRows.length}</b>
-            </button>
-            {trayCats.map((c) => (
-              <button
-                key={c.key}
-                className={'tray-cat-chip' + (trayCat === c.key ? ' on' : '')}
-                aria-pressed={trayCat === c.key}
-                title={trayCat === c.key ? '카테고리 필터 해제' : `${c.name} 카테고리만 보기`}
-                onClick={() => setTrayCat(trayCat === c.key ? CAT_ALL : c.key)}
-              >
-                {c.name} <b>{c.count}</b>
-              </button>
-            ))}
-          </div>
+          <label className="tray-filter">
+            <Icon name="tag" size={15} />
+            <select value={catValue} onChange={(e) => setTrayCat(e.target.value)} aria-label="카테고리 필터">
+              <option value={CAT_ALL}>전체 카테고리 ({trayRows.length})</option>
+              {trayCats.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.name} ({c.count})
+                </option>
+              ))}
+            </select>
+            <Icon name="chevronDown" size={13} />
+          </label>
         )}
       </div>
       <div className="tray-list">
@@ -1304,7 +1407,6 @@ export function Board() {
             onChange={(v) => {
               const on = v === 'edit'
               setEdit(on)
-              setSortMenu(false)
               if (on) setPanelOpen(true) // 편집을 켜면 카드 서랍(노트)을 바로 연다
             }}
             label="보기/편집 모드"
@@ -1335,14 +1437,14 @@ export function Board() {
             <span>격자</span>
           </button>
           <button
-            className={'bet-btn' + (sortMenu ? ' is-on' : '')}
-            onClick={() => setSortMenu((v) => !v)}
+            className="bet-btn"
+            onClick={groupByCategory}
             disabled={!shortcuts.length}
-            aria-label="정렬"
-            aria-expanded={sortMenu}
+            aria-label="카테고리별 정렬"
+            title="보드에 놓인 바로가기를 카테고리별로 묶고 그룹까지 자동으로 만들어 정렬합니다"
           >
             <Icon name="blocks" size={17} />
-            <span>정렬</span>
+            <span>분류</span>
           </button>
           <button className="bet-btn" onClick={() => void addGroup()} aria-label="그룹 추가">
             <Icon name="folderPlus" size={17} />
@@ -1359,32 +1461,6 @@ export function Board() {
           <span className="bet-sep" />
           <button className="primary-btn bet-done" onClick={() => setEdit(false)}>
             완료
-          </button>
-        </div>
-      )}
-
-      {/* 정렬 메뉴 */}
-      {sortMenu && edit && (
-        <div className="board-pop board-sort" role="menu" aria-label="정렬">
-          <div className="board-pop-title">정렬 — 고르면 가지런히 배치합니다</div>
-          <button className="board-pop-row" onClick={() => sortItems('title')}>
-            <Icon name="sort" size={16} /> 이름순 (가나다)
-          </button>
-          <button className="board-pop-row" onClick={() => sortItems('updated')}>
-            <Icon name="edit" size={16} /> 최근 수정순
-          </button>
-          <button className="board-pop-row" onClick={() => sortItems('kind')}>
-            <Icon name="blocks" size={16} /> 종류별 (노트·앱·파일)
-          </button>
-          <div className="board-pop-sep" />
-          <button
-            className="board-pop-row"
-            onClick={() => {
-              setSortMenu(false)
-              arrange()
-            }}
-          >
-            <Icon name="grid" size={16} /> 지금 순서대로 가지런히
           </button>
         </div>
       )}
@@ -1472,6 +1548,26 @@ export function Board() {
                 )}
                 {groupMenu === g.id && (
                   <div className="board-group-menu" onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="board-group-sort">
+                      <span className="board-group-sort-label">
+                        <Icon name="sort" size={13} /> 그룹 안 정렬
+                      </span>
+                      <div className="board-group-sort-row">
+                        <button
+                          className={!g.sort || g.sort === 'title' ? 'is-on' : ''}
+                          onClick={() => sortGroupItems(g, 'title')}
+                        >
+                          이름순
+                        </button>
+                        <button className={g.sort === 'updated' ? 'is-on' : ''} onClick={() => sortGroupItems(g, 'updated')}>
+                          최근 수정
+                        </button>
+                        <button className={g.sort === 'kind' ? 'is-on' : ''} onClick={() => sortGroupItems(g, 'kind')}>
+                          종류별
+                        </button>
+                      </div>
+                    </div>
+                    <div className="board-pop-sep" />
                     <button onClick={() => void renameGroup(g)}>
                       <Icon name="edit" size={14} /> 이름 바꾸기
                     </button>

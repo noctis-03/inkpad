@@ -4439,8 +4439,9 @@ details.adv > summary::marker {
   overflow: hidden;
   color: var(--ink);
   background: var(--paper);
-  --grid-line: color-mix(in srgb, var(--ink) 9%, transparent);
-  --grid-major: color-mix(in srgb, var(--ink) 16%, transparent);
+  /* 격자선은 전부 연하게 — 굵은 선(8칸마다)도 옅은 선과 같은 톤을 쓴다 */
+  --grid-line: color-mix(in srgb, var(--ink) 7%, transparent);
+  --grid-major: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 .board-stage {
   position: relative;
@@ -4463,9 +4464,9 @@ details.adv > summary::marker {
 }
 
 /* ── 배경화면 ── */
-.board-wall-ink { --grid-line: #ffffff16; --grid-major: #ffffff2b; }
-[data-theme='dark'] .board { --grid-line: #ffffff12; --grid-major: #ffffff22; }
-[data-theme='dark'] .board-wall-ink { --grid-line: #ffffff18; --grid-major: #ffffff30; }
+.board-wall-ink { --grid-line: #ffffff12; --grid-major: #ffffff12; }
+[data-theme='dark'] .board { --grid-line: #ffffff0e; --grid-major: #ffffff0e; }
+[data-theme='dark'] .board-wall-ink { --grid-line: #ffffff14; --grid-major: #ffffff14; }
 .board-wall-mist { background: linear-gradient(158deg, #dde6f6 0%, #f5f2ea 52%, #e6e1d6 100%); }
 .board-wall-dawn { background: linear-gradient(158deg, #ffe5d3 0%, #f8dde9 44%, #e3e5f8 100%); }
 .board-wall-forest { background: linear-gradient(158deg, #d7ead9 0%, #eef2e3 48%, #dbe5da 100%); }
@@ -5153,29 +5154,32 @@ details.adv > summary::marker {
 
 /* ── 작업보드: 서랍 카테고리 · 정렬 메뉴 · 끊긴 카드 받기 ── */
 
-/* 서랍 카테고리 칩 */
-.tray-cats { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: none; }
-.tray-cats::-webkit-scrollbar { display: none; }
-.tray-cat-chip {
-  flex: 0 0 auto;
-  display: inline-flex;
+/* 서랍 카테고리 필터 — 칩 줄 대신 패널의 다른 입력칸과 같은 결의 선택 필드 */
+.tray-filter {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 11px;
-  border-radius: 15px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--tray);
+  color: var(--muted);
+  transition: background .25s, box-shadow .35s var(--ft-ease), color .2s;
+}
+.tray-filter:focus-within { background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--ink); }
+.tray-filter select {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  outline: none;
   font: inherit;
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  font-size: var(--fs-sm);
   color: var(--ink-2);
-  white-space: nowrap;
   cursor: pointer;
 }
-.tray-cat-chip b { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 600; }
-.tray-cat-chip.on { background: var(--btn-bg); border-color: var(--ink); color: var(--btn-fg); }
-.tray-cat-chip.on b { color: var(--muted-2); }
 
 /* 카테고리 섹션 — 넓은 패널은 세로 목록, 좁은 서랍은 가로 타일 줄 */
 .tray-cat { display: flex; flex-direction: column; gap: 2px; }
@@ -5229,14 +5233,26 @@ details.adv > summary::marker {
 .board-relink-btn { display: inline-flex; align-items: center; gap: 4px; }
 .board-relink-btn.is-dl { border-color: var(--accent-line); background: var(--accent-soft-2); color: var(--accent-ink); }
 
-/* 정렬 메뉴 팝오버 — 편집 툴바 아래 가운데 */
-.board-sort {
-  top: calc(var(--safe-top) + var(--toolbar-h) + 72px);
-  right: auto;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 224px;
+/* 그룹 메뉴 안 '그룹 안 정렬' — 그룹 단위로 정렬 방법을 고른다 */
+.board-group-sort { padding: 6px 10px 4px; }
+.board-group-sort-label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: var(--fs-xs); color: var(--muted); }
+.board-group-sort-row { display: flex; gap: 6px; }
+.board-group-sort-row button {
+  flex: 1;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
 }
+.board-group-sort-row button:hover { background: var(--hover); }
+.board-group-sort-row button.is-on { border-color: var(--accent-line); background: var(--accent-soft-2); color: var(--accent-ink); }
 
 /* 작은 스피너 (받기 버튼 안) */
 .spinner.sm { width: 14px; height: 14px; border-width: 2px; }
