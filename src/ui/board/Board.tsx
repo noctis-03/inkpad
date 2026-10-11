@@ -90,6 +90,13 @@ function fileTone(name: string): string {
 }
 /** 그룹 톤 키 → 색 토큰 */
 const TONE_VAR: Record<string, string> = { blue: '--accent', green: '--success', violet: '--app', amber: '--warn' }
+/** 카테고리 표식 색 — 이름이 같으면 늘 같은 색이 나오게 (서랍 카테고리 머리의 작은 네모) */
+const CAT_TONES = ['--accent', '--success', '--app', '--warn']
+function catTone(name: string) {
+  let h = 0
+  for (const ch of name) h = (h + ch.charCodeAt(0) * 7) % 997
+  return CAT_TONES[h % CAT_TONES.length]
+}
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 type TrayFilter = 'doc' | 'app' | 'file' | 'all'
@@ -1365,8 +1372,11 @@ export function Board() {
           catSections.map((s) => (
             <section className="tray-cat" key={s.key || CAT_NONE}>
               <div className="tray-cat-head">
-                <span className="tray-cat-name">{s.name}</span>
-                <b>{s.rows.length}</b>
+                <span className="tray-cat-dot" style={{ background: `var(${catTone(s.name)})` }} aria-hidden="true" />
+                <span className="tray-cat-name" title={s.name}>
+                  {s.name}
+                </span>
+                <span className="tray-cat-count">{s.rows.length}</span>
                 {tray === 'doc' && (
                   <button className="tray-cat-add" onClick={() => placeCategory(s.cat)} title="이 카테고리의 노트를 보드에 한 번에 놓습니다">
                     <Icon name="plus" size={12} /> 전체 놓기

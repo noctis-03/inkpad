@@ -4439,6 +4439,8 @@ details.adv > summary::marker {
   overflow: hidden;
   color: var(--ink);
   background: var(--paper);
+  /* 카드 서랍(넓은 화면 오른쪽 패널) 폭 — 편집 툴바 가운데 정렬도 이 값을 함께 쓴다 */
+  --tray-w: 372px;
   /* 격자선은 전부 연하게 — 굵은 선(8칸마다)도 옅은 선과 같은 톤을 쓴다 */
   --grid-line: color-mix(in srgb, var(--ink) 7%, transparent);
   --grid-major: color-mix(in srgb, var(--ink) 7%, transparent);
@@ -4553,7 +4555,7 @@ details.adv > summary::marker {
   -webkit-backdrop-filter: blur(10px);
   transition: left var(--dur-base) var(--ft-ease);
 }
-.board-edit-toolbar.with-panel { left: calc((100% - 300px) / 2); }
+.board-edit-toolbar.with-panel { left: calc((100% - var(--tray-w)) / 2); }
 .bet-btn {
   display: inline-flex;
   align-items: center;
@@ -4969,7 +4971,7 @@ details.adv > summary::marker {
   top: calc(var(--toolbar-h) + var(--safe-top) + 8px);
   right: 8px;
   bottom: 8px;
-  width: 300px;
+  width: var(--tray-w);
   z-index: 8;
   display: flex;
   flex-direction: column;
@@ -5182,35 +5184,66 @@ details.adv > summary::marker {
 }
 
 /* 카테고리 섹션 — 넓은 패널은 세로 목록, 좁은 서랍은 가로 타일 줄 */
-.tray-cat { display: flex; flex-direction: column; gap: 2px; }
+.tray-cat { display: flex; flex-direction: column; gap: 3px; padding-bottom: 12px; }
+.tray-cat + .tray-cat { border-top: 1px solid var(--line); }
 .tray-cat-head {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 6px 4px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 6px 4px;
   background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
-.tray-cat-name { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); }
-.tray-cat-head b { font-size: var(--fs-xs); color: var(--muted-2); font-variant-numeric: tabular-nums; }
-.tray-cat-add {
-  margin-left: auto;
+.tray-cat-dot { flex: none; width: 8px; height: 8px; border-radius: 3px; }
+.tray-cat-name {
+  min-width: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-cat-count {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 24px;
-  padding: 2px 9px;
+  justify-content: center;
+  min-width: 22px;
+  height: 19px;
+  padding: 0 7px;
   border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tray-cat-add {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-ink);
   font: inherit;
   font-size: var(--fs-xs);
   font-weight: 700;
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ft-ease), border-color var(--dur-fast) var(--ft-ease);
 }
+.tray-cat-add:hover { background: var(--accent-soft-2); border-color: var(--accent-line-2); }
+.tray-cat-add:active { transform: scale(.97); }
 .tray-cat-rows { display: flex; flex-direction: column; gap: 2px; }
 .board-drawer .tray-list { flex-direction: column; overflow-x: hidden; }
 .board-drawer .tray-cat-rows { flex-direction: row; flex-wrap: wrap; gap: 8px; }
