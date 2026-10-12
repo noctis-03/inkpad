@@ -160,12 +160,28 @@ export interface MergeLogEntry {
 
 const MERGE_LOG_KEY = 'mergeLog'
 
+/** 머지 기록이 바뀌었을 때 — UI(배지 등)가 즉시 다시 읽도록 알린다 */
+export const MERGE_LOG_EVENT = 'inkpad-mergelog-changed'
+const emitMergeLogChanged = () => window.dispatchEvent(new Event(MERGE_LOG_EVENT))
+
 export async function listMergeLog(): Promise<MergeLogEntry[]> {
   return (await getSync<MergeLogEntry[]>(MERGE_LOG_KEY)) ?? []
 }
 
 export async function clearMergeLog(): Promise<void> {
   await putSync(MERGE_LOG_KEY, [])
+  emitMergeLogChanged()
+}
+
+const MERGE_LOG_SEEN_KEY = 'mergeLogSeenAt'
+
+/** 이 기기에서 마지막으로 머지 기록 서랍을 확인한 시각 — 그 뒤에 일어난 머지가 '확인하지 않은 머지'다 */
+export async function getMergeLogSeenAt(): Promise<number> {
+  return (await getSync<number>(MERGE_LOG_SEEN_KEY)) ?? 0
+}
+
+export async function markMergeLogSeen(at: number): Promise<void> {
+  await putSync(MERGE_LOG_SEEN_KEY, at)
 }
 
 async function logMerge(entry: MergeLogEntry): Promise<void> {
@@ -173,6 +189,7 @@ async function logMerge(entry: MergeLogEntry): Promise<void> {
     const log = await listMergeLog()
     log.unshift(entry)
     await putSync(MERGE_LOG_KEY, log.slice(0, 50)) // 최근 50건만 — 무한히 남기지 않는다
+    emitMergeLogChanged()
   } catch (e) {
     console.warn('[sync] 머지 기록 남기기 실패 — 동기화는 계속됩니다:', e)
   }

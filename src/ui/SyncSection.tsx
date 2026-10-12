@@ -14,8 +14,11 @@ import {
   pushNow,
   pushOneNote,
   syncNow,
+  MERGE_LOG_EVENT,
   clearMergeLog,
+  getMergeLogSeenAt,
   listMergeLog,
+  markMergeLogSeen,
   type CloudNoteInfo,
   type CloudNoteState,
   type MergeLogEntry,
@@ -412,14 +415,32 @@ function CloudList({
 /** 이 기기에서 일어난 머지의 이력 — 행을 누르면 그 노트를 열고, 되돌리기는 편집 화면의 버전 기록으로 한다 */
 function MergeLogList() {
   const [log, setLog] = useState<MergeLogEntry[] | null>(null)
+  const [seenAt, setSeenAt] = useState(0)
   const [open, setOpen] = useState(false)
   const navigate = useUI((s) => s.navigate)
 
-  // 열 때 읽는다 — 머지 기록은 이 기기의 syncState에만 있다
+  // 머지 기록은 이 기기의 syncState에만 있다 — 서랍이 닫혀 있어도 배지 개수는 알아야 하므로
+  // 마운트 때와 기록이 바뀔 때마다 읽는다 (열어야 갱신되던 문제)
   useEffect(() => {
-    if (!open) return
-    void listMergeLog().then(setLog)
-  }, [open])
+    const reload = () => {
+      void listMergeLog().then(setLog)
+      void getMergeLogSeenAt().then(setSeenAt)
+    }
+    reload()
+    window.addEventListener(MERGE_LOG_EVENT, reload)
+    return () => window.removeEventListener(MERGE_LOG_EVENT, reload)
+  }, [])
+
+  // 서랍을 펼치면 그 시점의 최신 기록까지 확인한 것으로 친다 — '확인하지 않은 머지' 표시가 사라진다
+  const unseen = log ? log.filter((e) => e.at > seenAt).length : 0
+  useEffect(() => {
+    if (!open || log === null) return
+    const newest = log[0]?.at ?? 0
+    if (newest > seenAt) {
+      setSeenAt(newest)
+      void markMergeLogSeen(newest)
+    }
+  }, [open, log, seenAt])
 
   const clear = async () => {
     if (
@@ -440,6 +461,7 @@ function MergeLogList() {
         <span className="tt">
           머지 기록<span>{log?.length ?? 0}</span>
         </span>
+        {unseen > 0 && <span className="unseen">확인하지 않은 머지 {unseen}건</span>}
         {open && !!log?.length && (
           <button className="sync-link muted" onClick={() => void clear()}>
             비우기

@@ -5522,6 +5522,15 @@ details.adv > summary::marker {
   border-color: var(--danger-line);
   color: var(--danger-ink);
 }
+/* 머지 기록 머리 — 아직 서랍을 펼쳐 확인하지 않은 머지가 있을 때의 알림 배지 */
+.cloud-lhead .unseen {
+  padding: 2px 8px;
+  border: 1px solid var(--danger-line);
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--danger-ink);
+}
 
 /* ── 미리보기 일괄 새로고침 버튼 (라이브러리 상단바) ── */
 .tb-btn.thumb-refresh.spinning svg {
