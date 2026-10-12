@@ -410,9 +410,10 @@ function CloudList({
   )
 }
 
-// ───────────────── 머지 기록 ─────────────────
+// ───────────────── 머지 충돌 기록 ─────────────────
 
-/** 이 기기에서 일어난 머지의 이력 — 행을 누르면 그 노트를 열고, 되돌리기는 편집 화면의 버전 기록으로 한다 */
+/** 이 기기에서 일어난 충돌 머지의 이력 — 행을 누르면 그 노트를 열고, 되돌리기는 편집 화면의 버전 기록으로 한다.
+ *  충돌 없이 자동으로 합쳐진 머지는 목록에 내지 않는다 (기록 자체는 계속 저장된다). */
 function MergeLogList() {
   const [log, setLog] = useState<MergeLogEntry[] | null>(null)
   const [seenAt, setSeenAt] = useState(0)
@@ -431,8 +432,11 @@ function MergeLogList() {
     return () => window.removeEventListener(MERGE_LOG_EVENT, reload)
   }, [])
 
+  // 패널이 '머지 충돌 기록'이므로 충돌난 머지만 내보인다 — 자동으로 합쳐진 기록은 저장만 남긴다
+  const conflictsOnly = log?.filter((e) => e.conflicts > 0) ?? null
+
   // 서랍을 펼치면 그 시점의 최신 기록까지 확인한 것으로 친다 — '확인하지 않은 머지' 표시가 사라진다
-  const unseen = log ? log.filter((e) => e.at > seenAt).length : 0
+  const unseen = conflictsOnly ? conflictsOnly.filter((e) => e.at > seenAt).length : 0
   useEffect(() => {
     if (!open || log === null) return
     const newest = log[0]?.at ?? 0
@@ -444,8 +448,8 @@ function MergeLogList() {
 
   const clear = async () => {
     if (
-      !(await confirmDialog('머지 기록 비우기', {
-        message: '이 기기의 머지 기록을 모두 지웁니다. 클라우드 버전 기록은 그대로 남습니다.',
+      !(await confirmDialog('머지 충돌 기록 비우기', {
+        message: '이 기기의 머지 충돌 기록을 모두 지웁니다. 클라우드 버전 기록은 그대로 남습니다.',
         ok: '비우기',
         danger: true
       }))
@@ -459,7 +463,7 @@ function MergeLogList() {
     <div className="merge-log">
       <div className="cloud-lhead">
         <span className="tt">
-          머지 기록<span>{log?.length ?? 0}</span>
+          머지 충돌 기록<span>{conflictsOnly?.length ?? 0}</span>
         </span>
         {unseen > 0 && <span className="unseen">확인하지 않은 머지 {unseen}건</span>}
         {open && !!log?.length && (
@@ -467,23 +471,23 @@ function MergeLogList() {
             비우기
           </button>
         )}
-        <button className="cloud-icon-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)} aria-label="머지 기록 펼치기">
+        <button className="cloud-icon-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)} aria-label="머지 충돌 기록 펼치기">
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={16} />
         </button>
       </div>
       {open && (
         <div className="merge-log-list">
-          {log === null ? (
+          {conflictsOnly === null ? (
             <p className="hint">읽는 중…</p>
-          ) : log.length === 0 ? (
-            <p className="hint">아직 머지 기록이 없습니다. 머지는 이 기기와 클라우드가 다르게 바뀐 노트를 올릴 때 일어납니다.</p>
+          ) : conflictsOnly.length === 0 ? (
+            <p className="hint">아직 충돌 낸 머지가 없습니다. 이 기기와 클라우드가 다르게 바뀐 노트를 올리면 머지가 일어나고, 양쪽이 모두 바뀌었을 때 충돌로 기록됩니다.</p>
           ) : (
-            log.map((e, i) => (
+            conflictsOnly.map((e, i) => (
               <button key={`${e.docId}-${e.at}-${i}`} className="merge-row" onClick={() => navigate({ name: 'editor', docId: e.docId })}>
                 <span className="t">{e.title}</span>
                 <span className="m">
-                  <span className={'bdg' + (e.conflicts ? ' warn' : '')}>{e.conflicts ? `충돌 ${e.conflicts}곳` : '충돌 없음'}</span>
-                  <span>{e.conflicts ? (e.decision === 'ours' ? '이 기기 우선' : '원격 우선') : '자동으로 합침'}</span>
+                  <span className="bdg warn">충돌 {e.conflicts}곳</span>
+                  <span>{e.decision === 'ours' ? '이 기기 우선' : '원격 우선'}</span>
                   {e.device && <span>{e.device}</span>}
                   <span>{formatDate(e.at)}</span>
                 </span>
