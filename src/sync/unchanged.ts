@@ -8,7 +8,7 @@ import { loadBase } from './base'
 import { packDocument, type DocFileV1 } from './pack'
 
 /** 이 노트에 걸린 올리기 대기(outbox) 행의 seq 목록 */
-async function pendingSeqsFor(docId: ID): Promise<number[]> {
+export async function pendingSeqsFor(docId: ID): Promise<number[]> {
   const rows = await db.outbox.toArray()
   const pageIds = new Set<ID>((await db.pages.where('documentId').equals(docId).toArray()).map((p) => p.id))
   const out: number[] = []

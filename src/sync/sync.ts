@@ -34,7 +34,7 @@ import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './p
 import { mergeDocs, type MergeConflictDetail } from './merge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
-import { clearPendingIfUnchanged } from './unchanged'
+import { clearPendingIfUnchanged, pendingSeqsFor } from './unchanged'
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 
 const SYNC_LOCK = 'inkpad-sync'
@@ -838,6 +838,20 @@ export async function downloadMissingDoc(docId: ID): Promise<'applied' | 'skippe
   const f = await ensureFolders()
   const remote = await drive.findByName(`docs/${docId}.json`, f.docs)
   if (!remote) return 'notfound'
+  return downloadCloudNote({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc })
+}
+
+/**
+ * 클라우드에 맞추기 — 이 기기의 올리기 대기를 내리고 클라우드 버전으로 덮어쓴다.
+ * 일반 '받기'는 이 기기에 수정 대기가 있으면 사양하지만, 이 함수는 메뉴에서 명시적으로
+ * 골랐으므로 대기를 치우고 덮어쓴다 — 로컬의 바뀜은 버려진다 (확인 창을 한 번 거친다).
+ */
+export async function alignWithCloud(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
+  const f = await ensureFolders()
+  const remote = await drive.findByName(`docs/${docId}.json`, f.docs)
+  if (!remote) return 'notfound'
+  const seqs = await pendingSeqsFor(docId) // 덮어쓸 것이므로 이 기기의 올리기 대기를 먼저 내린다
+  if (seqs.length) await db.outbox.bulkDelete(seqs)
   return downloadCloudNote({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc })
 }
 

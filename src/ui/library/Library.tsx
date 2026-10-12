@@ -37,7 +37,7 @@ import {
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
-import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, type CardSyncState } from '../../sync/sync'
+import { alignWithCloud, CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, type CardSyncState } from '../../sync/sync'
 import { THUMBS_EVENT } from '../../io/docThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
@@ -988,6 +988,28 @@ export function Library() {
           setBusy(null)
         }
         break
+      case 'cloudPull':
+        if (
+          !(await confirmDialog('클라우드에 맞추기', {
+            message: `"${d.title}"의 이 기기 변경을 버리고 클라우드 버전으로 덮어씁니다.`,
+            ok: '맞추기',
+            danger: true
+          }))
+        )
+          return
+        setBusy({ text: `"${d.title}" 맞추는 중` })
+        try {
+          const r = await alignWithCloud(d.id)
+          if (r === 'applied') toast(`"${d.title}"을(를) 클라우드 버전으로 맞췄습니다.`, 'success')
+          else if (r === 'skipped') toast('이 기기에서 수정 중인 노트라 맞추지 못했습니다. 잠시 뒤 다시 시도해 주세요.', 'info')
+          else toast('클라우드에 그 노트가 없습니다. 먼저 올려 주세요.', 'error')
+        } catch (e) {
+          toast(e instanceof Error ? e.message : '맞추지 못했습니다.', 'error')
+        } finally {
+          setBusy(null)
+        }
+        await refresh()
+        break
       case 'trash':
         await trashDocument(d.id)
         toast(`"${d.title}"을(를) 휴지통으로 옮겼습니다.`, 'info', {
@@ -1523,6 +1545,7 @@ export function Library() {
               <MenuItem icon="tag" label="카테고리 지정" onClick={() => docAction('category', menu.doc)} />
               <MenuItem icon="share" label=".inkpad로 내보내기" onClick={() => docAction('export', menu.doc)} />
               <MenuItem icon="upload" label="클라우드에 올리기" onClick={() => docAction('cloudPush', menu.doc)} />
+              {syncStates.get(menu.doc.id) !== 'new' && <MenuItem icon="download" label="클라우드에 맞추기" onClick={() => docAction('cloudPull', menu.doc)} />}
               <MenuItem icon="trash" label="휴지통으로" danger onClick={() => docAction('trash', menu.doc)} />
             </>
           )}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
+  alignWithCloud,
   downloadCloudNote,
   deleteCloudNote,
   excludeFromPush,
@@ -133,7 +134,8 @@ function CloudRow({
   busyId,
   onPrimary,
   onDelete,
-  onExclude
+  onExclude,
+  onAlign
 }: {
   c: CloudNoteInfo
   busy: boolean
@@ -141,37 +143,54 @@ function CloudRow({
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
   onExclude: (info: CloudNoteInfo) => void
+  onAlign: (info: CloudNoteInfo) => void
 }) {
   const [openMenu, setOpenMenu] = useState(false)
   const m = STATE_META[c.state]
   const rowBusy = busyId === c.docId
   const act = m.action ? ACTION_UI[m.action] : null
+  // 클라우드에 실제 파일이 있는 행(변경됨·새 버전)은 '클라우드에 맞추기'도 제공한다 —
+  // 이 기기의 바뀜을 버리고 클라우드 버전으로 덮어쓴다 (받기와 달리 수정 대기가 있어도 진행)
+  const canAlign = c.state === 'pending' || c.state === 'remote-new'
   // 모든 행에 ⋯ 메뉴를 두어 행 모양을 통일한다. 메뉴 항목은 클라우드에 실제 파일이 있는지로 정한다 —
   // new(한 번도 안 올림)는 일괄 올리기에서 뺄 수 있고, cloud-deleted는 클라우드에 지울 파일 자체가 없다
-  const menuItem =
-    c.state === 'new' ? (
-      <button
-        className="warn"
-        onClick={() => {
-          setOpenMenu(false)
-          onExclude(c)
-        }}
-      >
-        <Icon name="minus" size={16} /> 일괄 올리기에서 제외
-      </button>
-    ) : c.state === 'cloud-deleted' ? (
-      <div className="cloud-menu-note">클라우드에 올라가 있지 않아 삭제할 것이 없습니다</div>
-    ) : (
-      <button
-        className="danger"
-        onClick={() => {
-          setOpenMenu(false)
-          onDelete(c)
-        }}
-      >
-        <Icon name="trash" size={16} /> 클라우드에서 삭제
-      </button>
-    )
+  const menuItem = (
+    <>
+      {canAlign && (
+        <button
+          onClick={() => {
+            setOpenMenu(false)
+            onAlign(c)
+          }}
+        >
+          <Icon name="cloudDown" size={16} /> 클라우드에 맞추기
+        </button>
+      )}
+      {c.state === 'new' ? (
+        <button
+          className="warn"
+          onClick={() => {
+            setOpenMenu(false)
+            onExclude(c)
+          }}
+        >
+          <Icon name="minus" size={16} /> 일괄 올리기에서 제외
+        </button>
+      ) : c.state === 'cloud-deleted' ? (
+        <div className="cloud-menu-note">클라우드에 올라가 있지 않아 삭제할 것이 없습니다</div>
+      ) : (
+        <button
+          className="danger"
+          onClick={() => {
+            setOpenMenu(false)
+            onDelete(c)
+          }}
+        >
+          <Icon name="trash" size={16} /> 클라우드에서 삭제
+        </button>
+      )}
+    </>
+  )
   return (
     <div className={'cloud-row g-' + m.group}>
       <span className="cloud-ico" aria-hidden="true">
@@ -218,6 +237,7 @@ function CloudList({
   onPrimary,
   onDelete,
   onExclude,
+  onAlign,
   onPullAll,
   onPullCategory,
   onPushPreview
@@ -229,6 +249,7 @@ function CloudList({
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
   onExclude: (info: CloudNoteInfo) => void
+  onAlign: (info: CloudNoteInfo) => void
   onPullAll: () => void
   onPullCategory: (cat: string | null) => void
   onPushPreview: () => void
@@ -399,7 +420,7 @@ function CloudList({
             {isOpen && (
               <div className="cloud-items">
                 {g.items.map((c) => (
-                  <CloudRow key={c.docId} c={c} busy={busy} busyId={busyId} onPrimary={onPrimary} onDelete={onDelete} onExclude={onExclude} />
+                  <CloudRow key={c.docId} c={c} busy={busy} busyId={busyId} onPrimary={onPrimary} onDelete={onDelete} onExclude={onExclude} onAlign={onAlign} />
                 ))}
               </div>
             )}
@@ -644,6 +665,30 @@ export function SyncSection() {
     }
   }
 
+  /** 행 메뉴의 "클라우드에 맞추기" — 이 기기의 바뀜을 버리고 클라우드 버전으로 덮어쓴다 (변경됨·새 버전 행) */
+  const alignOne = async (info: CloudNoteInfo) => {
+    if (
+      !(await confirmDialog('클라우드에 맞추기', {
+        message: `"${info.title}"의 이 기기 변경을 버리고 클라우드 버전으로 덮어씁니다.`,
+        ok: '맞추기',
+        danger: true
+      }))
+    )
+      return
+    setBusyId(info.docId)
+    try {
+      const r = await alignWithCloud(info.docId)
+      if (r === 'applied') toast(`"${info.title}"을(를) 클라우드 버전으로 맞췄습니다.`, 'success')
+      else if (r === 'skipped') toast('이 기기에서 수정 중인 노트라 맞추지 못했습니다. 잠시 뒤 다시 시도해 주세요.', 'info')
+      else toast('클라우드에서 그 노트를 찾지 못했습니다.', 'error')
+      await loadCloud()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '맞추기 실패', 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const deleteOne = async (info: CloudNoteInfo) => {
     if (
       !(await confirmDialog('클라우드에서 삭제', {
@@ -831,6 +876,7 @@ export function SyncSection() {
         onPrimary={onPrimary}
         onDelete={(c) => void deleteOne(c)}
         onExclude={(c) => void excludeOne(c)}
+        onAlign={(c) => void alignOne(c)}
         onPullAll={() => void doPull()}
         onPullCategory={(c) => void pullCategory(c)}
         onPushPreview={() => void doPush()}
