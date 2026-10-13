@@ -91,5 +91,22 @@ async function ensureSubFolder(rootId: string, name: string, key: string, forceF
   return id
 }
 
+/**
+ * 머지 백업 폴더 (Inkpad/backups/) — 처음 쓸 때 만든다.
+ * 머지 전 이 기기 상태를 노트 파일과 별도로 보관한다 (sync.ts finishMerge, 버전 기록이 함께 보여 준다).
+ * 폴더가 사라졌어도 다시 올릴 것은 없다 — 백업은 그때그때 새로 만든다.
+ */
+export async function ensureBackupsFolder(): Promise<string> {
+  const { root } = await ensureFolders()
+  const saved = await getSync<string>('backupsFolderId')
+  if (saved) {
+    const m = await drive.getMeta(saved)
+    if (m && !m.trashed) return saved
+  }
+  const id = (await drive.findFolder('backups', root)) ?? (await drive.createFolder('backups', root))
+  await putSync('backupsFolderId', id)
+  return id
+}
+
 /** 다른 곳에서 참조하지 않도록 ID 재수출 */
 export type { ID }
