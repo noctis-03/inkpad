@@ -1,6 +1,6 @@
 // HTML 앱: 앱 1개 = Drive 파일 1개 (Inkpad/apps/<id>.html).
-// 노트와 달리 머지가 없다 — 추가·업데이트·삭제가 곧바로 Drive에 반영되고,
-// 실패하면 pending으로 남아 다음 올리기에서 처리된다.
+// 노트와 달리 머지가 없다 — 추가·업데이트·삭제가 곧바로 Drive에 반영되고(sync.ts 규칙 12),
+// 오프라인·실패면 pending으로 남아 앱 메뉴의 '모두 업로드'(항목마다 reuploadApp)로 다시 올린다.
 import { MAX_APP_BYTES, MAX_APP_TITLE_CHARS, type HtmlApp, type ID } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
@@ -122,15 +122,12 @@ async function flushOne(id: ID, folderId: string) {
     await purgeLocal(id)
     return
   }
-  let fileId = a.fileId
-  if (fileId) {
-    const m = await drive.getMeta(fileId)
-    if (!m || m.trashed) fileId = undefined
-  }
+  const name = `${a.id}.html`
+  const fileId = await drive.liveFileIdFor(a.fileId, name, folderId)
   const res = await drive.upload(
     new Blob([a.html], { type: 'text/html' }),
     {
-      name: `${a.id}.html`,
+      name,
       mimeType: 'text/html',
       appProperties: {
         appId: a.id,
@@ -156,20 +153,6 @@ const tryFlush = (id: ID): Promise<boolean> =>
     await flushOne(id, await appsFolder())
     emit()
   })
-
-/** 시트의 "모두 업로드" 버튼에서 호출 */
-export async function flushPendingApps(): Promise<number> {
-  const rows = (await db.apps.toArray()).filter((a) => a.pending)
-  if (!rows.length) return 0
-  const folder = await appsFolder()
-  for (const a of rows) await flushOne(a.id, folder)
-  emit()
-  return rows.length
-}
-
-export async function countPendingApps() {
-  return (await db.apps.toArray()).filter((a) => a.pending).length
-}
 
 // ───────── 앱 전용 클라우드 관리 (앱 메뉴) ─────────
 // 노트 동기화와 분리한다: Drive의 Inkpad/apps/ = 스토어(카탈로그), 각 기기는 원하는 앱만 설치/업데이트/제거.

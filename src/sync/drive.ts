@@ -94,6 +94,19 @@ export async function findByName(name: string, parentId?: string): Promise<Remot
   return files[0] ?? null
 }
 
+/**
+ * 덮어쓸 파일을 정한다 — 기록해 둔 파일이 살아 있으면 그것, 아니면 폴더 안의 같은 이름 파일, 둘 다 없으면
+ * undefined(새로 만든다). 기록이 비었어도(다시 올리기는 기록을 지우고 올린다) 이름으로 찾아 덮어써야
+ * 같은 항목의 파일이 둘 생기지 않는다 — 둘이 되면 다른 기기가 옛 판을 고를 수 있다.
+ */
+export async function liveFileIdFor(fileId: string | undefined, name: string, folderId: string): Promise<string | undefined> {
+  if (fileId) {
+    const m = await getMeta(fileId)
+    if (m && !m.trashed) return fileId
+  }
+  return (await findByName(name, folderId))?.id
+}
+
 export async function createFolder(name: string, parentId?: string): Promise<string> {
   const f = await ok<RemoteFile>(
     await driveFetch(`${API}/files?fields=id`, {

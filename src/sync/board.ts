@@ -1,5 +1,5 @@
 // 작업보드 프리셋: 프리셋 1개 = Drive 파일 1개 (Inkpad/boards/<id>.json).
-// 앱·기타 파일과 같은 규칙 — 프리셋은 작은 JSON이라 gzip 없이 평문으로 올린다.
+// 앱·기타 파일과 같은 규칙(저장·이름 변경이 곧 올리기, sync.ts 규칙 12) — 프리셋은 작은 JSON이라 gzip 없이 평문으로 올린다.
 // 담기는 것은 '바로가기의 위치'(어떤 항목을 어느 칸에 두었는가)와 배경화면뿐이고,
 // 노트·앱·파일 내용은 각자의 동기화 경로로 오간다.
 import { BOARD_PRESET_NAME_MAX, normalizeBoard, type Board, type BoardPreset } from '../shared/board'
@@ -78,11 +78,7 @@ async function flushOne(id: ID, folderId: string) {
     await db.boardPresets.delete(id)
     return
   }
-  let fileId = p.fileId
-  if (fileId) {
-    const m = await drive.getMeta(fileId)
-    if (!m || m.trashed) fileId = undefined
-  }
+  const fileId = await drive.liveFileIdFor(p.fileId, `${p.id}.json`, folderId)
   const payload = {
     id: p.id,
     name: p.name,
@@ -116,10 +112,6 @@ const tryFlush = (id: ID): Promise<boolean> =>
 
 /** 프리셋 저장 직후 호출 — 실패해도 로컬에는 남는다 */
 export const uploadPreset = (id: ID) => tryFlush(id)
-
-export async function countPendingPresets(): Promise<number> {
-  return (await db.boardPresets.toArray()).filter((p) => p.pending).length
-}
 
 /** 시트의 "모두 업로드" */
 export async function flushPendingPresets(): Promise<number> {

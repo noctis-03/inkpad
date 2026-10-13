@@ -835,7 +835,7 @@ export function SyncSection() {
           {counts.bulkPush > 0 && <span className="cnt">{counts.bulkPush}</span>}
         </button>
       </div>
-      <p className="hint">앱과 기타 파일은 각 메뉴에서 관리합니다.</p>
+      <p className="hint">받기·올리기는 노트만 주고받습니다. 앱·기타 파일·보드 프리셋은 추가하거나 고칠 때 그 항목만 바로 올라가고, 못 올린 것은 각 메뉴에서 다시 올립니다.</p>
 
       {/* 원본(PDF·이미지) 받기 진행 바 */}
       {fetching && (

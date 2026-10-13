@@ -1,5 +1,5 @@
 // 일반 파일: 파일 1개 = Drive 파일 1개 (Inkpad/files/<id><ext>).
-// HTML 앱과 같은 방식(추가·업데이트·삭제가 곧바로 Drive에 반영, 실패하면 pending)이지만,
+// HTML 앱과 같은 방식(추가·업데이트·삭제가 곧바로 Drive에 반영, 실패하면 pending — sync.ts 규칙 12)이지만,
 // 내용을 텍스트/Blob으로 보관하고 종류별 뷰어로 연다.
 // 원본 바이트는 "받기"에서 받지 않는다 — 메타만 갱신하고, 열 때 지연 로딩한다(에셋과 같은 원칙).
 // 노트 동기화와 분리한다: Drive의 Inkpad/files/ = 스토어, 각 기기는 원하는 파일만 설치/제거한다.
@@ -170,13 +170,10 @@ async function flushOne(id: ID, folderId: string) {
     await db.files.update(id, { pending: undefined, pendingKind: undefined })
     return
   }
-  let fileId = f.fileId
-  if (fileId) {
-    const m = await drive.getMeta(fileId)
-    if (!m || m.trashed) fileId = undefined
-  }
+  const name = `${f.id}${extOf(f.name) ? '.' + extOf(f.name) : ''}`
+  const fileId = await drive.liveFileIdFor(f.fileId, name, folderId)
   const blob = await fileToBlob(f)
-  const res = await drive.upload(blob, { name: `${f.id}${extOf(f.name) ? '.' + extOf(f.name) : ''}`, mimeType: f.mime, appProperties: propsOf(f) }, folderId, fileId)
+  const res = await drive.upload(blob, { name, mimeType: f.mime, appProperties: propsOf(f) }, folderId, fileId)
   await db.transaction('rw', db.files, async () => {
     const cur = await db.files.get(id)
     if (!cur) return
@@ -194,20 +191,6 @@ const tryFlush = (id: ID): Promise<boolean> =>
     await flushOne(id, await filesFolder())
     emit()
   })
-
-/** 시트의 "모두 재업로드" 버튼에서 호출 */
-export async function flushPendingFiles(): Promise<number> {
-  const rows = (await db.files.toArray()).filter((f) => f.pending)
-  if (!rows.length) return 0
-  const folder = await filesFolder()
-  for (const f of rows) await flushOne(f.id, folder)
-  emit()
-  return rows.length
-}
-
-export async function countPendingFiles() {
-  return (await db.files.toArray()).filter((f) => f.pending).length
-}
 
 // ───────── 파일 전용 클라우드 관리 (기타 파일 메뉴) ─────────
 // 파일은 원본을 지연 로딩하므로 상태가 다르다: 메타만 있는 행과 원본까지 있는 행을 구분한다.
