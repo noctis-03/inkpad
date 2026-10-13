@@ -9,11 +9,12 @@ import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, removeThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
 import { emitThumbsChanged, hasThumbnail } from '../../io/docThumb'
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
+import { registerOpenDoc, whenDocIdle } from '../../storage/docGuard'
 import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../sync/assets'
 import { confirmAssetDownload } from '../../sync/transfer'
 import { clearPendingIfUnchanged } from '../../sync/unchanged'
-import { CONFLICT_EVENT, REMOTE_EVENT } from '../../sync/sync'
+import { CONFLICT_EVENT, REMOTE_EVENT, type MergeEventDetail } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToolbar } from './FloatingToolbar'
@@ -38,7 +39,19 @@ export function Editor({ docId }: { docId: ID }) {
   const [doc, setDoc] = useState<DocumentMeta | null>(null)
   const [pages, setPages] = useState<Page[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [readOnly, setReadOnly] = useState(false)
+  /** 편집 잠금 결과 — 'pending'(확인 중) · 'edit'(이 탭이 편집) · 'read'(다른 탭이 편집 중이거나 뷰어로 엶) */
+  const [access, setAccess] = useState<'pending' | 'edit' | 'read'>('pending')
+  const accessRef = useRef(access)
+  accessRef.current = access
+  const readOnly = access === 'read' // 확인 중(pending)에는 예전처럼 편집 도구를 그대로 보인다
+  /** 올리면 엔진을 내리고 DB에서 다시 연다 (동기화가 이 노트를 바꾼 뒤) */
+  const [epoch, setEpoch] = useState(0)
+  /** 동기화가 이 노트를 바꾸는 동안 엔진을 내려 둔다 (storage/docGuard) */
+  const [suspended, setSuspended] = useState(false)
+  /** 직전 엔진의 정리(마지막 기록·보던 위치 저장)가 끝나는 시점 — 다음 엔진은 이걸 기다린 뒤 DB를 읽는다 */
+  const engineGone = useRef<Promise<void>>(Promise.resolve())
+  /** 이번 엔진 정리에서 카드 미리보기를 건너뛴다 (다시 열기·동기화 중에는 다시 만들 필요가 없다) */
+  const skipThumb = useRef(false)
   const [thumbTick, setThumbTick] = useState(0)
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
   const navigate = useUI((s) => s.navigate)
@@ -79,8 +92,33 @@ export function Editor({ docId }: { docId: ID }) {
     }
   }, [])
 
-  // 엔진 생성 / 해제
+  // 편집 잠금 — 노트를 연 동안 쥐고 있는다. 엔진을 다시 만들어도(동기화 뒤 다시 열기) 놓지 않는다.
   useEffect(() => {
+    let alive = true
+    // 뷰어보드 의도(1회) — 읽기 전용 판정은 acquireDocLock 한 곳으로 합쳐진다 (탭 충돌과 같은 경로)
+    const wantView = useUI.getState().viewOnly
+    if (wantView) useUI.setState({ viewOnly: false })
+    void acquireDocLock(docId, { readOnly: wantView }).then((ok) => {
+      if (!alive) {
+        if (ok) releaseDocLock(docId)
+        return
+      }
+      setAccess(ok ? 'edit' : 'read')
+      if (!ok && !wantView) toast('이 문서는 다른 탭에서 열려 있어 읽기 전용으로 엽니다.', 'info')
+    })
+    return () => {
+      alive = false
+      // 엔진이 마지막 변경을 다 기록한 뒤에 놓는다 — 먼저 놓으면 다른 탭이 덜 기록된 노트를 편집으로 연다.
+      // (엔진 정리는 아래 effect의 cleanup이 같은 커밋에서 engineGone에 걸어 둔다)
+      void Promise.resolve()
+        .then(() => engineGone.current)
+        .finally(() => releaseDocLock(docId))
+    }
+  }, [docId, toast])
+
+  // 엔진 생성 / 해제 — 잠금 결과가 나온 뒤, 그리고 다시 열 때(epoch)마다
+  useEffect(() => {
+    if (access === 'pending' || suspended) return
     let disposed = false
     let eng: Engine | null = null
     const pdf = new PdfCache()
@@ -102,16 +140,12 @@ export function Editor({ docId }: { docId: ID }) {
     pdf.assetProvider = (assetId) => ensureAssetLocal(assetId)
     pdf.onAssetError = (_assetId, message) => useUI.getState().toast(message, 'error')
     ;(async () => {
-      // 뷰어보드 의도(1회) — 읽기 전용 판정은 acquireDocLock 한 곳으로 합쳐진다 (탭 충돌과 같은 경로)
-      const wantView = useUI.getState().viewOnly
-      if (wantView) useUI.setState({ viewOnly: false })
       try {
-        const [loaded, lock] = await Promise.all([loadDocument(docId), acquireDocLock(docId, { readOnly: wantView })])
+        await engineGone.current // 직전 엔진이 마지막 변경을 기록할 때까지
+        await whenDocIdle(docId) // 동기화가 이 노트를 바꾸는 중이면 끝날 때까지
         if (disposed) return
-        if (!lock) {
-          setReadOnly(true)
-          if (!wantView) toast('이 문서는 다른 탭에서 열려 있어 읽기 전용으로 엽니다.', 'info')
-        }
+        const loaded = await loadDocument(docId)
+        if (disposed) return
         setDoc(loaded.doc)
         setPages(loaded.pages)
         const st = useUI.getState()
@@ -120,7 +154,7 @@ export function Editor({ docId }: { docId: ID }) {
           style: st.style,
           doc: loaded,
           pdf,
-          readOnly: !lock,
+          readOnly: access !== 'edit',
           persist: async (b) => {
             await saveBatch(b)
             // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점으로 돌아왔으면 '올리기 필요'를 내린다
@@ -163,15 +197,17 @@ export function Editor({ docId }: { docId: ID }) {
       disposed = true
       setAssetDownloadGate(null)
       const e = eng
+      const makeThumb = !skipThumb.current
+      skipThumb.current = false
       engineRef.current = null
       setEngine(null)
       useUI.setState({ selection: null, stats: null })
-      releaseDocLock(docId)
       if (e) {
         const view = e.getViewState()
-        void (async () => {
+        engineGone.current = (async () => {
           await e.destroy()
           await saveLastView(docId, view)
+          if (!makeThumb) return void (await pdf.destroy())
           // 미리보기는 로컬 전용(동기화 대상 아님)이라 여기서 항상 다시 만든다.
           // 편집이 없어도(다른 기기에서 받아 처음 연 경우 등) 이 기기의 미리보기를 채운다.
           // 비어 있던 미리보기를 채우는 경우에만 진행/완료 토스트를 띄운다(평소엔 조용히 갱신).
@@ -190,10 +226,38 @@ export function Editor({ docId }: { docId: ID }) {
             emitThumbsChanged()
           }
           await pdf.destroy()
-        })()
+        })().catch((err) => console.warn('[editor] 편집 화면 정리 중 오류', err))
       } else void pdf.destroy()
     }
-  }, [docId, toast])
+  }, [docId, access, epoch, suspended])
+
+  // 노트 보호 등록 (storage/docGuard) — 동기화·버전 되돌리기가 이 노트를 바꿀 때 먼저 멈추고 뒤에 다시 연다.
+  // 쓰기 가능한 편집 화면만 등록한다. 읽기 전용은 기록할 것이 없고, 원격 변경 알림으로 다시 연다(아래).
+  useEffect(() => {
+    if (access !== 'edit') return
+    return registerOpenDoc(docId, {
+      flush: async () => {
+        await engineRef.current?.flush()
+      },
+      suspend: async () => {
+        const e = engineRef.current
+        if (e) {
+          try {
+            await e.freeze()
+          } catch (err) {
+            e.unfreeze() // 기록하지 못했다 — 편집을 돌려주고 동기화는 이 노트를 건너뛴다
+            throw err
+          }
+        }
+        skipThumb.current = true
+        setSuspended(true)
+      },
+      resume: () => {
+        setSuspended(false)
+        setEpoch((n) => n + 1) // suspended가 한 번도 그려지지 않았어도 엔진을 다시 만들게 한다
+      }
+    })
+  }, [docId, access])
 
   useEffect(() => engineRef.current?.setSettings(settings), [settings])
   useEffect(() => engineRef.current?.setStyle(style), [style])
@@ -244,32 +308,35 @@ export function Editor({ docId }: { docId: ID }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // 다른 기기에서 이 문서가 변경되면 바로 덮어쓰지 않고 안내한다 (SDF 가이드 8장 3)
+  // 이 노트가 동기화·되돌리기로 바뀌었을 때.
+  // 쓰기 가능한 편집 화면은 노트 보호(docGuard)가 이미 멈췄다가 다시 열었으므로 할 일이 없다.
+  // 읽기 전용(다른 탭이 편집 중이거나 뷰어로 연 경우)은 쓰지 않으니 바뀐 내용으로 그냥 다시 연다.
   useEffect(() => {
     const onRemote = (ev: Event) => {
       const ids = (ev as CustomEvent<Set<string>>).detail
-      if (!ids?.has(docId)) return
-      toast('다른 기기에서 이 문서가 변경되었습니다.', 'info', {
-        label: '다시 불러오기',
-        run: () => {
-          navigate({ name: 'library' })
-          setTimeout(() => navigate({ name: 'editor', docId }), 0)
-        }
-      })
+      if (!ids?.has(docId) || accessRef.current !== 'read') return
+      skipThumb.current = true
+      setEpoch((n) => n + 1)
+      toast('이 노트의 바뀐 내용을 다시 불러왔습니다.', 'info')
     }
     window.addEventListener(REMOTE_EVENT, onRemote)
     return () => window.removeEventListener(REMOTE_EVENT, onRemote)
-  }, [docId, navigate, toast])
+  }, [docId, toast])
 
-  // 다른 기기와 충돌했을 때: 이 기기의 편집은 버전 기록에 보존되고, 문서는 다른 기기 버전으로 맞춰진다
+  // 머지했을 때: 어느 쪽을 우선했는지와 머지 전 모습이 어디 있는지 알린다
   useEffect(() => {
     const onConflict = (ev: Event) => {
-      const detail = (ev as CustomEvent<{ docId: string }>).detail
-      if (detail?.docId !== docId) return
-      toast('다른 기기 버전으로 맞췄어요. 내 편집은 버전 기록에 있어요.', 'info', {
-        label: '버전 기록',
-        run: () => useUI.getState().setPanel('history')
-      })
+      const d = (ev as CustomEvent<MergeEventDetail>).detail
+      if (d?.docId !== docId) return
+      const history = { label: '버전 기록', run: () => useUI.getState().setPanel('history') }
+      if (d.baseless) toast('동기화 기록이 없어 양쪽 필기를 모두 남겨 합쳤어요. 머지 전 모습은 버전 기록에 있어요.', 'info', history)
+      else if (d.conflicts > 0)
+        toast(
+          `겹친 ${d.conflicts}곳은 ${d.decision === 'ours' ? '이 기기' : '다른 기기'} 내용으로 합쳤어요. 머지 전 모습은 버전 기록에 있어요.`,
+          'info',
+          history
+        )
+      else toast('다른 기기의 변경과 합쳤어요.', 'success')
     }
     window.addEventListener(CONFLICT_EVENT, onConflict)
     return () => window.removeEventListener(CONFLICT_EVENT, onConflict)
@@ -306,7 +373,7 @@ export function Editor({ docId }: { docId: ID }) {
           <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
           {engine && <BlockLayer engine={engine} readOnly={readOnly} />}
           {!engine && (
-            <div className="doc-skeleton" role="status" aria-label="문서 여는 중">
+            <div className="doc-skeleton" role="status" aria-label={suspended ? '동기화로 노트를 맞추는 중' : '문서 여는 중'}>
               <span className="doc-skeleton-paper" />
             </div>
           )}

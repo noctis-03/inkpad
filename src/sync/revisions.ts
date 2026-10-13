@@ -9,6 +9,7 @@
 import type { ID } from '../shared/model'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
+import { withDocExclusive } from '../storage/docGuard'
 import { enqueue } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
@@ -163,15 +164,19 @@ export async function restoreDocRevision(docId: ID, revisionId: string): Promise
   if (file?.kind !== 'inkpad-doc') throw new Error('그 버전을 읽을 수 없습니다.')
   // 문서 ID는 그대로 유지하고 수정 시각만 갱신한다 (사본을 만들지 않는다)
   const payload: DocFileV1 = { ...file, doc: { ...file.doc, id: docId, updatedAt: Date.now() } }
-  await applyDocFile(payload, { force: true })
-  await db.transaction('rw', db.outbox, async () => {
-    await enqueue('document', docId)
+  // 열린 편집 화면을 멈춘 채로 덮어쓰고, 다 쓴 뒤에 되돌린 내용으로 다시 열게 한다 (storage/docGuard).
+  // 다른 탭에서 편집 중이면 DocBusyError — 버전 기록 패널이 그 메시지를 그대로 보여 준다
+  await withDocExclusive(docId, async () => {
+    await applyDocFile(payload, { force: true })
+    await db.transaction('rw', db.outbox, async () => {
+      await enqueue('document', docId)
+    })
+    // 이 기기의 '현재' 표식 — 버전 기록이 이 리비전을 현재로 표시한다 (기기별 로컬 전용)
+    await putSync(`curRev:${docId}`, { revId: revisionId, updatedAt: payload.doc.updatedAt })
+    // 다음 올리기가 '되돌림' 리비전이 되도록 표식을 남긴다 (업로드 때 소모된다)
+    await putSync(`revKind:${docId}`, 'restore')
   })
-  // 이 기기의 '현재' 표식 — 버전 기록이 이 리비전을 현재로 표시한다 (기기별 로컬 전용)
-  await putSync(`curRev:${docId}`, { revId: revisionId, updatedAt: payload.doc.updatedAt })
-  // 다음 올리기가 '되돌림' 리비전이 되도록 표식을 남긴다 (업로드 때 소모된다)
-  await putSync(`revKind:${docId}`, 'restore')
-  // 열려 있는 편집 화면에 "다시 불러오기" 안내를 띄운다 (되돌린 내용으로 갱신)
+  // 목록·읽기 전용 편집 화면에 알린다 (쓰기 가능한 편집 화면은 위 노트 보호가 이미 다시 열었다)
   window.dispatchEvent(new CustomEvent(REMOTE_EVENT, { detail: new Set<string>([docId]) }))
 }
 
