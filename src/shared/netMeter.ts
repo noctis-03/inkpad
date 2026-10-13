@@ -224,6 +224,23 @@ export function isNetMeterInstalled(): boolean {
   return installed
 }
 
+/**
+ * fetch를 거치지 않는 전송을 직접 기록한다 — 큰 파일 이어 올리기는 XHR로 보낸다(sync/drive.ts).
+ * 계량이 꺼져 있으면 아무것도 하지 않는다.
+ */
+export function recordTransfer(rawUrl: string, method: string, up: number, down: number, status: number, ms: number) {
+  if (!installed) return
+  const { label, url } = labelFor(rawUrl)
+  const entry: NetEntry = { id: ++seq, at: Date.now() - ms, method, label, url, up: 0, down: 0, status, ms, unknown: false }
+  stats.requests++
+  destOf(label).requests++
+  log.unshift(entry)
+  if (log.length > MAX_LOG) log.length = MAX_LOG
+  bump(entry, 'up', up)
+  bump(entry, 'down', down)
+  scheduleNotify()
+}
+
 /** fetch를 감싸 세션 동안의 사용량을 센다. 여러 번 불러도 한 번만 감싼다 */
 export function installNetMeter() {
   if (installed || typeof window === 'undefined' || typeof window.fetch !== 'function') return

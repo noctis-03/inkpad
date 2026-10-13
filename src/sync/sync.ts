@@ -32,7 +32,7 @@ import { getHiddenCategories } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
-import { loadBase, saveBase } from './base'
+import { loadBase, putBaseBlob, saveBase } from './base'
 import { ensureBackupsFolder, ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { mergeDocs, type MergeConflictDetail } from './merge'
@@ -486,7 +486,7 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     await putDocRecord(docId, remote.id, remote.version) // 앞으로만 (규칙 10)
     // 방금 올린 파일 표식 — 클라우드 목록이 이 파일 하나만 개별 확인하게 한다 (listCloudNotes)
     await putSync(`fresh:${docId}`, remote.id)
-    await putSync(`base:${docId}`, { blob: base })
+    await putBaseBlob(docId, base) // 저장 시각을 함께 남겨 되돌리기 판정의 요약 캐시가 새 base를 알아본다
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
     await db.syncState.delete(`clouddel:${docId}`) // 클라우드에서 삭제됐던 노트를 다시 올렸다 (지시서 3번)
     await db.syncState.delete(`curRev:${docId}`) // 되돌림 표식 해제 — 이제 헤드가 곧 이 기기의 현재

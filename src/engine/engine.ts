@@ -135,7 +135,15 @@ export class Engine {
   private cursor: Cursor | null = null
   private rectLeft = 0
   private rectTop = 0
-  private momentum: { vx: number; vy: number; t: number } | null = null
+  private _momentum: { vx: number; vy: number; t: number } | null = null
+  /** 한 손가락 스크롤 관성 — 남아 있는 동안 프레임을 돌린다 */
+  private get momentum() {
+    return this._momentum
+  }
+  private set momentum(v: { vx: number; vy: number; t: number } | null) {
+    this._momentum = v
+    if (v) this.wake()
+  }
   /** 가운데(휠) 버튼 드래그 팬 상태 */
   private middlePan: { id: number; sx: number; sy: number; camX: number; camY: number } | null = null
 
@@ -143,11 +151,35 @@ export class Engine {
   private selection: StrokeRec[] = []
   private selectionBox: Box | null = null
 
-  // 렌더
+  // 렌더 — 프레임은 할 일이 있을 때만 돈다.
+  // 예전에는 노트를 열어 두기만 해도 매 프레임(120Hz iPad에서 초당 120번) 깨어났다. 이제 아래 표시를
+  // 켜는 순간 다음 프레임을 예약(wake)하고, 프레임이 끝날 때 남은 일이 없으면 멈춘다.
+  // 표시는 setter라서 엔진 곳곳의 `this.liveDirty = true` 같은 기존 코드를 고치지 않아도 된다.
   private raf = 0
-  private liveDirty = true
-  private committedDirty = true
-  private pagesDirty = true
+  private _liveDirty = true
+  private _committedDirty = true
+  private _pagesDirty = true
+  private get liveDirty() {
+    return this._liveDirty
+  }
+  private set liveDirty(v: boolean) {
+    this._liveDirty = v
+    if (v) this.wake()
+  }
+  private get committedDirty() {
+    return this._committedDirty
+  }
+  private set committedDirty(v: boolean) {
+    this._committedDirty = v
+    if (v) this.wake()
+  }
+  private get pagesDirty() {
+    return this._pagesDirty
+  }
+  private set pagesDirty(v: boolean) {
+    this._pagesDirty = v
+    if (v) this.wake()
+  }
   private settleTimer = 0
   private pendingEventTs = Infinity
   private lastViewKey = ''
@@ -223,8 +255,26 @@ export class Engine {
     this.initialView(this.doc.lastView)
 
     this.bindEvents()
-    this.raf = requestAnimationFrame(this.frame)
+    this.wake()
     this.emitView(true)
+  }
+
+  /** 다음 프레임을 예약한다 (이미 예약돼 있으면 그대로) */
+  private wake() {
+    if (this.raf || this.destroyed) return
+    this.raf = requestAnimationFrame(this.frame)
+  }
+
+  /** 이번 프레임 뒤에도 계속 돌아야 하는가 — 그릴 것·관성·진행 중인 입력이 있거나, 성능 표시(HUD)가 켜져 있을 때 */
+  private needsFrame(): boolean {
+    return (
+      this._liveDirty ||
+      this._committedDirty ||
+      this._pagesDirty ||
+      this._momentum !== null ||
+      this.active !== null ||
+      this.settings.showHud // fps 측정은 프레임이 계속 돌아야 의미가 있다
+    )
   }
 
   private loadChunks(d: LoadedDocument) {
@@ -261,6 +311,7 @@ export class Engine {
     this.settings = s
     if (prev.pressureCapability !== s.pressureCapability) this.detector.capability = s.pressureCapability
     if (prev.resolution !== s.resolution) this.handleResize(true)
+    if (s.showHud && !prev.showHud) this.wake() // 성능 표시를 켜면 측정용으로 계속 돈다
   }
 
   setTool(t: Tool) {
@@ -1538,7 +1589,7 @@ export class Engine {
   }
 
   private frame = (now: number) => {
-    this.raf = requestAnimationFrame(this.frame)
+    this.raf = 0 // 이번 프레임에서 할 일을 다 한 뒤 needsFrame()으로 다음 프레임을 정한다
     this.frameCount++
     const r = this.renderer
     const paged = this.layout.paged
@@ -1621,7 +1672,13 @@ export class Engine {
       }
     }
 
-    if (now - this.lastStatsAt >= 500) this.flushStats(now)
+    if (now - this.lastStatsAt > 2000) {
+      // 쉬다가 깨어났다 — 쉰 시간까지 나누면 fps·이벤트 빈도가 엉터리로 낮게 나오므로 측정을 새로 시작한다
+      this.lastStatsAt = now
+      this.frameCount = this.eventCount = this.pointCount = this.coalescedTotal = this.coalescedEvents = 0
+    } else if (now - this.lastStatsAt >= 500) this.flushStats(now)
+
+    if (this.needsFrame()) this.wake()
   }
 
   private flushStats(now: number) {
