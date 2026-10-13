@@ -175,8 +175,8 @@ export async function restoreDocument(id: ID) {
   })
 }
 
-/** 영구 삭제 (로컬). 어떤 문서도 참조하지 않는 에셋도 함께 지운다 */
-export async function purgeDocument(id: ID) {
+/** 영구 삭제 (로컬). 어떤 문서도 참조하지 않는 에셋도 함께 지운다 (여러 개를 지울 때는 gc: false로 미루고 끝에 한 번) */
+export async function purgeDocument(id: ID, opts: { gc?: boolean } = {}) {
   await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.thumbnails, db.outbox, db.syncState], async () => {
     await db.documents.delete(id)
     // gone 표식을 남겨 받기가 이 노트를 되살리지 않게 한다 — 푸시 전에 영구 삭제하면
@@ -189,59 +189,86 @@ export async function purgeDocument(id: ID) {
     await db.thumbnails.delete(id)
     await enqueue('document', id, 'delete')
   })
-  await gcAssets()
+  if (opts.gc !== false) await gcOrphanAssets()
 }
 
 export async function purgeExpiredTrash() {
   const limit = Date.now() - TRASH_RETENTION_DAYS * 86400_000
   const expired = (await db.documents.toArray()).filter((d) => d.deletedAt && d.deletedAt < limit)
-  for (const d of expired) await purgeDocument(d.id)
+  for (const d of expired) await purgeDocument(d.id, { gc: false })
+  if (expired.length) await gcOrphanAssets() // 원본 정리는 끝에 한 번 (노트마다 전체 청크를 다시 풀지 않게)
   // 오래된 블록 tombstone도 함께 정리한다 (tombstone은 동기화 머지에만 필요)
   await db.blocks.where('deletedAt').below(limit).delete()
   return expired.length
 }
 
-async function gcAssets() {
-  const used = new Set<ID>()
-  await db.pages.each((p) => {
-    if (p.pdf) used.add(p.pdf.assetId)
-  })
-  const all = await db.assets.toCollection().primaryKeys()
-  const orphan = all.filter((id) => !used.has(id))
-  if (orphan.length) await db.assets.bulkDelete(orphan)
-}
-
 /**
- * 이 기기가 참조하는 에셋 → 그 에셋을 쓰는 문서 ID 집합.
- * 속지 PDF(page.pdf)와 이미지 요소(청크 안 ImageElement)를 모두 세고, 삭제된 페이지는 제외한다.
- * 에셋 관리 시트의 "이 기기가 참조하는가" 판정의 단일 출처.
+ * 원본(에셋) 참조 수집 — "이 원본을 누가 쓰나"의 단일 출처.
+ * 속지 PDF(page.pdf)와 청크 안 이미지 요소(ImageElement)를 모두 센다.
+ *  - includeDeletedPages: 지운 페이지(편집 화면의 되돌리기로 살아날 수 있다)도 참조로 센다
+ *  - strict: 청크 하나라도 풀지 못하면 null — 모르는 참조가 있을 수 있으니 지우는 쪽은 멈춰야 한다
  */
-export async function collectAssetUsage(): Promise<Map<ID, Set<ID>>> {
+async function scanAssetRefs(opts: { includeDeletedPages: boolean; strict: boolean }): Promise<Map<ID, Set<ID>> | null> {
   const usage = new Map<ID, Set<ID>>()
   const add = (assetId: ID, documentId: ID) => {
     const set = usage.get(assetId) ?? new Set<ID>()
     set.add(documentId)
     usage.set(assetId, set)
   }
-  const livePages = new Set<ID>()
+  const pages = new Set<ID>()
   await db.pages.each((p) => {
-    if (p.deletedAt) return
-    livePages.add(p.id)
+    if (p.deletedAt && !opts.includeDeletedPages) return
+    pages.add(p.id)
     if (p.pdf) add(p.pdf.assetId, p.documentId)
   })
-  // 이미지 요소는 청크(gzip) 안에 있다 — 풀어서 센다 (이미지 요소가 없으면 금방 끝난다)
+  // 이미지 요소는 청크(gzip) 안에 있다 — 풀어서 센다
   for (const c of await db.chunks.toArray()) {
-    if (!livePages.has(c.pageId)) continue
+    if (c.deletedAt || !pages.has(c.pageId)) continue
     let elements: Element[]
     try {
       elements = await decodeChunk(c)
     } catch (e) {
       console.warn('[assets] 청크를 풀지 못해 이미지 참조를 세지 못했습니다.', c.pageId, e)
+      if (opts.strict) return null
       continue
     }
     for (const el of elements) if (el.type === 'image') add(el.assetId, c.documentId)
   }
   return usage
+}
+
+/**
+ * 이 기기가 참조하는 에셋 → 그 에셋을 쓰는 문서 ID 집합 (삭제된 페이지는 제외).
+ * 에셋 관리 시트의 "이 기기가 참조하는가" 표시용.
+ */
+export async function collectAssetUsage(): Promise<Map<ID, Set<ID>>> {
+  return (await scanAssetRefs({ includeDeletedPages: false, strict: false }))!
+}
+
+/** 방금 만든 원본은 지우지 않는다 — PDF 가져오기는 원본을 먼저 저장하고 그 뒤에 페이지를 만든다 */
+const GC_GRACE_MS = 10 * 60_000
+
+/**
+ * 어느 노트도 참조하지 않는 원본 행을 지운다 (영구 삭제·버전 되돌리기 뒤).
+ * 예전에는 속지 PDF만 세어, 이미지 요소만 쓰는 원본을 다른 노트를 지울 때 함께 지울 수 있었다.
+ * 참조 판정이 불확실하면(청크를 풀지 못함) 아무것도 지우지 않는다.
+ * @returns 지운 원본 수
+ */
+export async function gcOrphanAssets(): Promise<number> {
+  const rows = await db.assets.toArray()
+  const now = Date.now()
+  const pageRefs = new Set<ID>()
+  await db.pages.each((p) => {
+    if (p.pdf) pageRefs.add(p.pdf.assetId)
+  })
+  // 속지 참조만으로 남는 게 확실한 것은 빼고, 남은 후보가 있을 때만 청크를 풀어 확인한다
+  const candidates = rows.filter((a) => !pageRefs.has(a.id) && now - (a.createdAt ?? 0) > GC_GRACE_MS)
+  if (!candidates.length) return 0
+  const refs = await scanAssetRefs({ includeDeletedPages: true, strict: true })
+  if (!refs) return 0
+  const orphan = candidates.filter((a) => !refs.has(a.id)).map((a) => a.id)
+  if (orphan.length) await db.assets.bulkDelete(orphan)
+  return orphan.length
 }
 
 // ───────────────────────── pages ─────────────────────────

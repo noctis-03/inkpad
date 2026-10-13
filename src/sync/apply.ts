@@ -5,6 +5,7 @@ import { normalizeBlockUrl } from '../engine/blocks'
 import { gunzipJson, gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { isDocExclusive } from '../storage/docGuard'
+import { gcOrphanAssets } from '../storage/repo'
 import type { DocFileV1 } from './pack'
 
 /**
@@ -74,19 +75,9 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
       if (!(await db.assets.get(am.id))) await db.assets.put({ ...am, version: 0 }) // 원본 blob은 지연 로딩이 받는다
     }
   })
-  // 되돌리기로 덮어쓴 뒤에는 참조가 사라진 에셋을 정리한다
-  if (applied && opts.force) await gcUnusedAssets()
+  // 되돌리기로 덮어쓴 뒤에는 참조가 사라진 에셋을 정리한다 (판정은 storage/repo의 단일 출처)
+  if (applied && opts.force) await gcOrphanAssets()
   return applied
-}
-
-async function gcUnusedAssets() {
-  const used = new Set<string>()
-  await db.pages.each((p) => {
-    if (p.pdf) used.add(p.pdf.assetId)
-  })
-  const all = await db.assets.toCollection().primaryKeys()
-  const orphan = all.filter((id) => !used.has(id))
-  if (orphan.length) await db.assets.bulkDelete(orphan)
 }
 
 export { gunzipJson }
