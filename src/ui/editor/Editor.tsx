@@ -187,7 +187,8 @@ export function Editor({ docId }: { docId: ID }) {
         eng.setTool(st.tool)
         engineRef.current = eng
         setEngine(eng)
-        ;(window as unknown as { inkpad: Engine }).inkpad = eng
+        // 개발 중 콘솔에서 엔진을 만지기 위한 통로 — 배포본에는 내보내지 않는다
+        if (import.meta.env.DEV) (window as unknown as { inkpad: Engine }).inkpad = eng
       } catch (e) {
         if (disposed) return
         setError(e instanceof SchemaTooNewError ? e.message : e instanceof Error ? e.message : '문서를 열 수 없습니다.')
