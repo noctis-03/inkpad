@@ -453,8 +453,8 @@ function MergeLogList() {
     return () => window.removeEventListener(MERGE_LOG_EVENT, reload)
   }, [])
 
-  // 패널이 '머지 충돌 기록'이므로 충돌난 머지만 내보인다 — 자동으로 합쳐진 기록은 저장만 남긴다
-  const conflictsOnly = log?.filter((e) => e.conflicts > 0) ?? null
+  // 패널이 '머지 충돌 기록'이므로 충돌났거나 기록 없이 합친(확인 창을 거친) 머지만 내보인다 — 자동으로 합쳐진 기록은 저장만 남긴다
+  const conflictsOnly = log?.filter((e) => e.conflicts > 0 || e.baseless) ?? null
 
   // 서랍을 펼치면 그 시점의 최신 기록까지 확인한 것으로 친다 — '확인하지 않은 머지' 표시가 사라진다
   const unseen = conflictsOnly ? conflictsOnly.filter((e) => e.at > seenAt).length : 0
@@ -507,7 +507,8 @@ function MergeLogList() {
               <button key={`${e.docId}-${e.at}-${i}`} className="merge-row" onClick={() => navigate({ name: 'editor', docId: e.docId })}>
                 <span className="t">{e.title}</span>
                 <span className="m">
-                  <span className="bdg warn">충돌 {e.conflicts}곳</span>
+                  {e.baseless && <span className="bdg warn">기록 없이 합침</span>}
+                  {e.conflicts > 0 && <span className="bdg warn">충돌 {e.conflicts}곳</span>}
                   <span>{e.decision === 'ours' ? '이 기기 우선' : '원격 우선'}</span>
                   {e.device && <span>{e.device}</span>}
                   <span>{formatDate(e.at)}</span>
@@ -604,7 +605,9 @@ export function SyncSection() {
     setPullPreview(null)
     const r = await pullNow()
     if (r) {
-      toast(r.docs ? `노트 ${r.docs}개를 받았습니다.` : '이미 최신 상태입니다.', r.docs ? 'success' : 'info')
+      const busy = r.busy ? `다른 탭에서 편집 중인 노트 ${r.busy}개는 건너뛰었습니다. 그 탭을 닫은 뒤 다시 받아 주세요.` : ''
+      if (r.docs) toast(`노트 ${r.docs}개를 받았습니다.${busy ? ' ' + busy : ''}`, 'success')
+      else toast(busy || '이미 최신 상태입니다.', 'info')
       void loadCloud()
     }
   }

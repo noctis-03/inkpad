@@ -4,15 +4,20 @@ import { SCHEMA_VERSION, type Block } from '../shared/model'
 import { normalizeBlockUrl } from '../engine/blocks'
 import { gunzipJson, gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
+import { isDocExclusive } from '../storage/docGuard'
 import type { DocFileV1 } from './pack'
 
 /**
  * Drive 파일을 로컬에 적용한다.
  * 그 사이에 로컬이 수정됐으면(outbox에 대기 중이면) 적용하지 않고 false를 돌려준다.
  * force = true면 대기 중이어도 덮어쓴다 (버전 되돌리기처럼 사용자가 명시적으로 요청한 경우).
+ *
+ * 반드시 노트 보호 안에서 부른다 — withDocExclusive(docId, () => applyDocFile(...)) (storage/docGuard).
+ * 밖에서 부르면 열린 편집 화면이 옛 내용을 들고 있다가 다음 저장 때 적용한 내용을 덮는다.
  */
 export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = {}): Promise<boolean> {
   const docId = file.doc.id
+  if (!isDocExclusive(docId)) console.warn('[sync] applyDocFile을 노트 보호(withDocExclusive) 밖에서 불렀습니다 — 열린 편집 화면이 덮어쓸 수 있습니다:', docId)
   const encoded: { c: DocFileV1['chunks'][number]; blob: Blob }[] = []
   for (const c of file.chunks) if (c.elements.length) encoded.push({ c, blob: await gzipJson(c.elements) })
   let applied = true

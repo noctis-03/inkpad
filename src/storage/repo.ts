@@ -300,10 +300,32 @@ export async function loadBlocks(documentId: ID, opts: { includeDeleted?: boolea
   return opts.includeDeleted ? rows : rows.filter((b) => !b.deletedAt)
 }
 
+/**
+ * 마이그레이션 전 원본 청크 백업. 필기 데이터(gzip)를 base64로 함께 담는다 — Blob은 JSON에 넣으면 {}가 되어
+ * 예전 백업에는 껍데기(메타)만 남았다. 노트마다·목표 스키마마다 한 번만 만든다: 옛 청크는 고쳐 저장될
+ * 때에야 새 스키마로 바뀌므로, 열 때마다 만들면 백업이 끝없이 쌓이고 나중 백업일수록 원본이 줄어든다.
+ */
 async function backupRows(documentId: ID, rows: ChunkRow[]) {
-  const payload = rows.map((r) => ({ ...r, data: undefined }))
-  const blob = new Blob([JSON.stringify(payload)])
-  await db.backups.put({ id: `${documentId}:${Date.now()}`, createdAt: Date.now(), reason: 'pre-migration', data: blob })
+  const id = `pre-migration:${documentId}:to${SCHEMA_VERSION}`
+  if (await db.backups.get(id)) return
+  const payload = []
+  for (const r of rows) payload.push({ ...r, data: await blobToBase64(r.data) })
+  const now = Date.now()
+  await db.backups.put({
+    id,
+    createdAt: now,
+    reason: 'pre-migration',
+    data: new Blob([JSON.stringify({ documentId, toSchema: SCHEMA_VERSION, createdAt: now, encoding: 'base64-gzip', chunks: payload })], {
+      type: 'application/json'
+    })
+  })
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
 }
 
 export async function loadPageChunks(pageId: ID): Promise<ChunkData[]> {

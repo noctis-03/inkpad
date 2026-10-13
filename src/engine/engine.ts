@@ -279,6 +279,30 @@ export class Engine {
     if (v) this.finishActive(false)
   }
 
+  private frozenFrom: boolean | null = null
+
+  /**
+   * 동기화가 이 노트를 바꾸기 직전에 부른다 (storage/docGuard) — 입력을 막고(쓰던 획은 설정대로
+   * 확정/취소) 메모리에만 있던 변경을 모두 기록한다. 이 엔진은 곧 내려지고 DB에서 다시 만들어진다.
+   * 기록하지 못한 변경이 남으면 던진다 — 호출한 쪽은 unfreeze()로 편집을 돌려주고 동기화를 멈춘다.
+   */
+  async freeze(): Promise<void> {
+    if (this.frozenFrom === null) {
+      this.frozenFrom = this.readOnly
+      if (!this.readOnly) this.finishActive(this.settings.cancelBehavior === 'commit')
+      this.readOnly = true
+    }
+    await this.flush()
+    if (this.hasPendingChanges) throw new Error('편집 내용을 기기에 저장하지 못해 동기화를 멈췄습니다. 잠시 뒤 다시 시도해 주세요.')
+  }
+
+  /** freeze 이전 상태로 편집을 돌려준다 */
+  unfreeze() {
+    if (this.frozenFrom === null) return
+    this.readOnly = this.frozenFrom
+    this.frozenFrom = null
+  }
+
   get pages(): Page[] {
     return this.layout.pages
   }
@@ -787,7 +811,9 @@ export class Engine {
       await this.saving
       if (!this.hasPendingChanges) return
     }
-    if (!this.hasPendingChanges || this.readOnly) {
+    // 읽기 전용이어도 이미 쌓인 변경은 기록한다 — 처음부터 읽기 전용인 엔진은 변경이 생기지 않고,
+    // freeze()로 막은 엔진은 막기 전의 변경을 마저 써야 한다
+    if (!this.hasPendingChanges) {
       if (this.saveState !== 'error') this.setSaveState('saved')
       return
     }

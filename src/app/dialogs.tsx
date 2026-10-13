@@ -59,15 +59,19 @@ export function choiceDialog(
   )
 }
 
-/** 머지 확인 — 충돌이 있는 머지를 적용하기 전에 방향을 묻는다 (동기화 패널의 머지 기록과 짝) */
+/** 머지 확인 — 충돌이 있거나 동기화 기록 없이 합치는 머지를 적용하기 전에 방향을 묻는다 (동기화 패널의 머지 기록과 짝) */
 export async function mergeConfirmDialog(info: MergeConfirmInfo): Promise<MergeDecision> {
   const counts: Record<string, number> = { page: 0, chunk: 0, block: 0 }
   for (const d of info.details) counts[d.kind]++
   const parts = [counts.chunk ? `필기 ${counts.chunk}곳` : '', counts.page ? `페이지 ${counts.page}곳` : '', counts.block ? `블록 ${counts.block}곳` : '']
     .filter(Boolean)
     .join(' · ')
-  const v = await choiceDialog('머지 충돌', {
-    message: `“${info.title}” 노트를 다른 기기에서도 고쳤습니다. 겹치지 않은 필기는 양쪽 모두 살고, 겹친 ${info.conflicts}곳${parts ? `(${parts})` : ''}은 한쪽의 내용으로 덮어 씁니다.`,
+  const overlap = info.conflicts > 0 ? `같은 획·페이지를 양쪽에서 다르게 고친 ${info.conflicts}곳${parts ? `(${parts})` : ''}은 한쪽의 내용으로 덮어 씁니다.` : ''
+  const message = info.baseless
+    ? `“${info.title}” 노트를 마지막으로 맞춘 기록이 이 기기에 없어, 어느 쪽에서 무엇을 지웠는지 알 수 없습니다. 양쪽 필기를 모두 남겨 합치므로 한쪽에서 지운 획이 되살아날 수 있습니다.${overlap ? ' ' + overlap : ''}`
+    : `“${info.title}” 노트를 다른 기기에서도 고쳤습니다. 양쪽에서 새로 그린 필기는 모두 남고, ${overlap}`
+  const v = await choiceDialog(info.baseless ? '기록 없이 합치기' : '머지 충돌', {
+    message,
     note: '머지 전 이 기기의 모습은 클라우드 버전 기록에 남아 나중에 되돌릴 수 있습니다.',
     options: [
       { key: 'theirs', label: '원격 우선으로 합치기', primary: true },
