@@ -69,7 +69,7 @@ function patternFor(page: Page): ExportPage['pattern'] {
   }
 }
 
-/** 문서형 문서 → PDF (FR-IO-03) */
+/** 문서형 문서 → PDF */
 export async function exportDocumentPdf(documentId: string, opts: ExportOptions = {}): Promise<Blob> {
   const { doc, pages, chunks } = await loadDocument(documentId)
   const strokesByPage = new Map<string, Stroke[]>()
@@ -155,7 +155,7 @@ async function rasterize(job: ExportJob, pages: Page[], assetIds: string[], opts
   }
 }
 
-/** 무한 캔버스: 필기 전체 영역을 PDF 1페이지로 (14.3). 너무 크면 비율을 유지한 채 줄인다 */
+/** 무한 캔버스: 필기 전체 영역을 PDF 1페이지로. 너무 크면 비율을 유지한 채 줄인다 */
 async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: ExportOptions): Promise<Blob> {
   const pad = 24
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity

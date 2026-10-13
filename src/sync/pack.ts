@@ -2,8 +2,7 @@ import { type Asset, type Block, type DocumentMeta, type Element, type ID, type 
 import { db } from '../storage/db'
 import { loadBlocks, loadDocument } from '../storage/repo'
 
-// 문서 ↔ Drive JSON 파일 변환 (SDF 가이드의 "노트 1개 = 파일 1개"를
-// inkpad에 맞춰 "문서 1개 = 파일 1개"로 적용한 것)
+// 문서 ↔ Drive JSON 파일 변환 — 문서 1개 = 파일 1개
 // - 문서 파일: 문서 메타(folderId 제외·category 포함) + 페이지 + 청크(획 = 디코드된 좌표 배열) + 참조 에셋 메타
 //   - 편집 블록 포함(tombstone 포함) — 머지를 위해 삭제 표식도 함께 직렬화한다
 //   - folderId는 로컬 전용(lastView처럼 동기화하지 않는다), category는 동기화한다

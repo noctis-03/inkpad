@@ -308,7 +308,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const widthMark = (w: number) => widthMarkOf(tool, curColor, w)
   const swatchColor = (c: string) => (isHl ? opaque(c) : c)
 
-  // 슬라이딩 선택 인디케이터 (5.2) — 세로 배치(left/right)에서는 axis='y'
+  // 슬라이딩 선택 인디케이터(ui/motion/useIndicator) — 세로 배치(left/right)에서는 axis='y'
   const orientAxis: 'x' | 'y' = layout?.orient === 'v' ? 'y' : 'x'
   useIndicator(toolsRef, tool, orientAxis)
   useIndicator(widthsRef, `${tool}:${curWidth}`, orientAxis)
@@ -650,7 +650,7 @@ function StylePanel(props: {
   )
 }
 
-/** 블록 팔레트 — 블록 버튼("블록 추가")을 누르면 열린다 (6.5) */
+/** 블록 팔레트 — 블록 버튼("블록 추가")을 누르면 열린다 */
 function BlocksPalette({ engine, onClose }: { engine: Engine | null; onClose: () => void }) {
   const paged = !!engine?.layout.paged
   const blocksVisible = useUI((s) => s.blocksVisible)

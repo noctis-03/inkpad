@@ -1,6 +1,6 @@
 # Inkpad (가칭)
 
-iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으로 단계별 구현 중.
+iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 단계별로 구현 중.
 
 ## 현재 단계: Phase 1 로컬 MVP + Phase 2 Google Drive 동기화 (완료)
 
@@ -88,7 +88,9 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 - **되돌리기/다시**: 편집 모드에서 ⌘Z / ⇧⌘Z, 두 손가락 탭 / 세 손가락 탭. 지우기는 토스트로 되돌리기
 - **프리셋**: 상단 프리셋 칩에서 저장·불러오기, 저장 상태 점 표시
 - 연결이 끊긴 바로가기는 '다시 연결' 버튼으로 다른 항목에 이어 붙일 수 있다
-- 보드 설정은 기기에 자동 저장(`inkpad.board.v3`)### 기능 진입점
+- 보드 설정은 기기에 자동 저장(`inkpad.board.v3`)
+
+### 기능 진입점
 | 경로 | 설명 |
 |---|---|
 | `/#/` | 문서 목록 |
@@ -132,7 +134,7 @@ npm run test:merge               # 노트 머지 회귀 테스트 (의존성 없
 npm run test:sync                # 받기 판정(받을 것·최신) 회귀 테스트 (의존성 없음)
 ```
 
-### 동기화 설정 (Google Drive, SDF 가이드 1장)
+### 동기화 설정 (Google Drive)
 1. Google Cloud Console에서 **Google Drive API** 사용 설정, OAuth 동의 화면(외부) — scope `openid email .../auth/drive.file`
 2. **게시 상태를 "프로덕션"으로 변경** (테스트 상태는 refresh token이 7일 뒤 만료됨. 민감 scope가 없어 심사 없이 게시 가능)
 3. OAuth 클라이언트(웹 애플리케이션) 생성 — 승인된 리디렉션 URI에 등록:

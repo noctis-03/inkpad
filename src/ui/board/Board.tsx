@@ -76,7 +76,7 @@ function gradient(title: string) {
   return `linear-gradient(135deg, hsl(${h} 68% 62%), hsl(${(h + 42) % 360} 68% 44%))`
 }
 
-/** 파일 확장자 → 색 계열 토큰 (P2) */
+/** 파일 확장자 → 색 계열 토큰 */
 const FILE_TONES: { tone: string; exts: string[] }[] = [
   { tone: '--danger', exts: ['pdf'] },
   { tone: '--success', exts: ['xlsx', 'xls', 'csv', 'numbers'] },
@@ -230,7 +230,7 @@ export function Board() {
     return () => ro.disconnect()
   }, [])
 
-  // ── 되돌리기 / 다시 (P9) ──
+  // ── 되돌리기 / 다시 ──
   const pushHistory = useCallback(() => {
     history.current = [...history.current.slice(-(UNDO_MAX - 1)), cloneBoard(boardRef.current)]
     future.current = []
@@ -532,7 +532,7 @@ export function Board() {
   }
 
   // ── 배치 조작 ──
-  /** 바로가기 삭제 — 확인 없이 지우고 토스트로 되돌리기를 제공한다 (P9) */
+  /** 바로가기 삭제 — 확인 없이 지우고 토스트로 되돌리기를 제공한다 */
   const removeShortcut = (sc: BoardShortcut, label?: string) => {
     commit((b) => ({ ...b, shortcuts: b.shortcuts.filter((s) => s.id !== sc.id) }))
     const nm = label ?? (itemOf(sc) ? (itemOf(sc)!.kind === 'file' ? (itemOf(sc) as { f: FileRow }).f.name : labelOf(itemOf(sc)!)) : '연결 끊긴 항목')
@@ -607,7 +607,7 @@ export function Board() {
     toast(`"${label}"을(를) 보드에 놓았습니다.`, 'success')
   }
 
-  /** 연결이 끊긴 바로가기에 새 항목을 이어 준다 — 자리는 그대로 (P8) */
+  /** 연결이 끊긴 바로가기에 새 항목을 이어 준다 — 자리는 그대로 */
   const relink = (sc: BoardShortcut, kind: ShortcutKind, refId: ID, label: string) => {
     commit((b) => ({ ...b, shortcuts: b.shortcuts.map((s) => (s.id === sc.id ? { ...s, kind, refId, label } : s)) }))
     toast(`"${label}"(으)로 다시 연결했습니다.`, 'success')
@@ -883,7 +883,7 @@ export function Board() {
     })
   }
 
-  // ── 그룹 박스 (P6) ──
+  // ── 그룹 박스 ──
   const addGroup = async () => {
     const n = boardRef.current.groups.length
     if (n >= BOARD_MAX_GROUPS) {
@@ -1120,7 +1120,7 @@ export function Board() {
 
   const wide = stage.w >= WIDE_W
 
-  // ── 미니맵 (P7) ──
+  // ── 미니맵 ──
   const mapColor = useCallback((name: string, fallback: string) => {
     const el = stageRef.current
     const v = el ? getComputedStyle(el).getPropertyValue(name).trim() : ''
@@ -1301,7 +1301,7 @@ export function Board() {
     setMoreMenu(false)
   }
 
-  // ── 카드 얼굴 (P2) ──
+  // ── 카드 얼굴 ──
   const kindIcon = (it: Item) => (it.kind === 'doc' ? (it.d.mode === 'infinite' ? 'infinite' : 'page') : it.kind === 'app' ? 'app' : 'file')
 
   const face = (it: Item) => {
@@ -1551,7 +1551,7 @@ export function Board() {
 
   return (
     <div className={'board board-wall-' + board.wallpaper + (edit ? ' is-editing' : '')} data-zoom={view.z < 0.55 ? 'far' : undefined}>
-      {/* ── 상단 바 (P1: 3열 그리드) ── */}
+      {/* ── 상단 바 (3열 그리드) ── */}
       <header className="board-topbar">
         <div className="board-topbar-left">
           <button className="board-back" onClick={() => navigate({ name: 'library' })} aria-label="노트 목록으로">
@@ -1611,7 +1611,7 @@ export function Board() {
         </nav>
       )}
 
-      {/* ── 편집 툴바 (P3) ── */}
+      {/* ── 편집 툴바 ── */}
       {edit && (
         <div className={'board-edit-toolbar' + (wide && panelOpen ? ' with-panel' : '')} role="toolbar" aria-label="편집 도구">
           <button className="bet-btn" onClick={undo} disabled={!history.current.length} aria-label="되돌리기">
@@ -1785,7 +1785,7 @@ export function Board() {
             )
           })}
 
-          {/* 놓일 칸 미리보기 (P4) */}
+          {/* 놓일 칸 미리보기 */}
           {dropCell && (
             <span
               className={'board-drop' + (dropCell.busy ? ' is-busy' : '')}
@@ -1900,7 +1900,7 @@ export function Board() {
         </div>
       </div>
 
-      {/* ── 미니맵 + 줌 HUD (P7) ── */}
+      {/* ── 미니맵 + 줌 HUD ── */}
       {shortcuts.length > 0 && (
         <div className="board-dock" style={{ bottom: wide && panelOpen ? 16 : undefined }}>
           <canvas
@@ -1928,7 +1928,7 @@ export function Board() {
         </div>
       )}
 
-      {/* ── 카드 서랍 (좁은 화면 = 아래 서랍 / 넓은 화면 = 오른쪽 패널) (P5) ── */}
+      {/* ── 카드 서랍 (좁은 화면 = 아래 서랍 / 넓은 화면 = 오른쪽 패널) ── */}
       {edit && !wide && (
         <section className={'board-drawer' + (panelOpen ? ' is-open' : '')} aria-label="카드 서랍">
           <button className="board-drawer-head" onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>

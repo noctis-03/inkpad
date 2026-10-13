@@ -1,4 +1,4 @@
-// 설계 문서 7장 데이터 모델. 클라이언트 전체(엔진·저장소·내보내기)와 Phase 2 API가 공유한다.
+// 데이터 모델. 클라이언트 전체(엔진·저장소·내보내기·동기화)가 공유한다.
 export const SCHEMA_VERSION = 2
 
 export type ID = string // ULID
@@ -113,7 +113,7 @@ export interface Asset {
   version: number
 }
 
-// ───────── 상수 (7.3) ─────────
+// ───────── 상수 ─────────
 export const CHUNK_SIZE = 4096
 export const PAGE_CHUNK_KEY = '0_0' // paged 모드: 페이지 1개 = 청크 1개
 export const MAX_HISTORY = 200
@@ -264,7 +264,7 @@ export interface HtmlApp {
   /** 클라우드 반영 대기 (오프라인·로그인 전에 바꾼 경우) */
   pending?: 'upsert' | 'delete'
   deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
-  /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 (명세 3.1·4.1) */
+  /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 */
   cloudDetachedAt?: number
 }
 export const MAX_APP_BYTES = 20 * 1024 * 1024
@@ -289,7 +289,7 @@ export interface StoredFile {
   /** 클라우드 반영 대기 (오프라인·로그인 전에 바꾼 경우) */
   pending?: 'upsert' | 'delete'
   deletedAt?: number // pending 'delete'인 동안만 존재 (목록에서 숨김)
-  /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 (명세 3.1·4.1) */
+  /** 이 기기에서 직접 클라우드 삭제 — 클라우드에는 없고 이 기기에만 남아 있음 */
   cloudDetachedAt?: number
   /** 'upsert' 대기 중 무엇을 보내야 하는지 — 'meta'는 본문 없이 메타만 (이름·카테고리 변경) */
   pendingKind?: 'meta' | 'content'

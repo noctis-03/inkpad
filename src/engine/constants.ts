@@ -1,4 +1,4 @@
-// 설계 문서 7.3 상수 + Phase 0 렌더링 상수
+// 엔진 상수 (저장 단위·줌·제스처·렌더링)
 export const CHUNK_SIZE = 4096 // 무한 캔버스 청크 크기 (월드 단위)
 export const MAX_HISTORY = 200
 export const MIN_ZOOM = 0.1 // 10%

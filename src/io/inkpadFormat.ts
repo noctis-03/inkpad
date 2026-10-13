@@ -1,4 +1,4 @@
-// 자체 포맷 (FR-IO-06/07): .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
+// 자체 포맷: .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
 // 전체 백업도 같은 구조에 문서가 여러 개 들어간다.
 // blocks.json은 선택 파일이다(블록이 있을 때만 쓴다) — FORMAT_VERSION을 올리지 않고도 옛 버전 앱이 무시하고 가져올 수 있다.
 import { unzip, zip, strFromU8, strToU8, type Unzipped, type Zippable } from 'fflate'

@@ -81,13 +81,13 @@ const SYNC_LABEL: Record<CardSyncState, string> = {
 const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
   r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
 
-/** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */
+/** 섹션 제목 — 바뀌면 위로 빠지고 아래에서 들어오며 바뀐다 */
 function TitleText({ text }: { text: string }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [shown, setShown] = useState(text)
   const shownRef = useRef(text)
   const anims = useRef<Animation[]>([])
-  // 섹션 제목 모핑 (시안 setTitle 방식): 위로 슬러드아웃 → 텍스트 교체 → 아래에서 슬러드인.
+  // 섹션 제목 모핑: 위로 슬라이드아웃 → 텍스트 교체 → 아래에서 슬라이드인.
   // CSS 한 단계 페이드보다 느리고 두 단계로 해서 섹션이 바뀌는 느낌을 살린다.
   useEffect(() => {
     const el = ref.current
@@ -144,7 +144,8 @@ function TitleText({ text }: { text: string }) {
   )
 }
 
-/** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
+/** 동기화 상태 점 + 라벨 pill. 상태가 바뀌면 pop 한다. */
+function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null)
   const prev = useRef(state)
   useEffect(() => {
@@ -178,7 +179,7 @@ export function Library() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [syncStates, setSyncStates] = useState<Map<ID, CardSyncState>>(new Map())
-  const [cloudOff, setCloudOff] = useState(false) // 동기화를 설정하지 않은 기기 (C-8)
+  const [cloudOff, setCloudOff] = useState(false) // 동기화를 설정하지 않은 기기 — 동기화 표시를 숨긴다
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -205,7 +206,7 @@ export function Library() {
   const recentScope =
     section.kind === 'all' || section.kind === 'notes' || section.kind === 'category' || section.kind === 'uncategorized' || section.kind === 'folder'
   const recentActive = recentOnly && recentScope
-  // 사이드바 선택 항목 슬라이딩 인디케이터 (5.2, 세로)
+  // 사이드바 선택 항목 슬라이딩 인디케이터 (세로)
   const treeRef = useRef<HTMLElement>(null)
   const treeActiveKey =
     section.kind === 'all'
@@ -267,7 +268,7 @@ export function Library() {
     void refresh()
   }, [refresh])
 
-  // 다른 기기에서 받아온 변경 반영 (SDF 가이드 8장 3)
+  // 다른 기기에서 받아온 변경 반영 — 목록을 다시 읽는다
   useEffect(() => {
     const onRemote = () => void refresh()
     window.addEventListener(REMOTE_EVENT, onRemote)
@@ -522,13 +523,13 @@ export function Library() {
     thumbsRef.current = thumbs
   }, [thumbs])
 
-  // 검색어 120ms 디바운스 (명세 5.4)
+  // 검색어 120ms 디바운스
   useEffect(() => {
     const t = setTimeout(() => setDq(query), 120)
     return () => clearTimeout(t)
   }, [query])
 
-  // 최초 마운트 시 1회 카드 등장 (5.3-1) — rich에서만 지연을 준다
+  // 최초 마운트 시 1회 카드 등장 — rich에서만 지연을 준다
   useEffect(() => {
     if (!ready || enteredRef.current) return
     enteredRef.current = true
@@ -537,7 +538,7 @@ export function Library() {
     return () => clearTimeout(t)
   }, [ready])
 
-  // 썸네일 리빌 (5.3-2) — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
+  // 썸네일 리빌 — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
   useEffect(() => {
     const root = gridRef.current
     if (!root) return
@@ -569,10 +570,10 @@ export function Library() {
     // 들어오므로, 다시 관찰해 is-revealed(리빌 애니메이션)를 붙여야 보인다.
   }, [items, thumbs, prefs.view])
 
-  // 동기화 버튼 회전 (5.5)
+  // 동기화 버튼 회전
   useEffect(() => onSyncStatus((s) => { setSyncing(s === 'syncing'); setCloudOff(s === 'disabled') }), [])
 
-  // 동기화가 끝나 '최신'이 된 카드에 settle (5.3-5)
+  // 동기화가 끝나 '최신'이 된 카드에 settle
   useEffect(() => {
     const prev = prevSync.current
     syncStates.forEach((s, id) => {
@@ -581,7 +582,7 @@ export function Library() {
     prevSync.current = new Map(syncStates)
   }, [syncStates, settleDoc])
 
-  // 편집 화면에서 복귀: 고스트를 카드로 축소하고 settle (5.6 닫기)
+  // 편집 화면에서 복귀: 고스트를 카드로 축소하고 settle
   useEffect(() => {
     if (!ready) return
     const rid = useUI.getState().returnDocId
@@ -616,11 +617,11 @@ export function Library() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
 
-  // 목록 변화 FLIP (5.4)
+  // 목록 변화 FLIP (ui/motion/useFlip)
   const flipSig = items.map((i) => (i.kind === 'doc' ? i.d.id : i.kind === 'app' ? i.a.id : i.f.id)).join('|')
   useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig])
 
-  // 틸트 + 광택 (5.3-3) — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
+  // 틸트 + 광택 — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
   const onGridMove = (e: React.PointerEvent) => {
     if (prefs.view === 'list' || e.pointerType === 'touch') return
     const lvl = motionLevel()
@@ -639,7 +640,7 @@ export function Library() {
       const r = card.getBoundingClientRect()
       const px = (cx - r.left) / r.width
       const py = (cy - r.top) / r.height
-      const angle = e.pointerType === 'pen' ? 3 : lvl === 'rich' ? 8 : 3 // 펜 호버는 기울기 상한을 낮춘다 (C-8)
+      const angle = e.pointerType === 'pen' ? 3 : lvl === 'rich' ? 8 : 3 // 펜 호버는 기울기 상한을 낮춘다
       card.style.transform = `perspective(700px) rotateX(${-(py - 0.5) * 2 * angle}deg) rotateY(${(px - 0.5) * 2 * angle}deg)`
       card.style.setProperty('--gx', `${px * 100}%`)
       card.style.setProperty('--gy', `${py * 100}%`)
@@ -661,7 +662,7 @@ export function Library() {
 
   // ───────── 작업 ─────────
 
-  /** 노트 열기 — 카드 썸네일 고스트가 편집 화면으로 펼쳐지는 모핑 (5.6 열기, 시안 openEditor 방식) */
+  /** 노트 열기 — 카드 썸네일 고스트가 편집 화면으로 펼쳐지는 모핑 */
   const open = (d: DocumentMeta, card?: HTMLElement | null) => {
     const rect = card?.getBoundingClientRect() ?? null
     useUI.setState({ docCardRect: rect })
@@ -867,7 +868,7 @@ export function Library() {
 
   const addFileItems = async (list: File[]) => {
     const total = list.reduce((n, f) => n + f.size, 0)
-    // 추가하기 전에 3버튼 확인 (명세 11.4) — 이 기기에만 추가 / 업로드 / 취소
+    // 추가하기 전에 3버튼 확인 (sync/transfer) — 이 기기에만 추가 / 업로드 / 취소
     const choice = await uploadChoice(total, list.length)
     if (choice === 'cancel') return
     const upload = choice === 'upload'
@@ -928,7 +929,7 @@ export function Library() {
         return
       case 'export':
         try {
-          // 원본이 이 기기에 없으면 내보내기가 다운로드를 일으킨다 — 기준 이상이면 먼저 묻는다 (11.3)
+          // 원본이 이 기기에 없으면 내보내기가 다운로드를 일으킨다 — 기준 이상이면 먼저 묻는다 (sync/transfer)
           const hasOrig = f.text !== undefined || !!f.blob
           if (!hasOrig && !(await confirmTransfer('down', f.size))) return
           await saveFile(await fileToBlob(f), f.name)
@@ -1711,7 +1712,7 @@ export function Menu({ x, y, onClose, children }: { x: number; y: number; onClos
   const style: React.CSSProperties = centered
     ? {}
     : { top: Math.min(y + 4, window.innerHeight - 280), left: Math.max(8, Math.min(x - 220, window.innerWidth - 232)) }
-  // Esc로 닫고, 열리면 메뉴로 포커스를 옮겨 Tab·Enter로 항목을 누를 수 있다 (C-1)
+  // Esc로 닫고, 열리면 메뉴로 포커스를 옮겨 Tab·Enter로 항목을 누를 수 있다
   useEffect(() => {
     ref.current?.focus()
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()

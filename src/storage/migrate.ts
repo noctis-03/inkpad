@@ -1,4 +1,4 @@
-// 스키마 마이그레이션 (NFR-10, 16.4). 모든 저장 데이터에 schemaVersion이 있다.
+// 스키마 마이그레이션. 모든 저장 데이터에 schemaVersion이 있다.
 import { SCHEMA_VERSION, type Element } from '../shared/model'
 
 export class SchemaTooNewError extends Error {

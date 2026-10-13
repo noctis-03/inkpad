@@ -1,4 +1,4 @@
-// Google Drive API 래퍼 (SDF 가이드 6장)
+// Google Drive API 래퍼
 // 401이면 토큰 강제 갱신 후 1회 재시도, 429/5xx는 지수 백오프로 재시도한다.
 import { gunzipJson } from '../storage/compress'
 import { getAccessToken } from './token'

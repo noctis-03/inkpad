@@ -1,4 +1,4 @@
-// 로컬 저장소 (설계 8장). 모든 쓰기는 같은 트랜잭션에서 outbox에 기록한다 (Phase 2 동기화용).
+// 로컬 저장소. 모든 쓰기는 같은 트랜잭션에서 outbox에 기록한다 (Phase 2 동기화용).
 import {
   PAGE_CHUNK_KEY,
   SCHEMA_VERSION,
@@ -21,7 +21,7 @@ import { assertNotTooNew, migrateElements, needsMigration } from './migrate'
 
 // ───────────────────────── outbox ─────────────────────────
 
-/** 같은 엔티티가 이미 대기 중이면 하나로 합친다 (설계 8장 3). 반드시 트랜잭션 안에서 호출. */
+/** 같은 엔티티가 이미 대기 중이면 하나로 합친다. 반드시 트랜잭션 안에서 호출. */
 export async function enqueue(entity: OutboxEntity, entityId: string, op: 'upsert' | 'delete' = 'upsert') {
   const existing = await db.outbox.where('[entity+entityId]').equals([entity, entityId]).first()
   if (existing) {
@@ -155,7 +155,7 @@ export async function trashDocument(id: ID) {
   await db.transaction('rw', [db.documents, db.outbox, db.syncState], async () => {
     const now = Date.now()
     await db.documents.update(id, { deletedAt: now, updatedAt: now })
-    // tombstone을 outbox에 넣지 않고 gone 표식을 바로 남긴다 (지시서 4번 권장안) —
+    // tombstone을 outbox에 넣지 않고 gone 표식을 바로 남긴다 —
     // Drive 사본은 그대로 남고(삭제는 이 기기의 일), 올리기 미리보기에 "삭제한 노트"가 잡히지 않는다.
     // sync/folders.ts의 putSync와 같은 테이블을 import 순환을 피하려고 직접 쓴다
     await db.syncState.put({ key: `gone:${id}`, value: now })
@@ -170,7 +170,7 @@ export async function restoreDocument(id: ID) {
     // 원래 폴더가 없어졌으면 최상위로
     const folderId = d.folderId && folders.has(d.folderId) ? d.folderId : null
     await db.documents.update(id, { deletedAt: undefined, folderId, updatedAt: Date.now() })
-    await db.syncState.delete(`gone:${id}`) // 휴지통 표식을 지운다 — 안 지우면 받기에서 계속 제외된다 (지시서 4번)
+    await db.syncState.delete(`gone:${id}`) // 휴지통 표식을 지운다 — 안 지우면 받기에서 계속 제외된다
     await enqueue('document', id)
   })
 }
@@ -312,7 +312,7 @@ export async function loadDocument(id: ID): Promise<LoadedDocument> {
   }
   const live = new Set(pages.map((p) => p.id))
   const rows = (await db.chunks.where('documentId').equals(id).toArray()).filter((r) => live.has(r.pageId) && !r.deletedAt)
-  // 오래된 스키마는 마이그레이션 전에 원본을 백업한다 (16.4)
+  // 오래된 스키마는 마이그레이션 전에 원본을 백업한다
   const old = rows.filter((r) => needsMigration(r.schemaVersion))
   if (old.length) await backupRows(id, old)
   const chunks: ChunkData[] = []
@@ -429,7 +429,7 @@ export async function saveBatch(b: SaveBatch) {
 
 // ───────────────────────── assets ─────────────────────────
 
-/** 같은 내용(SHA-256)이면 기존 에셋을 재사용한다 (14.1) */
+/** 같은 내용(SHA-256)이면 기존 에셋을 재사용한다 — 같은 PDF를 두 번 가져와도 원본은 하나 */
 export async function putAsset(blob: Blob, meta: { kind: Asset['kind']; mime: string; name?: string }): Promise<AssetRow> {
   const buf = await blob.arrayBuffer()
   const sha256 = await sha256Hex(buf)

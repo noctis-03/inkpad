@@ -2,8 +2,8 @@ import { useRef } from 'react'
 import { useIndicator } from './motion/useIndicator'
 
 /**
- * 공용 세그먼트 선택 — 슬라이딩 흰 칩 인디케이터(5.2).
- * 설정 패널과 새로 만들기 창이 함께 쓴다 (C-7에서 SettingsPanel에서 추출).
+ * 공용 세그먼트 선택 — 슬라이딩 흰 칩 인디케이터(ui/motion/useIndicator).
+ * 설정 패널과 새로 만들기 창이 함께 쓴다.
  */
 export function Segmented<T extends string>({
   value,

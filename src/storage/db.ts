@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie'
 import type { BoardPreset } from '../shared/board'
 import type { Asset, Block, DocumentMeta, Folder, HtmlApp, ID, Page, StoredFile } from '../shared/model'
 
-/** IndexedDB 레코드 (설계 8장) */
+/** IndexedDB 레코드 */
 export interface ChunkRow {
   pageId: ID
   key: string

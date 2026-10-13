@@ -23,7 +23,7 @@ import {
 import { Icon } from './Icon'
 import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
 
-// 앱 시트 (명세 3장). 모든 항목에 ⋯ 메뉴가 있고, 상태에 맞는 대표 버튼 하나를 바로 보여 준다.
+// 앱 시트. 모든 항목에 ⋯ 메뉴가 있고, 상태에 맞는 대표 버튼 하나를 바로 보여 준다.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
 type Primary = 'update' | 'reupload' | 'upload' | 'install'
 type AppGroup = 'confirm' | 'installed' | 'store'

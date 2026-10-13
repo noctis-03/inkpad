@@ -96,7 +96,7 @@
   /* ── 필기 캔버스(종이) — 테마와 무관하게 종이는 흰색 ── */
   --bg-pattern: #d6dbe3;
 
-  /* ── 고정 종이·태그 (B-2) ── */
+  /* ── 고정 종이·태그 ── */
   --thumb-paper: #ffffff;   /* 썸네일·종이는 테마와 상관없이 흰색 */
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
 
@@ -796,7 +796,7 @@ textarea {
 .library-header #new-doc-btn {
   flex-shrink: 0;
 }
-/* 시안(Interactive Motion v2) 상단 바 — 아이콘 버튼은 40px·라운드 12 */
+/* 상단 바 — 아이콘 버튼은 40px·라운드 12 */
 .library-header .tb-btn {
   width: 40px;
   min-width: 40px;
@@ -870,7 +870,7 @@ textarea {
   padding: 0 10px;
   font-size: 13px;
 }
-/* 상단 바의 격자/목록 세그먼트 — 시안의 .seg 축소판 (선택 칩은 인디케이터가 얹는다) */
+/* 상단 바의 격자/목록 세그먼트 — .seg의 축소판 (선택 칩은 인디케이터가 얹는다) */
 .library-header .seg {
   flex: none;
   gap: 0;
@@ -945,7 +945,7 @@ textarea {
   cursor: pointer;
   color: var(--muted);
 }
-/* 시안의 사이드바 — 선택 배경은 흰 인디케이터 칩(.motion-ind)이 대신 얹는다 */
+/* 사이드바 — 선택 배경은 흰 인디케이터 칩(.motion-ind)이 대신 얹는다 */
 .tree-item.is-active {
   background: transparent;
   color: var(--ink);
@@ -973,7 +973,7 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 사이드바 카테고리 색 점 — 시안처럼 선택되면 살짝 커진다 */
+/* 사이드바 카테고리 색 점 — 선택되면 살짝 커진다 */
 .tree-cat-dot {
   flex: 0 0 auto;
   width: 9px;
@@ -1086,7 +1086,7 @@ textarea {
   color: var(--muted);
   text-align: center;
 }
-/* ───────── 시안 · 책등 있는 노트 ─────────
+/* ───────── 책등 있는 노트 ─────────
    미리보기 위 오버레이(배지·카테고리 칩)를 걷어내고
    정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 캡션의 색 점 + 이름. */
 .doc-grid {
@@ -1111,7 +1111,7 @@ textarea {
   justify-content: center;
   color: var(--muted-2);
 }
-/* 시안(Interactive Motion v2)의 카드 캡션 — 카테고리는 색 점 + 이름 한 줄로 먼저 보여 주고,
+/* 카드 캡션 — 카테고리는 색 점 + 이름 한 줄로 먼저 보여 주고,
    쪽수·날짜는 그 아래 줄에서 더보기(⋯) 버튼과 같은 높이(28px)에 맞춘다. */
 .cat-dot {
   flex: 0 0 auto;
@@ -1139,7 +1139,7 @@ textarea {
   object-fit: cover;
   object-position: top;
 }
-/* (시안 적용) 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
+/* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
 /* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가
    세로 중앙에 오게 한다. 왼쪽 날짜, 오른쪽 더보기. */
 .doc-foot {
@@ -1179,7 +1179,7 @@ textarea {
 }
 /* 동기화 상태 — 8px 색 점 대신 말 라벨 (색만으로 전달하지 않는다).
    그리드: 카드(미리보기) 좌측 하단에 얹는다 / 리스트: 캡션 안에 인라인으로. */
-/* 시안의 동기화 태그 — 흰 알약 배지 + 상태색 글자·점 */
+/* 동기화 태그 — 흰 알약 배지 + 상태색 글자·점 */
 .doc-state {
   flex: 0 0 auto;
   padding: 2px 8px 2px 6px;
@@ -2285,7 +2285,7 @@ textarea {
   cursor: pointer;
 }
 
-/* ── 그룹 톤 — 텍스트/배경/테두리 한 조합 (--t/--ts/--tb, 시안 그대로) ── */
+/* ── 그룹 톤 — 텍스트/배경/테두리 한 조합 (--t/--ts/--tb) ── */
 .g-recv {
   --t: var(--accent);
   --ts: var(--accent-soft-2);
@@ -2327,7 +2327,7 @@ textarea {
   --tb: var(--danger-line);
 }
 
-/* 상태 카드 — 색만으로 전달하지 않는다 (개선 1) */
+/* 상태 카드 — 색만으로 전달하지 않는다 */
 .sync-status {
   display: flex;
   align-items: center;
@@ -2384,7 +2384,7 @@ textarea {
   white-space: nowrap;
 }
 
-/* 받기·올리기 큰 버튼 — 건수 배지와 위계 (개선 2) */
+/* 받기·올리기 큰 버튼 — 건수 배지와 위계 */
 .sync-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2463,7 +2463,7 @@ textarea {
   place-items: center;
 }
 
-/* 원본 받기 진행 바 (개선 8) */
+/* 원본 받기 진행 바 */
 .sync-prog {
   margin-top: 10px;
   padding: 10px 12px;
@@ -2511,7 +2511,7 @@ textarea {
   }
 }
 
-/* 목록 머리 — 제목·건수·새로 고침 (개선 8) */
+/* 목록 머리 — 제목·건수·새로 고침 */
 .cloud-lhead {
   display: flex;
   align-items: center;
@@ -2552,7 +2552,7 @@ textarea {
   animation: spin 0.8s linear infinite;
 }
 
-/* 상태별 필터 칩 — 한 줄 가로 스크롤 (개선 4) */
+/* 상태별 필터 칩 — 한 줄 가로 스크롤 */
 .cloud-chips {
   display: flex;
   gap: 6px;
@@ -2601,7 +2601,7 @@ textarea {
   cursor: default;
 }
 
-/* 그룹 — sticky 헤더 + 그룹 자리에서 바로 처리하는 일괄 동작 (개선 9) */
+/* 그룹 — sticky 헤더 + 그룹 자리에서 바로 처리하는 일괄 동작 */
 .cloud-group + .cloud-group {
   margin-top: 12px;
 }
@@ -2667,7 +2667,7 @@ textarea {
   cursor: default;
 }
 
-/* 행 — 아이콘 + 색 레일 + 메타 줄, 눈에 보이는 주 동작 버튼 (개선 5·7) */
+/* 행 — 아이콘 + 색 레일 + 메타 줄, 눈에 보이는 주 동작 버튼 */
 .cloud-items {
   display: flex;
   flex-direction: column;
@@ -2802,7 +2802,7 @@ textarea {
   color: var(--ink);
 }
 
-/* 행 꼬리 메뉴 — ⋯에는 보조 동작만 남긴다 (개선 5) */
+/* 행 꼬리 메뉴 — ⋯에는 보조 동작만 남긴다 */
 .cloud-menu-bg {
   position: fixed;
   inset: 0;
@@ -2921,7 +2921,7 @@ textarea {
 .cloud-empty .sync-link {
   padding: 2px 4px;
 }
-/* 이 기기 · 계정 정보 블록 (개선 3) */
+/* 이 기기 · 계정 정보 블록 */
 .sync-foot {
   margin: 4px 0 16px;
   padding: 4px 12px;
@@ -3597,7 +3597,7 @@ textarea {
 @keyframes blk-fire { from { box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent) } to { box-shadow:0 0 0 12px transparent } }
 
 .blk[data-type='memo'] { background:var(--memo, var(--warn-soft)); color:#23211d; }
-/* 블록은 테마와 상관없이 흰 종이 위 파스텔 배경 — 안 글자는 고정된 어두운 색 (다크 모드에서 밝은 글자가 밝은 블록에 올라가지 않게, D-3) */
+/* 블록은 테마와 상관없이 흰 종이 위 파스텔 배경 — 안 글자는 고정된 어두운 색 (다크 모드에서 밝은 글자가 밝은 블록에 올라가지 않게) */
 .blk[data-type='memo'] textarea { width:100%; border:0; background:transparent; resize:none; outline:none;
   font-size: var(--fs-md); line-height:1.5; user-select:text; -webkit-user-select:text; color:inherit; font-family:inherit; padding:0; }
 .blk[data-type='memo'] .blk-head { color:#6a655b; }
@@ -3698,7 +3698,7 @@ textarea {
 .file-other { flex: 1; }
 .file-card .doc-thumb { color: var(--file); }
 
-/* ═══════ Store sheets (앱 · 기타 파일) — 명세 2~4장 ═══════ */
+/* ═══════ Store sheets (앱 · 기타 파일) ═══════ */
 .store-sheet{position:relative;width:min(760px,100%);max-height:min(88vh,920px);display:flex;flex-direction:column;background:var(--paper);color:var(--ink);border-radius: var(--r-2xl);overflow:hidden;box-shadow:0 24px 60px #0000004d;}
 .store-head{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border-bottom:1px solid var(--line);flex:0 0 auto;}
 .store-head-icon{width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:0 0 auto;}
@@ -4150,7 +4150,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   from { transform: translateX(-130%); }
   to { transform: translateX(130%); }
 }
-/* 복귀 고스트 (5.6 닫기) */
+/* 복귀 고스트 — 편집 화면을 닫으면 카드로 줄어든다 */
 .doc-return-ghost {
   position: fixed;
   z-index: 45;
@@ -4161,7 +4161,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   box-shadow: var(--e2);
   pointer-events: none;
 }
-/* 열기 고스트 (5.6 열기) — 카드 썸네일이 편집 화면으로 펼쳐진다 */
+/* 열기 고스트 — 카드 썸네일이 편집 화면으로 펼쳐진다 */
 .doc-open-ghost {
   position: fixed;
   z-index: 45;
@@ -4285,7 +4285,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   to { opacity: 0; transform: translateY(6px); }
 }
 
-/* ───────── 숫자 스테퍼 (A-3) — 터치 영역 44px 이상 ───────── */
+/* ───────── 숫자 스테퍼 — 터치 영역 44px 이상 ───────── */
 .stepper {
   display: inline-flex;
   align-items: center;
@@ -4314,7 +4314,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   background: var(--press);
 }
 
-/* ───────── 문서 바 상태·⋯ 메뉴 (C-1) ───────── */
+/* ───────── 문서 바 상태·⋯ 메뉴 ───────── */
 .save-state.is-quiet .save-label {
   display: none;
 }
@@ -4335,7 +4335,7 @@ button.save-state {
   outline: none;
 }
 
-/* ───────── 문서 여는 중 스켈레톤 (C-5) ───────── */
+/* ───────── 문서 여는 중 스켈레톤 ───────── */
 .doc-skeleton {
   position: absolute;
   inset: 0;
@@ -4377,7 +4377,7 @@ button.save-state {
   content: none;
 }
 
-/* ───────── 설정 고급 섹션 (C-6) — 기본 접어 둠 ───────── */
+/* ───────── 설정 고급 섹션 — 기본 접어 둠 ───────── */
 details.adv > summary {
   cursor: pointer;
   font-size: var(--fs-lg);
@@ -4389,7 +4389,7 @@ details.adv > summary::marker {
   color: var(--muted);
 }
 
-/* ───────── 새로 만들기: 가져오기 줄 (C-7) ───────── */
+/* ───────── 새로 만들기: 가져오기 줄 ───────── */
 .import-section {
   display: flex;
   flex-direction: column;

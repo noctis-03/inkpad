@@ -26,7 +26,7 @@ export class PdfPasswordError extends Error {
 
 const BASE = import.meta.env.BASE_URL
 
-/** PDF 열기. 암호가 필요하면 PdfPasswordError. 비밀번호는 저장하지 않는다 (16.3) */
+/** PDF 열기. 암호가 필요하면 PdfPasswordError. 비밀번호는 저장하지 않는다 */
 export async function openPdf(data: ArrayBuffer | Uint8Array, password?: string): Promise<PDFDocumentProxy> {
   const lib = await loadPdfJs()
   // pdf.js가 버퍼를 워커로 넘기면서 비워버리므로 복사본을 준다

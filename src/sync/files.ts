@@ -337,7 +337,7 @@ export async function listCloudFiles(): Promise<CloudFileInfo[]> {
   for (const [fid, r] of cloud) {
     let local = locals.find((x) => x.id === fid)
     const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || 0
-    // 원격이 더 새로우면 제목·카테고리 같은 메타만 조용히 반영한다 (4.6-1).
+    // 원격이 더 새로우면 제목·카테고리 같은 메타만 조용히 반영한다.
     // 기타 파일은 내용을 고칠 수 없으므로 원본(text/blob)은 절대 버리지 않는다 — 'update' 상태도 만들지 않는다.
     if (local && !local.pending && remoteAt > local.updatedAt) {
       const patch = {
@@ -402,7 +402,7 @@ export async function addFileFromCloud(id: ID, opts?: { withOriginal?: boolean }
   if (opts?.withOriginal) await ensureFileLocal(id)
 }
 
-/** updateFileFromCloud: 메타만 갱신한다. 원본(text/blob)은 절대 버리지 않는다 (4.6-1) */
+/** updateFileFromCloud: 메타만 갱신한다. 원본(text/blob)은 절대 버리지 않는다 */
 export async function updateFileFromCloud(id: ID): Promise<void> {
   const local = await db.files.get(id)
   const r = await findRemoteFile(id)

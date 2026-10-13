@@ -43,7 +43,7 @@ const CAT_ALL = '__all__'
 const CAT_NONE = '__none__'
 
 /**
- * 상태 표시의 단일 출처 — 문구·톤·아이콘을 한곳에 모았다 (개선 1·구현 메모 ②).
+ * 상태 표시의 단일 출처 — 문구·톤·아이콘을 한곳에 모았다.
  * 오프라인은 회색, 오류만 빨강으로 나눠 단순 오프라인이 오류처럼 보이지 않게 한다.
  */
 type StatusTone = 'idle' | 'syncing' | 'offline' | 'error'
@@ -62,9 +62,9 @@ type GroupKey = 'recv' | 'push' | 'fresh' | 'gone'
 type RowAction = 'download' | 'pushOne' | 'repush' | 'restore' | null
 
 /**
- * 행 표시의 단일 출처 — 배지·아이콘·그룹과 행의 주 동작까지 데이터로 둔다 (개선 7·구현 메모 ③).
- * action이 있는 행만 오른쪽에 주 동작 버튼을 렌더한다 — 숨은 "행 탭 = 즉시 실행"은 없다 (개선 5).
- * pending/new의 올리기는 onPush()(전체 미리보기)가 아니라 pushOneNote로 그 노트만 올린다 (개선 6).
+ * 행 표시의 단일 출처 — 배지·아이콘·그룹과 행의 주 동작까지 데이터로 둔다.
+ * action이 있는 행만 오른쪽에 주 동작 버튼을 렌더한다 — 숨은 "행 탭 = 즉시 실행"은 없다.
+ * pending/new의 올리기는 onPush()(전체 미리보기)가 아니라 pushOneNote로 그 노트만 올린다.
  */
 const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; icon: string; action: RowAction }> = {
   'remote-new': { group: 'recv', badge: '새 버전', icon: 'cloudDown', action: 'download' },
@@ -91,7 +91,7 @@ const GROUPS: { key: GroupKey; title: string; chip: string; states: CloudNoteSta
   { key: 'gone', title: '이 기기에서 삭제됨', chip: '삭제됨', states: ['deleted-local'], startCollapsed: true }
 ]
 
-/** 요약 칸과 그룹 헤더가 같은 숫자를 두 번 보여 주던 것을 정리 — 건수는 한 곳에서 계산해 버튼·칩·헤더가 나눠 쓴다 (개선 2·4) */
+/** 요약 칸과 그룹 헤더가 같은 숫자를 두 번 보여 주던 것을 정리 — 건수는 한 곳에서 계산해 버튼·칩·헤더가 나눠 쓴다 */
 interface CloudCounts extends Record<GroupKey, number> {
   pending: number
   new: number
@@ -321,7 +321,7 @@ function CloudList({
 
   return (
     <div className="cloud-panel">
-      {/* 가로 스크롤 칩 한 줄로 필터 — 요약 칸 + 접히는 헤더의 이중 체계를 정리했다 (개선 4) */}
+      {/* 가로 스크롤 칩 한 줄로 필터 — 요약 칸 + 접히는 헤더의 이중 체계를 정리했다 */}
       <div className="cloud-chips" role="group" aria-label="상태별 필터">
         <button className={'cloud-chip' + (filter === 'all' ? ' on' : '')} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
           전체<span>{cloud.length}</span>
@@ -384,7 +384,7 @@ function CloudList({
       )}
 
       {groups.map((g) => {
-        // 칩을 골랐거나 검색 중이면 접힌 그룹도 자동으로 펼친다 (개선 4)
+        // 칩을 골랐거나 검색 중이면 접힌 그룹도 자동으로 펼친다
         const isOpen = filter !== 'all' || !!query.trim() || !collapsed[g.key]
         return (
           <section className={'cloud-group g-' + g.key} key={g.key}>
@@ -394,7 +394,7 @@ function CloudList({
                 <span>{g.title}</span>
                 <b>{g.items.length}</b>
               </button>
-              {/* 그룹 자리에서 바로 처리하는 일괄 동작 (개선 9) */}
+              {/* 그룹 자리에서 바로 처리하는 일괄 동작 */}
               {g.key === 'recv' &&
                 (catFilter === CAT_ALL ? (
                   <button className="cloud-bulk" disabled={busy} onClick={onPullAll}>
@@ -646,7 +646,7 @@ export function SyncSection() {
     }
   }
 
-  /** 행의 주 동작 — 상태가 정한 하나의 동작을 실행한다 (개선 5) */
+  /** 행의 주 동작 — 상태가 정한 하나의 동작을 실행한다 */
   const onPrimary = (info: CloudNoteInfo) => {
     const a = STATE_META[info.state].action
     if (a === 'pushOne' || a === 'repush') void pushOneRow(info)
@@ -714,7 +714,7 @@ export function SyncSection() {
   }
 
   /**
-   * 그 노트만 올린다 — 행 버튼은 이미 있는 pushOneNote(docId)를 쓴다 (개선 6).
+   * 그 노트만 올린다 — 행 버튼은 이미 있는 pushOneNote(docId)를 쓴다.
    * 클라우드에서 삭제된 노트는 확인하고 다시 올린다.
    */
   const pushOneRow = async (info: CloudNoteInfo) => {
@@ -782,7 +782,7 @@ export function SyncSection() {
   }
 
   const m = STATUS_META[status]
-  // 받기·올리기 중에는 "노트 2/5 올리는 중" 같은 진행 문구를 보여 준다 (개선 8·구현 메모 ④)
+  // 받기·올리기 중에는 "노트 2/5 올리는 중" 같은 진행 문구를 보여 준다
   const syncMsg = prog ? (prog.phase === 'push' ? `노트 ${prog.done}/${prog.total} 올리는 중` : `노트 ${prog.done}/${prog.total} 받는 중`) : ''
   const pushSub =
     [counts.pending ? `변경 ${counts.pending}` : '', counts.new ? `새 파일 ${counts.new}` : ''].filter(Boolean).join(' · ') || '올릴 것 없음'
@@ -791,7 +791,7 @@ export function SyncSection() {
     <section className="panel-section" id="sync-settings">
       <h3>동기화 · Google Drive</h3>
 
-      {/* 상태 카드 — 색만으로 전달하지 않게 톤·아이콘·설명을 갖춘다 (개선 1) */}
+      {/* 상태 카드 — 색만으로 전달하지 않게 톤·아이콘·설명을 갖춘다 */}
       <div className={'sync-status tone-' + m.tone} role="status" aria-live="polite">
         <span className="sync-status-ic" aria-hidden="true">
           {status === 'syncing' ? <span className="spinner" /> : <Icon name={m.icon} size={18} />}
@@ -812,7 +812,7 @@ export function SyncSection() {
         )}
       </div>
 
-      {/* 받기·올리기 — 건수 배지와 내용을 버튼 안으로 옮겨 눌러 보기 전에 알게 한다 (개선 2) */}
+      {/* 받기·올리기 — 건수 배지와 내용을 버튼 안으로 옮겨 눌러 보기 전에 알게 한다 */}
       <div className="sync-actions">
         <button className={'sync-big g-recv' + (counts.recv ? ' hot' : '')} onClick={() => void doPull()} disabled={status === 'syncing' || status === 'offline'}>
           <span className="sync-big-ic" aria-hidden="true">
@@ -837,7 +837,7 @@ export function SyncSection() {
       </div>
       <p className="hint">앱과 기타 파일은 각 메뉴에서 관리합니다.</p>
 
-      {/* 원본(PDF·이미지) 받기 진행 바 (개선 8) */}
+      {/* 원본(PDF·이미지) 받기 진행 바 */}
       {fetching && (
         <div className="sync-prog">
           <div className="sync-prog-top">
@@ -855,7 +855,7 @@ export function SyncSection() {
         </div>
       )}
 
-      {/* 목록 머리 — 새로 고침이 눌리는 동안 회전과 "확인 중…"으로 반응을 보여 준다 (개선 8) */}
+      {/* 목록 머리 — 새로 고침이 눌리는 동안 회전과 "확인 중…"으로 반응을 보여 준다 */}
       <div className="cloud-lhead">
         <span className="tt">
           클라우드 노트<span>{cloud?.length ?? 0}</span>
@@ -888,13 +888,13 @@ export function SyncSection() {
       {/* 이 기기에서 일어난 머지의 기록 — 확인 창에서 '나중에'를 골랐던 노트를 찾을 때도 쓴다 */}
       <MergeLogList />
 
-      {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 (개선 3) */}
+      {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 */}
       <DeviceFoot
         device={device}
         onSave={async (next) => {
           await setDeviceName(next)
           setDevice(next)
-          // setDeviceName이 반영된 값을 바로 보여 준다 — 옛날 상태를 보여 주던 버그 (구현 메모 ①)
+          // setDeviceName이 반영된 값을 바로 보여 준다 — 저장 전 옛 이름을 보여 주던 버그를 막는다
           toast(`기기 이름을 "${next}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
         }}
         onLogout={() => void logout().then(() => void syncNow())}
@@ -906,7 +906,7 @@ export function SyncSection() {
   )
 }
 
-/** 이 기기 · 계정 정보 블록 — 「변경」을 눌러 이름을 고친다 (개선 3) */
+/** 이 기기 · 계정 정보 블록 — 「변경」을 눌러 이름을 고친다 */
 function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (next: string) => Promise<void>; onLogout: () => void }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
@@ -969,7 +969,7 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
 
 /** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경과, 올린 뒤 받아올 다른 기기의 변경 */
 function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan; pull: PullPlan | null; busy: boolean; onConfirm: () => void; onClose: () => void }) {
-  // 삭제한 노트는 Drive에 올라가는 게 없어 미리보기에 세지 않는다 (지시서 4번)
+  // 삭제한 노트는 Drive에 올라가는 게 없어 미리보기에 세지 않는다 (삭제는 이 기기의 일)
   const groups = [
     { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
     { key: 'modify' as const, label: '수정한 노트', icon: 'edit', items: plan.docs.filter((d) => d.change === 'modify') }

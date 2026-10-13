@@ -21,7 +21,7 @@ import {
 import { Icon } from './Icon'
 import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
 
-// 기타 파일 시트 (명세 4장). 그룹 없이 리스트 하나, 정렬 탭과 저장 공간 카드.
+// 기타 파일 시트. 그룹 없이 리스트 하나, 정렬 탭과 저장 공간 카드.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
 type Primary = 'download' | 'reupload' | 'upload'
 type FilterKey = 'all' | 'downloaded' | 'cloud' | 'confirm'
@@ -35,7 +35,7 @@ const FILE_STATE: Record<CloudFileState, { chip?: string; tone: Tone; primary?: 
   'local-only': { chip: '업로드 안 됨', tone: 'push', primary: 'reupload', rail: true },
   'cloud-missing': { chip: '클라우드에서 삭제됨', tone: 'gone', primary: 'reupload', rail: true },
   detached: { chip: '이 기기에만 있음', tone: 'gray', primary: 'upload', rail: false },
-  update: { tone: 'gray', rail: false } // 없앤 상태 (4.6-1) — UI에서 쓰지 않는다
+  update: { tone: 'gray', rail: false } // 없앤 상태 — UI에서 쓰지 않는다
 }
 const PRIMARY_LABEL: Record<Primary, string> = { download: '다운로드', reupload: '재업로드', upload: '업로드' }
 
