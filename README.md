@@ -59,7 +59,7 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 
 **동기화 (노트 단위 Drive 목록 + 풀/푸시/머지)**
 - 오프라인 우선: 모든 읽기/쓰기는 IndexedDB. **동기화는 설정 > 동기화의 "받기"/"올리기" 버튼을 눌렀을 때만** 실행(자동 백그라운드 동기화 없음 — 평소에는 기기에만 저장)
-- **노트 1개 = Drive 파일 1개**(`Inkpad/docs/{id}.json`, gzip). 폴더 트리는 `folders.json`, PDF·이미지 원본은 sha256 내용 주소 파일(`Inkpad/assets/`)
+- **노트 1개 = Drive 파일 1개**(`Inkpad/docs/{id}.json`, gzip). PDF·이미지 원본은 sha256 내용 주소 파일(`Inkpad/assets/`). 폴더는 기기별 정리 도구라 동기화하지 않고, 노트의 카테고리만 노트 파일에 담겨 동기화된다
 - **클라우드 노트 목록**: 설정 > 동기화에 Drive에 저장된 노트 리스트가 뜬다 — 제목 왼쪽, 저장한 기기·시각·받기 버튼은 제목과 같은 높이로 오른쪽 정렬. 기기 이름은 설정에서 직접 정한다. 노트마다 **받기** 버튼으로 골라 내려받는다 — 새·업데이트된 노트는 파란 점, 이 기기에서 지운 노트는 **빨간 점**으로 표시되고(받기는 되살리지 않음), 노트별 받기로 명시적으로 되살린다. 목록 아래 **카테고리 칩**으로 좇혀 보고, 카테고리를 고른 뒤 받을 것 머리글의 **"카테고리 받기"**로 그 카테고리 노트 전체를 한 번에 받는다
 - **올리기**: 먼저 **미리보기**(추가/수정/삭제 노트 목록, 원본 수)를 보여주고 확인한 뒤 이 기기의 변경을 올리고, 다른 기기의 변경도 함께 받아온다(푸시 → 풀). 노트 메뉴의 "클라우드에 올리기"로 한 노트만 바로 올릴 수도 있다
 - **받기**: Drive 목록과 로컬 기록(파일 version)을 비교해 달라진 노트만 내려받는다. 기기 데이터가 지워졌어도 받기(또는 목록에서 골라 받기) 한 번이면 복구된다
@@ -121,8 +121,11 @@ public/      manifest, sw.js, icons, _routes.json
 
 ## 개발
 ```bash
+npm run dev                      # vite :5173 — 화면만 (/api가 없어 Drive 동기화는 안 됨)
 npm run build                    # vite build(클라이언트+SW 프리캐시) + vite build -c vite.server.config.ts(Worker)
-pm2 start ecosystem.config.cjs   # wrangler dev :3000 (정적 에셋 + Worker 함께)
+npm run preview                  # wrangler dev :3000 (빌드 결과 정적 에셋 + Worker 함께, 동기화까지)
+pm2 start ecosystem.config.cjs   # 위 preview를 pm2로 띄우기
+npm run deploy                   # build 후 wrangler deploy (Cloudflare Workers)
 npm run typecheck
 npm run test:merge               # 노트 머지 회귀 테스트 (의존성 없음)
 ```
@@ -131,16 +134,16 @@ npm run test:merge               # 노트 머지 회귀 테스트 (의존성 없
 1. Google Cloud Console에서 **Google Drive API** 사용 설정, OAuth 동의 화면(외부) — scope `openid email .../auth/drive.file`
 2. **게시 상태를 "프로덕션"으로 변경** (테스트 상태는 refresh token이 7일 뒤 만료됨. 민감 scope가 없어 심사 없이 게시 가능)
 3. OAuth 클라이언트(웹 애플리케이션) 생성 — 승인된 리디렉션 URI에 등록:
-   - `https://<앱>.pages.dev/api/auth/callback`
-   - `http://localhost:8788/api/auth/callback` (로컬)
-4. Cloudflare Pages → Settings → Variables and Secrets에 등록 (로컬은 `.dev.vars`, `.dev.vars.example` 참고 — 커밋 금지):
+   - `https://inkpad.<계정 서브도메인>.workers.dev/api/auth/callback` (배포 주소 — `npm run deploy` 끝에 출력된다. 사용자 도메인을 붙였으면 그 주소)
+   - `http://localhost:3000/api/auth/callback` (로컬 — `npm run preview`)
+4. 값 등록 — 배포본은 아래 명령으로, 로컬은 `.dev.vars`에 (`.dev.vars.example` 참고 — 커밋 금지):
 
-| 이름 | 값 |
-|---|---|
-| `GOOGLE_CLIENT_ID` | OAuth 클라이언트 ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth 클라이언트 보안 비밀 |
-| `SESSION_SECRET` | `openssl rand -base64 32` |
-| `ALLOWED_EMAIL` | 내 Gmail (선택 — 다른 계정 차단) |
+| 이름 | 값 | 배포본에 넣는 곳 |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | OAuth 클라이언트 ID | `wrangler.jsonc`의 `vars` (공개 값이라 이미 들어 있음) |
+| `GOOGLE_CLIENT_SECRET` | OAuth 클라이언트 보안 비밀 | `npx wrangler secret put GOOGLE_CLIENT_SECRET` |
+| `SESSION_SECRET` | `openssl rand -base64 32` | `npx wrangler secret put SESSION_SECRET` |
+| `ALLOWED_EMAIL` | 내 Gmail (선택 — 다른 계정 차단) | `npx wrangler secret put ALLOWED_EMAIL` |
 
 > 주의: iOS 홈 화면(PWA)은 Safari와 쿠키 저장소가 분리되어 PWA 안에서 한 번 따로 로그인해야 한다. `SESSION_SECRET`을 바꾸면 모든 기기에서 재로그인이 필요하다.
 
@@ -148,6 +151,8 @@ npm run test:merge               # 노트 머지 회귀 테스트 (의존성 없
 - **GitHub**: https://github.com/noctis-03/inkpad
 
 ## 배포
-- 플랫폼: Cloudflare Workers (정적 에셋 + Worker, `npx wrangler deploy`) — Drive 동기화는 앱과 같은 도메인의 `_worker.js`에서 처리 (제3자 쿠키 차단 회피)
+- 플랫폼: Cloudflare Workers (정적 에셋 + Worker, `npm run deploy` = build 후 `wrangler deploy`, 설정은 `wrangler.jsonc`) — Drive 동기화는 앱과 같은 도메인의 `_worker.js`에서 처리 (제3자 쿠키 차단 회피)
+  - 정적 파일에 없는 경로만 Worker로 간다 → `/api/*`가 Worker, 나머지는 `dist/`의 파일. 화면 경로는 `#/...` 해시라 서버에 오지 않는다
+  - `public/_routes.json`은 Cloudflare Pages 시절 설정으로, Workers에서는 쓰이지 않는다
 - 상태: 샌드박스 미리보기만 (프로덕션 미배포)
-- 마지막 업데이트: 2026-10-11
+- 마지막 업데이트: 2026-10-13
