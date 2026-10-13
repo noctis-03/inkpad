@@ -161,7 +161,10 @@ export function Editor({ docId }: { docId: ID }) {
             if (b.viaUndo) await clearPendingIfUnchanged(b.documentId)
           },
           callbacks: {
-            onStats: (s) => useUI.setState({ stats: s }),
+            // 성능 통계는 성능 표시(HUD)만 읽는다 — 꺼져 있으면 전역 상태를 0.5초마다 바꾸지 않는다
+            onStats: (s) => {
+              if (useUI.getState().settings.showHud) useUI.setState({ stats: s })
+            },
             onView: (v) => useUI.setState({ view: v }),
             onSelection: (s) => useUI.setState({ selection: s }),
             onSaveState: (s, err) => {
