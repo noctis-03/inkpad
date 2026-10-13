@@ -24,7 +24,7 @@
 // 11. 이 기기 DB의 노트 내용을 바꾸는 일(머지 적용·받기·맞추기)은 노트 보호(storage/docGuard) 안에서 한다.
 //     이 탭의 편집 화면은 먼저 메모리의 변경을 기록하고 멈췄다가 바뀐 내용으로 다시 열리고,
 //     다른 탭이 편집 중인 노트는 건드리지 않고 건너뛴다(DocBusyError).
-import type { ID } from '../shared/model'
+import type { DocumentMeta, ID } from '../shared/model'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { DocBusyError, flushOpenDocs, withDocExclusive } from '../storage/docGuard'
@@ -33,9 +33,10 @@ import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { loadBase, saveBase } from './base'
-import { ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
+import { ensureBackupsFolder, ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { mergeDocs, type MergeConflictDetail } from './merge'
+import { isUpToDate, mergedUpdatedAt, newestPerDoc, pullSkipReason, verNum } from './judge'
 import { rememberRevTag } from './revTags'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
 import { clearPendingIfUnchanged, pendingSeqsFor } from './unchanged'
@@ -222,13 +223,32 @@ function emitRemoteChanged(ids: Set<string>) {
 // ───────────────── 공통 ─────────────────
 // base 스냅샷(saveBase·loadBase)은 sync/base.ts — 되돌림 판정(unchanged.ts)이 함께 쓴다
 
-/** Drive version 비교용 — int64 문자열이라 Number로는 정밀도를 잃는다. 없거나 깨졌으면 0으로 본다 */
-function verNum(v: string | undefined): bigint {
-  try {
-    return BigInt(v ?? 0)
-  } catch {
-    return 0n
+// verNum·isUpToDate·newestPerDoc 등 "받아야 하나" 판정은 sync/judge.ts (테스트: npm run test:sync)
+
+/**
+ * 받기 대상 — 받기(pull)와 받기 미리보기(planPull)가 같은 목록을 쓴다 (예전에는 따로 골라 서로 어긋났다).
+ * 같은 노트의 중복 파일은 최신 하나만, 건너뛸 이유(지움·숨긴 카테고리·휴지통·올리기 대기·이미 맞춤)가 있으면 뺀다.
+ */
+async function pullCandidates(remotes: drive.RemoteFile[]): Promise<{ docId: ID; remote: drive.RemoteFile; local: DocumentMeta | undefined }[]> {
+  const outboxRows = await db.outbox.toArray()
+  const pendingIds = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
+  const hidden = new Set(await getHiddenCategories())
+  const out: { docId: ID; remote: drive.RemoteFile; local: DocumentMeta | undefined }[] = []
+  for (const remote of newestPerDoc(remotes)) {
+    const docId = remote.appProperties!.docId
+    const remoteCat = remote.appProperties?.category
+    const local = await db.documents.get(docId)
+    const skip = pullSkipReason({
+      gone: !!(await getSync(`gone:${docId}`)),
+      hidden: !!remoteCat && hidden.has(remoteCat),
+      local,
+      pending: pendingIds.has(docId),
+      rec: await getSync<FileRecord>(`doc:${docId}`),
+      remote
+    })
+    if (!skip) out.push({ docId, remote, local })
   }
+  return out
 }
 
 /**
@@ -563,21 +583,31 @@ async function finishMerge(a: {
   docsFolderId: string
 }): Promise<boolean> {
   const { docId, title, device, decision, outcome, local, remote, docsFolderId } = a
-  const merged = outcome.file
+  // 머지 결과는 양쪽 어느 것과도 다른 내용이므로 새 updatedAt을 단다 — 같은 값을 쓰면 먼저 올린 기기가
+  // 내용 표식(isUpToDate) 때문에 머지 결과를 '이미 맞춰짐'으로 보고 받지 못한다 (sync/judge.ts)
+  const merged: DocFileV1 = {
+    ...outcome.file,
+    doc: { ...outcome.file.doc, updatedAt: mergedUpdatedAt(local.doc.updatedAt, outcome.file.doc.updatedAt, Date.now()) }
+  }
   const conflicts = outcome.conflicts
 
   await logMerge({ docId, title, device, at: Date.now(), conflicts, decision, details: outcome.details, baseless: outcome.baseless })
 
-  // 머지 전 이 기기 상태를 리비전으로 남긴다 — 머지에서 밀린 편집의 백업('버려짐').
-  // 고정해 두어야 버전 기록에서 내려받아 표식(기기명)을 읽을 수 있고 30일 자동 삭제도 피한다.
+  // 머지 전 이 기기 상태를 남긴다 — 머지에서 밀린 편집의 백업('버려짐').
+  // 노트 파일이 아니라 별도 백업 파일(Inkpad/backups/)로 올린다. 예전에는 노트 파일에 먼저 올려
+  // 리비전으로 남겼는데, 그러면 머지 결과를 올리기 전까지 클라우드의 '현재'가 다른 기기 변경이 빠진
+  // 이 기기 상태가 된다 — 그 사이 업로드가 실패하면 그대로 남고, 다른 기기는 그걸 받아 자기 변경을 잃었다.
+  // 버전 기록은 이 백업 파일도 함께 보여 준다 (sync/revisions.ts).
   const backupRev: RevMarker = { kind: 'merge-backup', device, at: Date.now(), conflicts }
-  const backup = await drive.upload(
+  await drive.upload(
     await gzipJson({ ...local, rev: backupRev }),
-    { name: `docs/${docId}.json`, mimeType: 'application/json', appProperties: { docId, enc: drive.ENC_GZIP, revKind: backupRev.kind } },
-    docsFolderId,
-    remote.id
+    {
+      name: `backups/${docId}-${backupRev.at}.json`,
+      mimeType: 'application/json',
+      appProperties: { docId, enc: drive.ENC_GZIP, revKind: backupRev.kind, device, at: String(backupRev.at), ...(conflicts ? { revConflicts: String(conflicts) } : {}) }
+    },
+    await ensureBackupsFolder()
   )
-  await rememberRevTag(backup.id, { device, revKind: backupRev.kind, conflicts }, true)
 
   await applyDocFile(merged, { force: true })
   const mergedRev: RevMarker = { kind: 'merge', device, at: Date.now(), conflicts }
@@ -641,46 +671,11 @@ export async function pullNow(): Promise<PullResult | null> {
 
 async function pull(f: { docs: string; assets: string }): Promise<PullResult> {
   const r: PullResult = { docs: 0, busy: 0 }
-  const outboxRows = await db.outbox.toArray()
-  const pendingDocs_ = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
   const changed = new Set<string>()
-  const hidden = new Set(await getHiddenCategories())
 
-  // 문서
-  const remotes = await drive.listFiles(f.docs)
-  const recs = new Map<string, FileRecord>()
-  for (const kv of await db.syncState.toArray()) {
-    if (kv.key.startsWith('doc:')) recs.set(kv.key.slice(4), kv.value as FileRecord)
-  }
-  // 같은 docId의 살아 있는 파일이 여러 개면(폴더 재생성 직후 분기 등) 가장 최신 하나만 본다 —
-  // 버전이 재시작한 파일끼리 크기를 비교해 되받기를 반복하는 일이 없게 한다 (규칙 10)
-  const newestByDoc = new Map<string, drive.RemoteFile>()
-  for (const remote of remotes) {
-    const docId = remote.appProperties?.docId
-    if (!docId) continue
-    const cur = newestByDoc.get(docId)
-    if (!cur || verNum(remote.version) > verNum(cur.version) || (remote.version === cur.version && remote.modifiedTime > cur.modifiedTime))
-      newestByDoc.set(docId, remote)
-  }
-
-  // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용 (구현 메모 ④)
-  const eligible: typeof remotes = []
-  for (const remote of newestByDoc.values()) {
-    const docId = remote.appProperties?.docId
-    if (!docId) continue
-    if (await getSync(`gone:${docId}`)) continue // 이 기기에서 지운 노트 — 받기로 되살리지 않는다 (목록에서 개별 받기)
-    const remoteCat = remote.appProperties?.category
-    if (remoteCat && hidden.has(remoteCat)) continue // 숨긴 카테고리 — 이 기기는 받지 않는다 (클라우드 목록에는 표시)
-    const local = await db.documents.get(docId)
-    if (local?.deletedAt) continue // 휴지통에 있는 노트도 되살리지 않는다
-    if (pendingDocs_.has(docId)) continue // 로컬 변경은 push의 머지에서 처리
-    const rec = recs.get(docId)
-    // 이미 맞춰진 노트는 건너뛴다. Drive version은 실제보다 뒤처져 보일 수 있으므로
-    // '같거나 내 기록이 더 새로우면'(>=) 최신으로 본다. 그렇지 않으면 방금 올린 노트를
-    // 남의 변경으로 오판해 되받고, 기록까지 뒤로 밀린다 (규칙 10)
-    if (rec && verNum(rec.version) >= verNum(remote.version)) continue
-    eligible.push(remote)
-  }
+  // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용 (구현 메모 ④).
+  // 받기 미리보기(planPull)와 같은 함수로 고른다 — 미리보기에 뜬 목록이 곧 실제로 받는 목록이다
+  const eligible = (await pullCandidates(await drive.listFiles(f.docs))).map((c) => c.remote)
 
   let n = 0
   for (const remote of eligible) {
@@ -767,22 +762,16 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
 
   const pending = await pendingDocs()
   const hidden = new Set(await getHiddenCategories())
-  const byDoc = new Set(remotes.flatMap((r) => (r.appProperties?.docId ? [r.appProperties.docId] : [])))
+  // 같은 노트의 중복 파일은 최신 하나만 — 받기와 같은 규칙 (예전에는 목록에 두 번 뜰 수 있었다)
+  const newest = newestPerDoc(remotes)
+  const byDoc = new Set(newest.map((r) => r.appProperties!.docId))
   const out: CloudNoteInfo[] = []
-  for (const remote of remotes) {
-    const docId = remote.appProperties?.docId
-    if (!docId) continue
+  for (const remote of newest) {
+    const docId = remote.appProperties!.docId
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
-    // 1) 위치 기록의 version으로 판정 — 받기(pull)와 같은 규칙. 내 기록이 '같거나 새로우면' 최신 (규칙 10)
-    const sameByVersion = !!rec && verNum(rec.version) >= verNum(remote.version)
-    // 2) 내용 표식으로도 판정. Drive version은 뒤처져 보일 수 있고, 기록이 한 번 낡으면
-    //    목록은 읽기만 하므로 스스로 못 고쳐 방금 올린 노트가 영영 "받을 것"으로 남는다.
-    //    appProperties.updatedAt은 이 앱이 올릴 때 직접 쓴 값이라 그런 지연·불일치에 흔들리지
-    //    않는다. 둘 중 하나라도 맞으면 이미 맞춰진 것으로 본다
-    const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
-    const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
-    const same = sameByVersion || sameByContent
+    // 받기와 같은 판정 (sync/judge.ts) — 위치 기록 version 또는 내용 표식(updatedAt)이 맞으면 최신
+    const same = isUpToDate(rec, local, remote)
     // 이 기기에서 지운 노트인지는 표식으로 판정한다 — 휴지통(deletedAt), gone 표식,
     // 영구 삭제(위치 기록은 남고 로컬 행만 없음). 로컬 행이 없다는 이유만으로 삭제됨으로
     // 보면 다른 기기에서 새로 만들어 아직 받지 않은 노트가 "이 기기에서 삭제됨"으로 오판된다
@@ -843,30 +832,11 @@ export interface PullPlan {
  */
 export async function planPull(): Promise<PullPlan> {
   const f = await ensureFolders()
-  const remotes = await drive.listFiles(f.docs)
-  const outboxRows = await db.outbox.toArray()
-  const pendingDocs_ = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
-  const hidden = new Set(await getHiddenCategories())
-  const recs = new Map<string, FileRecord>()
-  for (const kv of await db.syncState.toArray()) {
-    if (kv.key.startsWith('doc:')) recs.set(kv.key.slice(4), kv.value as FileRecord)
-  }
   const docs: PullDoc[] = []
   let bytes = 0
-  for (const remote of remotes) {
-    const docId = remote.appProperties?.docId
-    if (!docId) continue
-    if (await getSync(`gone:${docId}`)) continue // 이 기기에서 지운 노트 — 받기로 되살리지 않는다
-    const remoteCat = remote.appProperties?.category
-    if (remoteCat && hidden.has(remoteCat)) continue // 숨긴 카테고리 — 이 기기는 받지 않는다
-    const local = await db.documents.get(docId)
-    if (local?.deletedAt) continue // 휴지통에 있는 노트도 되살리지 않는다
-    if (pendingDocs_.has(docId)) continue // 로컬 변경은 올리기의 머지에서 처리
-    const rec = recs.get(docId)
-    const sameByVersion = !!rec && verNum(rec.version) >= verNum(remote.version)
+  // 받기(pull)와 같은 함수로 고른다 — 미리보기 목록 = 실제로 받는 목록
+  for (const { docId, remote, local } of await pullCandidates(await drive.listFiles(f.docs))) {
     const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
-    const sameByContent = !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
-    if (sameByVersion || sameByContent) continue // 이미 맞춰진 노트 — 풀에서 내려받지 않는다
     const size = Math.max(0, Number(remote.size ?? 0) || 0)
     bytes += size
     docs.push({

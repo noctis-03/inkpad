@@ -83,10 +83,14 @@ export async function createFolder(name: string, parentId?: string): Promise<str
   return f.id
 }
 
-export async function listFiles(folderId: string): Promise<RemoteFile[]> {
+/** 폴더 안의 파일 목록. where: appProperties로 좁히기 (예: { docId: '…' } — 값은 ULID처럼 따옴표가 없는 것만) */
+export async function listFiles(folderId: string, where?: Record<string, string>): Promise<RemoteFile[]> {
   const out: RemoteFile[] = []
   let pageToken = ''
-  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`)
+  const props = Object.entries(where ?? {})
+    .map(([k, v]) => ` and appProperties has { key='${k}' and value='${v.replace(/['\\]/g, '')}' }`)
+    .join('')
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false${props}`)
   do {
     const url =
       `${API}/files?q=${q}&pageSize=1000&fields=nextPageToken,files(${FIELDS})` +

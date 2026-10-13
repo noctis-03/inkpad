@@ -28,6 +28,7 @@ import {
   listDocuments,
   listFolders,
   purgeDocument,
+  gcOrphanAssets,
   restoreDocument,
   setFolderCategories,
   trashDocument,
@@ -1057,7 +1058,8 @@ export function Library() {
   const emptyTrash = async () => {
     if (!trash.length) return
     if (!(await confirmDialog('휴지통 비우기', { message: `문서 ${trash.length}개를 영구 삭제합니다.`, ok: '비우기', danger: true }))) return
-    for (const d of trash) await purgeDocument(d.id)
+    for (const d of trash) await purgeDocument(d.id, { gc: false })
+    await gcOrphanAssets() // 원본 정리는 끝에 한 번
     await refresh()
   }
 

@@ -93,7 +93,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
   const restore = async (r: DocRevision) => {
     if (
       !(await confirmDialog('이 버전으로 되돌리기', {
-        message: `${formatDate(Date.parse(r.modifiedTime))} 시점으로 되돌립니다. 지금 내용은 버전 기록에 남습니다. 되돌린 버전이 '현재'로 표시되고, 동기화로 올리면 다른 기기에도 반영됩니다. (Drive 규칙상 옛 버전을 읽으려면 고정해야 해서, 되돌린 버전이 고정됨으로 표시됩니다)`,
+        message: `${formatDate(Date.parse(r.modifiedTime))} 시점으로 되돌립니다. 지금 내용은 버전 기록에 남습니다. 되돌린 버전이 '현재'로 표시되고, 동기화로 올리면 다른 기기에도 반영됩니다.${r.backupFileId ? '' : ' (Drive 규칙상 옛 버전을 읽으려면 고정해야 해서, 되돌린 버전이 고정됨으로 표시됩니다)'}`,
         ok: '되돌리기'
       }))
     )
@@ -154,7 +154,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
     }
   }
 
-  const pinnedBytes = (revs ?? []).filter((r) => r.keepForever).reduce((s, r) => s + r.size, 0)
+  const pinnedBytes = (revs ?? []).filter((r) => r.keepForever && !r.backupFileId).reduce((s, r) => s + r.size, 0)
 
   return (
     <aside id="version-panel" className="side-panel" aria-label="버전 기록">
@@ -217,7 +217,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
                         {r.revKind === 'merge' && <span className="rev-tag merged">머지됨</span>}
                         {r.revKind === 'merge-backup' && <span className="rev-tag dropped">버려짐</span>}
                         {r.revKind === 'restore' && <span className="rev-tag restored">되돌림</span>}
-                        {r.keepForever && <span className="rev-tag pinned">고정됨</span>}
+                        {r.backupFileId ? <span className="rev-tag pinned">별도 보관</span> : r.keepForever && <span className="rev-tag pinned">고정됨</span>}
                         {r.conflicts ? <span className="rev-size">충돌 {r.conflicts}</span> : null}
                         {/* 이 기기가 올린 버전 → 태그로, 다른 기기가 올렸고 이름을 알면 → 기기명으로, 모르면 → 표시 없음 */}
                         {r.device && (r.device === myDevice ? <span className="rev-tag mine">이 기기에서 올림</span> : <span className="rev-size">{r.device}</span>)}
@@ -232,9 +232,11 @@ export function VersionPanel({ docId }: { docId: ID }) {
                       >
                         되돌리기
                       </button>
-                      <button className="text-btn small" disabled={busyId === r.id} onClick={() => void togglePin(r)}>
-                        {r.keepForever ? '고정 해제' : '고정'}
-                      </button>
+                      {!r.backupFileId && (
+                        <button className="text-btn small" disabled={busyId === r.id} onClick={() => void togglePin(r)}>
+                          {r.keepForever ? '고정 해제' : '고정'}
+                        </button>
+                      )}
                       <button
                         className="text-btn small danger"
                         disabled={r.isHead || busyId === r.id}
@@ -252,6 +254,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
           <section className="panel-section">
             <p className="hint">
               되돌리면 그 버전이 이 기기의 '현재'가 되고, 동기화로 올리면 새 버전이 다시 '현재'가 됩니다. 버려짐은 머지에서 밀린 이 기기 편집의 백업, 머지됨은 머지 결과입니다.
+              별도 보관은 노트 파일과 따로 저장한 머지 백업으로, 자동으로 지워지지 않고 삭제하면 Drive 휴지통으로 갑니다.
               고정하지 않은 버전은 새 버전이 올라온 뒤 약 30일이 지나면 Google Drive가 자동으로 지웁니다. 고정은 파일당 최대 200개까지 가능하고 용량을 차지합니다. 맨 마지막
               버전(클라우드 최신)은 삭제할 수 없습니다.
             </p>
