@@ -146,7 +146,7 @@ npm run health                   # preview 서버의 /api/health 확인
 | `test:sync` | 받기 판정 — 받을 것·최신, 중복 파일, 머지 결과의 updatedAt (25개) |
 | `test:css` | CSS 구조 — 닫히지 않은 중괄호로 뒤 규칙이 통째로 중첩되던 사고 방지 |
 | `test:flip` · `test:motion` | 목록 FLIP·모션 판정 |
-| `test:e2e` | 실제 앱 코드를 Chromium에서: 탭 잠금, 열린 노트 보호, 두 기기 동기화(가짜 Google Drive — 네트워크·계정 불필요), 앱·파일·프리셋 업로드와 '자동 동기화 없음', 큰 파일 이어 올리기, 가만히 있을 때 프레임 0 (`tools/e2e/`) |
+| `test:e2e` | 실제 앱 코드를 Chromium에서: 탭 잠금, 열린 노트 보호, 두 기기 동기화(가짜 Google Drive — 네트워크·계정 불필요), 앱·파일·프리셋 업로드와 '자동 동기화 없음', 큰 파일 이어 올리기, 가만히 있을 때 프레임 0, 작업보드 끊긴 카드 다시 연결 (`tools/e2e/`) |
 
 ### 동기화 설정 (Google Drive)
 1. Google Cloud Console에서 **Google Drive API** 사용 설정, OAuth 동의 화면(외부) — scope `openid email .../auth/drive.file`

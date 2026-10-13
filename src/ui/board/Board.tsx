@@ -117,6 +117,11 @@ export function Board() {
   const editRef = useRef(edit)
   const multiTap = useRef<{ n: number; t0: number; moved: boolean }>({ n: 0, t0: 0, moved: false })
 
+  // 서랍을 닫거나 편집을 끝내면 '다시 연결' 모드도 끝낸다 — 다음에 서랍을 열 때 남아 있지 않게
+  useEffect(() => {
+    if (!panelOpen || !edit) setReconnectFor(null)
+  }, [panelOpen, edit])
+
   useEffect(() => {
     boardRef.current = board
     try {
@@ -1312,7 +1317,12 @@ export function Board() {
           <b className="tray-row-name">{x.label}</b>
           <span className="tray-row-time">{new Date(x.at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
         </span>
-        {n ? (
+        {reconnectFor ? (
+          // 다시 연결 모드: 이미 놓인 항목이어도 끊긴 카드를 이 항목으로 잇는다 (새 카드를 만들지 않는다)
+          <button className="tray-row-add" onClick={() => relink(reconnectFor, x.kind, x.id, x.label)} aria-label={`${x.label}(으)로 다시 연결`}>
+            <Icon name="link" size={16} />
+          </button>
+        ) : n ? (
           <span className="tray-row-placed">놓음 {n}</span>
         ) : (
           <button className="tray-row-add" onClick={() => placeFromPanel(x.kind, x.id, x.label)} aria-label={`${x.label} 보드에 놓기`}>
@@ -1856,8 +1866,8 @@ export function Board() {
         </div>
       </div>
 
-      {/* ── 미니맵 + 줌 HUD ── */}
-      {shortcuts.length > 0 && (
+      {/* ── 미니맵 + 줌 HUD ── 좁은 화면에서 아래 서랍이 열려 있으면 서랍 위를 덮어 카드를 못 누르게 되므로 숨긴다 */}
+      {shortcuts.length > 0 && !(edit && !wide && panelOpen) && (
         <div className="board-dock" style={{ bottom: wide && panelOpen ? 16 : undefined }}>
           <canvas
             ref={mapRef}
@@ -1893,7 +1903,7 @@ export function Board() {
             <span className="board-drawer-sub">
               노트 {docs.length} · 앱 {apps.length} · 파일 {files.length}
             </span>
-            <span className="board-drawer-hint">카드를 보드로 끌어다 놓으세요</span>
+            <span className="board-drawer-hint">{reconnectFor ? '연결 버튼을 누르면 끊긴 카드가 그 항목을 가리킵니다' : '카드를 보드로 끌어다 놓으세요'}</span>
           </button>
           {panelOpen && <div className="board-drawer-body">{trayBody}</div>}
         </section>
