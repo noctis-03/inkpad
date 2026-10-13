@@ -5,18 +5,19 @@
  *
  * 실제 src/ui/motion/*.ts 모듈을 그대로 불러와, 브라우저 없이 최소 DOM 셰임 위에서
  * 포인터 눌림 / settle / 모션 단계 토큰 동작을 시뮬레이션하고,
- * styles.css 와의 정합성(눌림 대상·인디케이터·모션 끄기 규칙)까지 검사한다.
+ * 앱 스타일(src/styles/*.css)과의 정합성(눌림 대상·인디케이터·모션 끄기 규칙)까지 검사한다.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { readAppCss } from './app-css.ts'
 
 import { installPress } from '../../src/ui/motion/press.ts'
 import { settle } from '../../src/ui/motion/settle.ts'
 import { motionLevel, dur, durRich, SPRING, EASE } from '../../src/ui/motion/motion.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const CSS = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+const CSS = readAppCss(ROOT)
 const PRESS_SRC = readFileSync(join(ROOT, 'src/ui/motion/press.ts'), 'utf8')
 
 /* ───────────────────────── 미니 DOM 셰임 ───────────────────────── */

@@ -112,12 +112,14 @@ src/
              pressure(필압 방식·자동 감지), geometry(외곽선·부분 지우개·올가미), background(속지), history,
              pdf/(pdf.js 로더, 비트맵 LRU 캐시)
   storage/   db(Dexie 스키마), repo(문서·페이지·청크·에셋·outbox), compress(gzip), migrate, tabLock
-   io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download
-   sync/      token(access token 갱신·기기 이름), drive(Drive API 래퍼), pack(문서↔파일), folders(Drive 위치·폴더 확보),
-              assets(원본 지연 로딩·인덱싱), merge(노트 단위 3-way 머지), sync(엔진: 받기/올리기·클라우드 목록), revisions(리비전 버전 기록)
-   ui/        library/(목록·새 문서·설정), editor/(툴바·사이드바·선택·페이지·내보내기), SettingsPanel, SyncSection, AppsSheet·FilesSheet(앱·기타 파일 스토어), Hud
-   app/       App, store(zustand: UI 상태만), dialogs
-   api/       Hono Worker (/api/*: health)
+  io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download
+  sync/      token(access token 갱신·기기 이름), drive(Drive API 래퍼), pack(문서↔파일), folders(Drive 위치·폴더 확보),
+             assets(원본 지연 로딩·인덱싱), merge(노트 단위 3-way 머지), sync(엔진: 받기/올리기·클라우드 목록), revisions(리비전 버전 기록)
+  ui/        library/(목록 Library + 작은 조각 parts·새 문서·설정), editor/(툴바·사이드바·선택·페이지·내보내기),
+             board/(작업보드 Board + boardUtil), Menu(공용 ⋯ 메뉴), SettingsPanel, SyncSection, AppsSheet·FilesSheet(앱·기타 파일 스토어), Hud
+  app/       App, store(zustand: UI 상태만), dialogs
+  api/       Hono Worker (/api/*: health)
+  styles.css 스타일 목차 — styles/01-base … 14-late.css를 이 순서로 묶는다(순서 = 우선순위)
 public/      manifest, sw.js, icons, _routes.json
 tools/       verify/(빠른 검사 — npm test), e2e/(브라우저 시나리오 + 가짜 Google Drive — npm run test:e2e)
 ```

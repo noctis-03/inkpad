@@ -74,7 +74,7 @@ export const BOARD_GROUP_MAX_CELLS = 40
 
 export const DEFAULT_BOARD: Board = { wallpaper: 'mist', snap: true, shortcuts: [], groups: [] }
 
-/** 배경화면 목록 — 실제 CSS는 styles.css 의 .board-wall-<key> (라이트/다크 각각) */
+/** 배경화면 목록 — 실제 CSS는 styles/13-board.css 의 .board-wall-<key> (라이트/다크 각각) */
 export const BOARD_WALLPAPERS: { key: string; name: string }[] = [
   { key: 'mist', name: '안개' },
   { key: 'dawn', name: '새벽' },

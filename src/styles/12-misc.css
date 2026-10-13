@@ -1,0 +1,141 @@
+/* ───────── 숫자 스테퍼 — 터치 영역 44px 이상 ───────── */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.stepper input {
+  width: 72px;
+  text-align: center;
+}
+.stepper-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.stepper-btn:active {
+  background: var(--press);
+}
+
+/* ───────── 문서 바 상태·⋯ 메뉴 ───────── */
+.save-state.is-quiet .save-label {
+  display: none;
+}
+.save-state.is-quiet {
+  opacity: 0.5;
+}
+.save-state.syncing {
+  color: var(--accent-ink);
+}
+button.save-state {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 8px;
+}
+.menu:focus {
+  outline: none;
+}
+
+/* ───────── 문서 여는 중 스켈레톤 ───────── */
+.doc-skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.doc-skeleton-paper {
+  position: relative;
+  width: min(62%, 420px);
+  aspect-ratio: 1 / 1.414;
+  max-height: 80%;
+  border-radius: var(--r-lg);
+  background: var(--thumb-paper); /* 종이는 테마와 무관하게 흰색 */
+  box-shadow: var(--e2);
+  opacity: 0.75;
+  overflow: hidden;
+}
+.doc-skeleton-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, #ffffffcc 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: doc-shimmer 1.4s linear infinite;
+}
+@keyframes doc-shimmer {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+/* 모션 끄기에서는 shimmer도 끈다 */
+:root[data-motion='off'] .doc-skeleton-paper::after {
+  animation: none;
+  content: none;
+}
+
+/* ───────── 설정 고급 섹션 — 기본 접어 둠 ───────── */
+details.adv > summary {
+  cursor: pointer;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--ink);
+  padding: 4px 2px;
+}
+details.adv > summary::marker {
+  color: var(--muted);
+}
+
+/* ───────── 새로 만들기: 가져오기 줄 ───────── */
+.import-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.import-btn:active {
+  background: var(--press);
+}
+.sheet-footer.end {
+  justify-content: flex-end;
+}

@@ -18,7 +18,6 @@ import {
   BOARD_WALLPAPERS,
   cellCenter,
   cloneBoard,
-  DEFAULT_BOARD,
   normalizeBoard,
   worldToGrid,
   type Board as BoardModel,
@@ -34,69 +33,28 @@ import { downloadMissingDoc } from '../../sync/sync'
 import { AuthRequiredError } from '../../sync/token'
 import { createPreset, uploadPreset } from '../../sync/board'
 import { BoardPresetsSheet } from '../BoardPresetsSheet'
+import {
+  CAT_ALL,
+  CAT_NONE,
+  catTone,
+  clamp,
+  fileTone,
+  gradient,
+  GROUP_COLLAPSE_Z,
+  GROUP_HEAD_H,
+  KIND_LABEL,
+  loadBoard,
+  LS_BOARD,
+  LS_HIDE_MISSING,
+  MAX_Z,
+  MIN_Z,
+  newId,
+  TONE_VAR,
+  UNDO_MAX,
+  WIDE_W,
+  ZOOM_STEP
+} from './boardUtil'
 import type { FileRow } from '../../storage/db'
-
-const LS_BOARD = 'inkpad.board.v3'
-const LS_HIDE_MISSING = 'inkpad.board.hideMissing'
-const MIN_Z = 0.25
-const MAX_Z = 2
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
-
-/** 그룹 박스 안쪽 맨 위 '이름 칸' 높이(px) — 박스 하나 안에 들어간다 */
-const GROUP_HEAD_H = 30
-/** 이 배율 이하로 축소되면 그룹 안 항목은 숨고 그룹은 이름 타일로 접힌다 */
-const GROUP_COLLAPSE_Z = 0.5
-/** 줌 버튼 한 번에 움직이는 배율 폭 (10%p) */
-const ZOOM_STEP = 0.1
-/** 되돌리기 스택 최대 단계 */
-const UNDO_MAX = 50
-/** 카드 서랍이 오른쪽 패널로 바뀌는 무대 폭 */
-const WIDE_W = 900
-/** 서랍 카테고리 필터의 예약 키 — 실제 카테고리 이름과 겹치지 않게 */
-const CAT_ALL = '__all__'
-const CAT_NONE = '__none__'
-/** 종류별 표시 이름 */
-const KIND_LABEL: Record<ShortcutKind, string> = { doc: '노트', app: '앱', file: '파일' }
-
-function loadBoard(): BoardModel {
-  try {
-    const raw = localStorage.getItem(LS_BOARD)
-    if (raw) return normalizeBoard(JSON.parse(raw))
-  } catch {
-    /* 저장소 차단 환경 */
-  }
-  return cloneBoard(DEFAULT_BOARD)
-}
-
-const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `s${Date.now()}${Math.random().toString(36).slice(2, 8)}`)
-
-function gradient(title: string) {
-  let h = 0
-  for (const ch of title) h = (h + ch.charCodeAt(0)) % 360
-  return `linear-gradient(135deg, hsl(${h} 68% 62%), hsl(${(h + 42) % 360} 68% 44%))`
-}
-
-/** 파일 확장자 → 색 계열 토큰 */
-const FILE_TONES: { tone: string; exts: string[] }[] = [
-  { tone: '--danger', exts: ['pdf'] },
-  { tone: '--success', exts: ['xlsx', 'xls', 'csv', 'numbers'] },
-  { tone: '--warn', exts: ['pptx', 'ppt', 'key'] },
-  { tone: '--app', exts: ['png', 'jpg', 'jpeg', 'heic', 'webp', 'gif'] }
-]
-function fileTone(name: string): string {
-  const e = extOf(name)
-  for (const t of FILE_TONES) if (t.exts.includes(e)) return t.tone
-  return '--file'
-}
-/** 그룹 톤 키 → 색 토큰 */
-const TONE_VAR: Record<string, string> = { blue: '--accent', green: '--success', violet: '--app', amber: '--warn' }
-/** 카테고리 표식 색 — 이름이 같으면 늘 같은 색이 나오게 (서랍 카테고리 머리의 작은 네모) */
-const CAT_TONES = ['--accent', '--success', '--app', '--warn']
-function catTone(name: string) {
-  let h = 0
-  for (const ch of name) h = (h + ch.charCodeAt(0) * 7) % 997
-  return CAT_TONES[h % CAT_TONES.length]
-}
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 type TrayFilter = 'doc' | 'app' | 'file' | 'all'
@@ -1132,8 +1090,6 @@ export function Board() {
     if (!cv) return
     const list = boardRef.current.shortcuts
     if (!list.length) return
-    const W = cv.width
-    const H = cv.height
     const ctx = cv.getContext('2d')
     if (!ctx) return
     const dpr = window.devicePixelRatio || 1

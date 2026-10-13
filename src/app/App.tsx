@@ -43,7 +43,7 @@ export function App() {
   }, [])
 
   // 테마 결정 — auto 는 기기 외관을 따르고, 결과를 <html data-theme> 에 반영한다.
-  // 다크 팔레트는 styles.css 의 :root[data-theme='dark'] 블록에 있다.
+  // 다크 팔레트는 styles/01-base.css 의 :root[data-theme='dark'] 블록에 있다.
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = () => {

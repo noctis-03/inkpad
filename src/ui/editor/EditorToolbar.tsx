@@ -4,7 +4,7 @@ import { useUI } from '../../app/store'
 import type { DocumentMeta } from '../../shared/model'
 import { onSyncStatus } from '../../sync/sync'
 import { Icon } from '../Icon'
-import { Menu, MenuItem } from '../library/Library'
+import { Menu, MenuItem } from '../Menu'
 
 const SAVE_LABEL = { saved: '저장됨', pending: '저장 대기', saving: '저장 중', error: '저장 실패' }
 

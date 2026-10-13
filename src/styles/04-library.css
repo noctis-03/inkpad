@@ -1,0 +1,655 @@
+/* ───────── 문서 목록 ───────── */
+.library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--paper);
+}
+.library-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 60px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  /* 한 줄을 유지하고, 좁은 화면에서는 가로로 스크롤한다.
+     (줄바꿈으로 재배치하지 않는다 — 버튼이 잘려 나가지 않고 전부 닿는다) */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-2) transparent;
+}
+.library-header::-webkit-scrollbar {
+  height: 4px;
+}
+.library-header::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: var(--muted-2);
+}
+.library-header::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 스크롤 영역 안에서는 항목이 줄어들면 안 된다 (눌리면 터치 영역이 사라진다) */
+.library-header > * {
+  flex-shrink: 0;
+}
+.library-header .search-box {
+  flex-basis: 220px;
+  min-width: 160px;
+  /* 오른쪽 정렬 그룹(검색·보기·정렬·버튼) — 남는 공간을 제목과 검색 사이로 몰아 넣는다 */
+  margin-left: auto;
+}
+.library-header #new-doc-btn {
+  flex-shrink: 0;
+}
+/* 상단 바 — 아이콘 버튼은 40px·라운드 12 */
+.library-header .tb-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border-radius: var(--r-lg);
+}
+.rev-message {
+  margin: 2px 0 4px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+.library-title .title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.title-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.search-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 300px;
+  min-width: 120px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--tray);
+  color: var(--muted);
+  transition: background .25s, box-shadow .35s var(--ft-ease), max-width .45s var(--ft-spring), color .2s;
+}
+.search-box:focus-within {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 10px 28px -12px #1f293740;
+  max-width: 400px;
+  color: var(--ink);
+}
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 15px;
+  color: var(--ink);
+}
+.sort-select {
+  height: 38px;
+  border-radius: 12px;
+  border: 0;
+  background: var(--tray);
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 13px;
+}
+/* 상단 바의 격자/목록 세그먼트 — .seg의 축소판 (선택 칩은 인디케이터가 얹는다) */
+.library-header .seg {
+  flex: none;
+  gap: 0;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--tray);
+}
+.library-header .seg button {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.library-header .seg button.is-active {
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+}
+.library-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.folder-tree {
+  flex: 0 0 220px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  background: var(--paper-2);
+  /* 스크롤바를 얇게 — 평소에는 숨기고 스크롤할 때만 뜬다 */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable;
+  transition: scrollbar-color .25s ease;
+}
+.folder-tree:hover,
+.folder-tree:focus-within {
+  scrollbar-color: var(--muted-2) transparent;
+}
+.folder-tree::-webkit-scrollbar {
+  width: 6px;
+}
+.folder-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+.folder-tree::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: transparent;
+}
+.folder-tree:hover::-webkit-scrollbar-thumb,
+.folder-tree:focus-within::-webkit-scrollbar-thumb {
+  background: var(--muted-2);
+}
+/* 모바일 서랍을 닫는 배경막 — 넓은 화면에서는 쓰지 않는다 */
+.tree-backdrop {
+  display: none;
+}
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--muted);
+}
+/* 사이드바 — 선택 배경은 흰 인디케이터 칩(.motion-ind)이 대신 얹는다 */
+.tree-item.is-active {
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+}
+.tree-item.folder {
+  padding-right: 4px;
+}
+.tree-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+  color: inherit;
+}
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 사이드바 카테고리 색 점 — 선택되면 살짝 커진다 */
+.tree-cat-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin: 0 5px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px #00000014;
+  transition: transform .35s var(--spring-pop);
+}
+.tree-item.is-active .tree-cat-dot {
+  transform: scale(1.35);
+}
+.tree-item .count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.tree-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 16px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+.tree-item.trash {
+  margin-top: 14px;
+}
+/* '최근 열람한 노트' — 별도 항목이 아니라, 이미 고른 항목을 한 번 더 누르면
+   그 항목 범위의 최근 노트가 나온다 (예: '전체'를 누르고 한 번 더).
+   그때 고른 항목 이름 옆에 붙는 표식. */
+.tree-recent-tag {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--muted-2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: .02em;
+}
+.library-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 40px;
+  -webkit-overflow-scrolling: touch;
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: var(--fs-md);
+}
+.breadcrumb span {
+  display: inline-flex;
+  align-items: center;
+}
+.breadcrumb button {
+  border: 0;
+  background: none;
+  padding: 6px;
+  color: inherit;
+  cursor: pointer;
+}
+.trash-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  font-size: var(--fs-md);
+}
+.folder-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  font-size: 15px;
+  cursor: pointer;
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 80px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+/* ───────── 책등 있는 노트 ─────────
+   미리보기 위 오버레이(배지·카테고리 칩)를 걷어내고
+   정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 캡션의 색 점 + 이름. */
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px 12px;
+}
+.doc-card {
+  position: relative;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+.doc-grid .doc-thumb {
+  position: relative;
+  aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
+  border-radius: var(--r-lg);
+  background: var(--thumb-paper);
+  box-shadow: var(--e1);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-2);
+}
+/* 카드 캡션 — 카테고리는 색 점 + 이름 한 줄로 먼저 보여 주고,
+   쪽수·날짜는 그 아래 줄에서 더보기(⋯) 버튼과 같은 높이(28px)에 맞춘다. */
+.cat-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.doc-cat-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 0;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.doc-cat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+/* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
+/* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가
+   세로 중앙에 오게 한다. 왼쪽 날짜, 오른쪽 더보기. */
+.doc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 28px;
+  gap: 3px 6px;
+  margin-top: 2px;
+}
+.doc-info {
+  padding: 8px 0 0 2px; /* 더보기 자리 32px 비움 없음 — 제목이 온전히 보인다 */
+}
+.doc-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-meta {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 28px; /* 더보기 버튼 높이에 맞춘 한 줄 세로 중앙 */
+  color: var(--muted);
+}
+.doc-meta-date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 동기화 상태 — 8px 색 점 대신 말 라벨 (색만으로 전달하지 않는다).
+   그리드: 카드(미리보기) 좌측 하단에 얹는다 / 리스트: 캡션 안에 인라인으로. */
+/* 동기화 태그 — 흰 알약 배지 + 상태색 글자·점 */
+.doc-state {
+  flex: 0 0 auto;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--chip);
+  color: var(--muted);
+  box-shadow: 0 0 0 1px var(--tag-border);
+}
+.doc-state.is-overlay {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 3;
+  box-shadow: 0 1px 2px #0000001a, 0 0 0 1px var(--tag-border);
+}
+/* 캡션 쪽 라벨은 리스트에서만 (그리드는 미리보기 위 .is-overlay) */
+.doc-state:not(.is-overlay) {
+  display: none;
+}
+.doc-list .doc-state:not(.is-overlay) {
+  display: inline-flex;
+  margin-left: auto;
+}
+.doc-list .doc-state.is-overlay {
+  display: none;
+}
+.doc-state.s-new {
+  color: var(--muted);
+}
+.doc-state.s-same {
+  color: var(--success-ink);
+}
+.doc-state.s-pending {
+  color: var(--warn-ink);
+}
+.doc-state.s-remote-new {
+  color: var(--accent);
+}
+.doc-more {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.doc-more:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.doc-list .doc-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.doc-list .doc-thumb {
+  position: relative;
+  width: 48px;
+  height: 64px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--tag-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-2);
+}
+.doc-list .doc-info {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+.doc-list .doc-foot {
+  margin-top: 2px;
+}
+/* 리스트는 폭이 넉넉하므로 한 줄로 눕힌다 */
+.doc-list .doc-meta {
+  flex: 1 1 auto;
+}
+
+/* ───────── 카드 누름 오버레이 (격자) ─────────
+   카드를 누르면 미리보기가 블러되고 그 위에 정보가 뜬다.
+   쪽수·날짜는 카드 안쪽 맨 위 가운데, 그 아래(세로 가운데)에 편집모드/뷰어보드 버튼. */
+.doc-open-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: color-mix(in srgb, var(--thumb-paper) 16%, transparent);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .32s var(--ft-ease);
+}
+.doc-card.is-revealed .doc-open-veil {
+  opacity: 1;
+  pointer-events: auto;
+}
+.doc-open-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 11px 10px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity .3s var(--ft-ease), transform .42s var(--spring-pop);
+}
+.doc-card.is-revealed .doc-open-panel {
+  opacity: 1;
+  transform: none;
+}
+/* 쪽수·날짜 — 카드 안쪽 맨 위 가운데 */
+.doc-open-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow: 0 1px 2px #ffffffcc, 0 1px 3px #ffffff99;
+}
+/* 편집모드 / 뷰어보드 — 한 줄을 반으로 나눈 버튼 (세로 가운데) */
+.doc-open-tabs {
+  margin: auto 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  box-shadow: var(--e2);
+  pointer-events: none;
+}
+.doc-open-actions {
+  margin: auto 0;
+  display: flex;
+  pointer-events: none;
+}
+.doc-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 15px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--e2);
+  pointer-events: none;
+}
+/* 오버레이가 실제로 열린 카드에서만 탭/버튼이 클릭을 받는다.
+   숨김 상태(패널 opacity:0)에서도 자식이 pointer-events:auto 였던 탓에,
+   카드 가운데(버튼이 놓이는 자리)를 누르면 오버레이가 뜨지 않고
+   곧바로 '편집모드/뷰어보드'로 열려 버리던 버그의 원인. */
+.doc-card.is-revealed .doc-open-tabs,
+.doc-card.is-revealed .doc-open-actions,
+.doc-card.is-revealed .doc-open-btn {
+  pointer-events: auto;
+}
+.doc-open-tabs .doc-open-btn,
+.doc-open-tabs .doc-open-btn:hover {
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.doc-open-tabs .doc-open-btn + .doc-open-btn {
+  position: relative;
+}
+.doc-open-tabs .doc-open-btn + .doc-open-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: color-mix(in srgb, var(--btn-fg) 26%, transparent);
+}
+.doc-open-tabs .doc-open-btn:active {
+  background: color-mix(in srgb, var(--btn-fg) 16%, transparent);
+}
+
+/* 캡션 — 카테고리(없으면 '미분류')와 더보기(⋯)를 같은 높이(28px)로 맞춘 한 줄 */
+.doc-cap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.doc-cap .doc-cat-line {
+  flex: 1 1 auto;
+  margin: 0;
+  padding-right: 30px; /* ⋯ 자리 — 28px 행 높이를 없애 제목·카테고리 간격을 좁힌다 */
+}

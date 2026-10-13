@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { readAppCss } from './app-css.ts'
 
 import {
   planFlip,
@@ -24,7 +25,7 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const USE_FLIP_SRC = readFileSync(join(ROOT, 'src/ui/motion/useFlip.ts'), 'utf8')
-const CSS = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+const CSS = readAppCss(ROOT)
 
 let pass = 0
 const failures: string[] = []

@@ -4,7 +4,7 @@ import type { Page } from '../../shared/model'
 import { useUI } from '../../app/store'
 import { confirmDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
-import { Menu, MenuItem } from '../library/Library'
+import { Menu, MenuItem } from '../Menu'
 
 const THUMB_W = 120
 

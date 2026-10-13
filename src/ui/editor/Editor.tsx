@@ -27,10 +27,10 @@ import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
-import { SPRING, dur } from '../motion/motion'
+import { dur } from '../motion/motion'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
-import { Menu, MenuItem } from '../library/Library'
+import { Menu, MenuItem } from '../Menu'
 
 export function Editor({ docId }: { docId: ID }) {
   const hostRef = useRef<HTMLElement>(null)

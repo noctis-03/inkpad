@@ -1,0 +1,208 @@
+/* ───────── 툴바 ───────── */
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 10;
+}
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-right: 1px solid var(--line);
+}
+.toolbar-group:last-child {
+  border-right: 0;
+}
+.toolbar-spacer {
+  flex: 1;
+}
+
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.tb-btn:active {
+  background: var(--hover);
+}
+.tb-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tb-btn:disabled {
+  opacity: 0.3;
+}
+.zoom-label {
+  min-width: 60px;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.color-swatch {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.color-swatch::after {
+  content: '';
+  position: absolute;
+  inset: 11px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px var(--tag-border);
+}
+.color-swatch.is-active::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+}
+
+.width-btn {
+  width: 40px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.width-btn.is-active {
+  background: var(--accent-soft);
+}
+.width-dot {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--btn-bg);
+}
+
+/* ───────── 캔버스 ───────── */
+.editor-area {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.canvas-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  cursor: crosshair;
+}
+.layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.layer-bg {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.layer-committed,
+.layer-page {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.canvas-root[data-mode='paged'] {
+  background: var(--surface-2);
+}
+
+/* ───────── HUD ───────── */
+.hud {
+  position: absolute;
+  left: 10px;
+  bottom: 52px;
+  max-width: calc(100% - 20px);
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--toast-bg);
+  color: var(--line-2);
+  font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+  z-index: 5;
+  cursor: pointer;
+}
+.hud b {
+  color: var(--on-ink);
+}
+.hud-row.good b {
+  color: var(--success);
+}
+.hud-row.warn b {
+  color: var(--warn);
+}
+.hud-row.bad b {
+  color: var(--danger-2);
+}
+.hud-row.dim {
+  color: var(--muted-2);
+}
+.hud-sep {
+  color: var(--muted);
+}
+
+/* ───────── 빠른 전환 ───────── */
+.quick-switch {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  box-shadow: var(--e2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+  touch-action: none;
+  cursor: pointer;
+}
+.quick-switch.is-eraser {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.quick-switch-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
