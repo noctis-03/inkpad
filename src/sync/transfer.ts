@@ -1,4 +1,4 @@
-// 큰 파일 전송 전 확인 (명세 5장).
+// 큰 파일 전송 전 확인 — 셀룰러 데이터를 모르게 쓰지 않게.
 // iPad Safari/PWA는 셀룰러·와이파이 여부를 알 수 없으므로(navigator.connection 미지원) 크기로 묻는다.
 import { confirmDialog, choiceDialog } from '../app/dialogs'
 import { useUI } from '../app/store'
@@ -38,7 +38,7 @@ export async function confirmTransfer(direction: 'down' | 'up', bytes: number, c
 }
 
 /**
- * 노트를 열 때 지연 로딩되는 원본(PDF·이미지)을 받기 전 확인 (명세 11.5).
+ * 노트를 열 때 지연 로딩되는 원본(PDF·이미지)을 받기 전 확인.
  * "받기"는 메타데이터만 받으므로, 메타만 있는 노트를 열면 그때 원본이 네트워크로 내려온다.
  * 그 경로에서도 큰 파일 전송 전 확인과 같은 기준·문구로 묻는다.
  */
@@ -47,7 +47,7 @@ export async function confirmAssetDownload(bytes: number, kind: 'pdf' | 'image')
 }
 
 /**
- * 파일 추가 전 3버튼 확인 (명세 11.4). 기준 미만이거나 끄기면 묻지 않고 'upload'.
+ * 파일 추가 전 3버튼 확인. 기준 미만이거나 끄기면 묻지 않고 'upload'.
  * 취소면 추가하지 않고, 'local'이면 db에만 추가한다(업로드 안 함).
  */
 export async function uploadChoice(bytes: number, count = 1): Promise<'cancel' | 'local' | 'upload'> {

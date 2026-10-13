@@ -1,5 +1,5 @@
 // 일반 파일: 파일 1개 = Drive 파일 1개 (Inkpad/files/<id><ext>).
-// HTML 앱과 같은 방식(추가·업데이트·삭제가 곧바로 Drive에 반영, 실패하면 pending)이지만,
+// HTML 앱과 같은 방식(추가·업데이트·삭제가 곧바로 Drive에 반영, 실패하면 pending — sync.ts 규칙 12)이지만,
 // 내용을 텍스트/Blob으로 보관하고 종류별 뷰어로 연다.
 // 원본 바이트는 "받기"에서 받지 않는다 — 메타만 갱신하고, 열 때 지연 로딩한다(에셋과 같은 원칙).
 // 노트 동기화와 분리한다: Drive의 Inkpad/files/ = 스토어, 각 기기는 원하는 파일만 설치/제거한다.
@@ -15,19 +15,10 @@ import {
 import { ulid } from '../shared/ulid'
 import { db, type FileRow } from '../storage/db'
 import * as drive from './drive'
-import { ensureFolders, getSync, putSync } from './folders'
+import { ensureStoreFolder, tryUpload } from './folders'
 
 export const FILES_EVENT = 'inkpad-files-changed'
 const emit = () => window.dispatchEvent(new Event(FILES_EVENT))
-
-// Drive appProperties 제한: 키+값 합쳐 UTF-8 124바이트
-const PROP_MAX = 124
-const bytes = (s: string) => new TextEncoder().encode(s).length
-function fitProp(key: string, value: string) {
-  let v = value
-  while (v && bytes(key) + bytes(v) > PROP_MAX) v = Array.from(v).slice(0, -1).join('')
-  return v
-}
 
 // ───────── 로컬 ─────────
 
@@ -133,17 +124,10 @@ export async function fileToBlob(row: FileRow): Promise<Blob> {
 
 // ───────── 클라우드 ─────────
 
-async function filesFolder(): Promise<string> {
-  const { root } = await ensureFolders()
-  const saved = await getSync<string>('filesFolderId')
-  if (saved) {
-    const m = await drive.getMeta(saved)
-    if (m && !m.trashed) return saved
-  }
-  const id = (await drive.findFolder('files', root)) ?? (await drive.createFolder('files', root))
-  if (saved && saved !== id) {
-    // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
-    await db.files.toCollection().modify((f) => {
+const filesFolder = () =>
+  // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
+  ensureStoreFolder('files', 'filesFolderId', () =>
+    db.files.toCollection().modify((f) => {
       if (f.cloudDetachedAt) return // 이 기기에서 직접 클라우드 삭제한 항목은 건드리지 않는다
       delete f.fileId
       if (f.pending !== 'delete') {
@@ -151,23 +135,19 @@ async function filesFolder(): Promise<string> {
         f.pendingKind = 'content'
       }
     })
-  }
-  await putSync('filesFolderId', id)
-  return id
-}
+  )
 
 function propsOf(f: FileRow): Record<string, string> {
   const p: Record<string, string> = {
     fileId: f.id,
     updatedAt: String(f.updatedAt),
-    title: fitProp('title', f.title),
+    title: drive.fitAppProperty('title', f.title),
     kind: f.kind,
-    mime: fitProp('mime', f.mime),
+    mime: drive.fitAppProperty('mime', f.mime),
     size: String(f.size),
-    name: fitProp('name', f.name)
+    name: drive.fitAppProperty('name', f.name)
   }
-  if (f.category && bytes('category') + bytes(f.category) <= PROP_MAX) p.category = f.category
-  return p
+  return { ...p, ...drive.appPropertyIfFits('category', f.category) }
 }
 
 async function flushOne(id: ID, folderId: string) {
@@ -190,13 +170,10 @@ async function flushOne(id: ID, folderId: string) {
     await db.files.update(id, { pending: undefined, pendingKind: undefined })
     return
   }
-  let fileId = f.fileId
-  if (fileId) {
-    const m = await drive.getMeta(fileId)
-    if (!m || m.trashed) fileId = undefined
-  }
+  const name = `${f.id}${extOf(f.name) ? '.' + extOf(f.name) : ''}`
+  const fileId = await drive.liveFileIdFor(f.fileId, name, folderId)
   const blob = await fileToBlob(f)
-  const res = await drive.upload(blob, { name: `${f.id}${extOf(f.name) ? '.' + extOf(f.name) : ''}`, mimeType: f.mime, appProperties: propsOf(f) }, folderId, fileId)
+  const res = await drive.upload(blob, { name, mimeType: f.mime, appProperties: propsOf(f) }, folderId, fileId)
   await db.transaction('rw', db.files, async () => {
     const cur = await db.files.get(id)
     if (!cur) return
@@ -208,31 +185,12 @@ async function flushOne(id: ID, folderId: string) {
   })
 }
 
-async function tryFlush(id: ID): Promise<boolean> {
-  if (!navigator.onLine) return false
-  try {
+/** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
+const tryFlush = (id: ID): Promise<boolean> =>
+  tryUpload('files', async () => {
     await flushOne(id, await filesFolder())
     emit()
-    return true
-  } catch (e) {
-    console.warn('[files] 클라우드 반영 실패 — 사용자가 재업로드해야 함', e)
-    return false
-  }
-}
-
-/** 시트의 "모두 재업로드" 버튼에서 호출 */
-export async function flushPendingFiles(): Promise<number> {
-  const rows = (await db.files.toArray()).filter((f) => f.pending)
-  if (!rows.length) return 0
-  const folder = await filesFolder()
-  for (const f of rows) await flushOne(f.id, folder)
-  emit()
-  return rows.length
-}
-
-export async function countPendingFiles() {
-  return (await db.files.toArray()).filter((f) => f.pending).length
-}
+  })
 
 // ───────── 파일 전용 클라우드 관리 (기타 파일 메뉴) ─────────
 // 파일은 원본을 지연 로딩하므로 상태가 다르다: 메타만 있는 행과 원본까지 있는 행을 구분한다.
@@ -337,7 +295,7 @@ export async function listCloudFiles(): Promise<CloudFileInfo[]> {
   for (const [fid, r] of cloud) {
     let local = locals.find((x) => x.id === fid)
     const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || 0
-    // 원격이 더 새로우면 제목·카테고리 같은 메타만 조용히 반영한다 (4.6-1).
+    // 원격이 더 새로우면 제목·카테고리 같은 메타만 조용히 반영한다.
     // 기타 파일은 내용을 고칠 수 없으므로 원본(text/blob)은 절대 버리지 않는다 — 'update' 상태도 만들지 않는다.
     if (local && !local.pending && remoteAt > local.updatedAt) {
       const patch = {
@@ -402,7 +360,7 @@ export async function addFileFromCloud(id: ID, opts?: { withOriginal?: boolean }
   if (opts?.withOriginal) await ensureFileLocal(id)
 }
 
-/** updateFileFromCloud: 메타만 갱신한다. 원본(text/blob)은 절대 버리지 않는다 (4.6-1) */
+/** updateFileFromCloud: 메타만 갱신한다. 원본(text/blob)은 절대 버리지 않는다 */
 export async function updateFileFromCloud(id: ID): Promise<void> {
   const local = await db.files.get(id)
   const r = await findRemoteFile(id)

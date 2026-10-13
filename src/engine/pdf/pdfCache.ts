@@ -10,7 +10,7 @@ interface Bitmap {
   lastUsed: number
 }
 
-const MAX_BITMAP_PIXELS = 48_000_000 // 비트맵 캐시 총량 (약 190MB RGBA). NFR-04
+const MAX_BITMAP_PIXELS = 48_000_000 // 비트맵 캐시 총량 (약 190MB RGBA) — iPad Safari 메모리 한도 안에 머물게
 
 /**
  * PDF 페이지 비트맵 캐시.
@@ -189,7 +189,7 @@ export class PdfCache {
     }
   }
 
-  /** 메모리 압박 시 (16.2) */
+  /** 메모리 압박 시 — 비트맵을 모두 버린다(보이는 페이지는 다시 그려진다) */
   trim() {
     for (const b of this.bitmaps.values()) b.canvas.width = b.canvas.height = 0
     this.bitmaps.clear()

@@ -41,7 +41,7 @@ export function anchorBlock(layout: Layout, wx: number, wy: number, w: number, h
   return { pageId: page.id, x: x - r.x, y: y - r.y }
 }
 
-// ───────── 링크 URL 보안 (6.4) ─────────
+// ───────── 링크 URL 보안 ─────────
 
 /** 실행·저장을 허용하는 스킴. 그 외(javascript:, data: 등)는 저장 자체를 거부한다 */
 const SAFE_URL_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:']

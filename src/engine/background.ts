@@ -16,7 +16,7 @@ export interface PatternGeom {
 export function patternGeometry(bg: Background, w: number, h: number): PatternGeom | null {
   if (bg.type === 'blank') return null
   const sp = bg.spacing
-  // 예전 기본 색으로 저장된 페이지는 새 기본 색으로 바꿔 그린다 (D-2).
+  // 예전 기본 색으로 저장된 페이지는 새 기본 색으로 바꿔 그린다.
   // 사용자가 지정한 색은 그대로 둔다. 캔버스와 PDF 내보내기가 같은 함수를 쓰므로 함께 바뀐다.
   const LEGACY_DEFAULT: Record<string, string> = { '#c7d2e0': '#d3d9e2', '#9aa3ad': '#a9b1bc' }
   const out: PatternGeom = { lines: [], dots: [], lineWidth: 0.5, dotRadius: 0.8, color: LEGACY_DEFAULT[bg.color] ?? bg.color }

@@ -34,7 +34,7 @@ export function NewDocumentSheet(props: {
   const [mode, setMode] = useState<'paged' | 'infinite'>('paged')
   const [title, setTitle] = useState('')
   const [sizeKey, setSizeKey] = useState<PageSizeKey>('a4')
-  // 입력 중에는 문자열로 들고 있다가 blur·'만들기' 때 범위를 맞춘다 (A-3)
+  // 입력 중에는 문자열로 들고 있다가 blur·'만들기' 때 범위를 맞춘다 — 지우는 중에 최솟값으로 튀지 않게
   const [customText, setCustomText] = useState({ w: '210', h: '297' }) // mm
   const [landscape, setLandscape] = useState(false)
   const [bg, setBg] = useState<BackgroundType>('lined')
@@ -45,7 +45,7 @@ export function NewDocumentSheet(props: {
   const pageCountNum = () => Math.max(1, Math.min(200, Math.round(parseFloat(pageCountText) || 0)))
   const stepPage = (d: number) => setPageCountText(String(Math.max(1, Math.min(200, pageCountNum() + d))))
 
-  // Esc로도 닫는다. 제목을 적는 중에는 바깥을 눌러도 닫히지 않는다 (C-7)
+  // Esc로도 닫는다. 제목을 적는 중에는 바깥을 눌러도 닫히지 않는다
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
     window.addEventListener('keydown', onKey)
@@ -87,7 +87,7 @@ export function NewDocumentSheet(props: {
           </button>
         </header>
 
-        {/* 만들 종류는 선택만 한다 — 눌러도 바로 실행되지 않는다 (C-7) */}
+        {/* 만들 종류는 선택만 한다 — 눌러도 바로 실행되지 않는다 */}
         <div className="mode-cards">
           <button className={'mode-card' + (mode === 'paged' ? ' is-active' : '')} onClick={() => (setMode('paged'), setBg('lined'))}>
             <Icon name="notebook" size={30} />
@@ -146,7 +146,7 @@ export function NewDocumentSheet(props: {
                   options={[['portrait', '세로'], ['landscape', '가로']]}
                 />
               </div>
-              {/* 스테퍼 버튼이 안에 있으므로 label이 아니라 div로 그린다 (A-1과 같은 이유) */}
+              {/* 스테퍼 버튼이 안에 있으므로 label이 아니라 div로 그린다 — label 안에 버튼이 있으면 라벨 클릭이 첫 버튼을 눌러 버린다 */}
               <div className="field inline">
                 <span>페이지 수</span>
                 <div className="stepper">
@@ -183,7 +183,7 @@ export function NewDocumentSheet(props: {
           </div>
         </section>
 
-        {/* 바로 실행되는 동작은 가져오기 줄로 — 버튼 모양으로 선택/실행이 구분된다 (C-7) */}
+        {/* 바로 실행되는 동작은 가져오기 줄로 — 버튼 모양으로 선택/실행이 구분된다 */}
         <section className="sheet-section import-section">
           <span className="import-label">가져오기</span>
           <div className="import-row">

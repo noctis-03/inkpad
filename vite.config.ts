@@ -21,7 +21,7 @@ function pdfjsAssets(): Plugin {
 }
 
 /**
- * Service Worker 프리캐시 목록 생성 (NFR-06).
+ * Service Worker 프리캐시 목록 생성 — 첫 설치 뒤 오프라인 실행용.
  * 빌드 결과물을 sw.js의 self.__PRECACHE에 주입하고, 내용 해시로 캐시 버전을 바꾼다.
  * pdf.js CMap 등 큰 보조 리소스는 처음 쓸 때 캐시한다 (런타임 캐시).
  */

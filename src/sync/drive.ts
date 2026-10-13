@@ -1,4 +1,4 @@
-// Google Drive API 래퍼 (SDF 가이드 6장)
+// Google Drive API 래퍼
 // 401이면 토큰 강제 갱신 후 1회 재시도, 429/5xx는 지수 백오프로 재시도한다.
 import { gunzipJson } from '../storage/compress'
 import { getAccessToken } from './token'
@@ -23,6 +23,27 @@ export interface RemoteFile {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// ───────────────── appProperties 크기 제한 ─────────────────
+// Drive는 appProperties 한 항목의 키+값이 UTF-8로 124바이트를 넘으면 업로드 전체를 거부한다.
+// 값만 재면 한글 40자(≈120바이트)에 키 'category'(8바이트)가 붙어 128바이트가 되므로 키 길이까지 함께 잰다.
+// 이 값들은 목록을 본문 없이 그리기 위한 표식일 뿐이고, 온전한 값은 파일 본문에 늘 들어 있다.
+
+export const APP_PROPERTY_MAX_BYTES = 124
+const utf8Bytes = (s: string) => new TextEncoder().encode(s).length
+
+/** 상한에 맞춰 값을 뒤에서부터 글자 단위로 자른다 — 제목처럼 잘려도 알아볼 수 있는 값에 */
+export function fitAppProperty(key: string, value: string): string {
+  let v = value
+  while (v && utf8Bytes(key) + utf8Bytes(v) > APP_PROPERTY_MAX_BYTES) v = Array.from(v).slice(0, -1).join('')
+  return v
+}
+
+/** 상한 안이면 { key: value }, 넘거나 비었으면 {} — 카테고리처럼 잘리면 다른 값이 되는 것은 통째로 뺀다 */
+export function appPropertyIfFits(key: string, value: string | null | undefined): Record<string, string> {
+  if (!value || utf8Bytes(key) + utf8Bytes(value) > APP_PROPERTY_MAX_BYTES) return {}
+  return { [key]: value }
+}
 
 async function driveFetch(url: string, init: RequestInit = {}): Promise<Response> {
   let force = false
@@ -71,6 +92,19 @@ export async function findByName(name: string, parentId?: string): Promise<Remot
   )
   const { files } = await ok<{ files: RemoteFile[] }>(await driveFetch(`${API}/files?q=${q}&fields=files(${FIELDS})`))
   return files[0] ?? null
+}
+
+/**
+ * 덮어쓸 파일을 정한다 — 기록해 둔 파일이 살아 있으면 그것, 아니면 폴더 안의 같은 이름 파일, 둘 다 없으면
+ * undefined(새로 만든다). 기록이 비었어도(다시 올리기는 기록을 지우고 올린다) 이름으로 찾아 덮어써야
+ * 같은 항목의 파일이 둘 생기지 않는다 — 둘이 되면 다른 기기가 옛 판을 고를 수 있다.
+ */
+export async function liveFileIdFor(fileId: string | undefined, name: string, folderId: string): Promise<string | undefined> {
+  if (fileId) {
+    const m = await getMeta(fileId)
+    if (m && !m.trashed) return fileId
+  }
+  return (await findByName(name, folderId))?.id
 }
 
 export async function createFolder(name: string, parentId?: string): Promise<string> {

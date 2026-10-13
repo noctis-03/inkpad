@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 
-// Phase 2: Google Drive 동기화용 OAuth 서버 (SDF 가이드 3장).
+// Google Drive 동기화용 OAuth 서버.
 // Access Token은 1시간이면 만료되므로 Refresh Token만 SESSION_SECRET으로
 // AES-GCM 암호해 HttpOnly 쿠키에 보관하고, 앱은 /api/auth/token으로
 // 새 Access Token을 받아 간다. 앱과 같은 도메인(_worker.js)에서 돌기 때문에

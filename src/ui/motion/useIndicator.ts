@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 
 /**
- * 슬라이딩 선택 인디케이터 (명세 5.2).
+ * 슬라이딩 선택 인디케이터.
  * 컨테이너 안 [data-indicator-key] 항목 중 activeKey의 위치로 흰 칩(.motion-ind)을 옮긴다.
  * 세로 배치(left/right 도구바 등)는 axis='y'로 표시하지만, 실제 이동은 translate로 처리하므로
  * 축은 표시용 의미만 갖는다.

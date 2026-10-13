@@ -3,7 +3,7 @@ import { SPRING, dur } from './motion'
 import { planFlip, type FlipCard, type FlipRect } from './flipPlan'
 
 /**
- * 목록 변화 FLIP (명세 5.4).
+ * 목록 변화 FLIP.
  * deps가 바뀌어 목록이 다시 그려질 때, 각 카드([data-flip-key])의 이동/등장을 부드럽게 잇는다.
  *
  * 판정은 flipPlan(planFlip)이 하고, 여기서는 그 결과를 애니메이션으로 옮기기만 한다.
@@ -84,7 +84,7 @@ export function useFlip(containerRef: RefObject<HTMLElement | null>, deps: unkno
     for (const g of geom) next.set(g.key, { left: g.left, top: g.top })
     prev.current = next
 
-    // deps는 호출자가 제어한다 (명세: 섹션/검색/정렬/보기 전환 등)
+    // deps는 호출자가 제어한다 (예: 섹션·검색·정렬·보기 전환)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 }

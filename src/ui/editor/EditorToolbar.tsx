@@ -4,14 +4,14 @@ import { useUI } from '../../app/store'
 import type { DocumentMeta } from '../../shared/model'
 import { onSyncStatus } from '../../sync/sync'
 import { Icon } from '../Icon'
-import { Menu, MenuItem } from '../library/Library'
+import { Menu, MenuItem } from '../Menu'
 
 const SAVE_LABEL = { saved: '저장됨', pending: '저장 대기', saving: '저장 중', error: '저장 실패' }
 
 /**
  * 편집 화면 상단 문서 바. 도구(펜·형광펜·지우개·올가미·색·굵기·되돌리기·전체 보기)는 FloatingToolbar로 분리됐다.
  * 필기 중 시선을 빼지 않도록 자주 쓰는 페이지·배경 설정 버튼만 남기고,
- * 버전 기록·내보내기·설정·동기화는 ⋯ 메뉴로 모았다 (C-1).
+ * 버전 기록·내보내기·설정·동기화는 ⋯ 메뉴로 모았다 — 문서 바에는 자주 쓰는 것만 남긴다.
  * 저장 상태와 동기화 상태를 한 줄로 합쳤다 — "저장됨"은 1.5초 뒤 아이콘만 흐리게 남는다.
  */
 export function EditorToolbar(props: {
@@ -35,7 +35,7 @@ export function EditorToolbar(props: {
 
   useEffect(() => setTitle(doc?.title ?? ''), [doc?.title])
 
-  // "저장됨"은 잠깐 보였다가 조용해진다. 저장 대기·저장 중·실패는 계속 보인다 (C-1)
+  // "저장됨"은 잠깐 보였다가 조용해진다. 저장 대기·저장 중·실패는 계속 보인다 — 문제가 있을 때만 눈에 띄게
   useEffect(() => {
     if (saveState !== 'saved') {
       setSavedQuiet(false)

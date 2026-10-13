@@ -11,7 +11,7 @@ import {
 import type { SaveState } from '../engine/engine'
 import type { BlockType, ID } from '../shared/model'
 
-// UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다 (설계 3장).
+// UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다.
 const LS_SETTINGS = 'inkpad.settings.v2'
 const LS_STYLE = 'inkpad.style.v2'
 const LS_LIBRARY = 'inkpad.library.v1'
@@ -66,7 +66,7 @@ const DEFAULT_STYLE: ToolStyle = {
 }
 
 /**
- * 예전 팔레트 색이 저장된 사용자를 위한 최근접 색 보정 (D-1).
+ * 예전 팔레트 색이 저장된 사용자를 위한 최근접 색 보정.
  * localStorage(inkpad.style.v2)의 선택색이 새 팔레트에 없으면 선택 표시가 사라지므로
  * 가장 가까운 새 색으로 옮긴다. 이미 그린 획의 색은 그대로다.
  */
@@ -161,7 +161,7 @@ interface UIState {
   selectedBlockId: ID | null
   /** 노트 열기 애니메이션용 — 누른 카드의 화면 위치 (편집 화면 마운트 시 1회 읽고 지운다) */
   docCardRect: DOMRect | null
-  /** 편집 화면을 닫을 때 — 라이브러리 복귀 전환이 이 카드로 축소한다 (모션 5.6) */
+  /** 편집 화면을 닫을 때 — 라이브러리 복귀 전환이 이 카드로 축소한다 */
   returnDocId: ID | null
   /** 뷰어보드 열기 — 편집 화면을 보기 전용으로 연다 (편집 화면이 1회 읽고 지운다) */
   viewOnly: boolean
@@ -309,7 +309,7 @@ window.addEventListener('popstate', () => {
   useUI.setState({
     route: next,
     panel: 'none',
-    // 뒤로가기로 편집 화면에서 나올 때도 닫기 전환을 위해 카드 id를 남긴다 (모션 5.6)
+    // 뒤로가기로 편집 화면에서 나올 때도 닫기 전환을 위해 카드 id를 남긴다
     ...(prev.name === 'editor' && next.name === 'library' ? { returnDocId: prev.docId } : {})
   })
 })

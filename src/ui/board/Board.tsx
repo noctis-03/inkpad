@@ -18,7 +18,6 @@ import {
   BOARD_WALLPAPERS,
   cellCenter,
   cloneBoard,
-  DEFAULT_BOARD,
   normalizeBoard,
   worldToGrid,
   type Board as BoardModel,
@@ -34,69 +33,28 @@ import { downloadMissingDoc } from '../../sync/sync'
 import { AuthRequiredError } from '../../sync/token'
 import { createPreset, uploadPreset } from '../../sync/board'
 import { BoardPresetsSheet } from '../BoardPresetsSheet'
+import {
+  CAT_ALL,
+  CAT_NONE,
+  catTone,
+  clamp,
+  fileTone,
+  gradient,
+  GROUP_COLLAPSE_Z,
+  GROUP_HEAD_H,
+  KIND_LABEL,
+  loadBoard,
+  LS_BOARD,
+  LS_HIDE_MISSING,
+  MAX_Z,
+  MIN_Z,
+  newId,
+  TONE_VAR,
+  UNDO_MAX,
+  WIDE_W,
+  ZOOM_STEP
+} from './boardUtil'
 import type { FileRow } from '../../storage/db'
-
-const LS_BOARD = 'inkpad.board.v3'
-const LS_HIDE_MISSING = 'inkpad.board.hideMissing'
-const MIN_Z = 0.25
-const MAX_Z = 2
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
-
-/** 그룹 박스 안쪽 맨 위 '이름 칸' 높이(px) — 박스 하나 안에 들어간다 */
-const GROUP_HEAD_H = 30
-/** 이 배율 이하로 축소되면 그룹 안 항목은 숨고 그룹은 이름 타일로 접힌다 */
-const GROUP_COLLAPSE_Z = 0.5
-/** 줌 버튼 한 번에 움직이는 배율 폭 (10%p) */
-const ZOOM_STEP = 0.1
-/** 되돌리기 스택 최대 단계 */
-const UNDO_MAX = 50
-/** 카드 서랍이 오른쪽 패널로 바뀌는 무대 폭 */
-const WIDE_W = 900
-/** 서랍 카테고리 필터의 예약 키 — 실제 카테고리 이름과 겹치지 않게 */
-const CAT_ALL = '__all__'
-const CAT_NONE = '__none__'
-/** 종류별 표시 이름 */
-const KIND_LABEL: Record<ShortcutKind, string> = { doc: '노트', app: '앱', file: '파일' }
-
-function loadBoard(): BoardModel {
-  try {
-    const raw = localStorage.getItem(LS_BOARD)
-    if (raw) return normalizeBoard(JSON.parse(raw))
-  } catch {
-    /* 저장소 차단 환경 */
-  }
-  return cloneBoard(DEFAULT_BOARD)
-}
-
-const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `s${Date.now()}${Math.random().toString(36).slice(2, 8)}`)
-
-function gradient(title: string) {
-  let h = 0
-  for (const ch of title) h = (h + ch.charCodeAt(0)) % 360
-  return `linear-gradient(135deg, hsl(${h} 68% 62%), hsl(${(h + 42) % 360} 68% 44%))`
-}
-
-/** 파일 확장자 → 색 계열 토큰 (P2) */
-const FILE_TONES: { tone: string; exts: string[] }[] = [
-  { tone: '--danger', exts: ['pdf'] },
-  { tone: '--success', exts: ['xlsx', 'xls', 'csv', 'numbers'] },
-  { tone: '--warn', exts: ['pptx', 'ppt', 'key'] },
-  { tone: '--app', exts: ['png', 'jpg', 'jpeg', 'heic', 'webp', 'gif'] }
-]
-function fileTone(name: string): string {
-  const e = extOf(name)
-  for (const t of FILE_TONES) if (t.exts.includes(e)) return t.tone
-  return '--file'
-}
-/** 그룹 톤 키 → 색 토큰 */
-const TONE_VAR: Record<string, string> = { blue: '--accent', green: '--success', violet: '--app', amber: '--warn' }
-/** 카테고리 표식 색 — 이름이 같으면 늘 같은 색이 나오게 (서랍 카테고리 머리의 작은 네모) */
-const CAT_TONES = ['--accent', '--success', '--app', '--warn']
-function catTone(name: string) {
-  let h = 0
-  for (const ch of name) h = (h + ch.charCodeAt(0) * 7) % 997
-  return CAT_TONES[h % CAT_TONES.length]
-}
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 type TrayFilter = 'doc' | 'app' | 'file' | 'all'
@@ -158,6 +116,11 @@ export function Board() {
   const future = useRef<BoardModel[]>([])
   const editRef = useRef(edit)
   const multiTap = useRef<{ n: number; t0: number; moved: boolean }>({ n: 0, t0: 0, moved: false })
+
+  // 서랍을 닫거나 편집을 끝내면 '다시 연결' 모드도 끝낸다 — 다음에 서랍을 열 때 남아 있지 않게
+  useEffect(() => {
+    if (!panelOpen || !edit) setReconnectFor(null)
+  }, [panelOpen, edit])
 
   useEffect(() => {
     boardRef.current = board
@@ -230,7 +193,7 @@ export function Board() {
     return () => ro.disconnect()
   }, [])
 
-  // ── 되돌리기 / 다시 (P9) ──
+  // ── 되돌리기 / 다시 ──
   const pushHistory = useCallback(() => {
     history.current = [...history.current.slice(-(UNDO_MAX - 1)), cloneBoard(boardRef.current)]
     future.current = []
@@ -532,7 +495,7 @@ export function Board() {
   }
 
   // ── 배치 조작 ──
-  /** 바로가기 삭제 — 확인 없이 지우고 토스트로 되돌리기를 제공한다 (P9) */
+  /** 바로가기 삭제 — 확인 없이 지우고 토스트로 되돌리기를 제공한다 */
   const removeShortcut = (sc: BoardShortcut, label?: string) => {
     commit((b) => ({ ...b, shortcuts: b.shortcuts.filter((s) => s.id !== sc.id) }))
     const nm = label ?? (itemOf(sc) ? (itemOf(sc)!.kind === 'file' ? (itemOf(sc) as { f: FileRow }).f.name : labelOf(itemOf(sc)!)) : '연결 끊긴 항목')
@@ -607,7 +570,7 @@ export function Board() {
     toast(`"${label}"을(를) 보드에 놓았습니다.`, 'success')
   }
 
-  /** 연결이 끊긴 바로가기에 새 항목을 이어 준다 — 자리는 그대로 (P8) */
+  /** 연결이 끊긴 바로가기에 새 항목을 이어 준다 — 자리는 그대로 */
   const relink = (sc: BoardShortcut, kind: ShortcutKind, refId: ID, label: string) => {
     commit((b) => ({ ...b, shortcuts: b.shortcuts.map((s) => (s.id === sc.id ? { ...s, kind, refId, label } : s)) }))
     toast(`"${label}"(으)로 다시 연결했습니다.`, 'success')
@@ -883,7 +846,7 @@ export function Board() {
     })
   }
 
-  // ── 그룹 박스 (P6) ──
+  // ── 그룹 박스 ──
   const addGroup = async () => {
     const n = boardRef.current.groups.length
     if (n >= BOARD_MAX_GROUPS) {
@@ -1120,7 +1083,7 @@ export function Board() {
 
   const wide = stage.w >= WIDE_W
 
-  // ── 미니맵 (P7) ──
+  // ── 미니맵 ──
   const mapColor = useCallback((name: string, fallback: string) => {
     const el = stageRef.current
     const v = el ? getComputedStyle(el).getPropertyValue(name).trim() : ''
@@ -1132,8 +1095,6 @@ export function Board() {
     if (!cv) return
     const list = boardRef.current.shortcuts
     if (!list.length) return
-    const W = cv.width
-    const H = cv.height
     const ctx = cv.getContext('2d')
     if (!ctx) return
     const dpr = window.devicePixelRatio || 1
@@ -1301,7 +1262,7 @@ export function Board() {
     setMoreMenu(false)
   }
 
-  // ── 카드 얼굴 (P2) ──
+  // ── 카드 얼굴 ──
   const kindIcon = (it: Item) => (it.kind === 'doc' ? (it.d.mode === 'infinite' ? 'infinite' : 'page') : it.kind === 'app' ? 'app' : 'file')
 
   const face = (it: Item) => {
@@ -1356,7 +1317,12 @@ export function Board() {
           <b className="tray-row-name">{x.label}</b>
           <span className="tray-row-time">{new Date(x.at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
         </span>
-        {n ? (
+        {reconnectFor ? (
+          // 다시 연결 모드: 이미 놓인 항목이어도 끊긴 카드를 이 항목으로 잇는다 (새 카드를 만들지 않는다)
+          <button className="tray-row-add" onClick={() => relink(reconnectFor, x.kind, x.id, x.label)} aria-label={`${x.label}(으)로 다시 연결`}>
+            <Icon name="link" size={16} />
+          </button>
+        ) : n ? (
           <span className="tray-row-placed">놓음 {n}</span>
         ) : (
           <button className="tray-row-add" onClick={() => placeFromPanel(x.kind, x.id, x.label)} aria-label={`${x.label} 보드에 놓기`}>
@@ -1551,7 +1517,7 @@ export function Board() {
 
   return (
     <div className={'board board-wall-' + board.wallpaper + (edit ? ' is-editing' : '')} data-zoom={view.z < 0.55 ? 'far' : undefined}>
-      {/* ── 상단 바 (P1: 3열 그리드) ── */}
+      {/* ── 상단 바 (3열 그리드) ── */}
       <header className="board-topbar">
         <div className="board-topbar-left">
           <button className="board-back" onClick={() => navigate({ name: 'library' })} aria-label="노트 목록으로">
@@ -1611,7 +1577,7 @@ export function Board() {
         </nav>
       )}
 
-      {/* ── 편집 툴바 (P3) ── */}
+      {/* ── 편집 툴바 ── */}
       {edit && (
         <div className={'board-edit-toolbar' + (wide && panelOpen ? ' with-panel' : '')} role="toolbar" aria-label="편집 도구">
           <button className="bet-btn" onClick={undo} disabled={!history.current.length} aria-label="되돌리기">
@@ -1785,7 +1751,7 @@ export function Board() {
             )
           })}
 
-          {/* 놓일 칸 미리보기 (P4) */}
+          {/* 놓일 칸 미리보기 */}
           {dropCell && (
             <span
               className={'board-drop' + (dropCell.busy ? ' is-busy' : '')}
@@ -1900,8 +1866,8 @@ export function Board() {
         </div>
       </div>
 
-      {/* ── 미니맵 + 줌 HUD (P7) ── */}
-      {shortcuts.length > 0 && (
+      {/* ── 미니맵 + 줌 HUD ── 좁은 화면에서 아래 서랍이 열려 있으면 서랍 위를 덮어 카드를 못 누르게 되므로 숨긴다 */}
+      {shortcuts.length > 0 && !(edit && !wide && panelOpen) && (
         <div className="board-dock" style={{ bottom: wide && panelOpen ? 16 : undefined }}>
           <canvas
             ref={mapRef}
@@ -1928,7 +1894,7 @@ export function Board() {
         </div>
       )}
 
-      {/* ── 카드 서랍 (좁은 화면 = 아래 서랍 / 넓은 화면 = 오른쪽 패널) (P5) ── */}
+      {/* ── 카드 서랍 (좁은 화면 = 아래 서랍 / 넓은 화면 = 오른쪽 패널) ── */}
       {edit && !wide && (
         <section className={'board-drawer' + (panelOpen ? ' is-open' : '')} aria-label="카드 서랍">
           <button className="board-drawer-head" onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>
@@ -1937,7 +1903,7 @@ export function Board() {
             <span className="board-drawer-sub">
               노트 {docs.length} · 앱 {apps.length} · 파일 {files.length}
             </span>
-            <span className="board-drawer-hint">카드를 보드로 끌어다 놓으세요</span>
+            <span className="board-drawer-hint">{reconnectFor ? '연결 버튼을 누르면 끊긴 카드가 그 항목을 가리킵니다' : '카드를 보드로 끌어다 놓으세요'}</span>
           </button>
           {panelOpen && <div className="board-drawer-body">{trayBody}</div>}
         </section>

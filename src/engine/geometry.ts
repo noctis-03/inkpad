@@ -54,7 +54,7 @@ export function pointsBBox(points: number[], width: number): [number, number, nu
   return [minX - pad, minY - pad, maxX + pad, maxY + pad]
 }
 
-/** 소수점 2자리 양자화 (설계 7.2) */
+/** 소수점 2자리 양자화 — 저장 크기를 줄인다 (0.01pt 아래는 눈에 보이지 않는다) */
 export const q2 = (v: number) => Math.round(v * 100) / 100
 
 /** 점 (px, py)와 획 중심선 사이 거리가 r 이하인지 (획 단위 지우개) */
@@ -80,7 +80,7 @@ export function segDist2(px: number, py: number, ax: number, ay: number, bx: num
 }
 
 /**
- * 부분 지우개 (FR-TL-03, 획 분할 방식).
+ * 부분 지우개 (획 분할 방식).
  * 지우개 원 안에 들어간 점을 빼고 남은 연속 구간들을 돌려준다. 원이 점 사이를 지나가는 경우를 위해
  * 간격이 넓은 구간은 먼저 잘게 나눈다. 지우개에 닿지 않았으면 null.
  */

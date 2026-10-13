@@ -1,4 +1,4 @@
-// Inkpad Service Worker (NFR-06: 첫 설치 이후 오프라인 실행)
+// Inkpad Service Worker — 첫 설치 이후 오프라인 실행
 // self.__PRECACHE / self.__VERSION 은 빌드 시 vite.config.ts가 주입한다.
 const VERSION = self.__VERSION || 'dev'
 const PRECACHE = self.__PRECACHE || ['/']

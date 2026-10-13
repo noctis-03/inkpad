@@ -4,11 +4,11 @@ import type { Page } from '../../shared/model'
 import { useUI } from '../../app/store'
 import { confirmDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
-import { Menu, MenuItem } from '../library/Library'
+import { Menu, MenuItem } from '../Menu'
 
 const THUMB_W = 120
 
-/** 썸네일 사이드바 (FR-PG-03/04): 보이는 썸네일만 그리고, 길게 눌러 끌면 순서 변경 */
+/** 썸네일 사이드바: 보이는 썸네일만 그리고, 길게 눌러 끌면 순서 변경 */
 export function PageSidebar({ engine, pages, tick }: { engine: Engine; pages: Page[]; tick: number }) {
   const current = useUI((s) => s.view.currentPage)
   const listRef = useRef<HTMLDivElement>(null)

@@ -10,14 +10,14 @@ if (isNetMeterEnabled()) installNetMeter()
 
 createRoot(document.getElementById('root')!).render(<App />)
 
-// 저장소 보존 요청 (NFR-07). Safari는 홈 화면 설치 시 허용하는 경우가 많다.
+// 저장소 보존 요청 — 브라우저가 공간이 부족할 때 데이터를 지우지 않게. Safari는 홈 화면 설치 시 허용하는 경우가 많다.
 navigator.storage?.persist?.().catch(() => {})
 
-// Google Drive 동기화 (Phase 2, SDF 가이드): 로컬은 항상 즉시 저장되고,
+// Google Drive 동기화: 로컬은 항상 즉시 저장되고,
 // 받기/올리기는 사용자가 설정 > 동기화의 버튼을 눌렀을 때만 실행된다.
 startSync() // 온라인/오프라인 상태 표시 + 세션 확인만 담당
 
-// 오프라인 실행 (NFR-06)
+// 오프라인 실행 (서비스 워커 public/sw.js)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {

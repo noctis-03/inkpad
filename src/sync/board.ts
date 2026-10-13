@@ -1,5 +1,5 @@
 // 작업보드 프리셋: 프리셋 1개 = Drive 파일 1개 (Inkpad/boards/<id>.json).
-// 앱·기타 파일과 같은 규칙 — 프리셋은 작은 JSON이라 gzip 없이 평문으로 올린다.
+// 앱·기타 파일과 같은 규칙(저장·이름 변경이 곧 올리기, sync.ts 규칙 12) — 프리셋은 작은 JSON이라 gzip 없이 평문으로 올린다.
 // 담기는 것은 '바로가기의 위치'(어떤 항목을 어느 칸에 두었는가)와 배경화면뿐이고,
 // 노트·앱·파일 내용은 각자의 동기화 경로로 오간다.
 import { BOARD_PRESET_NAME_MAX, normalizeBoard, type Board, type BoardPreset } from '../shared/board'
@@ -7,19 +7,10 @@ import type { ID } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
 import * as drive from './drive'
-import { ensureFolders, getSync, putSync } from './folders'
+import { ensureStoreFolder, tryUpload } from './folders'
 
 export const BOARDS_EVENT = 'inkpad-boards-changed'
 const emit = () => window.dispatchEvent(new Event(BOARDS_EVENT))
-
-// Drive appProperties 제한: 키+값 합쳐 UTF-8 124바이트
-const PROP_MAX = 124
-const bytes = (s: string) => new TextEncoder().encode(s).length
-function fitProp(key: string, value: string) {
-  let v = value
-  while (v && bytes(key) + bytes(v) > PROP_MAX) v = Array.from(v).slice(0, -1).join('')
-  return v
-}
 
 const cleanName = (name: string) => (name.trim() || '이름 없는 프리셋').slice(0, BOARD_PRESET_NAME_MAX)
 
@@ -61,31 +52,21 @@ export async function removePresetLocal(id: ID): Promise<void> {
 
 // ───────── 클라우드 ─────────
 
-async function boardsFolder(): Promise<string> {
-  const { root } = await ensureFolders()
-  const saved = await getSync<string>('boardsFolderId')
-  if (saved) {
-    const m = await drive.getMeta(saved)
-    if (m && !m.trashed) return saved
-  }
-  const id = (await drive.findFolder('boards', root)) ?? (await drive.createFolder('boards', root))
-  if (saved && saved !== id) {
-    // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다
-    await db.boardPresets.toCollection().modify((p) => {
+const boardsFolder = () =>
+  // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다
+  ensureStoreFolder('boards', 'boardsFolderId', () =>
+    db.boardPresets.toCollection().modify((p) => {
       if (p.cloudDetachedAt) return
       delete p.fileId
       if (p.pending !== 'delete') p.pending = 'upsert'
     })
-  }
-  await putSync('boardsFolderId', id)
-  return id
-}
+  )
 
 /** 개수를 appProperties에 함께 올려, 목록을 본문 없이 그릴 수 있게 한다 */
 const presetProps = (p: BoardPreset) => ({
   presetId: p.id,
   updatedAt: String(p.updatedAt),
-  title: fitProp('title', p.name),
+  title: drive.fitAppProperty('title', p.name),
   count: String(p.shortcuts.length)
 })
 
@@ -97,11 +78,7 @@ async function flushOne(id: ID, folderId: string) {
     await db.boardPresets.delete(id)
     return
   }
-  let fileId = p.fileId
-  if (fileId) {
-    const m = await drive.getMeta(fileId)
-    if (!m || m.trashed) fileId = undefined
-  }
+  const fileId = await drive.liveFileIdFor(p.fileId, `${p.id}.json`, folderId)
   const payload = {
     id: p.id,
     name: p.name,
@@ -126,24 +103,15 @@ async function flushOne(id: ID, folderId: string) {
 }
 
 /** 클라우드까지 저장됐으면 true */
-async function tryFlush(id: ID): Promise<boolean> {
-  if (!navigator.onLine) return false
-  try {
+/** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
+const tryFlush = (id: ID): Promise<boolean> =>
+  tryUpload('boards', async () => {
     await flushOne(id, await boardsFolder())
     emit()
-    return true
-  } catch (e) {
-    console.warn('[boards] 클라우드 반영 실패 — 재업로드가 필요하다', e)
-    return false
-  }
-}
+  })
 
 /** 프리셋 저장 직후 호출 — 실패해도 로컬에는 남는다 */
 export const uploadPreset = (id: ID) => tryFlush(id)
-
-export async function countPendingPresets(): Promise<number> {
-  return (await db.boardPresets.toArray()).filter((p) => p.pending).length
-}
 
 /** 시트의 "모두 업로드" */
 export async function flushPendingPresets(): Promise<number> {

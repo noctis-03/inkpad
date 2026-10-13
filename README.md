@@ -1,6 +1,6 @@
 # Inkpad (가칭)
 
-iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으로 단계별 구현 중.
+iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 단계별로 구현 중.
 
 ## 현재 단계: Phase 1 로컬 MVP + Phase 2 Google Drive 동기화 (완료)
 
@@ -59,7 +59,9 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 - 홈 화면 추가 안내, `navigator.storage.persist()` 요청
 
 **동기화 (노트 단위 Drive 목록 + 풀/푸시/머지)**
-- 오프라인 우선: 모든 읽기/쓰기는 IndexedDB. **동기화는 설정 > 동기화의 "받기"/"올리기" 버튼을 눌렀을 때만** 실행(자동 백그라운드 동기화 없음 — 평소에는 기기에만 저장)
+- 오프라인 우선: 모든 읽기/쓰기는 IndexedDB. **자동 동기화는 없다 — 네트워크는 사용자가 누른 동작이 직접 일으킬 때만 쓴다** (`npm run test:e2e -- stores`가 지킨다)
+  - 노트: 필기·이름 바꾸기 같은 편집은 기기에만 저장되고, 설정 > 동기화의 **"받기"/"올리기"**를 누를 때 오간다
+  - 앱·기타 파일·보드 프리셋: 추가·교체·이름/카테고리 변경 자체가 클라우드 스토어에 올리는 동작이라 **그 항목만 바로** 올린다. 오프라인·실패면 대기로 남고 각 메뉴의 업로드 버튼으로 다시 올린다(노트의 "올리기"는 이 대기를 올리지 않는다). 큰 파일은 올리기 전에 묻는다
 - **노트 1개 = Drive 파일 1개**(`Inkpad/docs/{id}.json`, gzip). PDF·이미지 원본은 sha256 내용 주소 파일(`Inkpad/assets/`). 폴더는 기기별 정리 도구라 동기화하지 않고, 노트의 카테고리만 노트 파일에 담겨 동기화된다
 - **클라우드 노트 목록**: 설정 > 동기화에 Drive에 저장된 노트 리스트가 뜬다 — 제목 왼쪽, 저장한 기기·시각·받기 버튼은 제목과 같은 높이로 오른쪽 정렬. 기기 이름은 설정에서 직접 정한다. 노트마다 **받기** 버튼으로 골라 내려받는다 — 새·업데이트된 노트는 파란 점, 이 기기에서 지운 노트는 **빨간 점**으로 표시되고(받기는 되살리지 않음), 노트별 받기로 명시적으로 되살린다. 목록 아래 **카테고리 칩**으로 좇혀 보고, 카테고리를 고른 뒤 받을 것 머리글의 **"카테고리 받기"**로 그 카테고리 노트 전체를 한 번에 받는다
 - **올리기**: 먼저 **미리보기**(추가/수정/삭제 노트 목록, 원본 수)를 보여주고 확인한 뒤 이 기기의 변경을 올리고, 다른 기기의 변경도 함께 받아온다(푸시 → 풀). 노트 메뉴의 "클라우드에 올리기"로 한 노트만 바로 올릴 수도 있다
@@ -88,7 +90,9 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 설계 문서 v0.1 기준으�
 - **되돌리기/다시**: 편집 모드에서 ⌘Z / ⇧⌘Z, 두 손가락 탭 / 세 손가락 탭. 지우기는 토스트로 되돌리기
 - **프리셋**: 상단 프리셋 칩에서 저장·불러오기, 저장 상태 점 표시
 - 연결이 끊긴 바로가기는 '다시 연결' 버튼으로 다른 항목에 이어 붙일 수 있다
-- 보드 설정은 기기에 자동 저장(`inkpad.board.v3`)### 기능 진입점
+- 보드 설정은 기기에 자동 저장(`inkpad.board.v3`)
+
+### 기능 진입점
 | 경로 | 설명 |
 |---|---|
 | `/#/` | 문서 목록 |
@@ -108,13 +112,16 @@ src/
              pressure(필압 방식·자동 감지), geometry(외곽선·부분 지우개·올가미), background(속지), history,
              pdf/(pdf.js 로더, 비트맵 LRU 캐시)
   storage/   db(Dexie 스키마), repo(문서·페이지·청크·에셋·outbox), compress(gzip), migrate, tabLock
-   io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download
-   sync/      token(access token 갱신·기기 이름), drive(Drive API 래퍼), pack(문서↔파일), folders(Drive 위치·폴더 확보),
-              assets(원본 지연 로딩·인덱싱), merge(노트 단위 3-way 머지), sync(엔진: 받기/올리기·클라우드 목록), revisions(리비전 버전 기록)
-   ui/        library/(목록·새 문서·설정), editor/(툴바·사이드바·선택·페이지·내보내기), SettingsPanel, SyncSection, AppsSheet·FilesSheet(앱·기타 파일 스토어), Hud
-   app/       App, store(zustand: UI 상태만), dialogs
-   api/       Hono Worker (/api/*: health)
+  io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download
+  sync/      token(access token 갱신·기기 이름), drive(Drive API 래퍼), pack(문서↔파일), folders(Drive 위치·폴더 확보),
+             assets(원본 지연 로딩·인덱싱), merge(노트 단위 3-way 머지), sync(엔진: 받기/올리기·클라우드 목록), revisions(리비전 버전 기록)
+  ui/        library/(목록 Library + 작은 조각 parts·새 문서·설정), editor/(툴바·사이드바·선택·페이지·내보내기),
+             board/(작업보드 Board + boardUtil), Menu(공용 ⋯ 메뉴), SettingsPanel, SyncSection, AppsSheet·FilesSheet(앱·기타 파일 스토어), Hud
+  app/       App, store(zustand: UI 상태만), dialogs
+  api/       Hono Worker (/api/*: health)
+  styles.css 스타일 목차 — styles/01-base … 14-late.css를 이 순서로 묶는다(순서 = 우선순위)
 public/      manifest, sw.js, icons, _routes.json
+tools/       verify/(빠른 검사 — npm test), e2e/(브라우저 시나리오 + 가짜 Google Drive — npm run test:e2e)
 ```
 
 ## 데이터 (IndexedDB `inkpad`)
@@ -128,11 +135,20 @@ npm run preview                  # wrangler dev :3000 (빌드 결과 정적 에�
 pm2 start ecosystem.config.cjs   # 위 preview를 pm2로 띄우기
 npm run deploy                   # build 후 wrangler deploy (Cloudflare Workers)
 npm run typecheck
-npm run test:merge               # 노트 머지 회귀 테스트 (의존성 없음)
-npm run test:sync                # 받기 판정(받을 것·최신) 회귀 테스트 (의존성 없음)
+npm test                         # 빠른 검사 모음(수 초, 브라우저 없음): 아래 test:merge·sync·css·flip·motion
+npm run test:e2e                 # 브라우저 시나리오(약 1분) — 처음 한 번 `npx playwright install chromium`
+npm run health                   # preview 서버의 /api/health 확인
 ```
 
-### 동기화 설정 (Google Drive, SDF 가이드 1장)
+| 검사 | 무엇을 지키나 |
+|---|---|
+| `test:merge` | 노트 머지 — 같은 페이지 양쪽 획 보존, base 없을 때, 옮긴 획, 페이지 삭제 충돌 (36개) |
+| `test:sync` | 받기 판정 — 받을 것·최신, 중복 파일, 머지 결과의 updatedAt (25개) |
+| `test:css` | CSS 구조 — 닫히지 않은 중괄호로 뒤 규칙이 통째로 중첩되던 사고 방지 |
+| `test:flip` · `test:motion` | 목록 FLIP·모션 판정 |
+| `test:e2e` | 실제 앱 코드를 Chromium에서: 탭 잠금, 열린 노트 보호, 두 기기 동기화(가짜 Google Drive — 네트워크·계정 불필요), 앱·파일·프리셋 업로드와 '자동 동기화 없음', 큰 파일 이어 올리기, 가만히 있을 때 프레임 0, 작업보드 끊긴 카드 다시 연결 (`tools/e2e/`) |
+
+### 동기화 설정 (Google Drive)
 1. Google Cloud Console에서 **Google Drive API** 사용 설정, OAuth 동의 화면(외부) — scope `openid email .../auth/drive.file`
 2. **게시 상태를 "프로덕션"으로 변경** (테스트 상태는 refresh token이 7일 뒤 만료됨. 민감 scope가 없어 심사 없이 게시 가능)
 3. OAuth 클라이언트(웹 애플리케이션) 생성 — 승인된 리디렉션 URI에 등록:

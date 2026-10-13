@@ -1,4 +1,4 @@
-// 청크 JSON gzip 압축 (설계 7.2). CompressionStream이 없으면(구형 Safari) fflate로 대체.
+// 청크 JSON gzip 압축. CompressionStream이 없으면(구형 Safari) fflate로 대체.
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate'
 
 const hasCS = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined'

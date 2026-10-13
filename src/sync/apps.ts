@@ -1,23 +1,14 @@
 // HTML 앱: 앱 1개 = Drive 파일 1개 (Inkpad/apps/<id>.html).
-// 노트와 달리 머지가 없다 — 추가·업데이트·삭제가 곧바로 Drive에 반영되고,
-// 실패하면 pending으로 남아 다음 올리기에서 처리된다.
+// 노트와 달리 머지가 없다 — 추가·업데이트·삭제가 곧바로 Drive에 반영되고(sync.ts 규칙 12),
+// 오프라인·실패면 pending으로 남아 앱 메뉴의 '모두 업로드'(항목마다 reuploadApp)로 다시 올린다.
 import { MAX_APP_BYTES, MAX_APP_TITLE_CHARS, type HtmlApp, type ID } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
 import * as drive from './drive'
-import { ensureFolders, getSync, putSync } from './folders'
+import { ensureStoreFolder, tryUpload } from './folders'
 
 export const APPS_EVENT = 'inkpad-apps-changed'
 const emit = () => window.dispatchEvent(new Event(APPS_EVENT))
-
-// Drive appProperties 제한: 키+값 합쳐 UTF-8 124바이트
-const PROP_MAX = 124
-const bytes = (s: string) => new TextEncoder().encode(s).length
-function fitProp(key: string, value: string) {
-  let v = value
-  while (v && bytes(key) + bytes(v) > PROP_MAX) v = Array.from(v).slice(0, -1).join('')
-  return v
-}
 
 // ───────── 로컬 ─────────
 
@@ -113,25 +104,15 @@ export async function saveAppStorage(id: ID, data: Record<string, unknown>) {
 
 // ───────── 클라우드 ─────────
 
-async function appsFolder(): Promise<string> {
-  const { root } = await ensureFolders()
-  const saved = await getSync<string>('appsFolderId')
-  if (saved) {
-    const m = await drive.getMeta(saved)
-    if (m && !m.trashed) return saved
-  }
-  const id = (await drive.findFolder('apps', root)) ?? (await drive.createFolder('apps', root))
-  if (saved && saved !== id) {
-    // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
-    await db.apps.toCollection().modify((a) => {
+const appsFolder = () =>
+  // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
+  ensureStoreFolder('apps', 'appsFolderId', () =>
+    db.apps.toCollection().modify((a) => {
       if (a.cloudDetachedAt) return // 이 기기에서 직접 클라우드 삭제한 항목은 건드리지 않는다
       delete a.fileId
       if (a.pending !== 'delete') a.pending = 'upsert'
     })
-  }
-  await putSync('appsFolderId', id)
-  return id
-}
+  )
 
 async function flushOne(id: ID, folderId: string) {
   const a = await db.apps.get(id)
@@ -141,21 +122,18 @@ async function flushOne(id: ID, folderId: string) {
     await purgeLocal(id)
     return
   }
-  let fileId = a.fileId
-  if (fileId) {
-    const m = await drive.getMeta(fileId)
-    if (!m || m.trashed) fileId = undefined
-  }
+  const name = `${a.id}.html`
+  const fileId = await drive.liveFileIdFor(a.fileId, name, folderId)
   const res = await drive.upload(
     new Blob([a.html], { type: 'text/html' }),
     {
-      name: `${a.id}.html`,
+      name,
       mimeType: 'text/html',
       appProperties: {
         appId: a.id,
         updatedAt: String(a.updatedAt),
-        title: fitProp('title', a.title),
-        ...(a.category && bytes('category') + bytes(a.category) <= PROP_MAX ? { category: a.category } : {})
+        title: drive.fitAppProperty('title', a.title),
+        ...drive.appPropertyIfFits('category', a.category)
       }
     },
     folderId,
@@ -169,31 +147,12 @@ async function flushOne(id: ID, folderId: string) {
   })
 }
 
-async function tryFlush(id: ID): Promise<boolean> {
-  if (!navigator.onLine) return false
-  try {
+/** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
+const tryFlush = (id: ID): Promise<boolean> =>
+  tryUpload('apps', async () => {
     await flushOne(id, await appsFolder())
     emit()
-    return true
-  } catch (e) {
-    console.warn('[apps] 클라우드 반영 실패 — 사용자가 재업로드해야 함', e)
-    return false
-  }
-}
-
-/** 시트의 "모두 업로드" 버튼에서 호출 */
-export async function flushPendingApps(): Promise<number> {
-  const rows = (await db.apps.toArray()).filter((a) => a.pending)
-  if (!rows.length) return 0
-  const folder = await appsFolder()
-  for (const a of rows) await flushOne(a.id, folder)
-  emit()
-  return rows.length
-}
-
-export async function countPendingApps() {
-  return (await db.apps.toArray()).filter((a) => a.pending).length
-}
+  })
 
 // ───────── 앱 전용 클라우드 관리 (앱 메뉴) ─────────
 // 노트 동기화와 분리한다: Drive의 Inkpad/apps/ = 스토어(카탈로그), 각 기기는 원하는 앱만 설치/업데이트/제거.
@@ -384,8 +343,8 @@ export async function uploadAppVersionToCloud(appId: ID, file: File): Promise<vo
       appProperties: {
         appId,
         updatedAt: String(Date.now()),
-        title: fitProp('title', title),
-        ...(category && bytes('category') + bytes(category) <= PROP_MAX ? { category } : {})
+        title: drive.fitAppProperty('title', title),
+        ...drive.appPropertyIfFits('category', category)
       }
     },
     folder,

@@ -6,7 +6,6 @@ import { settle } from '../motion/settle'
 import { CountUp } from '../motion/CountUp'
 import { SPRING, dur, motionLevel } from '../motion/motion'
 import { Icon } from '../Icon'
-import { refreshAllThumbnailsWithToast } from '../../io/docThumb'
 import { Segmented } from '../Segmented'
 import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { NewDocumentSheet } from './NewDocumentSheet'
@@ -15,8 +14,10 @@ import { SyncSheet } from '../SyncSection'
 import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
+import { Menu, MenuItem } from '../Menu'
+import { CategoryPicker, FolderTree, SyncPill, ThumbRefreshButton, TitleText } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
-import { MAX_CATEGORY_CHARS, TRASH_RETENTION_DAYS, extOf, normalizeCategory } from '../../shared/model'
+import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { categoryColor, formatDate } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import {
@@ -30,7 +31,6 @@ import {
   purgeDocument,
   gcOrphanAssets,
   restoreDocument,
-  setFolderCategories,
   trashDocument,
   updateDocument,
   updateFolder
@@ -65,101 +65,9 @@ function sameSection(a: Section, b: Section): boolean {
   return true
 }
 
-/**
- * 카드 캡션의 동기화 상태 라벨 (변경안 A).
- * 8px 색 점은 색만으로 뜻을 전달해 색각 이상 사용자에게 닿지 않는다 — 말로 바꾼다.
- * 클라우드 없음 / 올리기 대기 / 최신 / 클라우드에 새 버전.
- */
-const SYNC_LABEL: Record<CardSyncState, string> = {
-  new: '클라우드 없음',
-  pending: '올리기 필요',
-  same: '동기화됨',
-  'remote-new': '새 버전'
-}
-
 /** 앱·파일 행의 점 상태 — 행의 pending·fileId 표식만으로 판정한다 (노트와 같은 색 체계) */
 const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
   r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
-
-/** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */
-function TitleText({ text }: { text: string }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const [shown, setShown] = useState(text)
-  const shownRef = useRef(text)
-  const anims = useRef<Animation[]>([])
-  // 섹션 제목 모핑 (시안 setTitle 방식): 위로 슬러드아웃 → 텍스트 교체 → 아래에서 슬러드인.
-  // CSS 한 단계 페이드보다 느리고 두 단계로 해서 섹션이 바뀌는 느낌을 살린다.
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    // 실행 중인 애니메이션은 무조건 먼저 정리한다 — fill: forwards 가 남긴
-    // opacity:0 고정 상태도 cancel 로 풀린다. 가드를 먼저 보면 A→B→A 처럼
-    // 되돌아온 선택에서 사라짐 애니메이션이 끝까지 재생돼 제목이 사라진 채 남는다.
-    anims.current.forEach((a) => a.cancel())
-    anims.current = []
-    if (shownRef.current === text) return
-    if (document.documentElement.dataset.motion === 'off') {
-      shownRef.current = text
-      setShown(text)
-      return
-    }
-    const out = el.animate(
-      [
-        { opacity: 1, transform: 'none' },
-        { opacity: 0, transform: 'translateY(-7px)' }
-      ],
-      { duration: dur(170), easing: 'ease-in', fill: 'forwards' }
-    )
-    anims.current.push(out)
-    out.addEventListener(
-      'finish',
-      () => {
-        // out의 fill:forwards(opacity 0 고정)를 먼저 걷는다 — 안 그러면 아래에서
-        // 올라오는 애니메이션이 끝난 뒤 고정된 0이 다시 적용돼 제목이 안 뜬다.
-        // 같은 태스크에서 inn을 시작하므로 첫 키프레임(opacity 0)이 즉시 덮어 빈틈이 없다.
-        out.cancel()
-        anims.current = []
-        shownRef.current = text
-        setShown(text)
-        const inn = el.animate(
-          [
-            { opacity: 0, transform: 'translateY(7px)' },
-            { opacity: 1, transform: 'none' }
-          ],
-          { duration: dur(380), easing: SPRING }
-        )
-        anims.current.push(inn)
-      },
-      { once: true }
-    )
-    return () => {
-      anims.current.forEach((a) => a.cancel())
-      anims.current = []
-    }
-  }, [text])
-  return (
-    <span ref={ref} className="title-text">
-      {shown}
-    </span>
-  )
-}
-
-/** 점 + 라벨 pill (명세 5.5). 상태가 바뀌면 pop 한다. */function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const prev = useRef(state)
-  useEffect(() => {
-    if (prev.current !== state && ref.current && document.documentElement.dataset.motion !== 'off') {
-      ref.current.animate([{ scale: '0.7' }, { scale: '1.08' }, { scale: '1' }], { duration: dur(450), easing: SPRING })
-    }
-    prev.current = state
-  }, [state])
-  return (
-    <span ref={ref} className={'doc-state s-' + state + (overlay ? ' is-overlay' : '')}>
-      <i className="doc-state-dot" aria-hidden="true" />
-      {SYNC_LABEL[state]}
-    </span>
-  )
-}
 
 export function Library() {
   const navigate = useUI((s) => s.navigate)
@@ -178,7 +86,7 @@ export function Library() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [syncStates, setSyncStates] = useState<Map<ID, CardSyncState>>(new Map())
-  const [cloudOff, setCloudOff] = useState(false) // 동기화를 설정하지 않은 기기 (C-8)
+  const [cloudOff, setCloudOff] = useState(false) // 동기화를 설정하지 않은 기기 — 동기화 표시를 숨긴다
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -205,7 +113,7 @@ export function Library() {
   const recentScope =
     section.kind === 'all' || section.kind === 'notes' || section.kind === 'category' || section.kind === 'uncategorized' || section.kind === 'folder'
   const recentActive = recentOnly && recentScope
-  // 사이드바 선택 항목 슬라이딩 인디케이터 (5.2, 세로)
+  // 사이드바 선택 항목 슬라이딩 인디케이터 (세로)
   const treeRef = useRef<HTMLElement>(null)
   const treeActiveKey =
     section.kind === 'all'
@@ -267,7 +175,7 @@ export function Library() {
     void refresh()
   }, [refresh])
 
-  // 다른 기기에서 받아온 변경 반영 (SDF 가이드 8장 3)
+  // 다른 기기에서 받아온 변경 반영 — 목록을 다시 읽는다
   useEffect(() => {
     const onRemote = () => void refresh()
     window.addEventListener(REMOTE_EVENT, onRemote)
@@ -522,13 +430,13 @@ export function Library() {
     thumbsRef.current = thumbs
   }, [thumbs])
 
-  // 검색어 120ms 디바운스 (명세 5.4)
+  // 검색어 120ms 디바운스
   useEffect(() => {
     const t = setTimeout(() => setDq(query), 120)
     return () => clearTimeout(t)
   }, [query])
 
-  // 최초 마운트 시 1회 카드 등장 (5.3-1) — rich에서만 지연을 준다
+  // 최초 마운트 시 1회 카드 등장 — rich에서만 지연을 준다
   useEffect(() => {
     if (!ready || enteredRef.current) return
     enteredRef.current = true
@@ -537,7 +445,7 @@ export function Library() {
     return () => clearTimeout(t)
   }, [ready])
 
-  // 썸네일 리빌 (5.3-2) — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
+  // 썸네일 리빌 — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
   useEffect(() => {
     const root = gridRef.current
     if (!root) return
@@ -569,10 +477,10 @@ export function Library() {
     // 들어오므로, 다시 관찰해 is-revealed(리빌 애니메이션)를 붙여야 보인다.
   }, [items, thumbs, prefs.view])
 
-  // 동기화 버튼 회전 (5.5)
+  // 동기화 버튼 회전
   useEffect(() => onSyncStatus((s) => { setSyncing(s === 'syncing'); setCloudOff(s === 'disabled') }), [])
 
-  // 동기화가 끝나 '최신'이 된 카드에 settle (5.3-5)
+  // 동기화가 끝나 '최신'이 된 카드에 settle
   useEffect(() => {
     const prev = prevSync.current
     syncStates.forEach((s, id) => {
@@ -581,7 +489,7 @@ export function Library() {
     prevSync.current = new Map(syncStates)
   }, [syncStates, settleDoc])
 
-  // 편집 화면에서 복귀: 고스트를 카드로 축소하고 settle (5.6 닫기)
+  // 편집 화면에서 복귀: 고스트를 카드로 축소하고 settle
   useEffect(() => {
     if (!ready) return
     const rid = useUI.getState().returnDocId
@@ -616,11 +524,11 @@ export function Library() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
 
-  // 목록 변화 FLIP (5.4)
+  // 목록 변화 FLIP (ui/motion/useFlip)
   const flipSig = items.map((i) => (i.kind === 'doc' ? i.d.id : i.kind === 'app' ? i.a.id : i.f.id)).join('|')
   useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig])
 
-  // 틸트 + 광택 (5.3-3) — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
+  // 틸트 + 광택 — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
   const onGridMove = (e: React.PointerEvent) => {
     if (prefs.view === 'list' || e.pointerType === 'touch') return
     const lvl = motionLevel()
@@ -639,7 +547,7 @@ export function Library() {
       const r = card.getBoundingClientRect()
       const px = (cx - r.left) / r.width
       const py = (cy - r.top) / r.height
-      const angle = e.pointerType === 'pen' ? 3 : lvl === 'rich' ? 8 : 3 // 펜 호버는 기울기 상한을 낮춘다 (C-8)
+      const angle = e.pointerType === 'pen' ? 3 : lvl === 'rich' ? 8 : 3 // 펜 호버는 기울기 상한을 낮춘다
       card.style.transform = `perspective(700px) rotateX(${-(py - 0.5) * 2 * angle}deg) rotateY(${(px - 0.5) * 2 * angle}deg)`
       card.style.setProperty('--gx', `${px * 100}%`)
       card.style.setProperty('--gy', `${py * 100}%`)
@@ -661,7 +569,7 @@ export function Library() {
 
   // ───────── 작업 ─────────
 
-  /** 노트 열기 — 카드 썸네일 고스트가 편집 화면으로 펼쳐지는 모핑 (5.6 열기, 시안 openEditor 방식) */
+  /** 노트 열기 — 카드 썸네일 고스트가 편집 화면으로 펼쳐지는 모핑 */
   const open = (d: DocumentMeta, card?: HTMLElement | null) => {
     const rect = card?.getBoundingClientRect() ?? null
     useUI.setState({ docCardRect: rect })
@@ -867,7 +775,7 @@ export function Library() {
 
   const addFileItems = async (list: File[]) => {
     const total = list.reduce((n, f) => n + f.size, 0)
-    // 추가하기 전에 3버튼 확인 (명세 11.4) — 이 기기에만 추가 / 업로드 / 취소
+    // 추가하기 전에 3버튼 확인 (sync/transfer) — 이 기기에만 추가 / 업로드 / 취소
     const choice = await uploadChoice(total, list.length)
     if (choice === 'cancel') return
     const upload = choice === 'upload'
@@ -928,7 +836,7 @@ export function Library() {
         return
       case 'export':
         try {
-          // 원본이 이 기기에 없으면 내보내기가 다운로드를 일으킨다 — 기준 이상이면 먼저 묻는다 (11.3)
+          // 원본이 이 기기에 없으면 내보내기가 다운로드를 일으킨다 — 기준 이상이면 먼저 묻는다 (sync/transfer)
           const hasOrig = f.text !== undefined || !!f.blob
           if (!hasOrig && !(await confirmTransfer('down', f.size))) return
           await saveFile(await fileToBlob(f), f.name)
@@ -1655,161 +1563,5 @@ export function Library() {
       {showFiles && <FilesSheet onClose={() => setShowFiles(false)} />}
       {showAssets && <AssetsSheet onClose={() => setShowAssets(false)} />}
     </div>
-  )
-}
-
-function FolderTree(props: {
-  folders: Folder[]
-  parentId: ID | null
-  depth: number
-  activeId: ID | null
-  docs: DocumentMeta[]
-  apps: HtmlApp[]
-  files: FileRow[]
-  onSelect: (id: ID) => void
-  onMenu: (f: Folder, x: number, y: number) => void
-  /** 고른 폴더에서 '최근 열람' 모드일 때 폴더 이름 옆에 표식을 붙인다 */
-  recentActive?: boolean
-}) {
-  const children = props.folders.filter((f) => f.parentId === props.parentId)
-  if (!children.length) return null
-  return (
-    <>
-      {children.map((f) => (
-        <div key={f.id}>
-          <div className={'tree-item folder' + (props.activeId === f.id ? ' is-active' : '')} data-indicator-key={'folder:' + f.id} style={{ paddingLeft: 12 + props.depth * 16 }}>
-            <button className="tree-main" onClick={() => props.onSelect(f.id)}>
-              <Icon name="folder" size={18} /> <span className="tree-name">{f.name}</span>
-              {props.recentActive && props.activeId === f.id && <span className="tree-recent-tag">최근</span>}
-              <span className="count">
-                {props.docs.filter((d) => d.category && (f.categories ?? []).includes(d.category)).length +
-                  props.apps.filter((a) => a.category && (f.categories ?? []).includes(a.category)).length +
-                  props.files.filter((x) => x.category && (f.categories ?? []).includes(x.category)).length}
-              </span>
-            </button>
-            <button
-              className="icon-mini"
-              aria-label={`${f.name} 메뉴`}
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                props.onMenu(f, r.right, r.bottom)
-              }}
-            >
-              <Icon name="more" size={16} />
-            </button>
-          </div>
-          <FolderTree {...props} parentId={f.id} depth={props.depth + 1} />
-        </div>
-      ))}
-    </>
-  )
-}
-
-export function Menu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const centered = x === 0 && y === 0
-  const style: React.CSSProperties = centered
-    ? {}
-    : { top: Math.min(y + 4, window.innerHeight - 280), left: Math.max(8, Math.min(x - 220, window.innerWidth - 232)) }
-  // Esc로 닫고, 열리면 메뉴로 포커스를 옮겨 Tab·Enter로 항목을 누를 수 있다 (C-1)
-  useEffect(() => {
-    ref.current?.focus()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  return (
-    <div className="menu-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} className={'menu' + (centered ? ' centered' : '')} style={style} role="menu">
-        {children}
-      </div>
-    </div>
-  )
-}
-
-export function MenuItem({ icon, label, onClick, danger }: { icon: string; label: string; onClick: () => void; danger?: boolean }) {
-  return (
-    <button className={'menu-item' + (danger ? ' danger' : '')} role="menuitem" onClick={onClick}>
-      <Icon name={icon} size={18} /> {label}
-    </button>
-  )
-}
-
-function CategoryPicker({
-  current,
-  categories,
-  onPick,
-  onClose
-}: {
-  current: string | null
-  categories: string[]
-  onPick: (category: string | null) => void
-  onClose: () => void
-}) {
-  const [name, setName] = useState('')
-  const submit = () => {
-    const c = normalizeCategory(name)
-    if (!c) return
-    onPick(c)
-  }
-  return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <h2 className="modal-title">카테고리 지정</h2>
-        <div className="picker-list">
-          <button className={'menu-item' + (current === null ? ' is-current' : '')} onClick={() => onPick(null)}>
-            <Icon name="notebook" size={18} /> 미분류
-          </button>
-          {categories.map((c) => (
-            <button key={c} className={'menu-item' + (current === c ? ' is-current' : '')} onClick={() => onPick(c)}>
-              <Icon name="tag" size={18} /> {c}
-            </button>
-          ))}
-        </div>
-        <div className="cat-new-row">
-          <input
-            value={name}
-            maxLength={MAX_CATEGORY_CHARS}
-            placeholder="새 카테고리 만들기"
-            aria-label="새 카테고리 이름"
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && name.trim() && submit()}
-          />
-          <button className="text-btn small" disabled={!name.trim()} onClick={submit}>
-            추가
-          </button>
-        </div>
-        <div className="modal-actions">
-          <button className="text-btn" onClick={onClose}>
-            취소
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** 미리보기 일괄 새로고침 — 만들 수 있는 카드 미리보기를 한 번에 다시 만든다.
- * 원본이 없어 만들 수 없는 PDF 노트는 자동으로 건너뛰고, 원본을 받으면 다음 실행부터 대상이 된다. */
-function ThumbRefreshButton() {
-  const [busy, setBusy] = useState(false)
-  const toast = useUI((s) => s.toast)
-  return (
-    <button
-      className={'tb-btn thumb-refresh' + (busy ? ' spinning' : '')}
-      disabled={busy}
-      aria-label="미리보기 새로고침"
-      title="카드 미리보기 새로고침 — 만들 수 있는 미리보기를 한 번에 다시 만듭니다"
-      onClick={() => {
-        setBusy(true)
-        void refreshAllThumbnailsWithToast()
-          .then((n) => {
-            if (!n) toast('새로 만들 미리보기가 없습니다. 원본이 없는 PDF 노트는 원본을 받은 뒤 만들 수 있어요.', 'info')
-          })
-          .finally(() => setBusy(false))
-      }}
-    >
-      <Icon name="replace" />
-    </button>
   )
 }

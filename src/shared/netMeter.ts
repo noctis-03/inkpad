@@ -7,7 +7,7 @@
 //   1) 이 파일 삭제
 //   2) main.tsx: installNetMeter import + 호출 삭제
 //   3) SettingsPanel.tsx: NetUsageSection import + 렌더 한 줄 삭제
-//   4) src/ui/NetUsageDebug.tsx 삭제 (styles.css의 .net-usage-* / .net-log-* 규칙도 함께)
+//   4) src/ui/NetUsageDebug.tsx 삭제 (styles/08-settings.css의 .net-usage-* / .net-log-* 규칙도 함께)
 //
 // 기본으로 꺼져 있다 — 모든 요청을 가로채 응답을 한 번 더 읽으므로 평소에는 켜 두지 않는다.
 // 개발 서버(npm run dev)에서는 늘 켜지고, 배포본은 설정 > 네트워크 사용량에서 켠 뒤 다시 시작하면 센다.

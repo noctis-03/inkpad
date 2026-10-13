@@ -25,7 +25,7 @@ export function App() {
     return () => setMergeConfirmHook(null)
   }, [])
 
-  // 모션 단계 결정 (명세 4장) — auto는 OS '동작 줄이기'를 따르고, 결과를 <html data-motion>에 반영한다
+  // 모션 단계 결정 — auto는 OS '동작 줄이기'를 따르고, 결과를 <html data-motion>에 반영한다
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
     const apply = () => {
@@ -43,7 +43,7 @@ export function App() {
   }, [])
 
   // 테마 결정 — auto 는 기기 외관을 따르고, 결과를 <html data-theme> 에 반영한다.
-  // 다크 팔레트는 styles.css 의 :root[data-theme='dark'] 블록에 있다.
+  // 다크 팔레트는 styles/01-base.css 의 :root[data-theme='dark'] 블록에 있다.
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = () => {
@@ -60,7 +60,7 @@ export function App() {
     }
   }, [])
 
-  // 전역 누름 피드백 (명세 5.1)
+  // 전역 누름 피드백 (ui/motion/press)
   useEffect(() => {
     installPress()
   }, [])
@@ -90,7 +90,7 @@ function Toasts() {
   const dismiss = useUI((s) => s.dismissToast)
   const [rendered, setRendered] = useState<(Toast & { out?: boolean })[]>([])
 
-  // store에서 빠져도 퇴장 애니메이션이 끝날 때까지 DOM에 남긴다 (명세 5.9)
+  // store에서 빠져도 퇴장 애니메이션이 끝날 때까지 DOM에 남긴다
   useEffect(() => {
     setRendered((prev) => {
       const present = new Set(toasts.map((t) => t.id))
@@ -150,7 +150,7 @@ function Busy() {
   )
 }
 
-/** 첫 실행 시 홈 화면 설치 + 저장소 보존 안내 (NFR-07) */
+/** 첫 실행 시 홈 화면 설치 + 저장소 보존 안내 — 홈 화면에 둔 PWA는 Safari가 데이터를 덜 지운다 */
 function InstallHint() {
   const [show, setShow] = useState(false)
   useEffect(() => {

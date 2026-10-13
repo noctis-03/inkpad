@@ -6,7 +6,7 @@ import { Icon } from '../Icon'
 /**
  * 올가미 선택 도구 모음: 이동은 선택 영역을 펜으로 끌기.
  * 위치는 .editor-area 크기와 툴바 실제 폭을 재서 정한다 — 페이지 사이드바가 열려도
- * 화면 밖으로 나가지 않고, 위쪽 공간이 부족하면 선택 영역 아래에 놓인다 (C-2).
+ * 화면 밖으로 나가지 않고, 위쪽 공간이 부족하면 선택 영역 아래에 놓인다.
  */
 export function SelectionBar({ engine }: { engine: Engine }) {
   const sel = useUI((s) => s.selection)

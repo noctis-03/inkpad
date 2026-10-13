@@ -16,7 +16,7 @@ export interface BlockChange {
  * Command 기반 Undo/Redo.
  * 모든 편집을 "지운 획 / 추가한 획 (+ 페이지 구조 전후)"로 표현한다.
  *  - 그리기: added / 지우개: removed / 부분 지우개·올가미 이동: removed + added
- *  - 페이지 삭제: 페이지 + 그 페이지의 획을 함께 복원하는 복합 명령 (16.6)
+ *  - 페이지 삭제: 페이지 + 그 페이지의 획을 함께 복원하는 복합 명령
  *  - 블록: removed/added와 별개의 blocks 목록으로 표현한다 (Element 청크와 절대 섞지 않는다)
  */
 export interface Command {

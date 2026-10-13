@@ -731,7 +731,7 @@ export class Engine {
     this.exec({ removed: [], added: [], pagesBefore: before, pagesAfter: after, blocks: blockChanges, label: '페이지 크기' })
   }
 
-  /** 다른 문서/PDF에서 가져온 페이지를 index 뒤에 삽입 (FR-IO-01) */
+  /** 다른 문서/PDF에서 가져온 페이지를 index 뒤에 삽입 */
   insertPages(afterIndex: number, pages: Page[]) {
     if (!this.layout.paged || this.readOnly || !pages.length) return
     const before = this.snapshot([])
@@ -949,7 +949,7 @@ export class Engine {
     this.on(document, 'gesturestart', prevent, { passive: false })
     this.on(document, 'gesturechange', prevent, { passive: false })
     this.on(document, 'gestureend', prevent, { passive: false })
-    // 백그라운드 전환/종료 시 디바운스를 기다리지 않고 바로 기록 (설계 8장 4)
+    // 백그라운드 전환/종료 시 디바운스를 기다리지 않고 바로 기록 — iPad는 뒤로 간 탭을 예고 없이 닫는다
     this.on(document, 'visibilitychange', () => {
       if (document.hidden) {
         this.finishActive(this.settings.cancelBehavior === 'commit')

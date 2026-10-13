@@ -8,7 +8,7 @@ import { Segmented } from './Segmented'
 /**
  * 설정 행. asLabel이 true면 <label>로 감싸 컨트롤이 하나뿐인 행(토글·슬라이더·셀렉트)에서
  * 라벨 클릭이 컨트롤을 향하게 한다. 세그먼트 버튼 묶음처럼 컨트롤이 여러 개인 행은
- * <div>로 그린다 — <label> 안에 버튼이 여러 개 있으면 라벨 클릭이 첫 번째 버튼을 눌러 버린다 (A-1).
+ * <div>로 그린다 — <label> 안에 버튼이 여러 개 있으면 라벨 클릭이 첫 번째 버튼을 눌러 버린다.
  */
 function Row({ label, hint, children, asLabel = true }: { label: string; hint?: ReactNode; children: ReactNode; asLabel?: boolean }) {
   const Tag = asLabel ? 'label' : 'div'
@@ -54,7 +54,7 @@ function Select({ k, options }: { k: keyof Settings; options: [string, string][]
   )
 }
 
-/** 모션 단계 (명세 4장) */
+/** 모션 단계 — 자동(OS '동작 줄이기'를 따름)·끄기·보통·풍부 */
 function MotionSelect() {
   const v = useUI((s) => s.settings.motion)
   const set = useUI((s) => s.setSettings)
@@ -298,7 +298,7 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         </Row>
       </section>
 
-      {/* 자주 바꾸지 않는 항목 — 기본은 접어 둔다 (C-6). API 이름이 들어간 힌트는 여기 안에서만 보인다. */}
+      {/* 자주 바꾸지 않는 항목 — 기본은 접어 둔다. API 이름이 들어간 힌트는 여기 안에서만 보인다. */}
       <details className="panel-section adv">
         <summary>고급</summary>
         <section className="panel-section">

@@ -1,4 +1,4 @@
-// 자체 포맷 (FR-IO-06/07): .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
+// 자체 포맷: .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
 // 전체 백업도 같은 구조에 문서가 여러 개 들어간다.
 // blocks.json은 선택 파일이다(블록이 있을 때만 쓴다) — FORMAT_VERSION을 올리지 않고도 옛 버전 앱이 무시하고 가져올 수 있다.
 import { unzip, zip, strFromU8, strToU8, type Unzipped, type Zippable } from 'fflate'
@@ -181,8 +181,8 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
     await db.transaction('rw', db.documents, db.pages, db.outbox, async () => {
       await db.documents.add(doc)
       await db.pages.bulkAdd(pages)
-      await db.outbox.add({ entity: 'document', entityId: doc.id, op: 'upsert', createdAt: now, attempts: 0 })
-      for (const p of pages) await db.outbox.add({ entity: 'page', entityId: p.id, op: 'upsert', createdAt: now, attempts: 0 })
+      await db.outbox.add({ entity: 'document', entityId: doc.id, op: 'upsert', createdAt: now })
+      for (const p of pages) await db.outbox.add({ entity: 'page', entityId: p.id, op: 'upsert', createdAt: now })
     })
     const chunks: ChunkData[] = []
     const prefix = base + 'chunks/'

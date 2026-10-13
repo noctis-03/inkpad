@@ -24,6 +24,11 @@
 // 11. 이 기기 DB의 노트 내용을 바꾸는 일(머지 적용·받기·맞추기)은 노트 보호(storage/docGuard) 안에서 한다.
 //     이 탭의 편집 화면은 먼저 메모리의 변경을 기록하고 멈췄다가 바뀐 내용으로 다시 열리고,
 //     다른 탭이 편집 중인 노트는 건드리지 않고 건너뛴다(DocBusyError).
+// 12. 자동 동기화는 없다 — 네트워크는 사용자가 누른 동작이 직접 일으킬 때만 쓴다 (tools/e2e/stores.ts가 지킨다).
+//     노트: 필기·이름 바꾸기 같은 편집은 이 기기에만 저장되고, "받기"/"올리기"를 누를 때 오간다(편집은 잦고 저절로 생기므로).
+//     앱·기타 파일·보드 프리셋(sync/apps·files·board): 추가·교체·이름/카테고리 변경 자체가 클라우드 스토어에
+//     올리는 동작이라 그 항목만 바로 올린다. 오프라인·실패면 대기로 남고, 각 메뉴의 업로드 버튼으로 다시 올린다.
+//     노트의 "올리기"는 이 대기를 올리지 않는다.
 import type { DocumentMeta, ID } from '../shared/model'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
@@ -43,34 +48,12 @@ import { clearPendingIfUnchanged, pendingSeqsFor } from './unchanged'
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 
 const SYNC_LOCK = 'inkpad-sync'
-/** appProperties에 담을 수 있는 값의 상한 (Google Drive 제한: UTF-8 124바이트) */
-const APP_PROPERTY_MAX_BYTES = 124
 
-/** appProperties 값 상한(키+값 합계)에 맞춰 뒤에서부터 잘라낸다 */
-function fitProp(key: string, value: string): string {
-  const enc = new TextEncoder()
-  let v = value
-  while (v && enc.encode(key).length + enc.encode(v).length > APP_PROPERTY_MAX_BYTES) v = Array.from(v).slice(0, -1).join('')
-  return v
-}
-
-/** appProperties용 title 표식 — 키 길이를 포함한 상한을 넘으면 잘라 넣는다(본문에는 항상 온전히 들어간다) */
-function titleProp(title: string | null | undefined): Record<string, string> {
-  if (!title) return {}
-  return { title: fitProp('title', title) }
-}
-
-/**
- * appProperties용 category 표식 — 키+값 합계 상한을 넘으면 생략한다(본문에는 항상 들어간다).
- * 값만 124바이트로 검사하면 한글 40자(≈120바이트)에 키 'category'(8바이트)가 붙어 128바이트가 되고,
- * Drive가 업로드 전체를 거부한다. 키 길이를 포함해 검사해야 한다.
- */
-function categoryProp(category: string | null | undefined): Record<string, string> {
-  if (!category) return {}
-  const enc = new TextEncoder()
-  if (enc.encode('category').length + enc.encode(category).length > APP_PROPERTY_MAX_BYTES) return {}
-  return { category }
-}
+// appProperties 표식 — 크기 제한은 drive.ts (키+값 124바이트). 본문에는 늘 온전한 값이 들어간다
+/** 제목은 넘치면 잘라서 넣는다 */
+const titleProp = (title: string | null | undefined): Record<string, string> => (title ? { title: drive.fitAppProperty('title', title) } : {})
+/** 카테고리는 넘치면 뺀다 — 잘린 이름은 다른 카테고리가 된다 */
+const categoryProp = (category: string | null | undefined) => drive.appPropertyIfFits('category', category)
 
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'auth-required' | 'error' | 'disabled'
 
@@ -104,7 +87,7 @@ function notifyToast(text: string, kind: 'info' | 'success' | 'error' = 'success
 
 // ───────────────── 진행 표시 ─────────────────
 
-/** 받기·올리기의 노트 단위 진행 — 상태 카드의 "노트 2/5 올리는 중" 문구용 (구현 메모 ④) */
+/** 받기·올리기의 노트 단위 진행 — 상태 카드의 "노트 2/5 올리는 중" 문구용 */
 export interface SyncProgress {
   phase: 'push' | 'pull'
   done: number
@@ -384,7 +367,7 @@ async function push(f: { docs: string; assets: string }): Promise<{ uploaded: nu
   for (const [docId] of docs) {
     const doc = await db.documents.get(docId)
     if (!doc || doc.deletedAt) continue
-    // 클라우드에서 삭제된 노트는 일괄 올리기에서 뺀다 — 목록의 행을 직접 눌렀을 때만 다시 올린다 (지시서 3번)
+    // 클라우드에서 삭제된 노트는 일괄 올리기에서 뺀다 — 목록의 행을 직접 눌렀을 때만 다시 올린다
     if (await getSync(`clouddel:${docId}`)) continue
     uploadable.add(docId)
   }
@@ -488,7 +471,7 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     await putSync(`fresh:${docId}`, remote.id)
     await putBaseBlob(docId, base) // 저장 시각을 함께 남겨 되돌리기 판정의 요약 캐시가 새 base를 알아본다
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
-    await db.syncState.delete(`clouddel:${docId}`) // 클라우드에서 삭제됐던 노트를 다시 올렸다 (지시서 3번)
+    await db.syncState.delete(`clouddel:${docId}`) // 클라우드에서 삭제됐던 노트를 다시 올렸다
     await db.syncState.delete(`curRev:${docId}`) // 되돌림 표식 해제 — 이제 헤드가 곧 이 기기의 현재
     await db.syncState.delete(`revKind:${docId}`)
     if (cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(seqs)
@@ -673,7 +656,7 @@ async function pull(f: { docs: string; assets: string }): Promise<PullResult> {
   const r: PullResult = { docs: 0, busy: 0 }
   const changed = new Set<string>()
 
-  // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용 (구현 메모 ④).
+  // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용.
   // 받기 미리보기(planPull)와 같은 함수로 고른다 — 미리보기에 뜬 목록이 곧 실제로 받는 목록이다
   const eligible = (await pullCandidates(await drive.listFiles(f.docs))).map((c) => c.remote)
 
@@ -740,14 +723,14 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   const f = await ensureFolders()
   const remotes = await drive.listFiles(f.docs)
 
-  // 오판 방지 (지시서 3번): 방금 올린 파일은 listFiles 인덱스에 늦게 반영될 수 있다 (규칙 10).
+  // 오판 방지: 방금 올린 파일은 listFiles 인덱스에 늦게 반영될 수 있다 (규칙 10).
   // 위치 기록이 있는데 목록에 없는 파일은 getMeta로 그 파일만 한 번 더 확인하고,
   // 실제로 살아 있으면(=trashed가 아니면) 목록에 끼워 넣어 "클라우드에서 삭제됨" 오분류를 막는다.
   const listed = new Set(remotes.map((r) => r.id))
   // 방금 올린 파일(fresh: 표식)만 개별 확인한다. 예전에는 'doc:' 기록이 있는 모든 노트를
   // "목록에 안 보인다"는 이유로 하나씩 getMeta 했다 — 노트가 많으면 새로고침 1회가
   // 노트 수만큼 요청을 낳았다(색인 지연이 없어도 매번). 표식은 업로드 직후에만 생기므로
-  // 이 루프는 보통 0~1건이다 (지시서 3번 오판 방지는 그대로 유지).
+  // 이 루프는 보통 0~1건이다 (오판 방지는 그대로 유지).
   for (const kv of await db.syncState.toArray()) {
     if (!kv.key.startsWith('fresh:')) continue
     const fileId = kv.value as string
@@ -789,7 +772,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     })
   }
 
-  // 로컬에만 있는 노트 — Drive 목록만으로는 보이지 않는다 (지시서 2·3번)
+  // 로컬에만 있는 노트 — Drive 목록만으로는 보이지 않는다
   for (const doc of await db.documents.toArray()) {
     if (byDoc.has(doc.id)) continue // Drive에 있다 — 위에서 판정했다
     if (doc.deletedAt) continue // 휴지통에 있는 노트는 목록에 내지 않는다
@@ -800,7 +783,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       out.push({ docId: doc.id, title: doc.title, category: doc.category ?? null, updatedAt: doc.updatedAt, fileId: '', version: '', state: 'new' })
     } else {
       // 올린 적이 있는데 Drive 목록에 없다 → 클라우드에서 삭제됨. 위치 기록이 살아 있으면
-      // 위에서 getMeta로 실제 부재를 확인했으므로(지시서 3번 오판 방지) 여기서는 목록만 본다
+      // 위에서 getMeta로 실제 부재를 확인했으므로 여기서는 목록만 본다
       out.push({ docId: doc.id, title: doc.title, category: doc.category ?? null, updatedAt: doc.updatedAt, fileId: '', version: '', state: 'cloud-deleted' })
     }
   }
@@ -911,7 +894,7 @@ export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileI
   await db.syncState.delete(`base:${info.docId}`)
   await db.syncState.delete(`gone:${info.docId}`)
   // "클라우드에서 삭제함" 표식 — 위치 기록이 지워져도 이 기기는 노트를 'cloud-deleted'로
-  // 분류하고 일괄 올리기에서 뺀다 (지시서 3번). 행을 눌러 다시 올리면 지운다.
+  // 분류하고 일괄 올리기에서 뺀다. 행을 눌러 다시 올리면 지운다.
   await putSync(`clouddel:${info.docId}`, Date.now())
 }
 
@@ -950,9 +933,9 @@ export async function planPush(): Promise<PushPlan> {
     assets: { count: 0, bytes: 0 }
   }
   for (const [docId] of pending) {
-    if (await getSync(`clouddel:${docId}`)) continue // 클라우드에서 삭제됨 — 일괄 올리기에서 제외 (지시서 3번)
+    if (await getSync(`clouddel:${docId}`)) continue // 클라우드에서 삭제됨 — 일괄 올리기에서 제외
     const doc = await db.documents.get(docId)
-    // 삭제(휴지통·영구)는 Drive에 올라가는 게 없다 — 미리보기에 세지 않고 pushTombstone이 조용히 처리한다 (지시서 4번)
+    // 삭제(휴지통·영구)는 Drive에 올라가는 게 없다 — 미리보기에 세지 않고 pushTombstone이 조용히 처리한다 (삭제는 이 기기의 일 — 규칙 4)
     if (!doc || doc.deletedAt) continue
     // 예상 용량: 이 노트의 gzip 청크 합계 — 올릴 때 gzipJson으로 다시 압축하지만 크기는 이와 거의 같다
     const chunks = await db.chunks.where('documentId').equals(docId).toArray()

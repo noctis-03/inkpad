@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatBytes } from '../shared/util'
 import {
   getNetDestinations,
   getNetLog,
@@ -12,12 +13,8 @@ import {
   type NetStats
 } from '../shared/netMeter'
 
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(2)} MB`
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
+/** 사용량은 MB 소수 둘째 자리까지 본다 */
+const fmtBytes = (n: number) => formatBytes(n, 2)
 
 function fmtElapsed(ms: number): string {
   const m = Math.floor(ms / 60000)

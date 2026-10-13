@@ -1,4 +1,4 @@
-// Access token 캐시 및 자동 갱신 (SDF 가이드 4장)
+// Access token 캐시 및 자동 갱신
 // 만료 60초 전이면 /api/auth/token으로 새 토큰을 받는다.
 // 동시에 여러 요청이 와도 갱신 요청은 한 번만 나간다.
 import { db } from '../storage/db'

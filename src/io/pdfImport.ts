@@ -15,7 +15,7 @@ export interface PdfInfo {
   name: string
 }
 
-/** 파일 → 에셋 저장 + 페이지 크기 목록. 페이지 비트맵은 만들지 않는다 (14.1) */
+/** 파일 → 에셋 저장 + 페이지 크기 목록. 페이지 비트맵은 만들지 않는다(보일 때 pdf.js가 그린다) */
 export async function readPdf(file: File | Blob, name: string, askPassword: PasswordPrompt, onProgress?: (p: number) => void): Promise<PdfInfo> {
   if (file.size > MAX_IMPORT_BYTES) throw new ImportError(`파일이 너무 큽니다 (${Math.round(file.size / 1048576)}MB). 최대 200MB까지 가져올 수 있습니다.`)
   const buf = await file.arrayBuffer()

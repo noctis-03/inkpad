@@ -5,13 +5,13 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyn
 import { GESTURE_SETTLE_MS, TAP_SLOP_PX } from '../../engine/constants'
 import type { Engine } from '../../engine/engine'
 import { BLOCK_META, MEMO_BG, anchorBlock, blockOrigin, blockWorldPos, createBlock, isSafeBlockUrl, normalizeBlockUrl } from '../../engine/blocks'
-import { BLOCK_DEFAULT_W, type Block, type BlockType, type ID, type JumpBlock, type LinkBlock, type MemoBlock, type TimerBlock, type TodoBlock } from '../../shared/model'
+import { BLOCK_DEFAULT_W, type Block, type ID, type JumpBlock, type LinkBlock, type MemoBlock, type TimerBlock, type TodoBlock } from '../../shared/model'
 import { ulid } from '../../shared/ulid'
 import { useUI } from '../../app/store'
 import { Icon } from '../Icon'
 import { FtPopover } from './FloatingToolbar'
 
-const HEAD_H = 28 // .blk-head 높이 (styles.css의 Blocks 섹션과 동일)
+const HEAD_H = 28 // .blk-head 높이 (styles/09-toolbar-blocks.css의 Blocks 섹션과 동일)
 /** 크기 조절(우측 아래 모서리 드래그) 허용 폭 범위(pt) */
 const BLK_MIN_W = 120
 const BLK_MAX_W = 600

@@ -38,7 +38,7 @@ export function getPath(rec: { stroke: Stroke; path?: Path2D }): Path2D {
 
 /**
  * 청크(저장 단위)별로 획을 보관하고 R-tree로 월드 좌표 검색을 제공한다.
- * 획은 시작점이 속한 청크(무한 캔버스) 또는 페이지(문서형)에 저장한다 (설계 7.2).
+ * 획은 시작점이 속한 청크(무한 캔버스) 또는 페이지(문서형)에 저장한다.
  */
 export class Scene {
   recs = new Map<ID, StrokeRec>()

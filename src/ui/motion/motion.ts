@@ -1,4 +1,4 @@
-// 모션 토큰과 설정 (명세 3장).
+// 모션 토큰과 설정.
 // WAAPI(element.animate)와 CSS transition에서 함께 쓰는 곡선/지속시간 헬퍼.
 
 export const SPRING = 'cubic-bezier(.2,.9,.25,1.05)'

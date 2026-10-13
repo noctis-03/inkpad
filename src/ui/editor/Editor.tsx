@@ -4,6 +4,7 @@ import { askPdfPassword } from '../../app/dialogs'
 import { Engine } from '../../engine/engine'
 import { PdfCache } from '../../engine/pdf/pdfCache'
 import { trackRecentDoc } from '../../shared/recentDocs'
+import { formatBytesShort } from '../../shared/util'
 import { recallPassword, rememberPassword } from '../../io/passwords'
 import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, removeThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
@@ -26,10 +27,10 @@ import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
-import { SPRING, dur } from '../motion/motion'
+import { dur } from '../motion/motion'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
-import { Menu, MenuItem } from '../library/Library'
+import { Menu, MenuItem } from '../Menu'
 
 export function Editor({ docId }: { docId: ID }) {
   const hostRef = useRef<HTMLElement>(null)
@@ -131,7 +132,7 @@ export function Editor({ docId }: { docId: ID }) {
     }
     // 원본(PDF·이미지)은 이 기기에 없으면 그때 받아온다 (지연 로딩).
     // "받기"는 메타데이터만 받으므로 메타만 있는 노트는 여기서 원본을 내려받는다 —
-    // 네트워크를 쓰기 전에 큰 파일 전송 전 확인과 같은 기준으로 한 번 묻는다 (11.5).
+    // 네트워크를 쓰기 전에 큰 파일 전송 전 확인과 같은 기준으로 한 번 묻는다 (sync/transfer).
     setAssetDownloadGate(async ({ kind, bytes }) => {
       const ok = await confirmAssetDownload(bytes, kind)
       if (!ok) useUI.getState().toast('원본 내려받기를 취소했습니다. 이 기기에 원본이 없어 PDF를 표시하지 못합니다.', 'info')
@@ -384,8 +385,8 @@ export function Editor({ docId }: { docId: ID }) {
           )}
           {fetching && (
             <div className="loading">
-              원본 받는 중… {fmtBytes(fetching.loaded)}
-              {fetching.total ? ` / ${fmtBytes(fetching.total)}` : ''}
+              원본 받는 중… {formatBytesShort(fetching.loaded)}
+              {fetching.total ? ` / ${formatBytesShort(fetching.total)}` : ''}
             </div>
           )}
           <Hud />
@@ -405,11 +406,6 @@ export function Editor({ docId }: { docId: ID }) {
   )
 }
 
-function fmtBytes(n: number) {
-  if (n < 1024) return `${n}B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)}KB`
-  return `${(n / 1024 / 1024).toFixed(1)}MB`
-}
 
 function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
   const view = useUI((s) => s.view)
@@ -424,7 +420,7 @@ function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
           / {view.pageCount}
         </span>
       )}
-      {/* 누르면 보기 메뉴 — 무엇이 초기화되는지 글자로 보여 준다 (C-4). 엔진에 있는 동작만 넣는다. */}
+      {/* 누르면 보기 메뉴 — 무엇이 초기화되는지 글자로 보여 준다. 엔진에 있는 동작만 넣는다. */}
       <button
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect()

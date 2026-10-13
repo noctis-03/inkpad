@@ -3,7 +3,7 @@ export function sleep(ms: number) {
 }
 
 /** 카드 책등 색 팔레트 — 상태 색(파랑·호박·초록)과 어울리는 순서로 둔다 */
-/** 시안(Interactive Motion v2)의 카테고리 팔레트 — 블루·핑크·그린·앰버·바이올렛을 앞세운다 */
+/** 카테고리 팔레트 — 블루·핑크·그린·앰버·바이올렛을 앞세운다 */
 const CATEGORY_COLORS = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#4d7c0f']
 
 /**
@@ -39,11 +39,19 @@ export function categoryTag(name: string | null | undefined) {
   }
 }
 
-export function formatBytes(n: number) {
+/** 바이트 → "1.2 MB" (mbDigits: MB의 소수 자릿수 — 사용량 계량처럼 세밀하게 볼 때 2) */
+export function formatBytes(n: number, mbDigits = 1) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(mbDigits)} MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/** 바이트 → "512B" · "12KB" · "1.2MB" — 좁은 자리(진행 표시·버전 크기)용 짧은 표기 */
+export function formatBytesShort(n: number) {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)}KB`
+  return `${(n / 1024 / 1024).toFixed(1)}MB`
 }
 
 export function formatDate(ts: number) {

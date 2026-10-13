@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-// PDF 내보내기 Worker (14.2): 원본 PDF 페이지 위에 필기를 벡터 경로로 합친다.
+// PDF 내보내기 Worker: 원본 PDF 페이지 위에 필기를 벡터 경로로 합친다.
 import { PDFDocument, rgb, degrees, EncryptedPDFError, type PDFEmbeddedPage } from 'pdf-lib'
 import type { ExportJob, WorkerOut } from './exportTypes'
 

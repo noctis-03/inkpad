@@ -1,0 +1,466 @@
+/* ═════════════════════ 인터랙티브 모션 (MOTION_SPEC) ═════════════════════ */
+
+/* 3장 · 디자인 토큰 — 모션 토큰은 파일 상단 :root 로 통합(다크 모드와 한 곳 관리) */
+
+/* 모션 끄기 — 모든 전환/애니메이션을 즉시 끝낸다 (기능은 그대로) */
+[data-motion='off'] *,
+[data-motion='off'] *::before,
+[data-motion='off'] *::after {
+  animation-duration: .01ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* 5.1 · 전역 누름 피드백 */
+[data-press],
+.tb-btn,
+.primary-btn,
+.text-btn,
+.icon-mini,
+.doc-card,
+.mode-card,
+.menu-item,
+.store-pop-item,
+.tree-item,
+.tree-main,
+.folder-chip,
+.seg button,
+.paper-option,
+.hidden-cat-chip,
+.cloud-chip,
+.cloud-bulk,
+.cloud-act-main,
+.cloud-icon-btn,
+.store-btn,
+.store-tab,
+.sync-big,
+.sync-mini {
+  transition: scale .5s var(--spring-pop), background-color .2s, box-shadow .3s var(--ft-ease);
+}
+[data-press].is-pressed,
+.tb-btn.is-pressed,
+.primary-btn.is-pressed,
+.text-btn.is-pressed,
+.icon-mini.is-pressed,
+.mode-card.is-pressed,
+.menu-item.is-pressed,
+.store-pop-item.is-pressed,
+.tree-item.is-pressed,
+.tree-main.is-pressed,
+.folder-chip.is-pressed,
+.seg button.is-pressed,
+.paper-option.is-pressed,
+.hidden-cat-chip.is-pressed,
+.cloud-chip.is-pressed,
+.cloud-bulk.is-pressed,
+.cloud-act-main.is-pressed,
+.cloud-icon-btn.is-pressed,
+.store-btn.is-pressed,
+.store-tab.is-pressed,
+.sync-big.is-pressed,
+.sync-mini.is-pressed {
+  scale: .93;
+  transition-duration: var(--dur-fast);
+}
+.tb-btn.is-pressed,
+.icon-mini.is-pressed,
+.seg button.is-pressed {
+  background: var(--press);
+}
+.primary-btn.is-pressed,
+.doc-card.is-pressed,
+.mode-card.is-pressed,
+.card.is-pressed {
+  scale: .965;
+}
+
+/* 기존 :active 누름 스타일 제거 — 위의 눌림+탄성 복원으로 통일 */
+.tb-btn:active { background: transparent; }
+.primary-btn:active { filter: none; }
+.text-btn:active { background: var(--surface); }
+.icon-mini:active { background: transparent; }
+.menu-item:active { background: transparent; }
+.sync-big:active:not(:disabled) { transform: none; }
+
+/* 포커스는 키보드(:focus-visible)일 때만 표시한다 */
+:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+
+/* ═══════════════ 5.2 · 슬라이딩 선택 인디케이터 ═══════════════ */
+.motion-ind {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  border-radius: 9px;
+  background: var(--chip);
+  box-shadow: var(--raise);
+  pointer-events: none;
+  opacity: 0;
+  transition: transform .45s var(--ft-spring), width .3s var(--ft-spring), height .3s var(--ft-spring), opacity .18s ease;
+}
+[data-indicator-key] {
+  position: relative;
+  z-index: 1;
+}
+.seg {
+  position: relative;
+}
+.seg .motion-ind {
+  border-radius: var(--r-sm);
+}
+.folder-tree,
+.ft-tools,
+.ft-swatches,
+.ft-widths {
+  position: relative;
+}
+.folder-tree .motion-ind {
+  background: var(--chip);
+  border-radius: 10px;
+  box-shadow: var(--raise), 0 6px 14px -8px #1f293726;
+}
+.ft-tools .motion-ind,
+.ft-swatches .motion-ind,
+.ft-widths .motion-ind {
+  border-radius: calc(var(--ft-btn) / 2);
+  background: var(--chip);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .14), 0 0 0 .5px rgba(0, 0, 0, .05);
+}
+
+/* ═══════════════ 5.7 · 도구 트레이 + 선택 스타일 ═══════════════ */
+.ft-bar .ft-sep {
+  display: none;
+}
+.ft-tools,
+.ft-swatches,
+.ft-widths {
+  background: var(--tray);
+  border-radius: var(--r-lg);
+  padding: 3px;
+  gap: 2px;
+}
+.ft-bar[data-density='dense'] :is(.ft-tools, .ft-swatches, .ft-widths),
+.ft-bar[data-density='tiny'] :is(.ft-tools, .ft-swatches, .ft-widths) {
+  padding: 2px;
+}
+.ft-tool {
+  color: var(--muted);
+}
+.ft-tool.is-active {
+  background: transparent;
+  color: var(--ink);
+}
+.ft-tool.is-active svg {
+  animation: ft-pop .45s var(--spring-pop);
+}
+@keyframes ft-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+/* 색 선택: 칩 대신 색 링 */
+.ft-sw.is-active::before {
+  border: 0;
+  box-shadow: inset 0 0 0 1px #0000001a, 0 0 0 2.5px var(--tray), 0 0 0 4px var(--c);
+}
+.ft-sw.is-active::after {
+  transform: translate(-50%, -50%) scale(.92);
+}
+/* 굵기 선택: 흰 칩 + 점 색 muted→ink */
+.ft-wline { background: var(--muted); }
+.ft-edot { border-color: var(--muted); }
+.ft-wbtn.is-active {
+  background: var(--chip);
+  box-shadow: var(--raise);
+}
+.ft-wbtn.is-active .ft-wline { background: var(--btn-bg); }
+.ft-wbtn.is-active .ft-edot { border-color: var(--ink); }
+.ft-wbtn.is-active .ft-wline,
+.ft-wbtn.is-active .ft-edot { scale: 1.2; }
+/* 위치/접기 spring */
+.ft-bar {
+  transition: left .45s var(--ft-spring), top .45s var(--ft-spring), transform .2s var(--ft-ease), box-shadow .2s;
+}
+/* 진입 연출: 그룹이 위에서 10px 내려오며 45ms씩 차례로 */
+.ft-bar[data-ready] > * {
+  animation: ft-in .45s var(--ft-spring) both;
+}
+.ft-bar[data-ready] > *:nth-child(2) { animation-delay: 45ms; }
+.ft-bar[data-ready] > *:nth-child(3) { animation-delay: 90ms; }
+.ft-bar[data-ready] > *:nth-child(4) { animation-delay: 135ms; }
+.ft-bar[data-ready] > *:nth-child(5) { animation-delay: 180ms; }
+.ft-bar[data-ready] > *:nth-child(6) { animation-delay: 225ms; }
+@keyframes ft-in {
+  from { opacity: 0; transform: translateY(-10px); }
+}
+
+/* 빠른 전환: 지우개 상태 = 잉크 배경 + 흰 아이콘, 전환 시 rotateY flip */
+.quick-switch {
+  transition: left .45s var(--ft-spring), top .45s var(--ft-spring), background .25s var(--ft-ease), color .25s var(--ft-ease), scale .5s var(--spring-pop);
+}
+.quick-switch.is-dragging {
+  transition: background .25s var(--ft-ease), color .25s var(--ft-ease);
+}
+.quick-switch.is-eraser {
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border-color: transparent;
+}
+.quick-switch.is-eraser .quick-switch-badge {
+  background: var(--chip);
+  color: var(--btn-bg);
+}
+.quick-switch .qs-flip {
+  display: inline-flex;
+  animation: qs-flip .5s var(--ft-spring);
+}
+@keyframes qs-flip {
+  from { transform: rotateY(90deg); }
+  to { transform: rotateY(0deg); }
+}
+
+/* ═══════════════ 5.8 · 올가미 선택 · 페이지 번호 ═══════════════ */
+.selection-box {
+  border: 0;
+  border-radius: 6px;
+  background: var(--hover);
+}
+.selection-box::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image:
+    linear-gradient(90deg, var(--ink) 50%, transparent 0),
+    linear-gradient(90deg, var(--ink) 50%, transparent 0),
+    linear-gradient(0deg, var(--ink) 50%, transparent 0),
+    linear-gradient(0deg, var(--ink) 50%, transparent 0);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 12px 1.5px, 12px 1.5px, 1.5px 12px, 1.5px 12px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  animation: ants .6s linear infinite;
+}
+@keyframes ants {
+  to { background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px; }
+}
+.selection-bar {
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  animation: sbar-in .45s var(--ft-spring) both;
+}
+.selection-bar .sel-count { color: var(--muted-2); }
+.selection-bar .tb-btn { color: var(--btn-fg); }
+.selection-bar .tb-btn.danger { color: var(--danger-line-2); }
+@keyframes sbar-in {
+  from { opacity: 0; transform: scale(.94); }
+}
+.page-num-roll {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  animation: roll-in .26s var(--ft-ease) both;
+}
+@keyframes roll-in {
+  from { transform: translateY(10px); opacity: .2; }
+}
+
+/* ═══════════════ 5.3 · 라이브러리 카드 ═══════════════ */
+.doc-card,
+.doc-list .doc-card {
+  transition: transform .3s var(--ft-ease), scale .5s var(--spring-pop), background-color .2s, box-shadow .3s var(--ft-ease);
+}
+/* 등장: 최초 마운트 시 1회 (rich에서만 35ms 지연) */
+.doc-grid[data-enter] .doc-card,
+.doc-list[data-enter] .doc-card {
+  animation: card-in .6s var(--ft-spring) both;
+}
+html[data-motion='rich'] .doc-grid[data-enter] .doc-card,
+html[data-motion='rich'] .doc-list[data-enter] .doc-card {
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(18px) scale(.94); }
+}
+/* 누름: 그림자를 0 1px 2px로 축소 (종이가 책상에 붙는 느낌) */
+.doc-card.is-pressed .doc-thumb {
+  box-shadow: var(--raise);
+}
+/* 광택 레이어 + 틸트 (mouse/pen hover 전용) */
+.doc-gloss {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: var(--r-lg);
+  background: radial-gradient(220px circle at var(--gx, 50%) var(--gy, 50%), #ffffff80, transparent 60%);
+  mix-blend-mode: overlay;
+  transition: opacity .2s;
+}
+.doc-list .doc-gloss { border-radius: 6px; }
+.doc-card.is-tilt .doc-gloss { opacity: .9; }
+/* 썸네일 리빌 (위 → 아래로 쓸어내리듯) */
+.doc-thumb img[data-reveal] { clip-path: inset(0 0 100% 0); }
+.doc-thumb img[data-reveal].is-revealed { animation: thumb-reveal .6s var(--ft-ease) both; }
+.doc-thumb img[data-reveal].is-revealed.no-anim { animation: none; clip-path: inset(0); }
+@keyframes thumb-reveal {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0); }
+}
+/* settle: 흰 광택 띠 + 5px 들렸다 내려앉기 */
+.doc-card.is-settling .doc-thumb { animation: settle-lift .7s var(--spring-pop); }
+.doc-card.is-settling .doc-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, #ffffffcc 50%, transparent 70%);
+  animation: sheen .95s var(--ft-ease);
+}
+@keyframes settle-lift {
+  0%, 100% { transform: none; }
+  45% { transform: translateY(-5px); }
+}
+@keyframes sheen {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(130%); }
+}
+/* 복귀 고스트 — 편집 화면을 닫으면 카드로 줄어든다 */
+.doc-return-ghost {
+  position: fixed;
+  z-index: 45;
+  border-radius: var(--r-lg);
+  background-color: var(--paper);
+  background-size: cover;
+  background-position: top center;
+  box-shadow: var(--e2);
+  pointer-events: none;
+}
+/* 열기 고스트 — 카드 썸네일이 편집 화면으로 펼쳐진다 */
+.doc-open-ghost {
+  position: fixed;
+  z-index: 45;
+  border-radius: var(--r-lg);
+  background-color: var(--thumb-paper);
+  background-size: cover;
+  background-position: top center;
+  box-shadow: var(--e2);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 5.4 · 섹션 제목 모핑 — 애니메이션은 TitleText 컴포넌트가 Web Animations API로
+   두 단계(슬러드아웃→슬러드인)로 실행한다. CSS에서는 자리만 잡아 준다. */
+.library-title .title-text { display: inline-block; }
+@keyframes title-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+/* 5.5 · 동기화 상태 점 */
+.doc-state { display: inline-flex; align-items: center; gap: 5px; }
+.doc-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1px var(--tag-border);
+  flex: none;
+}
+.doc-state.s-new .doc-state-dot { background: var(--muted-2); }
+.doc-state.s-same .doc-state-dot { background: var(--success); }
+.doc-state.s-pending .doc-state-dot { background: var(--warn); animation: dot-pulse 1.6s ease-in-out infinite; }
+.doc-state.s-remote-new .doc-state-dot { background: var(--accent); box-shadow: 0 0 0 3px #2563eb1f; }
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .45; transform: scale(.8); }
+}
+.tb-btn.sync-btn.is-syncing svg { animation: spin .8s linear infinite; }
+/* 메뉴로 통합된 구름 버튼도 동기화 중에는 회전해 '새로고침 중'을 알린다 */
+.library-header .tb-btn.sync-btn.is-syncing svg { animation: spin .8s linear infinite; }
+
+/* ═══════════════ 5.9 · 시트 · 패널 · 토스트 ═══════════════ */
+.modal-backdrop {
+  background: var(--press);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.sheet,
+.store-sheet {
+  animation: sheet-up .55s var(--ft-spring) both;
+}
+@keyframes sheet-up {
+  from { opacity: 0; transform: translateY(24px); }
+}
+/* NewDocumentSheet: 템플릿이 55ms씩 차례로 올라온다 */
+.sheet .mode-card { animation: card-up .5s var(--ft-spring) both; }
+.sheet .mode-card:nth-child(1) { animation-delay: 0ms; }
+.sheet .mode-card:nth-child(2) { animation-delay: 55ms; }
+.sheet .mode-card:nth-child(3) { animation-delay: 110ms; }
+.sheet .mode-card:nth-child(4) { animation-delay: 165ms; }
+.sheet .mode-card:nth-child(5) { animation-delay: 220ms; }
+.sheet .mode-card:nth-child(6) { animation-delay: 275ms; }
+@keyframes card-up {
+  from { opacity: 0; transform: translateY(14px); }
+}
+/* 선택된 템플릿: 잉크 링 + 들림 */
+.mode-card.is-active {
+  border-color: var(--ink);
+  background: var(--paper-2);
+  color: var(--ink);
+  box-shadow: 0 0 0 1.5px var(--ink), 0 8px 18px #0000001f;
+  transform: translateY(-4px);
+}
+/* 입력 포커스: 파란 링 제거 */
+.field input:focus,
+.sheet input:focus,
+.sheet select:focus,
+.sheet textarea:focus,
+.modal-input:focus,
+.search-box input:focus,
+.cloud-search input:focus,
+.store-search input:focus {
+  outline: none;
+  border-color: var(--muted-2);
+  box-shadow: var(--focus-ring);
+}
+/* 주요 버튼: accent → ink */
+.primary-btn {
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  box-shadow: inset 0 1px 0 #ffffff1f;
+}
+/* 패널 열림 spring */
+.side-panel { animation: panel-in .4s var(--ft-spring) both; }
+@keyframes panel-in {
+  from { opacity: 0; transform: translateX(12px) scale(.99); }
+}
+/* 토스트 등장/퇴장 + 점 */
+.toast,
+.toast.error,
+.toast.success {
+  background: var(--toast-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: toast-in .5s var(--ft-spring) both;
+}
+.toast.is-out { animation: toast-out .3s ease both; }
+.toast-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+.toast.success .toast-dot { background: var(--success); }
+.toast.error .toast-dot { background: var(--danger-2); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(6px); }
+}

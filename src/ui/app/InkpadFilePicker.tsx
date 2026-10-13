@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../Icon'
 import { listInkpadFiles, readInkpadFile, type InkpadFile } from '../../sync/inkpadFiles'
+import { formatBytesShort } from '../../shared/util'
 
 /** 앱이 요청한 accept 문자열에 맞는 파일인지 ('.pdf', 'image/*', 'text/html' 등) */
 function matchesAccept(accept: string, mime: string, name: string): boolean {
@@ -17,12 +18,6 @@ function matchesAccept(accept: string, mime: string, name: string): boolean {
       if (tok.endsWith('/*')) return m.startsWith(tok.slice(0, -1))
       return m === tok
     })
-}
-
-function humanSize(n: number) {
-  if (n < 1024) return `${n}B`
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)}KB`
-  return `${(n / 1024 / 1024).toFixed(1)}MB`
 }
 
 /** "Inkpad에서 고르기" — 앱·원본 목록에서 파일을 고른다 */
@@ -133,7 +128,7 @@ export function InkpadFilePicker({
                     <span className="inkpad-pick-body">
                       <span className="inkpad-pick-name">{f.name}</span>
                       <span className="inkpad-pick-sub">
-                        {humanSize(f.size)}
+                        {formatBytesShort(f.size)}
                         {f.local ? ' · 이 기기에 있음' : ' · 클라우드에서 받아옴'}
                       </span>
                     </span>
