@@ -117,6 +117,7 @@ src/
    app/       App, store(zustand: UI 상태만), dialogs
    api/       Hono Worker (/api/*: health)
 public/      manifest, sw.js, icons, _routes.json
+tools/       verify/(빠른 검사 — npm test), e2e/(브라우저 시나리오 + 가짜 Google Drive — npm run test:e2e)
 ```
 
 ## 데이터 (IndexedDB `inkpad`)
@@ -130,9 +131,18 @@ npm run preview                  # wrangler dev :3000 (빌드 결과 정적 에�
 pm2 start ecosystem.config.cjs   # 위 preview를 pm2로 띄우기
 npm run deploy                   # build 후 wrangler deploy (Cloudflare Workers)
 npm run typecheck
-npm run test:merge               # 노트 머지 회귀 테스트 (의존성 없음)
-npm run test:sync                # 받기 판정(받을 것·최신) 회귀 테스트 (의존성 없음)
+npm test                         # 빠른 검사 모음(수 초, 브라우저 없음): 아래 test:merge·sync·css·flip·motion
+npm run test:e2e                 # 브라우저 시나리오(약 1분) — 처음 한 번 `npx playwright install chromium`
+npm run health                   # preview 서버의 /api/health 확인
 ```
+
+| 검사 | 무엇을 지키나 |
+|---|---|
+| `test:merge` | 노트 머지 — 같은 페이지 양쪽 획 보존, base 없을 때, 옮긴 획, 페이지 삭제 충돌 (36개) |
+| `test:sync` | 받기 판정 — 받을 것·최신, 중복 파일, 머지 결과의 updatedAt (25개) |
+| `test:css` | CSS 구조 — 닫히지 않은 중괄호로 뒤 규칙이 통째로 중첩되던 사고 방지 |
+| `test:flip` · `test:motion` | 목록 FLIP·모션 판정 |
+| `test:e2e` | 실제 앱 코드를 Chromium에서: 탭 잠금, 열린 노트 보호, 두 기기 동기화(가짜 Google Drive — 네트워크·계정 불필요), 큰 파일 이어 올리기, 가만히 있을 때 프레임 0 (`tools/e2e/`) |
 
 ### 동기화 설정 (Google Drive)
 1. Google Cloud Console에서 **Google Drive API** 사용 설정, OAuth 동의 화면(외부) — scope `openid email .../auth/drive.file`

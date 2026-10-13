@@ -8,11 +8,14 @@
     "preview": "wrangler dev --ip 0.0.0.0 --port 3000",
     "deploy": "npm run build && wrangler deploy",
     "clean-port": "fuser -k 3000/tcp 2>/dev/null || true",
-    "test": "curl -s http://localhost:3000/api/health",
+    "health": "curl -s http://localhost:3000/api/health",
+    "test": "npm run -s test:merge && npm run -s test:sync && npm run -s test:css && npm run -s test:flip && npm run -s test:motion",
     "test:motion": "node --experimental-strip-types --no-warnings tools/verify/motion-dom-sim.ts",
     "test:flip": "node --experimental-strip-types --no-warnings tools/verify/flip-plan-test.ts",
     "test:merge": "node --experimental-strip-types --no-warnings tools/verify/merge-test.ts",
-    "test:sync": "node --experimental-strip-types --no-warnings tools/verify/sync-judge-test.ts"
+    "test:sync": "node --experimental-strip-types --no-warnings tools/verify/sync-judge-test.ts",
+    "test:css": "node --experimental-strip-types --no-warnings tools/verify/css-check.ts",
+    "test:e2e": "node --experimental-strip-types --no-warnings tools/e2e/run.ts"
   },
   "dependencies": {
     "dexie": "^4.4.6",
@@ -34,6 +37,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "playwright": "1.63.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "wrangler": "^4.110.0"
