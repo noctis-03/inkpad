@@ -13,7 +13,7 @@ import { registerOpenDoc, whenDocIdle } from '../../storage/docGuard'
 import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../sync/assets'
 import { confirmAssetDownload } from '../../sync/transfer'
-import { clearPendingIfUnchanged } from '../../sync/unchanged'
+import { scheduleUnchangedCheck } from '../../sync/unchanged'
 import { CONFLICT_EVENT, REMOTE_EVENT, type MergeEventDetail } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
@@ -157,8 +157,9 @@ export function Editor({ docId }: { docId: ID }) {
           readOnly: access !== 'edit',
           persist: async (b) => {
             await saveBatch(b)
-            // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점으로 돌아왔으면 '올리기 필요'를 내린다
-            if (b.viaUndo) await clearPendingIfUnchanged(b.documentId)
+            // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점으로 돌아왔으면 '올리기 필요'를 내린다 —
+            // 저장마다 노트 전체를 비교하지 않고, 되돌리기가 멈춘 뒤 한 번만 본다 (저장 흐름을 막지 않는다)
+            if (b.viaUndo) scheduleUnchangedCheck(b.documentId)
           },
           callbacks: {
             // 성능 통계는 성능 표시(HUD)만 읽는다 — 꺼져 있으면 전역 상태를 0.5초마다 바꾸지 않는다
