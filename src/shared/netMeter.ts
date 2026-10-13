@@ -9,6 +9,9 @@
 //   3) SettingsPanel.tsx: NetUsageSection import + 렌더 한 줄 삭제
 //   4) src/ui/NetUsageDebug.tsx 삭제 (styles.css의 .net-usage-* / .net-log-* 규칙도 함께)
 //
+// 기본으로 꺼져 있다 — 모든 요청을 가로채 응답을 한 번 더 읽으므로 평소에는 켜 두지 않는다.
+// 개발 서버(npm run dev)에서는 늘 켜지고, 배포본은 설정 > 네트워크 사용량에서 켠 뒤 다시 시작하면 센다.
+//
 // 계측 대상: window.fetch로 나가는 요청/응답 바이트.
 // 앱의 네트워크 트래픽(원본 지연 로딩·동기화 업/다운로드·토큰 교환)은 모두 fetch를 지난다.
 //
@@ -193,6 +196,33 @@ function bump(entry: NetEntry, kind: 'up' | 'down', n: number) {
 }
 
 let installed = false
+
+const ENABLE_KEY = 'inkpad.netMeter'
+
+/** 이번 실행에서 계량할지 — 개발 서버는 늘, 배포본은 설정에서 켰을 때만 */
+export function isNetMeterEnabled(): boolean {
+  if (import.meta.env.DEV) return true
+  try {
+    return localStorage.getItem(ENABLE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 다음 실행부터 계량을 켜거나 끈다 (fetch를 감싸는 일은 앱이 뜰 때만 하므로 다시 시작해야 적용된다) */
+export function setNetMeterEnabled(on: boolean) {
+  try {
+    if (on) localStorage.setItem(ENABLE_KEY, '1')
+    else localStorage.removeItem(ENABLE_KEY)
+  } catch {
+    /* 저장소 차단 환경 */
+  }
+}
+
+/** 이번 실행에서 계량 중인가 */
+export function isNetMeterInstalled(): boolean {
+  return installed
+}
 
 /** fetch를 감싸 세션 동안의 사용량을 센다. 여러 번 불러도 한 번만 감싼다 */
 export function installNetMeter() {

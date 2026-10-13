@@ -24,10 +24,29 @@ const tb = load<{ pos: ToolbarPos; collapsed: boolean }>(LS_TOOLBAR, { pos: 'top
 if (!TOOLBAR_POS.includes(tb.pos)) tb.pos = 'top'
 const blocksLs = load<{ visible: boolean }>(LS_BLOCKS, { visible: true })
 
-export const PEN_COLORS = ['#1c1b19ff', '#1f3a7aff', '#2b5bd7ff', '#c4302bff', '#1f7a4dff', '#6a3fbfff', '#d0632bff', '#77736cff']
-export const HL_COLORS = ['#ffd84a66', '#7ee08a66', '#7cc0ff66', '#ff9cc866', '#ffb36b66']
-export const PEN_COLOR_NAMES = ['먹', '파랑', '빨강', '초록', '보라', '주황', '회색', '분홍']
-export const HL_COLOR_NAMES = ['노랑', '연두', '하늘', '분홍', '살구']
+// 색과 이름은 한 줄에 함께 둔다 — 따로 두면 팔레트를 바꿀 때 이름만 남아 어긋난다
+// (VoiceOver가 빨강 버튼을 "초록"으로 읽던 문제). 색을 바꾸면 이름도 같은 줄에서 바꾼다.
+const PEN_PALETTE: [hex: string, name: string][] = [
+  ['#1c1b19ff', '먹'],
+  ['#1f3a7aff', '남색'],
+  ['#2b5bd7ff', '파랑'],
+  ['#c4302bff', '빨강'],
+  ['#1f7a4dff', '초록'],
+  ['#6a3fbfff', '보라'],
+  ['#d0632bff', '주황'],
+  ['#77736cff', '회색']
+]
+const HL_PALETTE: [hex: string, name: string][] = [
+  ['#ffd84a66', '노랑'],
+  ['#7ee08a66', '연두'],
+  ['#7cc0ff66', '하늘'],
+  ['#ff9cc866', '분홍'],
+  ['#ffb36b66', '살구']
+]
+export const PEN_COLORS = PEN_PALETTE.map(([hex]) => hex)
+export const HL_COLORS = HL_PALETTE.map(([hex]) => hex)
+export const PEN_COLOR_NAMES = PEN_PALETTE.map(([, name]) => name)
+export const HL_COLOR_NAMES = HL_PALETTE.map(([, name]) => name)
 
 /** 마지막 글자의 받침에 따라 '로/으로' 조사를 붙인다 ("파랑으로") */
 export const ro = (name: string) => {

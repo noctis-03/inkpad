@@ -1,4 +1,5 @@
-# Cloudflare Pages 로컬 개발용 환경 변수 (npx wrangler pages dev가 읽는다)
+# Cloudflare Workers 로컬 개발용 환경 변수 (npm run preview = wrangler dev :3000 이 읽는다)
+# GOOGLE_CLIENT_ID는 wrangler.jsonc의 vars에도 있다 — 여기 적으면 로컬에서만 그 값을 덮는다
 # .dev.vars 파일로 복사하고 값을 채우세요. 절대 커밋하지 마세요 (.gitignore에 이미 있음)
 GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPx-...

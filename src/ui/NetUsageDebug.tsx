@@ -3,7 +3,9 @@ import {
   getNetDestinations,
   getNetLog,
   getNetStats,
+  isNetMeterInstalled,
   resetNetStats,
+  setNetMeterEnabled,
   subscribeNetStats,
   type NetDest,
   type NetEntry,
@@ -89,6 +91,33 @@ function RequestLog({ log }: { log: NetEntry[] }) {
  * 누적 저장하지 않고, 브라우저가 Wi-Fi/셀룰러를 구분하지 못하므로 합계만 보여준다.
  */
 export function NetUsageSection() {
+  // 계량은 기본으로 꺼져 있다 — 켜는 스위치만 보여 준다 (훅 규칙상 본문은 별도 컴포넌트)
+  if (!isNetMeterInstalled()) {
+    return (
+      <section className="panel-section" id="net-usage-debug">
+        <h3>네트워크 사용량 (디버그)</h3>
+        <p className="hint">
+          꺼져 있습니다. 켜면 앱을 다시 시작한 뒤부터 이번 실행 동안 쓴 인터넷 사용량과 요청 기록을 보여 줍니다. 모든 요청을 한 번 더
+          읽으므로 확인할 때만 켜 두세요.
+        </p>
+        <div className="btn-row">
+          <button
+            className="text-btn"
+            onClick={() => {
+              setNetMeterEnabled(true)
+              location.reload()
+            }}
+          >
+            켜고 다시 시작
+          </button>
+        </div>
+      </section>
+    )
+  }
+  return <NetUsageBody />
+}
+
+function NetUsageBody() {
   const [s, setS] = useState<NetStats>(getNetStats)
   const [conn, setConn] = useState('')
   const [showLog, setShowLog] = useState(true)
@@ -164,6 +193,17 @@ export function NetUsageSection() {
         <button className="text-btn" onClick={resetNetStats}>
           사용량 · 로그 초기화
         </button>
+        {!import.meta.env.DEV && (
+          <button
+            className="text-btn"
+            onClick={() => {
+              setNetMeterEnabled(false)
+              location.reload()
+            }}
+          >
+            끄고 다시 시작
+          </button>
+        )}
       </div>
     </section>
   )
