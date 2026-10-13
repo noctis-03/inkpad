@@ -10,8 +10,6 @@ export interface ChunkRow {
   schemaVersion: number
   data: Blob // gzip(JSON Element[])
   count: number // 요소 수 (목록 표시/통계용)
-  version: number // 서버 기준 버전
-  localRev: number // 로컬에서 바뀔 때마다 +1
   updatedAt: number
   deletedAt?: number
 }
@@ -41,7 +39,6 @@ export interface OutboxRow {
   entityId: string // chunk는 "pageId|key"
   op: 'upsert' | 'delete'
   createdAt: number
-  attempts: number
 }
 
 export interface KV {

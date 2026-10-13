@@ -27,7 +27,7 @@ export async function enqueue(entity: OutboxEntity, entityId: string, op: 'upser
   if (existing) {
     if (existing.op !== op) await db.outbox.update(existing.seq!, { op, createdAt: Date.now() })
   } else {
-    await db.outbox.add({ entity, entityId, op, createdAt: Date.now(), attempts: 0 })
+    await db.outbox.add({ entity, entityId, op, createdAt: Date.now() })
   }
 }
 
@@ -399,7 +399,7 @@ export async function saveBatch(b: SaveBatch) {
       const entityId = `${c.pageId}|${c.key}`
       if (!blob) {
         if (prev && !prev.deletedAt) {
-          await db.chunks.update(key, { deletedAt: now, updatedAt: now, count: 0, localRev: prev.localRev + 1 })
+          await db.chunks.update(key, { deletedAt: now, updatedAt: now, count: 0 })
           await enqueue('chunk', entityId, 'delete')
         }
         continue
@@ -411,8 +411,6 @@ export async function saveBatch(b: SaveBatch) {
         schemaVersion: SCHEMA_VERSION,
         data: blob,
         count: c.elements.length,
-        version: prev?.version ?? 0,
-        localRev: (prev?.localRev ?? 0) + 1,
         updatedAt: now
       })
       await enqueue('chunk', entityId)

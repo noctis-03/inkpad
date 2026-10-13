@@ -181,8 +181,8 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
     await db.transaction('rw', db.documents, db.pages, db.outbox, async () => {
       await db.documents.add(doc)
       await db.pages.bulkAdd(pages)
-      await db.outbox.add({ entity: 'document', entityId: doc.id, op: 'upsert', createdAt: now, attempts: 0 })
-      for (const p of pages) await db.outbox.add({ entity: 'page', entityId: p.id, op: 'upsert', createdAt: now, attempts: 0 })
+      await db.outbox.add({ entity: 'document', entityId: doc.id, op: 'upsert', createdAt: now })
+      for (const p of pages) await db.outbox.add({ entity: 'page', entityId: p.id, op: 'upsert', createdAt: now })
     })
     const chunks: ChunkData[] = []
     const prefix = base + 'chunks/'

@@ -4,6 +4,7 @@ import { askPdfPassword } from '../../app/dialogs'
 import { Engine } from '../../engine/engine'
 import { PdfCache } from '../../engine/pdf/pdfCache'
 import { trackRecentDoc } from '../../shared/recentDocs'
+import { formatBytesShort } from '../../shared/util'
 import { recallPassword, rememberPassword } from '../../io/passwords'
 import type { DocumentMeta, ID, Page } from '../../shared/model'
 import { loadDocument, putThumbnail, removeThumbnail, saveBatch, saveLastView, updateDocument } from '../../storage/repo'
@@ -384,8 +385,8 @@ export function Editor({ docId }: { docId: ID }) {
           )}
           {fetching && (
             <div className="loading">
-              원본 받는 중… {fmtBytes(fetching.loaded)}
-              {fetching.total ? ` / ${fmtBytes(fetching.total)}` : ''}
+              원본 받는 중… {formatBytesShort(fetching.loaded)}
+              {fetching.total ? ` / ${formatBytesShort(fetching.total)}` : ''}
             </div>
           )}
           <Hud />
@@ -405,11 +406,6 @@ export function Editor({ docId }: { docId: ID }) {
   )
 }
 
-function fmtBytes(n: number) {
-  if (n < 1024) return `${n}B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)}KB`
-  return `${(n / 1024 / 1024).toFixed(1)}MB`
-}
 
 function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
   const view = useUI((s) => s.view)

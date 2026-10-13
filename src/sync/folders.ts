@@ -92,20 +92,43 @@ async function ensureSubFolder(rootId: string, name: string, key: string, forceF
 }
 
 /**
- * 머지 백업 폴더 (Inkpad/backups/) — 처음 쓸 때 만든다.
- * 머지 전 이 기기 상태를 노트 파일과 별도로 보관한다 (sync.ts finishMerge, 버전 기록이 함께 보여 준다).
- * 폴더가 사라졌어도 다시 올릴 것은 없다 — 백업은 그때그때 새로 만든다.
+ * Inkpad/ 아래 하위 폴더(apps·files·boards·backups)를 확보한다 — 기록해 둔 폴더가 살아 있으면 그대로,
+ * 없으면 이름으로 찾거나 만든다. 기록과 다른 폴더가 되면(통째로 지워져 새로 만든 경우)
+ * onRecreated로 알린다 — 그 폴더를 쓰는 쪽이 로컬 항목을 지우지 않고 '다시 올릴 것'으로 돌린다 (규칙 5).
  */
-export async function ensureBackupsFolder(): Promise<string> {
+export async function ensureStoreFolder(name: string, key: string, onRecreated?: () => Promise<unknown>): Promise<string> {
   const { root } = await ensureFolders()
-  const saved = await getSync<string>('backupsFolderId')
+  const saved = await getSync<string>(key)
   if (saved) {
     const m = await drive.getMeta(saved)
     if (m && !m.trashed) return saved
   }
-  const id = (await drive.findFolder('backups', root)) ?? (await drive.createFolder('backups', root))
-  await putSync('backupsFolderId', id)
+  const id = (await drive.findFolder(name, root)) ?? (await drive.createFolder(name, root))
+  if (saved && saved !== id) await onRecreated?.()
+  await putSync(key, id)
   return id
+}
+
+/**
+ * 머지 백업 폴더 (Inkpad/backups/) — 처음 쓸 때 만든다.
+ * 머지 전 이 기기 상태를 노트 파일과 별도로 보관한다 (sync.ts finishMerge, 버전 기록이 함께 보여 준다).
+ * 폴더가 사라졌어도 다시 올릴 것은 없다 — 백업은 그때그때 새로 만든다.
+ */
+export const ensureBackupsFolder = () => ensureStoreFolder('backups', 'backupsFolderId')
+
+/**
+ * 항목 하나를 지금 클라우드에 반영해 본다 (앱·기타 파일·보드 프리셋을 추가·수정한 직후).
+ * 오프라인이거나 실패하면 false — 항목의 pending 표식이 남아 시트의 '모두 올리기'로 다시 올린다.
+ */
+export async function tryUpload(tag: string, run: () => Promise<void>): Promise<boolean> {
+  if (!navigator.onLine) return false
+  try {
+    await run()
+    return true
+  } catch (e) {
+    console.warn(`[${tag}] 클라우드 반영 실패 — 올리기 대기로 남는다`, e)
+    return false
+  }
 }
 
 /** 다른 곳에서 참조하지 않도록 ID 재수출 */

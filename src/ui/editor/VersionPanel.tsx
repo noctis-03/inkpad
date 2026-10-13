@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useUI } from '../../app/store'
 import { confirmDialog } from '../../app/dialogs'
-import { formatDate } from '../../shared/util'
+import { formatBytesShort, formatDate } from '../../shared/util'
 import type { ID } from '../../shared/model'
 import { db } from '../../storage/db'
 import { AuthRequiredError, SyncNotConfiguredError, getDeviceName } from '../../sync/token'
@@ -17,13 +17,6 @@ import {
   type DocRevision
 } from '../../sync/revisions'
 import { Icon } from '../Icon'
-
-function fmtSize(n: number) {
-  if (!n) return ''
-  if (n < 1024) return `${n}B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)}KB`
-  return `${(n / 1024 / 1024).toFixed(1)}MB`
-}
 
 /** 되돌림 표식 — 이 기기가 어느 리비전 위에 서 있는지 (기기별 로컬 전용) */
 interface CurMarker {
@@ -197,7 +190,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
                 <small>고정한 버전은 자동 삭제되지 않습니다</small>
               </span>
               <span className="setting-control">
-                {pinnedBytes > 0 ? `${fmtSize(pinnedBytes)} 고정됨` : '고정 없음'}
+                {pinnedBytes > 0 ? `${formatBytesShort(pinnedBytes)} 고정됨` : '고정 없음'}
               </span>
             </div>
           </section>
@@ -221,7 +214,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
                         {r.conflicts ? <span className="rev-size">충돌 {r.conflicts}</span> : null}
                         {/* 이 기기가 올린 버전 → 태그로, 다른 기기가 올렸고 이름을 알면 → 기기명으로, 모르면 → 표시 없음 */}
                         {r.device && (r.device === myDevice ? <span className="rev-tag mine">이 기기에서 올림</span> : <span className="rev-size">{r.device}</span>)}
-                        {r.size > 0 && <span className="rev-size">{fmtSize(r.size)}</span>}
+                        {r.size > 0 && <span className="rev-size">{formatBytesShort(r.size)}</span>}
                       </span>
                     </div>
                     <div className="rev-actions">

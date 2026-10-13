@@ -51,8 +51,6 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
         schemaVersion: SCHEMA_VERSION,
         data: blob,
         count: c.elements.length,
-        version: 0,
-        localRev: 1,
         updatedAt: file.doc.updatedAt
       })
     }

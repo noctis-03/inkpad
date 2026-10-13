@@ -1,6 +1,4 @@
-// 엔진 상수 (저장 단위·줌·제스처·렌더링)
-export const CHUNK_SIZE = 4096 // 무한 캔버스 청크 크기 (월드 단위)
-export const MAX_HISTORY = 200
+// 엔진 상수 (줌·제스처·렌더링). 저장 단위(CHUNK_SIZE)·되돌리기 단계(MAX_HISTORY)는 shared/model.ts
 export const MIN_ZOOM = 0.1 // 10%
 export const MAX_ZOOM = 20 // 2000%
 // Ctrl/⌘ + 휠 줌 감도: factor = exp(-delta * SENSITIVITY). 작을수록 한 칸당 변화가 작다.

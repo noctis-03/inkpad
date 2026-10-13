@@ -39,11 +39,19 @@ export function categoryTag(name: string | null | undefined) {
   }
 }
 
-export function formatBytes(n: number) {
+/** 바이트 → "1.2 MB" (mbDigits: MB의 소수 자릿수 — 사용량 계량처럼 세밀하게 볼 때 2) */
+export function formatBytes(n: number, mbDigits = 1) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(mbDigits)} MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/** 바이트 → "512B" · "12KB" · "1.2MB" — 좁은 자리(진행 표시·버전 크기)용 짧은 표기 */
+export function formatBytesShort(n: number) {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)}KB`
+  return `${(n / 1024 / 1024).toFixed(1)}MB`
 }
 
 export function formatDate(ts: number) {

@@ -117,7 +117,6 @@ export interface Asset {
 export const CHUNK_SIZE = 4096
 export const PAGE_CHUNK_KEY = '0_0' // paged 모드: 페이지 1개 = 청크 1개
 export const MAX_HISTORY = 200
-export const SYNC_DEBOUNCE_MS = 3000
 export const TRASH_RETENTION_DAYS = 30
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024
 export const MAX_CATEGORY_CHARS = 40 // 카테고리 이름 길이 제한 (한글 40자 ≈ 120바이트 < Drive appProperties 124바이트)
@@ -156,10 +155,6 @@ export const BACKGROUND_LABELS: Record<BackgroundType, string> = {
   grid: '모눈',
   dot: '점',
   cornell: '코넬'
-}
-
-export function chunkKeyOf(pageId: ID, key: string) {
-  return `${pageId}|${key}`
 }
 
 // ───────── 편집 블록 (PDF 내보내기 제외, Element와 별개) ─────────

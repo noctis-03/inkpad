@@ -15,19 +15,10 @@ import {
 import { ulid } from '../shared/ulid'
 import { db, type FileRow } from '../storage/db'
 import * as drive from './drive'
-import { ensureFolders, getSync, putSync } from './folders'
+import { ensureStoreFolder, tryUpload } from './folders'
 
 export const FILES_EVENT = 'inkpad-files-changed'
 const emit = () => window.dispatchEvent(new Event(FILES_EVENT))
-
-// Drive appProperties 제한: 키+값 합쳐 UTF-8 124바이트
-const PROP_MAX = 124
-const bytes = (s: string) => new TextEncoder().encode(s).length
-function fitProp(key: string, value: string) {
-  let v = value
-  while (v && bytes(key) + bytes(v) > PROP_MAX) v = Array.from(v).slice(0, -1).join('')
-  return v
-}
 
 // ───────── 로컬 ─────────
 
@@ -133,17 +124,10 @@ export async function fileToBlob(row: FileRow): Promise<Blob> {
 
 // ───────── 클라우드 ─────────
 
-async function filesFolder(): Promise<string> {
-  const { root } = await ensureFolders()
-  const saved = await getSync<string>('filesFolderId')
-  if (saved) {
-    const m = await drive.getMeta(saved)
-    if (m && !m.trashed) return saved
-  }
-  const id = (await drive.findFolder('files', root)) ?? (await drive.createFolder('files', root))
-  if (saved && saved !== id) {
-    // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
-    await db.files.toCollection().modify((f) => {
+const filesFolder = () =>
+  // 폴더가 통째로 사라졌다 — 로컬은 지우지 않고 전부 다시 올린다 (sync 규칙 5)
+  ensureStoreFolder('files', 'filesFolderId', () =>
+    db.files.toCollection().modify((f) => {
       if (f.cloudDetachedAt) return // 이 기기에서 직접 클라우드 삭제한 항목은 건드리지 않는다
       delete f.fileId
       if (f.pending !== 'delete') {
@@ -151,23 +135,19 @@ async function filesFolder(): Promise<string> {
         f.pendingKind = 'content'
       }
     })
-  }
-  await putSync('filesFolderId', id)
-  return id
-}
+  )
 
 function propsOf(f: FileRow): Record<string, string> {
   const p: Record<string, string> = {
     fileId: f.id,
     updatedAt: String(f.updatedAt),
-    title: fitProp('title', f.title),
+    title: drive.fitAppProperty('title', f.title),
     kind: f.kind,
-    mime: fitProp('mime', f.mime),
+    mime: drive.fitAppProperty('mime', f.mime),
     size: String(f.size),
-    name: fitProp('name', f.name)
+    name: drive.fitAppProperty('name', f.name)
   }
-  if (f.category && bytes('category') + bytes(f.category) <= PROP_MAX) p.category = f.category
-  return p
+  return { ...p, ...drive.appPropertyIfFits('category', f.category) }
 }
 
 async function flushOne(id: ID, folderId: string) {
@@ -208,17 +188,12 @@ async function flushOne(id: ID, folderId: string) {
   })
 }
 
-async function tryFlush(id: ID): Promise<boolean> {
-  if (!navigator.onLine) return false
-  try {
+/** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
+const tryFlush = (id: ID): Promise<boolean> =>
+  tryUpload('files', async () => {
     await flushOne(id, await filesFolder())
     emit()
-    return true
-  } catch (e) {
-    console.warn('[files] 클라우드 반영 실패 — 사용자가 재업로드해야 함', e)
-    return false
-  }
-}
+  })
 
 /** 시트의 "모두 재업로드" 버튼에서 호출 */
 export async function flushPendingFiles(): Promise<number> {
