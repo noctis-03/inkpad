@@ -3,6 +3,7 @@ import { useUI, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { MergeHost } from '../ui/merge/MergeView'
 import { ArchiveHost } from '../ui/ArchiveSheet'
+import { installSyncReminders } from './syncReminders'
 import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
 import { Editor } from '../ui/editor/Editor'
@@ -19,6 +20,9 @@ export function App() {
     // 휴지통 30일 정리 (로컬). 서버 쪽은 Phase 2에서 요청 시 lazy 정리
     void purgeExpiredTrash().catch(() => {})
   }, [])
+
+  // 동기화 편의 — 앱 아이콘 배지, (켰다면) 앱을 열 때·돌아올 때 클라우드 확인
+  useEffect(() => installSyncReminders(), [])
 
   // 모션 단계 결정 — auto는 OS '동작 줄이기'를 따르고, 결과를 <html data-motion>에 반영한다
   useEffect(() => {

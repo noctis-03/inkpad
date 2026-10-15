@@ -3,6 +3,7 @@ import type { Engine } from '../../engine/engine'
 import { useUI } from '../../app/store'
 import type { DocumentMeta } from '../../shared/model'
 import { onSyncStatus } from '../../sync/sync'
+import { NoteSyncChip } from './NoteSyncChip'
 import { Icon } from '../Icon'
 import { Menu, MenuItem } from '../Menu'
 
@@ -112,6 +113,9 @@ export function EditorToolbar(props: {
             <span className="save-label">{SAVE_LABEL[saveState]}</span>
           </span>
         )}
+
+        {/* 이 노트의 동기화 상태 — 읽기 전용(다른 탭에서 편집 중·뷰어)이면 내지 않는다 */}
+        {doc && !props.readOnly && <NoteSyncChip docId={doc.id} />}
 
         <nav className="toolbar-group" aria-label="문서">
           {doc?.mode === 'paged' && (

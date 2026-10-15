@@ -4,6 +4,9 @@ import type { PressureMode, Settings } from '../engine/types'
 import { Icon } from './Icon'
 import { NetUsageSection } from './NetUsageDebug'
 import { Segmented } from './Segmented'
+import { getSync } from '../sync/folders'
+import { formatBytesShort, formatDate } from '../shared/util'
+import type { CloudCheckRecord } from '../app/syncReminders'
 
 /**
  * 설정 행. asLabel이 true면 <label>로 감싸 컨트롤이 하나뿐인 행(토글·슬라이더·셀렉트)에서
@@ -51,6 +54,43 @@ function Select({ k, options }: { k: keyof Settings; options: [string, string][]
         </option>
       ))}
     </select>
+  )
+}
+
+/** 동기화 편의 — 알림·배지는 네트워크를 쓰지 않는다. '앱 열 때 확인'만 목록 메타를 읽는다(기본 끔) */
+function SyncComfortSection() {
+  const on = useUI((s) => s.settings.cloudCheckOnOpen)
+  const [last, setLast] = useState<CloudCheckRecord | null>(null)
+  useEffect(() => {
+    void getSync<CloudCheckRecord>('cloudCheck').then((r) => setLast(r ?? null))
+  }, [on])
+  return (
+    <section className="panel-section">
+      <h3>동기화 편의</h3>
+      <Row label="노트를 닫을 때 알림" hint="올리지 않은 변경이 있으면 '올리기' 버튼이 달린 알림을 띄웁니다 — 기기를 바꾸기 전에 잊지 않게">
+        <Toggle k="leaveReminder" />
+      </Row>
+      <Row label="앱 아이콘 배지" hint="올리지 않은 노트와 머지 대기 수를 앱 아이콘에 표시합니다(홈 화면에 설치한 앱에서, 기기가 지원할 때)">
+        <Toggle k="appBadge" />
+      </Row>
+      <Row
+        label="앱을 열 때 클라우드 확인"
+        hint={
+          <>
+            앱을 열거나 돌아올 때 클라우드의 노트·브랜치 목록만 확인해 '받을 것·갈라짐·머지 대기'를 표시합니다. 내용은 받지 않으며, 30분 안에 다시 열면 확인하지 않습니다. 데이터는
+            노트 100개에 약 35KB, 300개에 약 100KB입니다.
+            {last && (
+              <>
+                {' '}
+                마지막 확인: {formatDate(last.at)} · 노트 {last.notes}개{last.bytes ? ` · ${formatBytesShort(last.bytes)}` : ''}
+              </>
+            )}
+          </>
+        }
+      >
+        <Toggle k="cloudCheckOnOpen" />
+      </Row>
+    </section>
   )
 }
 
@@ -294,6 +334,8 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
           />
         </Row>
       </section>
+
+      <SyncComfortSection />
 
       {/* 자주 바꾸지 않는 항목 — 기본은 접어 둔다. API 이름이 들어간 힌트는 여기 안에서만 보인다. */}
       <details className="panel-section adv">

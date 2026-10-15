@@ -13,6 +13,7 @@ import { ensureFolders, findBranchesFolder, getSync } from './folders'
 import { newestPerDoc } from './judge'
 import { withSyncLock } from './lock'
 import { AUTO_PIN_PREFIX, unpinDocRevision } from './revisions'
+import { forgetQueued } from './sync'
 import { snapshotUsage } from './snapshots'
 import { getDeviceId } from './token'
 
@@ -141,6 +142,7 @@ export function trashBranches(list: Pick<ArchiveBranch, 'fileId' | 'docId' | 'de
         }
       }
     }
+    await forgetQueued(list) // 머지 대기 배지에서도 뺀다
     return n
   })
 }
