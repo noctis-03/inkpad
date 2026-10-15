@@ -64,7 +64,7 @@ import { SYNC_LOCK, withSyncLock } from './lock'
 import { rememberRevTag } from './revTags'
 import { takeSnapshot } from './snapshots'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceId, getDeviceName } from './token'
-import { clearPendingIfUnchanged } from './unchanged'
+import { clearPendingIfUnchanged, pendingSeqsFor } from './unchanged'
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 
 
@@ -309,29 +309,35 @@ async function cacheCloudStates(infos: CloudNoteInfo[]): Promise<void> {
  * 캐시가 낡았어도 위치 기록(doc:)의 version이 캐시 이상으로 올라갔으면(받기·올리기 완료) 파란 점을 푼다
  */
 export async function cardSyncStates(): Promise<Map<ID, CardSyncState>> {
-  const [docs, pending, cache] = await Promise.all([
-    db.documents.toArray(),
-    pendingDocs(),
-    getSync<{ at: number; states: Record<string, CloudNoteState>; versions: Record<string, string> }>('cloudStates')
-  ])
+  const [docs, pending, cache] = await Promise.all([db.documents.toArray(), pendingDocs(), getCloudStatesCache()])
   const out = new Map<ID, CardSyncState>()
   for (const d of docs) {
     if (d.deletedAt) continue // 휴지통 노트는 점을 달지 않는다
-    let s: CardSyncState
-    const rec = await getSync<FileRecord>(`doc:${d.id}`)
-    const cached = cache?.states[d.id]
-    // 캐시가 낡았는지 — 위치 기록이 캐시 이후로 앞서 나갔으면(받기·따라가기 완료) 캐시 판정을 버린다
-    const cacheFresh = !rec || verNum(rec.version) < verNum(cache?.versions?.[d.id])
-    if (cached === 'diverged' && cacheFresh) s = 'diverged' // 갈라짐 — 머지 관리에서 합칠 때까지
-    else if (pending.has(d.id)) s = 'pending' // 이 기기 변경이 올리기 대기
-    else {
-      if (cached === 'remote-new' && cacheFresh) s = 'remote-new'
-      else if (!rec || cached === 'cloud-deleted') s = 'new' // 클라우드에 없음
-      else s = 'same' // 위치 기록이 있고 대기도 없음 — 최신
-    }
-    out.set(d.id, s)
+    out.set(d.id, await cardStateOf(d.id, pending.has(d.id), cache))
   }
   return out
+}
+
+type CloudStatesCache = { at: number; states: Record<string, CloudNoteState>; versions: Record<string, string> }
+const getCloudStatesCache = () => getSync<CloudStatesCache>('cloudStates')
+
+/** 노트 하나의 카드 상태 (편집 화면의 노트 칩) — 네트워크 없음 */
+export async function noteCardState(docId: ID): Promise<CardSyncState | null> {
+  const d = await db.documents.get(docId)
+  if (!d || d.deletedAt) return null
+  return cardStateOf(docId, (await pendingSeqsFor(docId)).length > 0, await getCloudStatesCache())
+}
+
+async function cardStateOf(docId: ID, pending: boolean, cache: CloudStatesCache | undefined): Promise<CardSyncState> {
+  const rec = await getSync<FileRecord>(`doc:${docId}`)
+  const cached = cache?.states[docId]
+  // 캐시가 낡았는지 — 위치 기록이 캐시 이후로 앞서 나갔으면(받기·따라가기 완료) 캐시 판정을 버린다
+  const cacheFresh = !rec || verNum(rec.version) < verNum(cache?.versions?.[docId])
+  if (cached === 'diverged' && cacheFresh) return 'diverged' // 갈라짐 — 머지 관리에서 합칠 때까지
+  if (pending) return 'pending' // 이 기기 변경이 올리기 대기
+  if (cached === 'remote-new' && cacheFresh) return 'remote-new'
+  if (!rec || cached === 'cloud-deleted') return 'new' // 클라우드에 없음
+  return 'same' // 위치 기록이 있고 대기도 없음 — 최신
 }
 
 // ───────────────── push ─────────────────
@@ -362,6 +368,7 @@ export async function pushNow(): Promise<void> {
       }
       if (diverged > 0)
         notifyToast(`다른 기기에서도 바뀐 노트 ${diverged}개는 이 기기 브랜치에만 올렸습니다(갈라짐). 필기는 그대로 남아 있습니다.`, 'info')
+      notifySyncChanged() // 라이브러리 배지·편집 화면 칩이 다시 계산한다
       const skipped = busy + pulled.busy
       if (skipped > 0) notifyToast(`다른 탭에서 편집 중인 노트 ${skipped}개는 건너뛰었습니다. 그 탭을 닫은 뒤 다시 올려 주세요.`, 'info')
     } catch (e) {
@@ -631,6 +638,7 @@ export async function pullNow(): Promise<PullResult | null> {
       const r = await pull(f)
       await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
       setStatus('idle')
+      notifySyncChanged()
       return r
     } catch (e) {
       handleSyncError(e)
@@ -997,7 +1005,9 @@ export function pushOneNote(docId: ID): Promise<'ff' | 'diverged' | 'skipped'> {
     const f = await ensureFolders()
     await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 싣는다
     const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
-    return pushDoc(docId, info, f)
+    const r = await pushDoc(docId, info, f)
+    notifySyncChanged() // 라이브러리 점·배지·편집 화면 칩이 다시 계산한다 (알림의 '올리기'처럼 화면 밖에서 불러도)
+    return r
   })
 }
 
@@ -1059,7 +1069,9 @@ export async function listMergeQueue(): Promise<MergeQueueEntry[]> {
       mainAt: Number(main.appProperties?.updatedAt) || Date.parse(main.modifiedTime) || 0
     })
   }
-  return out.sort((a, b) => b.branchAt - a.branchAt)
+  out.sort((a, b) => b.branchAt - a.branchAt)
+  await cacheMergeQueue(out.map((e) => ({ docId: e.docId, deviceId: e.deviceId, mine: e.mine })))
+  return out
 }
 
 /**
@@ -1178,9 +1190,108 @@ export function commitMerge(session: MergeSession, draft: MergeDraft): Promise<M
       }
     }
     emitRemoteChanged(new Set<string>([docId]))
-    window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
-    cloudStatesChannel?.postMessage(Date.now())
+    await forgetQueued([{ docId, deviceId: entry.deviceId }]) // 상태 변경 알림도 함께
     return { applied, keptLocal }
+  })
+}
+
+// ───────────────── 동기화 요약 (네트워크 없이) ─────────────────
+// 라이브러리 배지·편집 화면의 노트 칩·앱 아이콘 배지가 읽는다. 이 기기 DB와 마지막으로 본 캐시만 읽는다 —
+// '받을 것'과 '머지 대기'는 사용자가 목록을 새로 고쳤을 때(또는 켜 둔 '앱 열 때 확인') 알게 된 것까지만이다.
+
+/** 동기화 상태가 바뀌었다 — 이 탭과 다른 탭에 알린다 (카드 점·배지·칩이 다시 계산) */
+export function notifySyncChanged(): void {
+  window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
+  cloudStatesChannel?.postMessage(Date.now())
+}
+
+const MERGE_QUEUE_CACHE = 'mergeQueueCache'
+interface QueuedRef {
+  docId: ID
+  deviceId: string
+  mine: boolean
+}
+
+async function cacheMergeQueue(items: QueuedRef[]): Promise<void> {
+  await putSync(MERGE_QUEUE_CACHE, { at: Date.now(), items })
+  notifySyncChanged()
+}
+
+/** 마지막으로 본 머지 대기 목록 (네트워크 없음) */
+export async function cachedMergeQueue(): Promise<QueuedRef[]> {
+  return (await getSync<{ items: QueuedRef[] }>(MERGE_QUEUE_CACHE))?.items ?? []
+}
+
+/** 머지했거나 지운 브랜치를 캐시에서 뺀다 */
+export async function forgetQueued(refs: { docId: ID; deviceId: string }[]): Promise<void> {
+  const drop = new Set(refs.map((r) => `${r.docId}@${r.deviceId}`))
+  await cacheMergeQueue((await cachedMergeQueue()).filter((i) => !drop.has(`${i.docId}@${i.deviceId}`)))
+}
+
+/** 올리지 않은 변경이 있는 노트 — 휴지통·클라우드에서 지운 노트(일괄 올리기 제외)는 뺀다 */
+export async function unsyncedNoteIds(): Promise<ID[]> {
+  const out: ID[] = []
+  for (const docId of (await pendingDocs()).keys()) {
+    const doc = await db.documents.get(docId)
+    if (!doc || doc.deletedAt || (await getSync(`clouddel:${docId}`))) continue
+    out.push(docId)
+  }
+  return out
+}
+
+export interface SyncSummary {
+  /** 올리지 않은 변경이 있는 노트 */
+  pending: ID[]
+  /** 갈라진 이 기기 노트 (마지막으로 본 판정) */
+  diverged: ID[]
+  /** 머지 대기 브랜치 수 (다른 기기 것 포함, 마지막으로 본 목록) */
+  merge: number
+}
+
+export async function syncSummary(): Promise<SyncSummary> {
+  const [pending, states, queue] = await Promise.all([unsyncedNoteIds(), cardSyncStates(), cachedMergeQueue()])
+  return { pending, diverged: [...states].filter(([, s]) => s === 'diverged').map(([id]) => id), merge: queue.length }
+}
+
+/** 클라우드 목록 판정 캐시에서 노트 하나만 고친다 (노트 하나 받기·확인 뒤) */
+async function setCachedState(docId: ID, state: CloudNoteState, version: string): Promise<void> {
+  const cache = (await getSync<{ at: number; states: Record<string, CloudNoteState>; versions: Record<string, string> }>('cloudStates')) ?? { at: 0, states: {}, versions: {} }
+  cache.states[docId] = state
+  cache.versions[docId] = version
+  await putSync('cloudStates', cache)
+}
+
+export type PullOneResult = 'applied' | 'same' | 'pending' | 'diverged' | 'notfound'
+
+/**
+ * 이 노트 하나만 받는다 (편집 화면의 노트 칩). 받기와 같은 판정 — 올리지 않은 변경이 있으면 'pending'(올리기가 맡는다),
+ * 갈라졌으면 'diverged'(머지 관리) 로 돌려주고 덮지 않는다. 받을 것이면 main으로 따라간다(덮기 직전 스냅샷).
+ */
+export function pullOneNote(docId: ID): Promise<PullOneResult> {
+  return withSyncLock(async () => {
+    const f = await ensureFolders()
+    await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 판정에 넣는다
+    const remote = await findMain(docId, f.docs)
+    if (!remote) return 'notfound'
+    const local = await db.documents.get(docId)
+    const { sync } = await judgeNote(docId, remote, local, (await pendingDocs()).has(docId), await getDeviceId())
+    await setCachedState(docId, SYNC_TO_STATE[sync], remote.version)
+    if (sync !== 'pull') {
+      notifySyncChanged()
+      return sync === 'same' ? 'same' : sync === 'push' ? 'pending' : 'diverged'
+    }
+    const file = await drive.downloadJson<MainFile>(remote.id, remote.appProperties?.enc)
+    if (file?.kind !== 'inkpad-doc') return 'notfound'
+    const applied = await withDocExclusive(docId, async () => {
+      await takeSnapshot(docId, 'pull')
+      return applyDocFile(plainDoc(file))
+    })
+    if (!applied) return 'pending'
+    await putDocRecord(docId, remote.id, remote.version)
+    await followedMain(docId, file, remote.appProperties)
+    emitRemoteChanged(new Set<string>([docId]))
+    notifySyncChanged()
+    return 'applied'
   })
 }
 

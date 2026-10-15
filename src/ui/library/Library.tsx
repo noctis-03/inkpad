@@ -38,7 +38,8 @@ import {
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
-import { alignWithCloud, CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, type CardSyncState } from '../../sync/sync'
+import { alignWithCloud, CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
+import { MERGE_DONE_EVENT } from '../merge/MergeView'
 import { THUMBS_EVENT } from '../../io/docThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
@@ -91,6 +92,23 @@ export function Library() {
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showSync, setShowSync] = useState(false)
+  // 할 일 배지 — 올리지 않은 노트 + 머지 대기 (네트워크 없이, 마지막으로 본 판정까지)
+  const [todo, setTodo] = useState<SyncSummary | null>(null)
+  useEffect(() => {
+    const on = () => void syncSummary().then(setTodo).catch(() => {})
+    on()
+    window.addEventListener(CLOUD_STATES_EVENT, on)
+    window.addEventListener(REMOTE_EVENT, on)
+    window.addEventListener(MERGE_DONE_EVENT, on)
+    window.addEventListener('focus', on)
+    return () => {
+      window.removeEventListener(CLOUD_STATES_EVENT, on)
+      window.removeEventListener(REMOTE_EVENT, on)
+      window.removeEventListener(MERGE_DONE_EVENT, on)
+      window.removeEventListener('focus', on)
+    }
+  }, [])
+  const todoCount = todo ? todo.pending.length + todo.merge : 0
   const [showApps, setShowApps] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [showAssets, setShowAssets] = useState(false)
@@ -1037,14 +1055,15 @@ export function Library() {
         </button>
         <button
           className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
-          aria-label="동기화·에셋·앱·파일 메뉴"
-          title="동기화 · 에셋 원본 · 앱 · 기타 파일"
+          aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
+          title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
           onClick={(e) => {
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
             setMoreMenu({ x: r.right, y: r.bottom })
           }}
         >
           <Icon name="cloud" />
+          {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
         </button>
         {section.kind !== 'trash' && (
           <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>

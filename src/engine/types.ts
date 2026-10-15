@@ -40,6 +40,10 @@ export interface Settings {
   momentum: boolean // 한 손가락 스크롤 관성
   // 기타 파일 전송 전 확인 (iPad Safari는 셀룰러 여부를 알 수 없어 크기로 묻는다)
   largeFileConfirm: 'always' | 'off' | '5' | '10' | '50'
+  // 동기화 편의 (sync/reminders.ts) — 네트워크를 쓰는 것은 cloudCheckOnOpen 하나뿐이고 기본은 끔
+  leaveReminder: boolean // 노트를 닫을 때 올리지 않은 변경이 있으면 알림
+  appBadge: boolean // 앱 아이콘에 할 일(올릴 노트 + 머지 대기) 개수
+  cloudCheckOnOpen: boolean // 앱을 열 때 클라우드 목록 확인 (목록만, 30분에 한 번)
   // 인터랙티브 모션 (MOTION_SPEC 4장). auto = 기기의 '동작 줄이기' 설정을 따름
   motion: 'auto' | 'off' | 'normal' | 'rich'
   // 테마 (다크 모드). auto = 기기의 외관 설정을 따름
@@ -67,6 +71,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showHud: false,
   momentum: true,
   largeFileConfirm: 'always',
+  leaveReminder: true,
+  appBadge: true,
+  cloudCheckOnOpen: false,
   motion: 'auto',
   theme: 'auto'
 }

@@ -115,7 +115,7 @@ check('J8 없고 맞춰져 있지 않으면 모름', knownBaseMid(null, false, '
 /* ── J6 · sync.ts가 판정을 judge.ts 하나로만 한다 ─────────────────── */
 check('J6 sync.ts에 판정 복사본(sameByContent) 없음', !/sameByContent/.test(SYNC_SRC))
 check('J6 받기와 받기 미리보기가 같은 대상 함수(pullCandidates)를 쓴다', (SYNC_SRC.match(/await pullCandidates\(/g) ?? []).length === 2)
-check('J6 클라우드 목록이 받기와 같은 판정(judgeNote·newestPerDoc)을 쓴다', (SYNC_SRC.match(/await judgeNote\(/g) ?? []).length === 2 && /newestPerDoc\(remotes\)/.test(SYNC_SRC))
+check('J6 받기·클라우드 목록·노트 하나 받기가 같은 판정(judgeNote·newestPerDoc)을 쓴다', (SYNC_SRC.match(/await judgeNote\(/g) ?? []).length === 3 && /newestPerDoc\(remotes\)/.test(SYNC_SRC))
 check('J6 자동 머지 없음(브랜치 방식)', !/mergeDocs\(/.test(SYNC_SRC) && !/mergeConfirmHook/.test(SYNC_SRC))
 
 /* ── 리포트 ─────────────────────────────────────────────────────── */

@@ -16,6 +16,7 @@ import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../s
 import { confirmAssetDownload } from '../../sync/transfer'
 import { scheduleUnchangedCheck } from '../../sync/unchanged'
 import { REMOTE_EVENT } from '../../sync/sync'
+import { remindOnLeave } from '../../app/syncReminders'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToolbar } from './FloatingToolbar'
@@ -353,7 +354,7 @@ export function Editor({ docId }: { docId: ID }) {
 
   return (
     <div className="editor" ref={rootRef}>
-      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => { useUI.setState({ returnDocId: docId }); navigate(useUI.getState().returnRoute ?? { name: 'library' }) }} />
+      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => { useUI.setState({ returnDocId: docId }); if (!readOnly) remindOnLeave(docId, doc?.title ?? ''); navigate(useUI.getState().returnRoute ?? { name: 'library' }) }} />
       <div className="editor-body">
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
         <div className="editor-area">

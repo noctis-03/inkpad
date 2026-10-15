@@ -1463,3 +1463,54 @@
   color: var(--accent-ink);
   font-size: var(--fs-xs);
 }
+
+/* ───────── 편집 화면의 노트 동기화 칩 ───────── */
+.note-sync {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  margin-right: 4px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.note-sync .doc-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+/* 편집 중에는 거의 늘 '올리기 필요'다 — 깜박이면 가만히 있어도 화면이 쉬지 않는다(배터리) */
+.note-sync .doc-state-dot {
+  animation: none !important;
+}
+/* 좁은 툴바에서는 점만 */
+@media (max-width: 640px) {
+  .note-sync .doc-state {
+    font-size: 0;
+    gap: 0;
+  }
+}
+
+/* ───────── 라이브러리 동기화 버튼의 할 일 배지 ───────── */
+.sync-btn {
+  position: relative;
+}
+.sync-badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+}
