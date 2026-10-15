@@ -12,7 +12,7 @@ import type { SaveState } from '../engine/engine'
 import type { BlockType, ID } from '../shared/model'
 
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다.
-const LS_SETTINGS = 'inkpad.settings.v3'
+const LS_SETTINGS = 'inkpad.settings.v2'
 const LS_STYLE = 'inkpad.style.v2'
 const LS_LIBRARY = 'inkpad.library.v1'
 const LS_TOOLBAR = 'inkpad.toolbar.v1'
@@ -262,8 +262,10 @@ export const useUI = create<UIState>((set, get) => ({
     set({ settings })
   },
   resetSettings: () => {
-    save(LS_SETTINGS, DEFAULT_SETTINGS)
-    set({ settings: DEFAULT_SETTINGS })
+    const keep = { pressureCapability: get().settings.pressureCapability }
+    const settings = { ...DEFAULT_SETTINGS, ...keep }
+    save(LS_SETTINGS, settings)
+    set({ settings })
   },
   setStyle: (style) => {
     save(LS_STYLE, style)

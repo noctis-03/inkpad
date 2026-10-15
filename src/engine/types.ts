@@ -4,28 +4,28 @@ export type { ID, Stroke, StrokeOpts, BackgroundType }
 export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso'
 
 /**
- * 펜 스타일 — 두 가지뿐이다. 값 조절 슬라이더는 두지 않는다.
- *  pen     : 기본 펜 — 필압 펜은 누르는 힘대로, 손가락·마우스는 속도대로 굵기가 흐른다
- *  ballpen : 굵기가 항상 일정한 펜
+ * 필압 처리 방식
+ *  auto     : 펜이 필압을 보내는지 자동 감지 → 있으면 필압, 없으면 fallbackMode
+ *  pressure : 항상 필압 사용 (Apple Pencil)
+ *  velocity : 속도로 굵기 흉내 (빨리 그리면 가늘게) — 필압 없는 펜/손가락
+ *  constant : 굵기 일정
  */
-export type PenStyleId = 'pen' | 'ballpen'
-
-export const PEN_STYLE_ORDER: PenStyleId[] = ['pen', 'ballpen']
-
-export const PEN_STYLES: Record<PenStyleId, { label: string; hint: string }> = {
-  pen: {
-    label: '펜',
-    hint: '필압 펜은 누르는 힘에 따라, 손가락·마우스는 속도에 따라 굵기가 흐릅니다'
-  },
-  ballpen: {
-    label: '볼펜',
-    hint: '필압에 반응하지 않고 굵기가 항상 일정합니다'
-  }
-}
+export type PressureMode = 'auto' | 'pressure' | 'velocity' | 'constant'
+export type FallbackMode = 'velocity' | 'constant'
+export type PressureCapability = 'unknown' | 'yes' | 'no'
 
 export interface Settings {
-  // 펜
-  penStyle: PenStyleId
+  // 필압
+  pressureMode: PressureMode
+  fallbackMode: FallbackMode // auto에서 필압이 없을 때, 그리고 손가락/터치펜/마우스 입력에 사용
+  pressureCapability: PressureCapability // 자동 감지 결과 (기기에 저장)
+  thinning: number // 굵기 변화 폭 0~0.95
+  pressureGamma: number // 필압 곡선 (<1 가볍게, >1 세게 눌러야 굵어짐)
+  minPressure: number // 이보다 약한 필압은 이 값으로 (너무 가늘어지는 것 방지)
+  pressureSmoothing: number // 필압 평활화 0~0.9 (높을수록 굵기 변화가 부드럽지만 반응이 둔해짐)
+  // 필기
+  streamline: number
+  smoothing: number
   fingerDraw: boolean // 손가락·정전식 터치펜으로 그리기 (기본 끔)
   eraserMode: 'stroke' | 'partial'
   // 지연·입력
@@ -33,8 +33,6 @@ export interface Settings {
   coalesced: boolean
   palmWindowMs: number
   palmMaxContact: number // 0 = 끔
-  /** 입력 중인 획에서 매 프레임 다시 계산하는 최근 점 개수 — 나머지는 확정 레이어에 한 번만 굳힌다 */
-  liveWindow: number
   cancelBehavior: 'commit' | 'discard'
   // 렌더링
   gestureRender: 'auto' | 'transform' | 'redraw'
@@ -50,16 +48,21 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  penStyle: 'pen',
+  pressureMode: 'auto',
+  fallbackMode: 'velocity',
+  pressureCapability: 'unknown',
+  thinning: 0.6,
+  pressureGamma: 1,
+  minPressure: 0.05,
+  pressureSmoothing: 0.35,
+  streamline: 0.3,
+  smoothing: 0.5,
   fingerDraw: false,
   eraserMode: 'stroke',
   prediction: true,
   coalesced: true,
-  // 펜을 뗀 뒤 이 시간 동안의 "단일" 접촉만 손바닥으로 본다 — 두 번째 접촉이 오면 되살려
-  // 제스처(핀치·두 손가락 탭)로 쓴다. 예전 기본값 500ms는 필기 직후 제스처를 통째로 막았다.
-  palmWindowMs: 250,
+  palmWindowMs: 500,
   palmMaxContact: 0,
-  liveWindow: 32,
   cancelBehavior: 'commit',
   gestureRender: 'auto',
   resolution: 1,
