@@ -178,13 +178,6 @@ export function Editor({ docId }: { docId: ID }) {
                   .toast(quota ? '기기 저장 공간이 부족합니다. 설정 > 저장소에서 공간을 확인하세요.' : '저장하지 못했습니다. 잠시 후 다시 시도합니다.', 'error')
               }
             },
-            onPressureCapability: (c) => {
-              useUI.getState().setSettings({ pressureCapability: c })
-              if (c === 'no' && useUI.getState().settings.pressureMode === 'auto') {
-                const fb = useUI.getState().settings.fallbackMode === 'velocity' ? '속도 기반' : '일정한 굵기'
-                useUI.getState().toast(`이 펜은 필압을 보내지 않습니다. ${fb}으로 그립니다. (설정 > 펜 · 필압에서 변경)`, 'info')
-              }
-            },
             onPagesChanged: (p) => setPages(p),
             onPageContentChanged: () => setThumbTick((t) => t + 1)
           }

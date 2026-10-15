@@ -1,94 +1,44 @@
 import type { StrokeOpts } from '../shared/model'
-import type { PressureCapability, Settings } from './types'
-
-/** 실제로 획에 적용할 방식 */
-export type ResolvedPressure = 'pressure' | 'velocity' | 'constant'
-
-export function resolvePressure(s: Settings, pointerType: string): ResolvedPressure {
-  // 손가락·정전식 터치펜·마우스는 필압이 없다
-  if (pointerType !== 'pen') return s.pressureMode === 'pressure' || s.pressureMode === 'auto' ? s.fallbackMode : s.pressureMode
-  switch (s.pressureMode) {
-    case 'pressure':
-    case 'velocity':
-    case 'constant':
-      return s.pressureMode
-    case 'auto':
-      // 아직 모를 때는 필압으로 시작한다 (Apple Pencil이 대부분). 필압이 없으면 획이 끝날 때 감지되어 다음 획부터 바뀐다.
-      return s.pressureCapability === 'no' ? s.fallbackMode : 'pressure'
-  }
-}
+import type { PenStyleId } from './types'
 
 /**
- * 이 획의 외곽선 파라미터.
- *
- * streamline(perfect-freehand 내부 리샘플링 평활)은 항상 0으로 저장한다 — 손떨림 보정은 엔진이
- * 점을 만들 때 "시간 기준"으로 이미 적용하므로(engine.addPoint), 라이브러리에도 맡기면 이중으로
- * 눌리고 이벤트 주기에 따라 달라진다. 이미 그려 둔 획은 자기 opts를 그대로 쓰므로 모양이 변하지 않는다.
- *
- * 속도 모드(velocity)는 엔진이 점마다 "화면 기준 속도"로 굵기를 만들어 넘기므로 라이브러리의
- * 거리 기반 추정(simulatePressure)을 끈다 (거리/굵기 비율로 추정하면 배율마다 굵기가 달라진다).
+ * 펜 스타일 → perfect-freehand 외곽선 파라미터.
+ * 값은 고정이다 — 조절 슬라이더는 두지 않는다. 두 스타일이 전부다.
+ *  - streamline(라이브러리 내부 위치 평활)으로 손떨림을 눌러 둔다.
+ *  - simulatePressure는 끈다. 라이브러리의 속도 추정은 점 사이 "월드" 거리로 하므로
+ *    배율이 바뀌면 굵기가 함께 끌려간다. 속도 기반 굵기는 엔진이 "화면" 기준으로 만든다.
+ * 이미 그린 획은 자기 opts를 그대로 쓰므로, 이 값을 바꿔도 옛 획 모양은 변하지 않는다.
  */
-export function strokeOptsFor(mode: ResolvedPressure, s: Settings, tool: 'pen' | 'highlighter'): StrokeOpts {
+export function strokeOptsFor(style: PenStyleId, tool: 'pen' | 'highlighter'): StrokeOpts {
   if (tool === 'highlighter') {
     return { thinning: 0, smoothing: 0.5, streamline: 0, simulatePressure: false }
   }
-  switch (mode) {
-    case 'pressure':
-      return { thinning: s.thinning, smoothing: s.smoothing, streamline: 0, simulatePressure: false }
-    case 'velocity':
-      // 속도 기반은 변화가 과하면 어색하므로 폭을 줄인다
-      return { thinning: s.thinning * 0.7, smoothing: s.smoothing, streamline: 0, simulatePressure: false }
-    case 'constant':
-      return { thinning: 0, smoothing: s.smoothing, streamline: 0, simulatePressure: false }
+  return {
+    thinning: style === 'ballpen' ? 0 : 0.5,
+    smoothing: 0.5,
+    streamline: 0.5,
+    simulatePressure: false
   }
 }
 
-export const PRESSURE_LABEL: Record<ResolvedPressure, string> = {
+/** 이 획의 굵기를 무엇으로 정하는지 — 획을 시작할 때 한 번 정한다 */
+export type InkSource = 'pressure' | 'velocity' | 'fixed'
+
+export const PRESSURE_LABEL: Record<InkSource, string> = {
   pressure: '필압',
   velocity: '속도',
-  constant: '일정'
+  fixed: '일정'
 }
 
 /**
- * 펜이 필압을 보내는지 감지한다.
- * - 한 획 안에서 필압 값이 여러 가지로 바뀌면 → 지원 (즉시 확정)
- * - 점이 충분히 많은데 필압이 한 값으로 고정된 획이 연속 2번 → 미지원
- *   (Logitech Crayon, 일부 USI 펜은 pointerType이 'pen'이어도 0.5/1.0 고정값을 보낸다)
+ * 이 획의 굵기 원천.
+ *  - 볼펜(형광펜 포함)은 일정.
+ *  - 펜 입력에서 필압 값이 0보다 크면 필압 (Apple Pencil 등). 필압이 고정값(0.5 등)만
+ *    보내는 펜은 굵기도 일정하게 나온다 — 값이 없다고 속도로 흉내 내지 않는다.
+ *  - 그 외 입력(손가락·마우스)은 화면 기준 속도로 굵기를 만든다 (quality.velocityPressure).
  */
-export class PressureDetector {
-  private flatStreak = 0
-
-  constructor(public capability: PressureCapability) {}
-
-  /** 획이 끝날 때 호출. 판정이 바뀌면 새 값을 돌려준다 */
-  observe(rawPressures: number[]): PressureCapability | null {
-    if (rawPressures.length < 8) return null
-    let min = Infinity
-    let max = -Infinity
-    const distinct = new Set<number>()
-    for (const p of rawPressures) {
-      if (p < min) min = p
-      if (p > max) max = p
-      if (distinct.size < 4) distinct.add(Math.round(p * 1000))
-    }
-    const varies = max - min > 0.02 && distinct.size >= 3
-    if (varies) {
-      this.flatStreak = 0
-      return this.set('yes')
-    }
-    this.flatStreak++
-    if (this.flatStreak >= 2) return this.set('no')
-    return null
-  }
-
-  reset() {
-    this.flatStreak = 0
-    this.capability = 'unknown'
-  }
-
-  private set(c: PressureCapability) {
-    if (c === this.capability) return null
-    this.capability = c
-    return c
-  }
+export function inkSourceFor(style: PenStyleId, pointerType: string, firstPressure: number): InkSource {
+  if (style === 'ballpen') return 'fixed'
+  if (pointerType === 'pen' && firstPressure > 0) return 'pressure'
+  return 'velocity'
 }

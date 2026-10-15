@@ -5,14 +5,13 @@ import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geome
 import { History, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
-import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
-import { minPointDist, OneEuroFilter, taperStrokeEnd, VELOCITY_START_PRESSURE, velocityPressure } from './quality'
+import { PRESSURE_LABEL, inkSourceFor, strokeOptsFor, type InkSource } from './pressure'
+import { minPointDist, VELOCITY_START_PRESSURE, velocityPressure } from './quality'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
 import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
 import { drawPattern } from './background'
 import type {
   EngineStats,
-  PressureCapability,
   SelectionInfo,
   Settings,
   Tool,
@@ -31,7 +30,6 @@ export interface EngineCallbacks {
   onView?: (v: ViewInfo) => void
   onSelection?: (s: SelectionInfo | null) => void
   onSaveState?: (s: SaveState, error?: unknown) => void
-  onPressureCapability?: (c: PressureCapability) => void
   onPagesChanged?: (pages: Page[]) => void
   onPageContentChanged?: (pageId: ID) => void
 }
@@ -55,27 +53,20 @@ interface ActiveStroke {
   ox: number
   oy: number
   points: number[]
-  raw: number[] // 원래 필압 값 (감지용)
   predicted: number[][]
   lastT: number
   width: number
   color: string
   opts: StrokeOpts
-  pressure: ResolvedPressure
-  /** 직전까지의 평활된 필압 (-1 = 아직 없음) */
+  /** 이 획의 굵기 원천 (필압·속도·일정) */
+  pressure: InkSource
+  /** 직전까지 적용한 필압 (-1 = 아직 없음) — 필압 이벤트가 0을 보낼 때 이어 쓴다 */
   smoothP: number
-  /** 필압·속도 평활 필터 (획마다 새로 만든다) */
-  oe: OneEuroFilter
-  /** 위치 안정화 필터 — 손떨림 보정(GoodNotes Stroke Stabilization) */
-  fx: OneEuroFilter
-  fy: OneEuroFilter
-  /** 직전 "원시" 화면 좌표·시각 — 속도는 안정화된 좌표가 아니라 손의 실제 움직임으로 잰다 */
+  /** 직전 "원시" 화면 좌표·시각 — 속도는 화면 기준으로 잰다 */
   rsx: number
   rsy: number
   rt: number
   hasRaw: boolean
-  /** 획 끝 날카로움으로 실제 깎은 세기 (통계·검증용) */
-  tapered: number
   /** 확정 레이어에 이미 굳힌 점 개수 (증분 라이브 렌더링) */
   frozen: number
   // 지우개
@@ -138,8 +129,6 @@ export class Engine {
   readOnly: boolean
   private cb: EngineCallbacks
   private persist: (b: SaveBatch) => Promise<void>
-  private detector: PressureDetector
-
   // 페이지
   private allPages = new Map<ID, Page>()
   /** 페이지별 콘텐츠 리비전 (썸네일 캐시 무효화용) */
@@ -243,7 +232,6 @@ export class Engine {
     this.readOnly = !!o.readOnly
     this.pdf = o.pdf
     this.doc = o.doc.doc
-    this.detector = new PressureDetector(o.settings.pressureCapability)
 
     this.layout = new Layout(this.doc.mode)
     for (const p of o.doc.pages) this.allPages.set(p.id, p)
@@ -327,7 +315,6 @@ export class Engine {
   setSettings(s: Settings) {
     const prev = this.settings
     this.settings = s
-    if (prev.pressureCapability !== s.pressureCapability) this.detector.capability = s.pressureCapability
     if (prev.resolution !== s.resolution) this.handleResize(true)
     if (s.showHud && !prev.showHud) this.wake() // 성능 표시를 켜면 측정용으로 계속 돈다
   }
@@ -1202,7 +1189,7 @@ export class Engine {
     if (!target) return
     const hl = tool === 'highlighter'
     const st = hl ? this.style.highlighter : this.style.pen
-    const pressure = resolvePressure(this.settings, e.pointerType)
+    const pressure: InkSource = hl ? 'fixed' : inkSourceFor(this.settings.penStyle, e.pointerType, e.pressure)
     const a: ActiveStroke = {
       pointerId: e.pointerId,
       pointerType: e.pointerType,
@@ -1212,22 +1199,17 @@ export class Engine {
       ox: target.ox,
       oy: target.oy,
       points: [],
-      raw: [],
       predicted: [],
       lastT: e.timeStamp,
       width: st.width,
       color: st.color,
-      opts: strokeOptsFor(pressure, this.settings, hl ? 'highlighter' : 'pen'),
+      opts: strokeOptsFor(this.settings.penStyle, hl ? 'highlighter' : 'pen'),
       pressure,
       smoothP: -1,
-      oe: OneEuroFilter.forSmoothing(this.settings.pressureSmoothing),
-      fx: OneEuroFilter.forStabilization(this.settings.streamline),
-      fy: OneEuroFilter.forStabilization(this.settings.streamline),
       rsx: p.x,
       rsy: p.y,
       rt: eventTimeToPerf(e.timeStamp),
       hasRaw: false,
-      tapered: 0,
       frozen: 0,
       removed: new Map(),
       added: new Map(),
@@ -1262,10 +1244,7 @@ export class Engine {
     if (a.pressure !== 'pressure') return 0.5
     const raw = ev.pressure
     if (!(raw > 0)) return -1
-    let p = Math.min(1, raw)
-    const g = this.settings.pressureGamma
-    if (g !== 1) p = Math.pow(p, g)
-    return Math.max(this.settings.minPressure, p)
+    return Math.min(1, Math.max(0.05, raw))
   }
 
   private toChunkPoint(a: ActiveStroke, ev: PointerEvent): number[] {
@@ -1298,12 +1277,10 @@ export class Engine {
       }
       return
     }
-    if (a.pointerType === 'pen') a.raw.push(ev.pressure)
     const ts = eventTimeToPerf(ev.timeStamp)
     const rdt = Math.max(0, Math.round(ts - a.rt)) // 이벤트 사이 실제 경과 시간 — 평활 계수의 기준
 
-    // 1) 굵기 원값.
-    //    필압 펜은 원시 필압(곡선·최소값 적용), 그 외에는 "화면 기준 속도"로 만든다.
+    // 1) 굵기 원값 — 필압 펜은 원시 필압, 그 외에는 "화면 기준 속도"로 만든다.
     //    속도를 월드 거리로 재면 같은 손 동작이 배율마다 다른 굵기가 된다 — 화면 px/s로 잰다.
     let rawP: number
     if (a.pressure === 'velocity') {
@@ -1313,21 +1290,11 @@ export class Engine {
       // 이 이벤트가 필압을 보내지 않았다 → 직전 값 유지
       rawP = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
     }
-
-    // 2) 시간 기준 1€ 평활 — 이벤트 개수가 아니라 경과 시간으로 계수를 잡아
-    //    60/120Hz·coalesced 배수가 달라도 같은 감각이 된다.
-    const pr = a.smoothP < 0 ? rawP : a.oe.filter(rawP, rdt || 1)
+    // 2) 평활 필터는 두지 않는다 — perfect-freehand의 smoothing·streamline이 대신한다.
+    const pr = rawP
     a.smoothP = pr
-
-    // 3) 위치 안정화(GoodNotes Stroke Stabilization) — 잔떨림만 눌러 두고 빠른 획은 따라간다.
-    //    여기서 만든 점이 그대로 저장되므로 확정된 획과 입력 중 미리보기의 모양이 같다.
-    let px = w.x
-    let py = w.y
-    if (a.hasRaw) {
-      const sp = this.cam.screenToWorld(a.fx.filter(p.x, rdt || 1), a.fy.filter(p.y, rdt || 1))
-      px = sp.x
-      py = sp.y
-    }
+    const px = w.x
+    const py = w.y
     a.rsx = p.x
     a.rsy = p.y
     a.rt = ts
@@ -1411,15 +1378,9 @@ export class Engine {
       return
     }
     if (a.tool === 'lasso') return this.finishLasso(a, commit)
-    if (a.pointerType === 'pen') {
-      const changed = this.detector.observe(a.raw)
-      if (changed) this.cb.onPressureCapability?.(changed)
-    }
     this.stats.pressureSource = PRESSURE_LABEL[a.pressure]
     if (!commit || a.points.length === 0) return
     const hl = a.tool === 'highlighter'
-    // 획 끝 날카로움 (GoodNotes Tip Sharpness) — 빠르게 스쳐 끝난 획만 끝을 가늘게 다듬는다
-    if (!hl) a.tapered = taperStrokeEnd(a.points, this.settings.tipSharpness, this.cam.zoom)
     const stroke: Stroke = {
       id: ulid(),
       type: 'stroke',
@@ -1905,7 +1866,7 @@ export class Engine {
     const c = this.cam.screenToWorld(this.renderer.cssW / 2, this.renderer.cssH / 2)
     const colors = ['#1f2937ff', '#2563ebff', '#dc2626ff', '#059669ff', '#7c3aedff']
     const list: Entry[] = []
-    const opts = strokeOptsFor('pressure', this.settings, 'pen')
+    const opts = strokeOptsFor('pen', 'pen')
     const area = this.layout.paged ? Math.min(areaSize, 500) : areaSize
     for (let i = 0; i < count; i++) {
       let x = c.x + (Math.random() - 0.5) * area

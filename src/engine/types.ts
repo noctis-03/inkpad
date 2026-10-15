@@ -4,132 +4,28 @@ export type { ID, Stroke, StrokeOpts, BackgroundType }
 export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso'
 
 /**
- * 필압 처리 방식
- *  auto     : 펜이 필압을 보내는지 자동 감지 → 있으면 필압, 없으면 fallbackMode
- *  pressure : 항상 필압 사용 (Apple Pencil)
- *  velocity : 속도로 굵기 흉내 (빨리 그리면 가늘게) — 필압 없는 펜/손가락
- *  constant : 굵기 일정
+ * 펜 스타일 — 두 가지뿐이다. 값 조절 슬라이더는 두지 않는다.
+ *  pen     : 기본 펜 — 필압 펜은 누르는 힘대로, 손가락·마우스는 속도대로 굵기가 흐른다
+ *  ballpen : 굵기가 항상 일정한 펜
  */
-export type PressureMode = 'auto' | 'pressure' | 'velocity' | 'constant'
-export type FallbackMode = 'velocity' | 'constant'
-export type PressureCapability = 'unknown' | 'yes' | 'no'
+export type PenStyleId = 'pen' | 'ballpen'
 
-/**
- * 필기 프로파일 — GoodNotes의 펜 종류(볼펜·만년필·붓펜)에 대응한다.
- * 하나를 고르면 그 펜에 맞는 필압·평활·안정화 값을 한 번에 맞춘다(custom = 직접 맞춤).
- * 값을 손으로 바꾸면 자동으로 custom으로 돌아간다(store.setSettings).
- */
-export type InkProfile = 'ballpen' | 'fountain' | 'brush' | 'custom'
+export const PEN_STYLE_ORDER: PenStyleId[] = ['pen', 'ballpen']
 
-/** 프로파일이 함께 정하는 값들 */
-export interface ProfileValues {
-  pressureMode: PressureMode
-  fallbackMode: FallbackMode
-  thinning: number // 굵기 변화 폭
-  pressureGamma: number // 필압 곡선
-  minPressure: number // 최소 필압 (GoodNotes의 Pressure Sensitivity 'Min'에 해당)
-  pressureSmoothing: number // 필압 평활
-  streamline: number // 손떨림 보정 (Stroke Stabilization)
-  smoothing: number // 외곽선 매끄럽게
-  tipSharpness: number // 획 끝 날카로움 (Tip Sharpness)
-}
-
-export const INK_PROFILE_ORDER: InkProfile[] = ['ballpen', 'fountain', 'brush', 'custom']
-
-export const INK_PROFILES: Record<Exclude<InkProfile, 'custom'>, { label: string; hint: string; values: ProfileValues }> = {
+export const PEN_STYLES: Record<PenStyleId, { label: string; hint: string }> = {
+  pen: {
+    label: '펜',
+    hint: '필압 펜은 누르는 힘에 따라, 손가락·마우스는 속도에 따라 굵기가 흐릅니다'
+  },
   ballpen: {
     label: '볼펜',
-    hint: '필압에 반응하지 않고 굵기가 일정합니다 (GoodNotes Ball Pen)',
-    values: {
-      pressureMode: 'constant',
-      fallbackMode: 'constant',
-      thinning: 0,
-      pressureGamma: 1,
-      minPressure: 0.05,
-      pressureSmoothing: 0.5,
-      streamline: 0.45,
-      smoothing: 0.5,
-      tipSharpness: 0
-    }
-  },
-  fountain: {
-    label: '만년필',
-    hint: '누르는 힘에 따라 굵기가 부드럽게 변합니다 (GoodNotes Fountain Pen)',
-    values: {
-      pressureMode: 'pressure',
-      fallbackMode: 'velocity',
-      thinning: 0.5,
-      pressureGamma: 1,
-      minPressure: 0.15,
-      pressureSmoothing: 0.6,
-      streamline: 0.4,
-      smoothing: 0.5,
-      tipSharpness: 0.5
-    }
-  },
-  brush: {
-    label: '붓펜',
-    hint: '필압에 크게 반응하고 획 끝이 날카롭습니다 (GoodNotes Brush Pen)',
-    values: {
-      pressureMode: 'pressure',
-      fallbackMode: 'velocity',
-      thinning: 0.85,
-      pressureGamma: 1.2,
-      minPressure: 0.06,
-      pressureSmoothing: 0.45,
-      streamline: 0.5,
-      smoothing: 0.55,
-      tipSharpness: 0.85
-    }
+    hint: '필압에 반응하지 않고 굵기가 항상 일정합니다'
   }
 }
 
-/** 프로파일이 정하는 키 — 이 값을 손으로 바꾸면 custom으로 표시한다 */
-export const PROFILE_KEYS: (keyof ProfileValues)[] = [
-  'pressureMode',
-  'fallbackMode',
-  'thinning',
-  'pressureGamma',
-  'minPressure',
-  'pressureSmoothing',
-  'streamline',
-  'smoothing',
-  'tipSharpness'
-]
-
-/**
- * 프로파일 값을 설정에 얹는다 (id = 'custom'이면 표시만 바꾼다).
- * 프로파일은 "펜 종류 한 벌"이므로 값이 여러 개 한꺼번에 바뀐다.
- */
-export function profileSettings(cur: Settings, id: InkProfile): Settings {
-  if (id === 'custom') return { ...cur, inkProfile: 'custom' }
-  return { ...cur, ...INK_PROFILES[id].values, inkProfile: id }
-}
-
-/**
- * 설정을 한 항목 바꿀 때 프로파일 표시를 맞춘다 — 프로파일이 정하는 값을 손으로 바꾸면
- * '직접 맞춤'이 된다(프로파일 칩이 실제 값과 어긋나지 않게).
- */
-export function applySettingsPatch(cur: Settings, patch: Partial<Settings>): Settings {
-  const next = { ...cur, ...patch }
-  if (next.inkProfile !== 'custom' && PROFILE_KEYS.some((k) => k in patch)) next.inkProfile = 'custom'
-  return next
-}
-
 export interface Settings {
-  // 필압
-  inkProfile: InkProfile
-  pressureMode: PressureMode
-  fallbackMode: FallbackMode // auto에서 필압이 없을 때, 그리고 손가락/터치펜/마우스 입력에 사용
-  pressureCapability: PressureCapability // 자동 감지 결과 (기기에 저장)
-  thinning: number // 굵기 변화 폭 0~0.95
-  pressureGamma: number // 필압 곡선 (<1 가볍게, >1 세게 눌러야 굵어짐)
-  minPressure: number // 이보다 약한 필압은 이 값으로 (너무 가늘어지는 것 방지)
-  pressureSmoothing: number // 필압 평활화 0~0.9 (높을수록 굵기 변화가 부드럽지만 반응이 둔해짐)
-  // 필기
-  streamline: number // 손떨림 보정 0~0.9 — 위치 안정화(Stroke Stabilization), 높을수록 부드럽지만 펜 끝이 뒤처짐
-  smoothing: number // 외곽선을 잇는 곡선의 매끄러움 (perfect-freehand smoothing)
-  tipSharpness: number // 획 끝 날카로움 0~1 — 빠르게 스쳐 끝난 획의 끝을 가늘게 (Tip Sharpness)
+  // 펜
+  penStyle: PenStyleId
   fingerDraw: boolean // 손가락·정전식 터치펜으로 그리기 (기본 끔)
   eraserMode: 'stroke' | 'partial'
   // 지연·입력
@@ -154,17 +50,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  inkProfile: 'custom',
-  pressureMode: 'auto',
-  fallbackMode: 'velocity',
-  pressureCapability: 'unknown',
-  thinning: 0.6,
-  pressureGamma: 1,
-  minPressure: 0.05,
-  pressureSmoothing: 0.35,
-  streamline: 0.3,
-  smoothing: 0.5,
-  tipSharpness: 0.5,
+  penStyle: 'pen',
   fingerDraw: false,
   eraserMode: 'stroke',
   prediction: true,

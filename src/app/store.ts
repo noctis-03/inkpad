@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import {
-  applySettingsPatch,
   DEFAULT_SETTINGS,
-  profileSettings,
   type EngineStats,
   type SelectionInfo,
   type Settings,
@@ -14,7 +12,7 @@ import type { SaveState } from '../engine/engine'
 import type { BlockType, ID } from '../shared/model'
 
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다.
-const LS_SETTINGS = 'inkpad.settings.v2'
+const LS_SETTINGS = 'inkpad.settings.v3'
 const LS_STYLE = 'inkpad.style.v2'
 const LS_LIBRARY = 'inkpad.library.v1'
 const LS_TOOLBAR = 'inkpad.toolbar.v1'
@@ -174,7 +172,6 @@ interface UIState {
   setTool: (t: Tool) => void
   toggleQuick: () => void
   setSettings: (p: Partial<Settings>) => void
-  applyInkProfile: (id: Settings['inkProfile']) => void
   resetSettings: () => void
   setStyle: (s: ToolStyle) => void
   setLibrary: (p: Partial<LibraryPrefs>) => void
@@ -260,22 +257,13 @@ export const useUI = create<UIState>((set, get) => ({
     set({ tool: next, prevTool: tool })
   },
   setSettings: (p) => {
-    // 프로파일이 정하는 값을 손으로 바꾸면 '직접 맞춤'으로 표시한다 (칩이 실제 값과 어긋나지 않게)
-    const settings = applySettingsPatch(get().settings, p)
-    save(LS_SETTINGS, settings)
-    set({ settings })
-  },
-  applyInkProfile: (id) => {
-    // 프로파일 = 펜 종류 한 벌 — 필압·평활·안정화·획 끝 값을 한꺼번에 맞춘다
-    const settings = profileSettings(get().settings, id)
+    const settings = { ...get().settings, ...p }
     save(LS_SETTINGS, settings)
     set({ settings })
   },
   resetSettings: () => {
-    const keep = { pressureCapability: get().settings.pressureCapability }
-    const settings = { ...DEFAULT_SETTINGS, ...keep }
-    save(LS_SETTINGS, settings)
-    set({ settings })
+    save(LS_SETTINGS, DEFAULT_SETTINGS)
+    set({ settings: DEFAULT_SETTINGS })
   },
   setStyle: (style) => {
     save(LS_STYLE, style)
