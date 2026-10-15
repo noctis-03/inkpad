@@ -1137,7 +1137,7 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
           <div>
             <h2 className="modal-title">받기 미리보기</h2>
             <p className="push-sub">
-              클라우드와 똑같이 맞춥니다{plan.bytes > 0 ? ` · 약 ${formatBytes(plan.bytes)}` : ''}
+              클라우드와 똑같이 맞춥니다{plan.bytes > 0 ? ` · 최대 ${formatBytes(plan.bytes)}` : ''}
             </p>
           </div>
         </header>

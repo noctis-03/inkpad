@@ -1,7 +1,7 @@
 // 보관함 관리 — 클라우드와 이 기기에 쌓이는 보관물을 보여 주고 정리한다 (docs/branch-merge.md §6).
 //
 //   기기 브랜치(Inkpad/branches/) · 옛 머지 백업(Inkpad/backups/) · 노트가 사라진 뒤 남은 파일 ·
-//   이 기기 로컬 스냅샷 · 되돌리기가 만든 자동 고정(이 기기 기록)
+//   이 기기 로컬 스냅샷 · 되돌리기가 만든 자동 고정(이 기기 기록) · 안 쓰는 노트 조각(Inkpad/objects/)
 //
 // 클라우드 파일은 지우지 않고 Drive 휴지통으로 옮긴다(30일 보관). 머지 안 된 브랜치는 부르는 쪽이 경고한 뒤에만 지운다.
 // 모두 사용자가 이 화면에서 누를 때만 네트워크를 쓴다.
@@ -14,6 +14,7 @@ import { newestPerDoc } from './judge'
 import { withSyncLock } from './lock'
 import { AUTO_PIN_PREFIX, unpinDocRevision } from './revisions'
 import { forgetQueued } from './sync'
+import { OBJECT_GRACE_MS, forgetTrashedObjects, isNoteFile, objsOf, type StoredNote } from './objects'
 import { snapshotUsage } from './snapshots'
 import { getDeviceId } from './token'
 
@@ -175,4 +176,106 @@ export async function releaseAutoPins(pins: ArchiveReport['autoPins']): Promise<
     }
   }
   return { released, failed }
+}
+
+// ───────── 안 쓰는 노트 조각 (Inkpad/objects/, sync/objects.ts) ─────────
+// 조각은 main·브랜치·고정한 리비전이 가리킨다. 아무도 가리키지 않는 조각은 바로 지우지 않는다 —
+// 고정하지 않은 옛 리비전(약 30일 산다)이 아직 가리킬 수 있고, 다른 기기가 최근에 본 조각을 다시 가리킬 수 있다.
+//   1. 정리를 누르면 아무도 가리키지 않는 조각에 '안 씀' 표식(unref=시각)을 단다. 다시 가리키는 조각은 표식을 지운다
+//   2. 표식을 단 지 45일이 지나도 여전히 아무도 가리키지 않는 조각만 휴지통으로(30일 뒤 Drive가 지운다)
+// 올리기는 휴지통의 조각을 다시 가리키지 않고 새로 올린다(objects.ts) — 정리와 올리기가 겹쳐도 잃지 않는다.
+
+export interface ObjectScan {
+  total: number
+  bytes: number
+  /** 아무도 가리키지 않는 조각 */
+  unused: { id: string; size: number; markedAt: number }[]
+  unusedBytes: number
+  /** 다시 가리키게 된(표식을 지울) 조각 */
+  revived: string[]
+  /** 표식을 단 지 45일이 지나 이번 정리에 휴지통으로 갈 조각 */
+  ready: number
+  readyBytes: number
+  /** 살펴본 노트 파일(main·브랜치·고정 리비전) 수 */
+  files: number
+}
+
+const markedAt = (f: drive.RemoteFile) => Number(f.appProperties?.unref) || 0
+
+/**
+ * 조각 검사 — 모든 main·브랜치와 고정한 리비전의 매니페스트를 받아(조각 목록만, 작다) 가리키는 조각을 모은다.
+ * 노트마다 리비전 목록을 한 번 읽는다. 누를 때만.
+ */
+export async function scanObjects(onProgress?: (done: number, total: number) => void): Promise<ObjectScan | null> {
+  const folder = (await getSync<string>('objectsFolderId')) ?? (await drive.findFolder('objects', (await ensureFolders()).root))
+  if (!folder) return null
+  const f = await ensureFolders()
+  const branchFolder = await findBranchesFolder()
+  const [objects, mains, branches] = await Promise.all([
+    drive.listFiles(folder),
+    drive.listFiles(f.docs),
+    branchFolder ? drive.listFiles(branchFolder) : Promise.resolve([] as drive.RemoteFile[])
+  ])
+  const used = new Set<string>()
+  const take = (raw: unknown) => {
+    if (isNoteFile(raw)) for (const o of objsOf(raw as StoredNote)) used.add(o.f)
+  }
+  const jobs: (() => Promise<void>)[] = []
+  for (const m of mains) {
+    jobs.push(async () => {
+      take(await drive.downloadJson(m.id, m.appProperties?.enc).catch(() => null))
+      const revs = await drive.listRevisions(m.id).catch(() => [] as drive.Revision[])
+      for (const r of revs.slice(0, -1)) if (r.keepForever) take(await drive.downloadRevision(m.id, r.id, m.appProperties?.enc).catch(() => null))
+    })
+  }
+  for (const b of branches) jobs.push(async () => take(await drive.downloadJson(b.id, b.appProperties?.enc ?? drive.ENC_GZIP).catch(() => null)))
+  let done = 0
+  let next = 0
+  await Promise.all(
+    Array.from({ length: Math.min(4, jobs.length) }, async () => {
+      while (next < jobs.length) {
+        await jobs[next++]()
+        onProgress?.(++done, jobs.length)
+      }
+    })
+  )
+
+  const now = Date.now()
+  const scan: ObjectScan = { total: objects.length, bytes: 0, unused: [], unusedBytes: 0, revived: [], ready: 0, readyBytes: 0, files: jobs.length }
+  for (const o of objects) {
+    const size = Number(o.size ?? 0) || 0
+    scan.bytes += size
+    if (used.has(o.id)) {
+      if (markedAt(o)) scan.revived.push(o.id)
+      continue
+    }
+    scan.unused.push({ id: o.id, size, markedAt: markedAt(o) })
+    scan.unusedBytes += size
+    if (markedAt(o) && now - markedAt(o) >= OBJECT_GRACE_MS) {
+      scan.ready++
+      scan.readyBytes += size
+    }
+  }
+  return scan
+}
+
+/** 조각 정리 — 검사 결과대로 표식을 달고·지우고, 45일 지난 것은 휴지통으로 */
+export function cleanObjects(scan: ObjectScan): Promise<{ marked: number; trashed: number; revived: number }> {
+  return withSyncLock(async () => {
+    const now = Date.now()
+    let marked = 0
+    let trashed = 0
+    for (const id of scan.revived) await drive.updateMeta(id, { appProperties: { unref: '0' } })
+    for (const o of scan.unused) {
+      if (!o.markedAt) {
+        await drive.updateMeta(o.id, { appProperties: { unref: String(now) } })
+        marked++
+      } else if (now - o.markedAt >= OBJECT_GRACE_MS) {
+        await drive.trash(o.id)
+        trashed++
+      }
+    }
+    forgetTrashedObjects()
+    return { marked, trashed, revived: scan.revived.length }
+  })
 }

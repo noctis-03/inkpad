@@ -36,7 +36,8 @@ export function createFakeDrive() {
   const files = new Map<string, FakeFile>()
   const sessions = new Map<string, Session>()
   const fail = { nextDocUpload: false, abortChunk: 0 }
-  const stats = { chunkPuts: 0, uploadedBytes: 0, aborted: 0, statusQueries: 0 }
+  /** upBytes·downBytes: 노트 파일·조각을 오간 본문 바이트 (multipart 업로드 본문 · alt=media 내려받기) */
+  const stats = { chunkPuts: 0, uploadedBytes: 0, aborted: 0, statusQueries: 0, upBytes: 0, downBytes: 0, uploads: 0, downloads: 0, listedFiles: 0 }
   let chunkSeen = 0
   let seq = 0
   let clock = Date.parse('2026-10-13T00:00:00Z')
@@ -60,11 +61,14 @@ export function createFakeDrive() {
     const parent = /'([^']+)' in parents/.exec(q)
     ok = ok && (parent ? f.parents.includes(parent[1]) : f.parents.length === 0)
     if (/trashed=false/.test(q)) ok = ok && !f.trashed
+    if (/trashed=true/.test(q)) ok = ok && f.trashed
     const name = /name=("(?:[^"\\]|\\.)*")/.exec(q)
     if (name) ok = ok && f.name === JSON.parse(name[1])
     const mime = /mimeType='([^']+)'/.exec(q)
     if (mime) ok = ok && f.mimeType === mime[1]
     for (const m of q.matchAll(/appProperties has \{ key='([^']+)' and value='([^']*)' \}/g)) ok = ok && f.appProperties?.[m[1]] === m[2]
+    const after = /modifiedTime > '([^']+)'/.exec(q)
+    if (after) ok = ok && Date.parse(head(f)?.modifiedTime ?? f.created ?? '') > Date.parse(after[1])
     return ok
   }
 
@@ -161,6 +165,8 @@ export function createFakeDrive() {
     let m = /^\/upload\/drive\/v3\/files(?:\/([^/]+))?$/.exec(path)
     if (m) {
       const { metadata, content } = parseMultipart(req.postDataBuffer()!, req.headers()['content-type'])
+      stats.upBytes += content.length
+      stats.uploads++
       if (m[1]) {
         const f = files.get(m[1])
         if (!f) return json(route, req, 404, { error: 'notFound' })
@@ -190,6 +196,8 @@ export function createFakeDrive() {
       if (!r) return json(route, req, 404, { error: 'notFound' })
       if (method === 'GET') {
         if (!r.keepForever && r !== head(f)) return json(route, req, 403, { error: { message: 'Only revisions with keepForever set to true can be downloaded' } })
+        stats.downBytes += r.content.length
+        stats.downloads++
         return route.fulfill({ status: 200, contentType: 'application/octet-stream', headers: cors(req), body: r.content })
       }
       if (method === 'PATCH') {
@@ -211,8 +219,11 @@ export function createFakeDrive() {
     if (m) {
       const f = files.get(m[1])
       if (!f) return json(route, req, 404, { error: 'notFound' })
-      if (method === 'GET' && url.searchParams.get('alt') === 'media')
+      if (method === 'GET' && url.searchParams.get('alt') === 'media') {
+        stats.downBytes += head(f).content.length
+        stats.downloads++
         return route.fulfill({ status: 200, contentType: 'application/octet-stream', headers: cors(req), body: head(f).content })
+      }
       if (method === 'GET') return json(route, req, 200, meta(f))
       if (method === 'PATCH') {
         const body = JSON.parse(req.postData() || '{}')
@@ -228,7 +239,9 @@ export function createFakeDrive() {
     if (path === '/drive/v3/files') {
       if (method === 'GET') {
         const q = url.searchParams.get('q') ?? ''
-        return json(route, req, 200, { files: [...files.values()].filter((f) => matches(f, q)).map(meta) })
+        const found = [...files.values()].filter((f) => matches(f, q)).map(meta)
+        stats.listedFiles += found.length
+        return json(route, req, 200, { files: found })
       }
       if (method === 'POST') {
         const body = JSON.parse(req.postData() || '{}')
@@ -246,7 +259,18 @@ export function createFakeDrive() {
   }
 
   // ── 검사용 ──
-  const ungz = (buf: Buffer) => JSON.parse(gunzipSync(buf).toString('utf8'))
+  /** 노트 파일 본문 — 매니페스트(조각 목록)면 조각 파일을 읽어 chunks를 채운다 (src/sync/objects.ts) */
+  const ungz = (buf: Buffer) => {
+    const file = JSON.parse(gunzipSync(buf).toString('utf8'))
+    if (file?.kind !== 'inkpad-doc-m') return file
+    const chunks = (file.objs as { pageId: string; key: string; f: string }[]).map((o) => {
+      const obj = files.get(o.f)
+      return { pageId: o.pageId, key: o.key, elements: obj ? JSON.parse(gunzipSync(head(obj).content).toString('utf8')) : [] }
+    })
+    return { ...file, kind: 'inkpad-doc', chunks }
+  }
+  /** 조각 파일들 (objects/{해시}.gz) */
+  const objects = () => [...files.values()].filter((f) => f.name.startsWith('objects/'))
   const strokeIds = (file: { chunks: { elements: { id: string }[] }[] }) => file.chunks.flatMap((c) => c.elements.map((e) => e.id)).sort()
   const docFile = (docId: string) => [...files.values()].find((f) => f.name === `docs/${docId}.json` && !f.trashed)
   const backupsOf = (docId: string) => [...files.values()].filter((f) => f.name.startsWith(`backups/${docId}-`) && !f.trashed)
@@ -262,7 +286,10 @@ export function createFakeDrive() {
     return all.length > 0 && all.every((f) => f.trashed)
   }
 
-  return { attach, fail, stats, files, docFile, backupsOf, branchesOf, branchOf, fileStrokes, allTrashed, revisionStrokes, headStrokes, ungz, strokeIds }
+  /** 가짜 Drive 시계를 앞으로 — '바뀐 시각' 목록 검사용 */
+  const advance = (ms: number) => void (clock += ms)
+
+  return { attach, advance, fail, stats, files, objects, docFile, backupsOf, branchesOf, branchOf, fileStrokes, allTrashed, revisionStrokes, headStrokes, ungz, strokeIds }
 }
 
 export type FakeDrive = ReturnType<typeof createFakeDrive>
