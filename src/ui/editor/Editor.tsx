@@ -15,7 +15,7 @@ import { SchemaTooNewError } from '../../storage/migrate'
 import { ensureAssetLocal, onAssetProgress, setAssetDownloadGate } from '../../sync/assets'
 import { confirmAssetDownload } from '../../sync/transfer'
 import { scheduleUnchangedCheck } from '../../sync/unchanged'
-import { CONFLICT_EVENT, REMOTE_EVENT, type MergeEventDetail } from '../../sync/sync'
+import { REMOTE_EVENT } from '../../sync/sync'
 import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToolbar } from './FloatingToolbar'
@@ -327,25 +327,6 @@ export function Editor({ docId }: { docId: ID }) {
     }
     window.addEventListener(REMOTE_EVENT, onRemote)
     return () => window.removeEventListener(REMOTE_EVENT, onRemote)
-  }, [docId, toast])
-
-  // 머지했을 때: 어느 쪽을 우선했는지와 머지 전 모습이 어디 있는지 알린다
-  useEffect(() => {
-    const onConflict = (ev: Event) => {
-      const d = (ev as CustomEvent<MergeEventDetail>).detail
-      if (d?.docId !== docId) return
-      const history = { label: '버전 기록', run: () => useUI.getState().setPanel('history') }
-      if (d.baseless) toast('동기화 기록이 없어 양쪽 필기를 모두 남겨 합쳤어요. 머지 전 모습은 버전 기록에 있어요.', 'info', history)
-      else if (d.conflicts > 0)
-        toast(
-          `겹친 ${d.conflicts}곳은 ${d.decision === 'ours' ? '이 기기' : '다른 기기'} 내용으로 합쳤어요. 머지 전 모습은 버전 기록에 있어요.`,
-          'info',
-          history
-        )
-      else toast('다른 기기의 변경과 합쳤어요.', 'success')
-    }
-    window.addEventListener(CONFLICT_EVENT, onConflict)
-    return () => window.removeEventListener(CONFLICT_EVENT, onConflict)
   }, [docId, toast])
 
   const rename = useCallback(

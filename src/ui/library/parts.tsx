@@ -13,13 +13,14 @@ import type { FileRow } from '../../storage/db'
 /**
  * 카드 캡션의 동기화 상태 라벨.
  * 8px 색 점은 색만으로 뜻을 전달해 색각 이상 사용자에게 닿지 않는다 — 말로 바꾼다.
- * 클라우드 없음 / 올리기 대기 / 최신 / 클라우드에 새 버전.
+ * 클라우드 없음 / 올리기 대기 / 최신 / 클라우드에 새 버전 / 갈라짐(이 기기와 클라우드가 각각 바뀜 — 머지가 필요).
  */
 const SYNC_LABEL: Record<CardSyncState, string> = {
   new: '클라우드 없음',
   pending: '올리기 필요',
   same: '동기화됨',
-  'remote-new': '새 버전'
+  'remote-new': '새 버전',
+  diverged: '갈라짐'
 }
 
 /** 섹션 제목 — 바뀌면 위로 빠지고 아래에서 들어오며 바뀐다 */

@@ -1,7 +1,7 @@
 import { BlockStore, anchorBlock, refreshBlockIds } from './blocks'
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
-import { hitStroke, pointsBBox, q2, splitStroke, strokeInPolygon } from './geometry'
+import { hitStroke, pointsBBox, q2, strokeInPolygon } from './geometry'
 import { History, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
@@ -1277,28 +1277,12 @@ export class Engine {
 
   private eraseAt(a: ActiveStroke, wx: number, wy: number) {
     const r = this.style.eraserSize / 2 / this.cam.zoom
-    const partial = this.settings.eraserMode === 'partial'
     let box: Box | null = null
     for (const rec of this.scene.query(wx - r, wy - r, wx + r, wy + r)) {
       const s = rec.stroke
-      const lx = wx - rec.ox, ly = wy - rec.oy
-      if (partial) {
-        const pieces = splitStroke(s.points, lx, ly, r + s.width * 0.35)
-        if (!pieces) continue
-        this.eraseRec(a, rec)
-        for (const pts of pieces) {
-          const piece: Entry = {
-            pageId: rec.pageId,
-            key: rec.key,
-            stroke: { ...s, id: ulid(), points: pts, bbox: pointsBBox(pts, s.width) }
-          }
-          this.scene.add(piece)
-          a.added.set(piece.stroke.id, piece)
-        }
-      } else {
-        if (!hitStroke(s.points, lx, ly, r + s.width / 2)) continue
-        this.eraseRec(a, rec)
-      }
+      // 지우개는 획 단위만 — 획을 잘라 새 ID 조각을 만들면 기기 간 머지에서 원래 획과 조각이 함께 남는다
+      if (!hitStroke(s.points, wx - rec.ox, wy - rec.oy, r + s.width / 2)) continue
+      this.eraseRec(a, rec)
       box = unionBox(box, rec.item)
       this.markDirty(rec.pageId, rec.key)
     }

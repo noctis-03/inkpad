@@ -79,51 +79,6 @@ export function segDist2(px: number, py: number, ax: number, ay: number, bx: num
   return cx * cx + cy * cy
 }
 
-/**
- * 부분 지우개 (획 분할 방식).
- * 지우개 원 안에 들어간 점을 빼고 남은 연속 구간들을 돌려준다. 원이 점 사이를 지나가는 경우를 위해
- * 간격이 넓은 구간은 먼저 잘게 나눈다. 지우개에 닿지 않았으면 null.
- */
-export function splitStroke(points: number[], cx: number, cy: number, r: number): number[][] | null {
-  const r2 = r * r
-  const step = Math.max(0.5, r / 2)
-  // 1) 조밀화
-  const dense: number[] = []
-  for (let i = 0; i < points.length; i += 4) {
-    if (i > 0) {
-      const ax = points[i - 4], ay = points[i - 3], ap = points[i - 2]
-      const bx = points[i], by = points[i + 1], bp = points[i + 2]
-      const d = Math.hypot(bx - ax, by - ay)
-      if (d > step) {
-        const n = Math.ceil(d / step)
-        for (let k = 1; k < n; k++) {
-          const t = k / n
-          dense.push(ax + (bx - ax) * t, ay + (by - ay) * t, ap + (bp - ap) * t, 0)
-        }
-      }
-    }
-    dense.push(points[i], points[i + 1], points[i + 2], points[i + 3])
-  }
-  // 2) 원 안의 점 제거
-  let hit = false
-  const runs: number[][] = []
-  let cur: number[] = []
-  for (let i = 0; i < dense.length; i += 4) {
-    const dx = dense[i] - cx, dy = dense[i + 1] - cy
-    if (dx * dx + dy * dy <= r2) {
-      hit = true
-      if (cur.length) runs.push(cur)
-      cur = []
-    } else {
-      cur.push(q2(dense[i]), q2(dense[i + 1]), q2(dense[i + 2]), dense[i + 3])
-    }
-  }
-  if (cur.length) runs.push(cur)
-  if (!hit) return null
-  // 너무 짧은 조각은 버린다
-  return runs.filter((r) => r.length >= 8 || (r.length === 4 && points.length === 4))
-}
-
 /** 짝수-홀수 규칙 점-다각형 포함 판정. poly = [x0,y0,x1,y1,...] */
 export function pointInPolygon(x: number, y: number, poly: number[]): boolean {
   let inside = false

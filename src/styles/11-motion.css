@@ -375,6 +375,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 .doc-state.s-same .doc-state-dot { background: var(--success); }
 .doc-state.s-pending .doc-state-dot { background: var(--warn); animation: dot-pulse 1.6s ease-in-out infinite; }
 .doc-state.s-remote-new .doc-state-dot { background: var(--accent); box-shadow: 0 0 0 3px #2563eb1f; }
+.doc-state.s-diverged .doc-state-dot { background: var(--danger); }
 @keyframes dot-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .45; transform: scale(.8); }

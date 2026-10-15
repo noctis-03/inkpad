@@ -29,19 +29,53 @@ export function newestPerDoc(remotes: RemoteFile[]): RemoteFile[] {
 }
 
 /**
- * 이 기기가 그 원격 파일과 이미 맞춰져 있는가. 둘 중 하나라도 맞으면 맞춰진 것으로 본다.
+ * (브랜치 이전 기록용) 이 기기가 그 원격 파일과 이미 맞춰져 있는가. 둘 중 하나라도 맞으면 맞춰진 것으로 본다.
+ * 브랜치 상태(br:)가 없는 노트의 출발점을 정할 때만 쓴다 (knownBaseMid).
  *  - 위치 기록의 version이 원격 이상 (Drive version은 실제보다 뒤처져 보일 수 있어 '같거나 크면')
  *  - 원격 appProperties.updatedAt(이 앱이 올릴 때 직접 쓴 값)이 이 기기 노트의 updatedAt과 같음 —
  *    기록이 한 번 낡아도 스스로 바로잡힌다. 그래서 내용이 다른 업로드는 반드시 새 updatedAt을 달아야 한다
  *    (머지 결과는 mergedUpdatedAt으로 새 값을 받는다)
  */
 export function isUpToDate(rec: FileRecord | undefined, local: { updatedAt: number } | undefined, remote: RemoteFile): boolean {
-  if (rec && verNum(rec.version) >= verNum(remote.version)) return true
+  // 기록한 파일과 다른 파일이면(폴더 재생성으로 새로 만들어져 version이 다시 시작) version 비교를 믿지 않는다
+  if (rec && rec.fileId === remote.id && verNum(rec.version) >= verNum(remote.version)) return true
   const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
   return !!local && remoteUpdatedAt > 0 && local.updatedAt === remoteUpdatedAt
 }
 
-export type PullSkip = 'gone' | 'hidden' | 'trashed' | 'pending' | 'same'
+/**
+ * 노트 하나의 동기화 상태 (이 기기 기준, docs/branch-merge.md §3.1)
+ *  - same: 최신 / pull: 받을 것(main으로 따라가기) / push: 올릴 것(올리면 main도 따라간다) /
+ *  - diverged: 갈라짐 — 이 기기 변경(또는 main에 아직 안 들어간 내 브랜치)이 있는데 main도 내 출발점 이후 바뀌었다.
+ *    받기로 덮지 않고, 올리기는 내 브랜치에만 올린다. 머지 관리에서 합친다.
+ */
+export type NoteSync = 'same' | 'pull' | 'push' | 'diverged'
+
+export function noteSync(a: {
+  /** 이 기기 변경이 올리기 대기 중 */
+  pending: boolean
+  /** 내 브랜치에 main에 아직 들어가지 않은 내용이 있다 (branch.ts isUnmerged) */
+  unmerged: boolean
+  /** 이 기기 출발점의 main 신원 (모르면 null) */
+  baseMid: string | null
+  /** 지금 main의 신원 (branch.ts mainMidOf) */
+  mainMid: string
+}): NoteSync {
+  const moved = a.baseMid !== a.mainMid
+  if (a.pending || a.unmerged) return moved ? 'diverged' : 'push'
+  return moved ? 'pull' : 'same'
+}
+
+/**
+ * 출발점 신원 — 브랜치 상태에 기록이 있으면 그것, 없으면(브랜치 이전에 맞춘 노트) 예전 판정으로 맞춰져 있을 때만
+ * 지금 main을 출발점으로 본다. 모르면 null(→ 받을 것, 또는 이 기기 변경이 있으면 갈라짐 — 덮지 않는다).
+ */
+export function knownBaseMid(stateBaseMid: string | null | undefined, legacyUpToDate: boolean, mainMid: string): string | null {
+  if (stateBaseMid) return stateBaseMid
+  return legacyUpToDate ? mainMid : null
+}
+
+export type PullSkip = 'gone' | 'hidden' | 'trashed' | 'pending' | 'diverged' | 'same'
 
 /** 받기에서 이 원격 노트를 건너뛰는 이유 (없으면 null = 받는다) */
 export function pullSkipReason(a: {
@@ -49,17 +83,15 @@ export function pullSkipReason(a: {
   gone: boolean
   /** 숨긴 카테고리 — 이 기기는 받지 않는다 (클라우드 목록에는 표시) */
   hidden: boolean
-  local: { updatedAt: number; deletedAt?: number } | undefined
-  /** 이 기기 변경이 올리기 대기 중 — 올리기의 머지가 맡는다 */
-  pending: boolean
-  rec: FileRecord | undefined
-  remote: RemoteFile
+  local: { deletedAt?: number } | undefined
+  sync: NoteSync
 }): PullSkip | null {
   if (a.gone) return 'gone'
   if (a.hidden) return 'hidden'
   if (a.local?.deletedAt) return 'trashed'
-  if (a.pending) return 'pending'
-  if (isUpToDate(a.rec, a.local, a.remote)) return 'same'
+  if (a.sync === 'push') return 'pending' // 올리기가 맡는다
+  if (a.sync === 'diverged') return 'diverged' // 덮지 않는다 — 머지 관리에서 합친다
+  if (a.sync === 'same') return 'same'
   return null
 }
 

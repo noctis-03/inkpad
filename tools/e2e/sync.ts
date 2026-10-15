@@ -1,88 +1,171 @@
 // 동기화: 두 기기(저장소가 따로인 브라우저 컨텍스트)가 가짜 Drive를 함께 쓰며 실제 동기화 코드를 돌린다.
-// 획 단위 머지, 받을 것 판정, 머지 백업 분리, 업로드 실패, 버전 기록(되돌리기·고정 해제), 원본 정리
+// 기기별 브랜치 + main 따라가기(fast-forward), 갈라짐은 덮지 않음, 클라우드에 맞추기, main 쓰기 실패,
+// main이 덮였을 때의 감지, 브랜치 이전 기록 호환, 클라우드 삭제, 버전 기록(되돌리기·고정 해제), 원본 정리
 import type { Page } from 'playwright'
 import { createFakeDrive } from './fake-drive.ts'
 import { addStroke, createDoc, device, logsOf, openEditor, sameSet, strokes, type Ctx } from './lib.ts'
 
 const push = (p: Page) => p.evaluate(async () => (await import('/src/sync/sync.ts')).pushNow())
 const pull = (p: Page) => p.evaluate(async () => (await import('/src/sync/sync.ts')).pullNow())
-const planPullIds = (p: Page) => p.evaluate(async () => (await (await import('/src/sync/sync.ts')).planPull()).docs.map((d) => d.docId))
+const planPull = (p: Page) =>
+  p.evaluate(async () => {
+    const plan = await (await import('/src/sync/sync.ts')).planPull()
+    return { docs: plan.docs.map((d) => d.docId), diverged: plan.diverged.map((d) => d.docId) }
+  })
 const cloudState = (p: Page, docId: string) =>
   p.evaluate(async (docId) => (await (await import('/src/sync/sync.ts')).listCloudNotes()).find((n) => n.docId === docId)?.state, docId)
+const cardState = (p: Page, docId: string) => p.evaluate(async (docId) => (await (await import('/src/sync/sync.ts')).cardSyncStates()).get(docId), docId)
 const pendingFor = (p: Page, docId: string) => p.evaluate(async (docId) => (await (await import('/src/sync/unchanged.ts')).pendingSeqsFor(docId)).length, docId)
 const revisions = (p: Page, docId: string) => p.evaluate(async (docId) => (await import('/src/sync/revisions.ts')).listDocRevisions(docId), docId)
+const deviceId = (p: Page) => p.evaluate(async () => (await import('/src/sync/token.ts')).getDeviceId())
 
 export default async function sync(ctx: Ctx) {
   const { base, check } = ctx
   const drive = createFakeDrive()
   const A = await device(ctx, { drive, name: 'A' })
   const B = await device(ctx, { drive, name: 'B' })
+  const [devA, devB] = [await deviceId(A), await deviceId(B)]
+  const mainProps = (docId: string) => drive.docFile(docId)?.appProperties ?? {}
 
-  // ── 획 단위 머지 · 받을 것 판정 ──
+  // ── 따라가기(fast-forward): 한쪽만 바뀌면 main이 그대로 따라온다 ──
   const D = await createDoc(A, '노트 D')
   await addStroke(A, D, 'a')
   await push(A)
+  check('ff: 처음 올리면 main이 생긴다(세대 1)', sameSet(drive.headStrokes(D), ['a']) && mainProps(D).gen === '1')
+  check('ff: 이 기기 브랜치도 올라간다', sameSet(drive.fileStrokes(drive.branchOf(D, devA)!), ['a']) && drive.branchOf(D, devA)!.appProperties.seq === '1')
+  check('ff: main에 A의 브랜치가 반영됐다(m.A=1)', mainProps(D)[`m.${devA}`] === '1')
   await pull(B)
-  check('B가 노트를 받았다', sameSet(await strokes(B, D), ['a']))
-  await addStroke(A, D, 'c') // A가 먼저 고쳐 두고(아직 안 올림)
-  await addStroke(B, D, 'b') // B가 나중에 고쳐 먼저 올린다
+  check('ff: B가 받았다', sameSet(await strokes(B, D), ['a']))
+  check('ff: 받은 뒤 B는 최신', (await cloudState(B, D)) === 'same')
+  await addStroke(B, D, 'b')
+  check('ff: 고치면 올릴 것', (await cloudState(B, D)) === 'pending')
   await push(B)
-  await push(A) // A 올리기 → 머지
-  check('머지: A에 양쪽 획이 모두 남는다', sameSet(await strokes(A, D), ['a', 'b', 'c']), JSON.stringify(await strokes(A, D)))
-  check('머지: 클라우드 최신본 = 머지 결과', sameSet(drive.headStrokes(D), ['a', 'b', 'c']))
-  check('판정: B의 받기 미리보기에 머지 결과가 뜬다', (await planPullIds(B)).includes(D))
-  check('판정: B의 클라우드 목록에서 "받을 것"', (await cloudState(B, D)) === 'remote-new', String(await cloudState(B, D)))
-  await pull(B)
-  check('판정: B가 받기로 머지 결과를 받는다', sameSet(await strokes(B, D), ['a', 'b', 'c']), JSON.stringify(await strokes(B, D)))
-  check('판정: 받은 뒤 B의 목록은 최신', (await cloudState(B, D)) === 'same')
-  check('판정: A의 받기 미리보기에 자기가 올린 머지는 없다', !(await planPullIds(A)).includes(D))
+  check('ff: B가 올리면 main이 따라온다(세대 2)', sameSet(drive.headStrokes(D), ['a', 'b']) && mainProps(D).gen === '2')
+  check('ff: B는 올린 뒤 최신', (await cloudState(B, D)) === 'same')
+  check('ff: A의 받기 미리보기에 뜬다', (await planPull(A)).docs.includes(D))
+  check('ff: A의 클라우드 목록에서 받을 것', (await cloudState(A, D)) === 'remote-new')
+  await pull(A)
+  check('ff: A가 받아 따라온다', sameSet(await strokes(A, D), ['a', 'b']))
+  check('ff: 받은 뒤 A는 최신이고 받을 것 없음', (await cloudState(A, D)) === 'same' && !(await planPull(A)).docs.includes(D))
+  check('ff: 머지 백업 파일을 만들지 않는다', drive.backupsOf(D).length === 0)
 
-  // ── 머지 백업은 별도 파일 ──
-  const revs = drive.revisionStrokes(drive.docFile(D)!)
-  check('백업: 노트 파일 리비전에 A의 머지 전 상태(a,c)가 없다', !revs.some((r) => sameSet(r.strokes, ['a', 'c'])), JSON.stringify(revs.map((r) => r.strokes)))
-  const backups = drive.backupsOf(D)
-  check('백업: 백업 폴더에 A의 머지 전 상태 파일 1개', backups.length === 1 && sameSet(drive.strokeIds(drive.ungz(backups[0].revisions[0].content)), ['a', 'c']))
-  check('백업: 파일 표식(docId·기기·종류)', backups[0]?.appProperties?.docId === D && backups[0]?.appProperties?.device === 'A' && backups[0]?.appProperties?.revKind === 'merge-backup')
-  const list = await revisions(A, D)
-  const bk = list.find((r) => r.backupFileId)
-  check('버전 기록: 백업이 함께 보인다', !!bk && bk.revKind === 'merge-backup' && bk.device === 'A')
-  check('버전 기록: 마지막은 클라우드 최신(헤드)', list[list.length - 1].isHead === true)
-  check('버전 기록: 다른 기기(B)에도 백업이 보인다', (await revisions(B, D)).some((r) => r.backupFileId))
+  // ── 갈라짐: 양쪽이 각각 고치면 아무것도 덮지 않는다 ──
+  await addStroke(A, D, 'c') // A가 고쳐 두고(아직 안 올림)
+  await addStroke(B, D, 'd') // B가 고쳐 먼저 올린다
+  await push(B)
+  await push(A) // A는 main이 바뀐 것을 보고 브랜치에만 올린다
+  check('갈라짐: main은 B의 내용 그대로(a,b,d)', sameSet(drive.headStrokes(D), ['a', 'b', 'd']), JSON.stringify(drive.headStrokes(D)))
+  check('갈라짐: A의 변경은 A 브랜치에(a,b,c)', sameSet(drive.fileStrokes(drive.branchOf(D, devA)!), ['a', 'b', 'c']))
+  check('갈라짐: A 노트는 그대로(a,b,c)', sameSet(await strokes(A, D), ['a', 'b', 'c']))
+  check('갈라짐: A의 올리기 대기는 내려간다(브랜치에 있으므로)', (await pendingFor(A, D)) === 0)
+  check('갈라짐: A 목록 상태', (await cloudState(A, D)) === 'diverged', String(await cloudState(A, D)))
+  check('갈라짐: A 카드 상태', (await cardState(A, D)) === 'diverged', String(await cardState(A, D)))
+  const planA = await planPull(A)
+  check('갈라짐: 받기 미리보기는 받지 않는 이유로 보여 준다', !planA.docs.includes(D) && planA.diverged.includes(D))
+  await pull(A)
+  check('갈라짐: 받기가 A 노트를 덮지 않는다', sameSet(await strokes(A, D), ['a', 'b', 'c']))
+  check('갈라짐: main에 A의 두 번째 업로드는 반영되지 않았다', mainProps(D)[`m.${devA}`] === '1' && drive.branchOf(D, devA)!.appProperties.seq === '2')
 
-  // 머지 결과 업로드가 실패해도 클라우드 '현재'는 B의 상태로 남는다
+  // ── 클라우드에 맞추기: main으로 덮고, A 브랜치 내용은 버린 것으로 표시(파일은 남는다) ──
+  await A.evaluate(async (D) => (await import('/src/sync/sync.ts')).alignWithCloud(D), D)
+  check('맞추기: A가 main 내용(a,b,d)', sameSet(await strokes(A, D), ['a', 'b', 'd']))
+  check('맞추기: A는 최신', (await cloudState(A, D)) === 'same', String(await cloudState(A, D)))
+  check('맞추기: A 브랜치 파일은 남고 버림 표식', sameSet(drive.fileStrokes(drive.branchOf(D, devA)!), ['a', 'b', 'c']) && drive.branchOf(D, devA)!.appProperties.resolved === '2')
+  await addStroke(A, D, 'e')
+  await push(A)
+  check('맞추기: 그 뒤 A가 고쳐 올리면 다시 따라간다', sameSet(drive.headStrokes(D), ['a', 'b', 'd', 'e']) && mainProps(D)[`m.${devA}`] === '3')
+
+  // 맞추기는 올리지 않은 변경을 먼저 브랜치에 올려 둔다
+  await addStroke(A, D, 'lost?')
+  await pull(B) // B는 A가 올린 e까지 받은 뒤 고친다 — 한쪽만 바뀐 것이 되어 main이 따라간다
+  await addStroke(B, D, 'f')
+  await push(B)
+  await A.evaluate(async (D) => (await import('/src/sync/sync.ts')).alignWithCloud(D), D)
+  check('맞추기: 올리지 않은 변경은 덮기 전에 A 브랜치에 남는다', drive.fileStrokes(drive.branchOf(D, devA)!).includes('lost?'))
+  check('맞추기: A 노트는 main(f 포함)', (await strokes(A, D)).includes('f') && !(await strokes(A, D)).includes('lost?'))
+
+  // ── main 쓰기 실패: 대기가 남고, 다시 올리면 따라간다 ──
   const E = await createDoc(A, '노트 E')
   await addStroke(A, E, 'x')
   await push(A)
   await pull(B)
-  await addStroke(A, E, 'z')
   await addStroke(B, E, 'y')
-  await push(B)
   drive.fail.nextDocUpload = true
-  await push(A)
-  check('업로드 실패: 클라우드 최신본은 B의 상태(x,y) 그대로', sameSet(drive.headStrokes(E), ['x', 'y']), JSON.stringify(drive.headStrokes(E)))
-  check('업로드 실패: A의 올리기 대기는 남는다', (await pendingFor(A, E)) > 0)
-  await push(A)
-  check('업로드 실패: 다시 올리면 머지 결과(x,y,z)', sameSet(drive.headStrokes(E), ['x', 'y', 'z']), JSON.stringify(drive.headStrokes(E)))
-  await pull(B)
-  check('업로드 실패: B도 x,y,z를 받는다', sameSet(await strokes(B, E), ['x', 'y', 'z']))
+  await push(B)
+  check('쓰기 실패: main은 그대로(x)', sameSet(drive.headStrokes(E), ['x']))
+  check('쓰기 실패: B 브랜치에는 올라갔다(x,y)', sameSet(drive.fileStrokes(drive.branchOf(E, devB)!), ['x', 'y']))
+  check('쓰기 실패: B의 올리기 대기는 남는다', (await pendingFor(B, E)) > 0)
+  check('쓰기 실패: B는 갈라짐이 아니라 올릴 것', (await cloudState(B, E)) === 'pending', String(await cloudState(B, E)))
+  await push(B)
+  check('쓰기 실패: 다시 올리면 main이 따라온다(x,y)', sameSet(drive.headStrokes(E), ['x', 'y']))
+  await pull(A)
+  check('쓰기 실패: A도 x,y를 받는다', sameSet(await strokes(A, E), ['x', 'y']))
 
-  if (bk) await A.evaluate(async ([D, id]) => (await import('/src/sync/revisions.ts')).restoreDocRevision(D, id), [D, bk.id] as const)
-  check('버전 기록: 백업으로 되돌리면 A는 머지 전 상태(a,c)', sameSet(await strokes(A, D), ['a', 'c']), JSON.stringify(await strokes(A, D)))
-
-  // ── 고정 해제가 클라우드 최신본을 바꾸지 않는다 ──
+  // ── main이 다른 기기에 덮이면(동시에 따라가기) 진 쪽은 갈라짐으로 보인다 ──
   const F = await createDoc(A, '노트 F')
-  await addStroke(A, F, 'old')
+  await addStroke(A, F, 'f1')
   await push(A)
-  await addStroke(A, F, 'new')
+  await addStroke(A, F, 'f2')
+  await push(A)
+  const fMain = drive.docFile(F)!
+  // 다른 기기가 같은 세대에서 동시에 따라가 A의 쓰기를 덮은 것처럼 — 새 신원, A의 두 번째 업로드는 반영 안 됨
+  fMain.appProperties = { ...fMain.appProperties, mid: 'someoneelse', midU: fMain.appProperties.updatedAt, [`m.${devA}`]: '1' }
+  check('덮임: A는 갈라짐으로 본다', (await cloudState(A, F)) === 'diverged', String(await cloudState(A, F)))
+  await pull(A)
+  check('덮임: A 노트를 덮지 않는다', sameSet(await strokes(A, F), ['f1', 'f2']))
+  check('덮임: A의 내용은 A 브랜치에 있다', sameSet(drive.fileStrokes(drive.branchOf(F, devA)!), ['f1', 'f2']))
+
+  // ── 브랜치 이전 기록 호환: 예전 방식으로 맞춘 노트 ──
+  const G = await createDoc(A, '노트 G')
+  await addStroke(A, G, 'g1')
   await push(A)
   await pull(B)
-  const fFile = drive.docFile(F)!
-  const oldRev = fFile.revisions[0].id
-  await A.evaluate(async ([F, r]) => (await import('/src/sync/revisions.ts')).pinDocRevision(F, r), [F, oldRev] as const)
-  await A.evaluate(async ([F, r]) => (await import('/src/sync/revisions.ts')).unpinDocRevision(F, r), [F, oldRev] as const)
-  check('고정 해제: 클라우드 최신본은 그대로(old,new)', sameSet(drive.headStrokes(F), ['new', 'old']), JSON.stringify(drive.headStrokes(F)))
-  check('고정 해제: 고정본은 지워지고 옛 내용은 고정 없는 리비전으로 남는다', !fFile.revisions.some((r) => r.id === oldRev) && drive.revisionStrokes(fFile).some((r) => sameSet(r.strokes, ['old']) && !r.keepForever))
-  check('고정 해제: A·B 모두 받을 것 없음', !(await planPullIds(A)).includes(F) && !(await planPullIds(B)).includes(F))
+  const forgetBranch = (p: Page, docId: string) => p.evaluate(async (docId) => (await import('/src/storage/db.ts')).db.syncState.delete(`br:${docId}`), docId)
+  await forgetBranch(B, G)
+  check('호환: 브랜치 기록이 없어도 예전 기록으로 최신', (await cloudState(B, G)) === 'same', String(await cloudState(B, G)))
+  await addStroke(B, G, 'g2')
+  await push(B)
+  check('호환: 예전 기록으로 맞춘 노트도 따라간다', sameSet(drive.headStrokes(G), ['g1', 'g2']))
+  await forgetBranch(A, G)
+  await addStroke(A, G, 'g3') // A의 예전 기록은 B가 올리기 전 것 → 출발점이 main과 다르다
+  await push(A)
+  check('호환: 출발점이 낡은 기기는 덮지 않고 갈라짐', sameSet(drive.headStrokes(G), ['g1', 'g2']) && (await cloudState(A, G)) === 'diverged')
+
+  // ── 클라우드 삭제는 main과 모든 기기 브랜치를 휴지통으로 ──
+  await A.evaluate(async ([E, fileId]) => (await import('/src/sync/sync.ts')).deleteCloudNote({ docId: E, fileId }), [E, drive.docFile(E)!.id] as const)
+  check('클라우드 삭제: main·브랜치 모두 휴지통', drive.allTrashed(E))
+  check('클라우드 삭제: A 노트는 남는다', sameSet(await strokes(A, E), ['x', 'y']))
+
+  // ── 버전 기록: 되돌리면 '되돌림'으로 main이 따라간다 ──
+  const H = await createDoc(A, '노트 H')
+  await addStroke(A, H, 'h1')
+  await push(A)
+  await addStroke(A, H, 'h2')
+  await push(A)
+  await pull(B)
+  const hRevs = await revisions(A, H)
+  check('버전 기록: 리비전 2개, 마지막이 헤드', hRevs.length === 2 && hRevs[1].isHead)
+  await A.evaluate(async ([H, id]) => (await import('/src/sync/revisions.ts')).restoreDocRevision(H, id), [H, hRevs[0].id] as const)
+  check('버전 기록: 되돌리면 A는 그때 내용(h1)', sameSet(await strokes(A, H), ['h1']))
+  await push(A)
+  check('버전 기록: 올리면 main이 되돌림으로 따라간다', sameSet(drive.headStrokes(H), ['h1']) && mainProps(H).revKind === 'restore')
+  await pull(B)
+  check('버전 기록: B도 되돌린 내용을 받는다', sameSet(await strokes(B, H), ['h1']))
+
+  // ── 고정 해제가 main을 바꾸지 않는다 ──
+  const K = await createDoc(A, '노트 K')
+  await addStroke(A, K, 'old')
+  await push(A)
+  await addStroke(A, K, 'new')
+  await push(A)
+  await pull(B)
+  const kFile = drive.docFile(K)!
+  const oldRev = kFile.revisions[0].id
+  await A.evaluate(async ([K, r]) => (await import('/src/sync/revisions.ts')).pinDocRevision(K, r), [K, oldRev] as const)
+  await A.evaluate(async ([K, r]) => (await import('/src/sync/revisions.ts')).unpinDocRevision(K, r), [K, oldRev] as const)
+  check('고정 해제: main 최신본은 그대로(old,new)', sameSet(drive.headStrokes(K), ['new', 'old']), JSON.stringify(drive.headStrokes(K)))
+  check('고정 해제: 고정본은 지워지고 옛 내용은 고정 없는 리비전으로 남는다', !kFile.revisions.some((r) => r.id === oldRev) && drive.revisionStrokes(kFile).some((r) => sameSet(r.strokes, ['old']) && !r.keepForever))
+  check('고정 해제: A·B 모두 최신', (await cloudState(A, K)) === 'same' && (await cloudState(B, K)) === 'same')
 
   // ── 원본 정리 ──
   const gc = await A.evaluate(async () => {
@@ -103,12 +186,11 @@ export default async function sync(ctx: Ctx) {
   check('원본 정리: 방금 가져온 원본(10분 이내)은 남긴다', gc.includes('ORPHAN-NEW'))
 
   // ── 버전 기록 화면 ──
-  await openEditor(A, base, D)
+  await openEditor(A, base, H)
   await A.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setPanel('history'))
   await A.waitForSelector('#version-panel .rev-row')
   await A.waitForTimeout(500)
-  const row = A.locator('#version-panel .rev-row', { hasText: '별도 보관' })
-  check('버전 기록 화면: "별도 보관" 행이 있고 고정 버튼은 없다', (await row.count()) === 1 && (await row.getByRole('button', { name: /고정/ }).count()) === 0)
+  check('버전 기록 화면: 리비전 행이 보인다', (await A.locator('#version-panel .rev-row').count()) >= 2)
 
   const warn = [...logsOf(A), ...logsOf(B)].filter((t) => /노트 보호\(withDocExclusive\) 밖|미구현/.test(t))
   check('경고 없음: 보호 밖 적용·가짜 Drive 미구현 API', warn.length === 0, warn.join(' | '))

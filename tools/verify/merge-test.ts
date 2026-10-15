@@ -1,15 +1,16 @@
 /**
- * 노트 머지(sync/merge.ts) 회귀 테스트 (의존성 없음)
+ * 브랜치 머지(sync/merge.ts) 회귀 테스트 (의존성 없음)
  *
  * 실행:  node --experimental-strip-types --no-warnings tools/verify/merge-test.ts
  *
- * 배경: 머지가 페이지(문서형)·청크(무한 캔버스) 통째로 비교해서
- *  - 같은 페이지에 두 기기가 서로 다른 줄을 쓰면 한쪽 필기가 통째로 사라졌다
- *  - base(마지막 동기화 기록)가 없으면 묻지도 않고 원격으로 덮었다
- *  - 무한 캔버스에서 같은 새 영역에 양쪽이 처음 쓰면 한쪽이 사라졌다
- * 획 ID 단위 머지로 바꾼 뒤 이 경로들이 다시 깨지지 않도록 여기서 잠근다.
+ * 규칙 (docs/branch-merge.md §4):
+ *  - 머지에는 삭제가 없다(모두 살리기) — 한쪽에라도 있으면 남는다
+ *  - 한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 머지하는 기기 쪽 (브랜치의 '고친 목록'으로 가린다)
+ *  - 옮긴 획은 ID로 따라가 두 군데 생기지 않는다
+ *  - 작업본: 버린 항목은 빠지고, 반대쪽으로 바꾼 항목은 그쪽 내용
  */
-import { mergeDocs } from '../../src/sync/merge.ts'
+import { classify, compose, draftFromJson, draftToJson, editPlaced, emptyDraft, mergePageOrder, resolveItem, retainDraft, type MergeDraft, type Side } from '../../src/sync/merge.ts'
+import { computeModified } from '../../src/sync/branch.ts'
 import type { DocFileV1 } from '../../src/sync/pack.ts'
 import type { Block, Element, Page, Stroke } from '../../src/shared/model.ts'
 
@@ -19,27 +20,30 @@ const check = (name: string, cond: boolean, detail = '') => {
   if (cond) pass++
   else failures.push(`${name}${detail ? ' — ' + detail : ''}`)
 }
+/** 작업본 줄임말 — 안 준 것은 비어 있다 */
+const D = (d: Partial<MergeDraft>): MergeDraft => ({ ...emptyDraft(), ...d })
 const eqSet = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',')
 
-/* ── 테스트용 노트 만들기 ─────────────────────────────────────────── */
+/* ── 테스트용 노트 ─────────────────────────────────────────────── */
 
-const stroke = (id: string, z = 1, color = '#000000ff', x = 0): Stroke => ({
+const stroke = (id: string, x = 0, color = '#000000ff', z = 1): Stroke => ({
   id, type: 'stroke', layer: 'main', z, createdAt: 0, tool: 'pen', color, width: 2,
   points: [x, 0, 0.5, 0, x + 10, 10, 0.5, 16], bbox: [x, 0, x + 10, 10],
   opts: { thinning: 0.5, smoothing: 0.5, streamline: 0.5, simulatePressure: false }
 })
-const page = (id: string, bg = 'blank'): Page => ({
+const page = (id: string, bg: 'blank' | 'grid' = 'blank'): Page => ({
   id, documentId: 'D', schemaVersion: 2, size: { w: 595, h: 842 },
   background: bg === 'grid' ? { type: 'grid', spacing: 24, color: '#d3d9e2' } : { type: 'blank', color: '#ffffff' },
   createdAt: 0, updatedAt: 0, version: 0
 })
-type Layout = Record<string, Element[]> // 'pageId|key' → 요소
-function doc(layout: Layout, opts: { pages?: Page[]; mode?: 'paged' | 'infinite'; blocks?: Block[]; title?: string } = {}): DocFileV1 {
+const memo = (id: string, text: string, deletedAt?: number): Block =>
+  ({ id, type: 'memo', documentId: 'D', pageId: 'p1', schemaVersion: 1, x: 0, y: 0, w: 100, h: 50, z: 1, createdAt: 0, updatedAt: 0, data: { text }, ...(deletedAt ? { deletedAt } : {}) }) as unknown as Block
+function doc(layout: Record<string, Element[]>, opts: { pages?: Page[]; title?: string; order?: string[]; blocks?: Block[]; updatedAt?: number } = {}): DocFileV1 {
   const pageIds = [...new Set(Object.keys(layout).map((k) => k.split('|')[0]))]
   const pages = opts.pages ?? pageIds.map((id) => page(id))
   return {
     kind: 'inkpad-doc', schemaVersion: 1,
-    doc: { id: 'D', schemaVersion: 2, title: opts.title ?? '노트', mode: opts.mode ?? 'paged', category: null, pageOrder: pages.map((p) => p.id), createdAt: 0, updatedAt: 1 },
+    doc: { id: 'D', schemaVersion: 2, title: opts.title ?? '노트', mode: 'paged', category: null, pageOrder: opts.order ?? pages.map((p) => p.id), createdAt: 0, updatedAt: opts.updatedAt ?? 1 },
     pages,
     chunks: Object.entries(layout).map(([k, elements]) => ({ pageId: k.split('|')[0], key: k.split('|')[1], elements })),
     blocks: opts.blocks ?? [],
@@ -47,219 +51,186 @@ function doc(layout: Layout, opts: { pages?: Page[]; mode?: 'paged' | 'infinite'
   }
 }
 const P = (pageId: string) => `${pageId}|0_0`
-/** 결과에서 획 ID 목록 (어느 청크에 있든) */
 const ids = (f: DocFileV1) => f.chunks.flatMap((c) => c.elements.map((e) => e.id))
-const idsAt = (f: DocFileV1, chunk: string) => f.chunks.find((c) => `${c.pageId}|${c.key}` === chunk)?.elements.map((e) => e.id) ?? []
+const elOf = (f: DocFileV1, id: string) => f.chunks.flatMap((c) => c.elements.map((e) => ({ pageId: c.pageId, el: e }))).find((x) => x.el.id === id)
 const noDuplicates = (f: DocFileV1) => new Set(ids(f)).size === ids(f).length
 
-/* ── T1 · 같은 페이지에 양쪽이 서로 다른 획을 추가 (보고된 증상 ①) ──── */
+/** base에서 출발해 main·branch가 각각 바뀐 상황을 머지한다 (브랜치의 고친 목록은 실제처럼 base와 비교해 만든다) */
+function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer: Side = 'main', draft: MergeDraft = emptyDraft()) {
+  const modified = base ? computeModified(base, branch) : {}
+  const plan = classify(main, branch, { modified, hasBase: !!base, prefer })
+  return { plan, out: compose(main, branch, plan, draft, 5000), item: (key: string) => plan.items.find((i) => i.key === key)! }
+}
+
+/* ── M1 · 양쪽이 서로 다른 획을 추가 ──────────────────────────── */
 {
   const base = doc({ [P('p1')]: [stroke('a')] })
-  const ours = doc({ [P('p1')]: [stroke('a'), stroke('mine', 2)] })
-  const theirs = doc({ [P('p1')]: [stroke('a'), stroke('theirs', 2)] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T1 양쪽 새 획 모두 남음', eqSet(ids(r.file), ['a', 'mine', 'theirs']), ids(r.file).join(','))
-  check('T1 충돌 없음', r.conflicts === 0, String(r.conflicts))
-  check('T1 baseless 아님', !r.baseless)
+  const r = run(base, doc({ [P('p1')]: [stroke('a'), stroke('m')] }), doc({ [P('p1')]: [stroke('a'), stroke('b')] }))
+  check('M1 양쪽 새 획 모두 남음', eqSet(ids(r.out), ['a', 'm', 'b']), ids(r.out).join(','))
+  check('M1 분류: 공통·main에만·브랜치에만', r.item('el:a').cls === 'common' && r.item('el:m').cls === 'mainOnly' && r.item('el:b').cls === 'branchOnly')
+  check('M1 개수', r.plan.counts.common === 1 && r.plan.counts.mainOnly === 1 && r.plan.counts.branchOnly === 1 && r.plan.counts.modified === 0)
 }
 
-/* ── T2 · base 없이 양쪽이 다름 (보고된 증상 ②) ──────────────────── */
+/* ── M2 · 모두 살리기: 한쪽에서 지운 획도 남는다 ─────────────────── */
 {
-  const ours = doc({ [P('p1')]: [stroke('mine')] })
-  const theirs = doc({ [P('p1')]: [stroke('theirs')] })
-  const r = mergeDocs(null, ours, theirs)
-  check('T2 base 없음 — 양쪽 획 모두 남음', eqSet(ids(r.file), ['mine', 'theirs']), ids(r.file).join(','))
-  check('T2 base 없음 — baseless로 알림(확인 창 대상)', r.baseless)
-  const same = mergeDocs(null, doc({ [P('p1')]: [stroke('x')] }), doc({ [P('p1')]: [stroke('x')] }))
-  check('T2 base 없음 — 내용이 같으면 묻지 않음', !same.baseless && same.conflicts === 0)
-  const diff = mergeDocs(null, doc({ [P('p1')]: [stroke('x', 1, '#ff0000ff')] }), doc({ [P('p1')]: [stroke('x', 1, '#0000ffff')] }))
-  check('T2 base 없음 — 같은 획이 다르면 충돌로 셈', diff.conflicts === 1 && diff.baseless)
+  const base = doc({ [P('p1')]: [stroke('a'), stroke('x')] })
+  const r1 = run(base, doc({ [P('p1')]: [stroke('a'), stroke('x')] }), doc({ [P('p1')]: [stroke('a')] }))
+  check('M2 브랜치가 지운 획은 main에 남아 살아난다', eqSet(ids(r1.out), ['a', 'x']) && r1.item('el:x').cls === 'mainOnly')
+  const r2 = run(base, doc({ [P('p1')]: [stroke('a')] }), doc({ [P('p1')]: [stroke('a'), stroke('x')] }))
+  check('M2 main이 지운 획도 브랜치에 있으면 살아난다', eqSet(ids(r2.out), ['a', 'x']) && r2.item('el:x').cls === 'branchOnly')
 }
 
-/* ── T3 · 무한 캔버스: base에 없던 같은 새 영역에 양쪽이 처음 씀 (보고된 증상 ③) ── */
-{
-  const base = doc({}, { mode: 'infinite', pages: [page('inf')] })
-  const ours = doc({ 'inf|1_0': [stroke('mine')] }, { mode: 'infinite', pages: [page('inf')] })
-  const theirs = doc({ 'inf|1_0': [stroke('theirs')] }, { mode: 'infinite', pages: [page('inf')] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T3 새 청크 양쪽 획 모두 남음', eqSet(idsAt(r.file, 'inf|1_0'), ['mine', 'theirs']), ids(r.file).join(','))
-  check('T3 충돌 없음', r.conflicts === 0 && !r.baseless)
-}
-
-/* ── T4 · 한쪽이 지우고 다른 쪽은 다른 획을 추가 ───────────────────── */
+/* ── M3 · 한쪽만 고친 획은 고친 쪽 ───────────────────────────── */
 {
   const base = doc({ [P('p1')]: [stroke('a'), stroke('b')] })
-  const ours = doc({ [P('p1')]: [stroke('a')] }) // b를 지움
-  const theirs = doc({ [P('p1')]: [stroke('a'), stroke('b'), stroke('c')] }) // c 추가
-  const r = mergeDocs(base, ours, theirs)
-  check('T4 지운 획은 지워지고 새 획은 남음', eqSet(ids(r.file), ['a', 'c']), ids(r.file).join(','))
-  check('T4 충돌 없음', r.conflicts === 0)
-}
-
-/* ── T5 · 같은 획을 양쪽에서 다르게 고침 → 충돌, 방향은 인자 순서 ──── */
-{
-  const base = doc({ [P('p1')]: [stroke('a')] })
-  const ours = doc({ [P('p1')]: [stroke('a', 1, '#ff0000ff')] })
-  const theirs = doc({ [P('p1')]: [stroke('a', 1, '#0000ffff')] })
-  const remoteFirst = mergeDocs(base, ours, theirs)
-  const localFirst = mergeDocs(base, theirs, ours)
-  const color = (f: DocFileV1) => (f.chunks[0].elements[0] as Stroke).color
-  check('T5 충돌 1곳', remoteFirst.conflicts === 1 && remoteFirst.details[0]?.kind === 'chunk')
-  check('T5 원격 우선이면 원격 색', color(remoteFirst.file) === '#0000ffff')
-  check('T5 이 기기 우선이면 이 기기 색', color(localFirst.file) === '#ff0000ff')
-}
-
-/* ── T6 · 같은 청크에서 획 여러 개가 충돌해도 1곳으로 센다 ─────────── */
-{
-  const base = doc({ [P('p1')]: [stroke('a'), stroke('b')] })
-  const ours = doc({ [P('p1')]: [stroke('a', 1, '#ff0000ff'), stroke('b', 1, '#ff0000ff')] })
-  const theirs = doc({ [P('p1')]: [stroke('a', 1, '#00ff00ff'), stroke('b', 1, '#00ff00ff')] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T6 충돌 위치 1곳', r.conflicts === 1, String(r.conflicts))
-}
-
-/* ── T7 · 올가미로 다른 페이지로 옮긴 획 — 두 군데 생기지 않는다 ──── */
-{
-  const base = doc({ [P('p1')]: [stroke('a'), stroke('m')], [P('p2')]: [stroke('b')] })
-  const ours = doc({ [P('p1')]: [stroke('a')], [P('p2')]: [stroke('b'), stroke('m', 1, '#000000ff', 50)] }) // m을 p2로 옮김
-  const theirs = doc({ [P('p1')]: [stroke('a'), stroke('m'), stroke('t')], [P('p2')]: [stroke('b')] }) // p1에 t 추가
-  const r = mergeDocs(base, ours, theirs)
-  check('T7 옮긴 획은 새 위치에만', eqSet(idsAt(r.file, P('p2')), ['b', 'm']) && eqSet(idsAt(r.file, P('p1')), ['a', 't']), JSON.stringify(r.file.chunks.map((c) => [c.pageId, c.elements.map((e) => e.id)])))
-  check('T7 중복 ID 없음', noDuplicates(r.file))
-  check('T7 충돌 없음', r.conflicts === 0)
-}
-
-/* ── T8 · 이 기기는 옮기고 원격은 색을 바꿈 → 충돌이지만 한 군데에만 ── */
-{
-  const base = doc({ [P('p1')]: [stroke('m')], [P('p2')]: [] })
-  const ours = doc({ [P('p1')]: [], [P('p2')]: [stroke('m', 1, '#000000ff', 50)] })
-  const theirs = doc({ [P('p1')]: [stroke('m', 1, '#ff0000ff')], [P('p2')]: [] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T8 충돌 1곳', r.conflicts === 1)
-  check('T8 중복 ID 없음', noDuplicates(r.file) && ids(r.file).filter((i) => i === 'm').length === 1)
-}
-
-/* ── T9 · 원격이 페이지를 지웠고 이 기기는 손대지 않음 → 조용히 지움 ── */
-{
-  const base = doc({ [P('p1')]: [stroke('a')], [P('p2')]: [stroke('b')] })
-  const ours = doc({ [P('p1')]: [stroke('a')], [P('p2')]: [stroke('b')] })
-  const theirs = doc({ [P('p1')]: [stroke('a')] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T9 페이지 삭제 반영', r.file.pages.map((p) => p.id).join() === 'p1' && eqSet(ids(r.file), ['a']))
-  check('T9 충돌 없음', r.conflicts === 0)
-}
-
-/* ── T10 · 원격이 지운 페이지에 이 기기가 필기를 더함 → 충돌로 알림 ── */
-{
-  const base = doc({ [P('p1')]: [stroke('a')], [P('p2')]: [stroke('b')] })
-  const ours = doc({ [P('p1')]: [stroke('a')], [P('p2')]: [stroke('b'), stroke('new', 2)] })
-  const theirs = doc({ [P('p1')]: [stroke('a')] })
-  const remoteFirst = mergeDocs(base, ours, theirs)
-  check('T10 페이지 충돌 1곳', remoteFirst.conflicts === 1 && remoteFirst.details[0]?.kind === 'page', JSON.stringify(remoteFirst.details))
-  check('T10 원격 우선 — 페이지 삭제', !remoteFirst.file.pages.some((p) => p.id === 'p2'))
-  const localFirst = mergeDocs(base, theirs, ours)
-  check('T10 이 기기 우선 — 페이지와 그 안 필기 전부 되살림', localFirst.file.pages.some((p) => p.id === 'p2') && eqSet(idsAt(localFirst.file, P('p2')), ['b', 'new']), ids(localFirst.file).join(','))
-  check('T10 되살린 페이지가 페이지 순서에 있음', localFirst.file.doc.pageOrder.includes('p2'))
-}
-
-/* ── T11 · 한쪽은 속지를 바꾸고 다른 쪽은 그 페이지에 필기 → 둘 다 반영 ── */
-{
-  const base = doc({ [P('p1')]: [stroke('a')] })
-  const ours = doc({ [P('p1')]: [stroke('a')] }, { pages: [{ ...page('p1', 'grid'), updatedAt: 99 }] })
-  const theirs = doc({ [P('p1')]: [stroke('a'), stroke('t', 2)] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T11 속지 변경 유지', r.file.pages[0].background.type === 'grid')
-  check('T11 필기 추가 유지', eqSet(ids(r.file), ['a', 't']))
-  check('T11 충돌 없음', r.conflicts === 0)
-}
-
-/* ── T12 · 양쪽이 서로 다른 새 페이지 추가 → 둘 다, 순서에도 둘 다 ── */
-{
-  const base = doc({ [P('p1')]: [] })
-  const ours = doc({ [P('p1')]: [], [P('pA')]: [stroke('x')] })
-  const theirs = doc({ [P('p1')]: [], [P('pB')]: [stroke('y')] })
-  const r = mergeDocs(base, ours, theirs)
-  check('T12 새 페이지 둘 다', eqSet(r.file.pages.map((p) => p.id), ['p1', 'pA', 'pB']))
-  check('T12 순서에 둘 다', eqSet(r.file.doc.pageOrder, ['p1', 'pA', 'pB']))
-  check('T12 필기 둘 다', eqSet(ids(r.file), ['x', 'y']))
-}
-
-/* ── T13 · 블록: 양쪽 새 블록 / base 없이 같은 블록이 다름 ────────── */
-{
-  const blk = (id: string, text: string, updatedAt = 1): Block => ({
-    id, documentId: 'D', pageId: 'p1', schemaVersion: 1, x: 0, y: 0, w: 200, z: 1, createdAt: 0, updatedAt,
-    type: 'memo', data: { text, color: 'yellow', collapsed: false }
-  })
-  const base = doc({ [P('p1')]: [] }, { blocks: [] })
-  const r = mergeDocs(base, doc({ [P('p1')]: [] }, { blocks: [blk('m1', 'a')] }), doc({ [P('p1')]: [] }, { blocks: [blk('m2', 'b')] }))
-  check('T13 양쪽 새 블록 모두', eqSet((r.file.blocks ?? []).map((b) => b.id), ['m1', 'm2']))
-  const nb = mergeDocs(null, doc({ [P('p1')]: [] }, { blocks: [blk('m', 'mine', 5)] }), doc({ [P('p1')]: [] }, { blocks: [blk('m', 'theirs', 3)] }))
-  check('T13 base 없이 같은 블록이 다르면 충돌', nb.conflicts === 1 && nb.details[0]?.kind === 'block' && nb.baseless)
-}
-
-/* ── T14 · 청크 안 순서: z순, 같은 z는 ID순 (결과가 늘 같다) ─────── */
-{
-  const base = doc({ [P('p1')]: [] })
-  const ours = doc({ [P('p1')]: [stroke('b', 5), stroke('c', 1)] })
-  const theirs = doc({ [P('p1')]: [stroke('a', 5)] })
-  const r1 = mergeDocs(base, ours, theirs)
-  check('T14 z순·ID순', idsAt(r1.file, P('p1')).join() === 'c,a,b', idsAt(r1.file, P('p1')).join())
-}
-
-/* ── T15 · 무작위 편집 1,000회 — 불변식 ─────────────────────────── */
-{
-  // 고정 시드 난수 (재현 가능)
-  let seed = 20261013
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
-  const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length)]
-  let bad = 0
-  let firstBad = ''
-  for (let round = 0; round < 1000; round++) {
-    const pagesIds = ['p1', 'p2', 'p3']
-    const baseLayout: Layout = {}
-    let n = 0
-    for (const p of pagesIds) baseLayout[P(p)] = Array.from({ length: 3 }, () => stroke(`b${n++}`))
-    const base = doc(baseLayout)
-    // 양쪽이 서로 겹치지 않는 편집을 한다: ours는 짝수 획만, theirs는 홀수 획만 지운다. 새 획은 각자 이름이 다르다.
-    const edit = (tag: string, parity: number) => {
-      const lay: Layout = JSON.parse(JSON.stringify(baseLayout))
-      const deleted: string[] = []
-      const added: string[] = []
-      for (let k = 0; k < 3; k++) {
-        const pg = P(pick(pagesIds))
-        const op = rnd()
-        if (op < 0.5) {
-          const victims = lay[pg].filter((e) => Number(e.id.slice(1)) % 2 === parity)
-          if (victims.length) {
-            const v = pick(victims)
-            lay[pg] = lay[pg].filter((e) => e.id !== v.id)
-            deleted.push(v.id)
-          }
-        } else {
-          const id = `${tag}${round}_${k}`
-          lay[pg].push(stroke(id, 10 + k))
-          added.push(id)
-        }
-      }
-      return { file: doc(lay), deleted, added }
-    }
-    const o = edit('o', 0)
-    const t = edit('t', 1)
-    const r = mergeDocs(base, o.file, t.file)
-    const got = new Set(ids(r.file))
-    const expect = new Set<string>([...Object.values(baseLayout).flat().map((e) => e.id), ...o.added, ...t.added])
-    for (const d of [...o.deleted, ...t.deleted]) expect.delete(d)
-    const ok = r.conflicts === 0 && noDuplicates(r.file) && got.size === expect.size && [...expect].every((x) => got.has(x))
-    if (!ok) {
-      bad++
-      if (!firstBad) firstBad = `round ${round}: expect ${[...expect].sort()} got ${[...got].sort()} conflicts ${r.conflicts}`
-    }
+  const main = doc({ [P('p1')]: [stroke('a', 0, '#ff0000ff'), stroke('b')] }) // main이 a 색을 바꿈
+  const branch = doc({ [P('p1')]: [stroke('a'), stroke('b', 40)] }) // 브랜치가 b를 옮김
+  for (const prefer of ['main', 'branch'] as const) {
+    const r = run(base, main, branch, prefer)
+    check(`M3 main만 고친 획은 main 쪽 (머지하는 기기=${prefer})`, r.item('el:a').pick === 'main' && !r.item('el:a').both && (elOf(r.out, 'a')!.el as Stroke).color === '#ff0000ff')
+    check(`M3 브랜치만 고친 획은 브랜치 쪽 (머지하는 기기=${prefer})`, r.item('el:b').pick === 'branch' && !r.item('el:b').both && (elOf(r.out, 'b')!.el as Stroke).points[0] === 40)
   }
-  check('T15 겹치지 않는 편집 1,000회 — 추가는 모두 남고 삭제는 모두 반영, 충돌·중복 없음', bad === 0, firstBad)
+}
+
+/* ── M4 · 양쪽이 고친 획은 머지하는 기기 쪽 ───────────────────── */
+{
+  const base = doc({ [P('p1')]: [stroke('a')] })
+  const main = doc({ [P('p1')]: [stroke('a', 0, '#ff0000ff')] })
+  const branch = doc({ [P('p1')]: [stroke('a', 0, '#0000ffff')] })
+  const rm = run(base, main, branch, 'main')
+  check('M4 양쪽 고침 — main 기기가 머지하면 main', rm.item('el:a').both === true && (elOf(rm.out, 'a')!.el as Stroke).color === '#ff0000ff')
+  const rb = run(base, main, branch, 'branch')
+  check('M4 양쪽 고침 — 브랜치 기기가 머지하면 브랜치', (elOf(rb.out, 'a')!.el as Stroke).color === '#0000ffff')
+  check('M4 양쪽 고침 개수', rm.plan.bothCount === 1)
+  const flipped = run(base, main, branch, 'main', D({ flip: new Set(['el:a']) }))
+  check('M4 반대쪽으로 바꾸면 그쪽 내용', (elOf(flipped.out, 'a')!.el as Stroke).color === '#0000ffff')
+}
+
+/* ── M5 · 출발점 없이 올린 브랜치는 내용이 다른 것을 모두 양쪽 고침으로 ── */
+{
+  const r = run(null, doc({ [P('p1')]: [stroke('a', 0, '#ff0000ff'), stroke('m')] }), doc({ [P('p1')]: [stroke('a', 0, '#0000ffff'), stroke('b')] }), 'branch')
+  check('M5 출발점 없음 — 다른 획은 양쪽 고침, 머지하는 기기 쪽', r.item('el:a').both === true && (elOf(r.out, 'a')!.el as Stroke).color === '#0000ffff')
+  check('M5 출발점 없음 — 한쪽에만 있는 획은 모두 남는다', eqSet(ids(r.out), ['a', 'm', 'b']))
+}
+
+/* ── M6 · 다른 페이지로 옮긴 획은 한 곳에만 ───────────────────── */
+{
+  const base = doc({ [P('p1')]: [stroke('a')], [P('p2')]: [] })
+  const branch = doc({ [P('p1')]: [], [P('p2')]: [stroke('a')] })
+  const r = run(base, base, branch)
+  check('M6 옮긴 획은 새 페이지에', elOf(r.out, 'a')?.pageId === 'p2' && noDuplicates(r.out))
+}
+
+/* ── M7 · 페이지: 모두 살리기, 순서 끼워 넣기, 속지 ───────────── */
+{
+  const base = doc({ [P('p1')]: [], [P('p2')]: [] })
+  const main = doc({ [P('p1')]: [], [P('p2')]: [], [P('m3')]: [stroke('mm')] }) // main이 맨 뒤에 m3 추가
+  const branch = doc({ [P('p1')]: [], [P('b9')]: [stroke('bb')], [P('p2')]: [] }) // 브랜치가 p1 뒤에 b9 추가
+  const r = run(base, main, branch)
+  check('M7 양쪽 새 페이지 모두 남음', eqSet(r.out.pages.map((p) => p.id), ['p1', 'b9', 'p2', 'm3']))
+  check('M7 브랜치 페이지는 브랜치 순서의 앞 페이지 뒤에', r.out.doc.pageOrder.join(',') === 'p1,b9,p2,m3', r.out.doc.pageOrder.join(','))
+  check('M7 결과 페이지 배열도 같은 순서', r.out.pages.map((p) => p.id).join(',') === r.out.doc.pageOrder.join(','))
+
+  const del = run(base, base, doc({ [P('p1')]: [] }))
+  check('M7 브랜치가 지운 페이지도 남는다', eqSet(del.out.pages.map((p) => p.id), ['p1', 'p2']) && del.item('page:p2').cls === 'mainOnly')
+
+  const bg = run(base, base, doc({ [P('p1')]: [], [P('p2')]: [] }, { pages: [page('p1', 'grid'), page('p2')] }))
+  check('M7 브랜치만 바꾼 속지는 브랜치 쪽', bg.out.pages.find((p) => p.id === 'p1')!.background.type === 'grid' && bg.item('page:p1').pick === 'branch')
+
+  const discard = run(base, main, branch, 'main', D({ discard: new Set(['page:b9']) }))
+  check('M7 버린 페이지는 그 필기와 함께 빠진다', !discard.out.pages.some((p) => p.id === 'b9') && !ids(discard.out).includes('bb') && !discard.out.doc.pageOrder.includes('b9'))
+}
+
+/* ── M8 · 페이지 순서 끼워 넣기 (순수 함수) ───────────────────── */
+{
+  const live = (xs: string[]) => new Set(xs)
+  check('M8 앞 페이지가 없으면 맨 앞', mergePageOrder(['a', 'b'], ['n', 'a', 'b'], live(['a', 'b', 'n'])).join(',') === 'n,a,b')
+  check('M8 연속으로 끼운 페이지는 순서 유지', mergePageOrder(['a', 'b'], ['a', 'x', 'y', 'b'], live(['a', 'b', 'x', 'y'])).join(',') === 'a,x,y,b')
+  check('M8 결과에 없는 페이지는 뺀다', mergePageOrder(['a', 'gone', 'b'], ['a', 'b'], live(['a', 'b'])).join(',') === 'a,b')
+}
+
+/* ── M9 · 문서 정보 ───────────────────────────────────────────── */
+{
+  const base = doc({ [P('p1')]: [] }, { title: '처음' })
+  const onlyBranch = run(base, base, doc({ [P('p1')]: [] }, { title: '브랜치 제목' }))
+  check('M9 브랜치만 바꾼 제목은 브랜치 쪽', onlyBranch.out.doc.title === '브랜치 제목')
+  const onlyMain = run(base, doc({ [P('p1')]: [] }, { title: 'main 제목' }), base)
+  check('M9 main만 바꾼 제목은 main 쪽', onlyMain.out.doc.title === 'main 제목')
+  const both = run(base, doc({ [P('p1')]: [] }, { title: 'M' }), doc({ [P('p1')]: [] }, { title: 'B' }), 'branch')
+  check('M9 양쪽이 바꾼 제목은 머지하는 기기 쪽', both.out.doc.title === 'B' && both.plan.meta[0]?.both === true)
+  const flip = run(base, doc({ [P('p1')]: [] }, { title: 'M' }), doc({ [P('p1')]: [] }, { title: 'B' }), 'branch', D({ flip: new Set(['doc:title']) }))
+  check('M9 제목도 반대쪽으로 바꿀 수 있다', flip.out.doc.title === 'M')
+}
+
+/* ── M10 · 블록 ───────────────────────────────────────────────── */
+{
+  const base = doc({ [P('p1')]: [] }, { blocks: [memo('k', '처음'), memo('d', '지울 메모')] })
+  const main = doc({ [P('p1')]: [] }, { blocks: [memo('k', '처음'), memo('d', '지울 메모')] })
+  const branch = doc({ [P('p1')]: [] }, { blocks: [memo('k', '고침'), memo('d', '지울 메모', 99)] })
+  const r = run(base, main, branch)
+  const out = new Map((r.out.blocks ?? []).map((b) => [b.id, b]))
+  check('M10 브랜치만 고친 블록은 브랜치 쪽', (out.get('k') as unknown as { data: { text: string } }).data.text === '고침')
+  check('M10 한쪽만 지운 블록은 살아 있는 쪽(모두 살리기)', !!out.get('d') && !out.get('d')!.deletedAt)
+}
+
+/* ── M11 · 작업본: 버리기 ─────────────────────────────────────── */
+{
+  const base = doc({ [P('p1')]: [stroke('a'), stroke('x')] })
+  const main = doc({ [P('p1')]: [stroke('a'), stroke('x'), stroke('m')] })
+  const branch = doc({ [P('p1')]: [stroke('a'), stroke('b')] })
+  const r = run(base, main, branch, 'main', D({ discard: new Set(['el:x', 'el:b', 'el:a']) }))
+  check('M11 버린 획은 빠진다(브랜치가 지운 x, 브랜치 새 획 b)', !ids(r.out).includes('x') && !ids(r.out).includes('b'))
+  check('M11 공통 획은 버릴 수 없다', ids(r.out).includes('a') && !resolveItem(r.item('el:a'), D({ discard: new Set(['el:a']) })).discarded)
+  check('M11 나머지는 남는다', ids(r.out).includes('m'))
+}
+
+/* ── M12 · 결과의 형태 ────────────────────────────────────────── */
+{
+  const base = doc({ [P('p1')]: [stroke('a')] }, { updatedAt: 100 })
+  const main = doc({ [P('p1')]: [stroke('a'), stroke('m', 0, '#000000ff', 2)] }, { updatedAt: 9000 })
+  const branch = doc({ [P('p1')]: [stroke('a'), stroke('b', 0, '#000000ff', 2)] }, { updatedAt: 200 })
+  main.assets = [{ id: 'A1', kind: 'pdf', mime: 'application/pdf', size: 1, sha256: 's1', createdAt: 0 }]
+  branch.assets = [{ id: 'A2', kind: 'image', mime: 'image/png', size: 1, sha256: 's2', createdAt: 0 }]
+  const r = run(base, main, branch)
+  check('M12 결과 updatedAt은 양쪽보다 크다', r.out.doc.updatedAt > 9000 && r.out.doc.updatedAt > 200)
+  check('M12 원본은 합집합', eqSet(r.out.assets.map((a) => a.id), ['A1', 'A2']))
+  check('M12 같은 z는 ID로 순서 고정(늘 같은 결과)', r.out.chunks[0].elements.map((e) => e.id).join(',') === 'a,b,m')
+  check('M12 중복 없음', noDuplicates(r.out))
+  const again = run(base, main, branch)
+  check('M12 같은 입력이면 같은 결과', JSON.stringify(again.out) === JSON.stringify(r.out))
+}
+
+/* ── M13 · 작업본: 옮기기·색 ─────────────────────────────────── */
+{
+  const base = doc({ [P('p1')]: [stroke('a')] })
+  const branch = doc({ [P('p1')]: [stroke('a'), stroke('b')] })
+  const r = run(base, base, branch, 'main', D({ move: new Map([['el:b', { dx: 30, dy: 5 }]]), color: new Map([['el:a', '#00ff00ff']]) }))
+  const b = elOf(r.out, 'b')!.el as Stroke
+  check('M13 옮긴 획은 점·상자가 함께 옮겨진다', b.points[0] === 30 && b.points[1] === 5 && b.points[4] === 40 && b.bbox[0] === 30 && b.bbox[3] === 15, JSON.stringify(b.points))
+  check('M13 색을 바꾼 획 (공통 획도 바꿀 수 있다)', (elOf(r.out, 'a')!.el as Stroke).color === '#00ff00ff')
+  check('M13 원래 입력은 그대로', (branch.chunks[0].elements[1] as Stroke).points[0] === 0)
+  // 무한 캔버스: 청크 밖으로 옮기면 시작점이 들어간 청크로 다시 배치 (엔진과 같은 규칙)
+  const moved = editPlaced({ pageId: 'p', key: '0_0', el: stroke('c', 4000) }, { dx: 200, dy: -10 }, undefined, true)
+  check('M13 무한 캔버스 — 새 청크로', moved.key === '1_-1', moved.key)
+  const pts = (moved.el as Stroke).points
+  check('M13 무한 캔버스 — 새 청크 원점 기준 좌표', pts[0] === 104 && pts[1] === 4086, JSON.stringify(pts.slice(0, 2)))
+  check('M13 문서형은 같은 페이지에', editPlaced({ pageId: 'p', key: '0_0', el: stroke('c', 590) }, { dx: 50, dy: 0 }, undefined, false).key === '0_0')
+}
+
+/* ── M14 · 작업본 저장·다시 얹기 ──────────────────────────────── */
+{
+  const d = D({ discard: new Set(['el:x', 'el:gone']), flip: new Set(['doc:title']), move: new Map([['el:x', { dx: 1, dy: 2 }]]), color: new Map([['el:gone', '#000']]) })
+  const back = draftFromJson(JSON.parse(JSON.stringify(draftToJson(d))))
+  check('M14 저장 모양으로 갔다 와도 같다', JSON.stringify(draftToJson(back)) === JSON.stringify(draftToJson(d)))
+  const base = doc({ [P('p1')]: [stroke('x')] })
+  const { plan } = run(base, base, doc({ [P('p1')]: [stroke('x')] }, { title: '새' }))
+  const kept = retainDraft(d, plan)
+  check('M14 새 입력에 없는 항목은 빠진다', !kept.discard.has('el:gone') && !kept.color.has('el:gone'))
+  check('M14 있는 항목은 그대로 얹힌다', kept.discard.has('el:x') && kept.move.get('el:x')?.dy === 2 && kept.flip.has('doc:title'))
 }
 
 /* ── 리포트 ─────────────────────────────────────────────────────── */
-console.log(`\n노트 머지: ${pass}개 통과, ${failures.length}개 실패`)
+console.log(`\n브랜치 머지: ${pass}개 통과, ${failures.length}개 실패`)
 if (failures.length) {
   console.log('\n실패 항목:')
   failures.forEach((f) => console.log('  ✗ ' + f))

@@ -1,4 +1,4 @@
-// 편집 화면: 탭 잠금(Web Locks), 열린 노트 보호(동기화 적용 중 멈췄다 다시 열기), 머지 확인 창, 마이그레이션 백업
+// 편집 화면: 탭 잠금(Web Locks), 열린 노트 보호(동기화 적용 중 멈췄다 다시 열기), 마이그레이션 백업
 import type { Page } from 'playwright'
 import { createDoc, device, drawStroke, logsOf, openEditor, sleep, type Ctx } from './lib.ts'
 
@@ -102,24 +102,6 @@ export default async function editor(ctx: Ctx) {
     }
   }, docId)
   check('노트 보호: 다른 탭에서 편집 중인 노트는 건너뛴다(DocBusyError)', busy === 'DocBusyError', busy)
-
-  // ── 머지 확인 창 ──
-  await p.evaluate(async (id) => {
-    const d = await import('/src/app/dialogs.tsx')
-    ;(window as unknown as { __answer: unknown }).__answer = d.mergeConfirmDialog({ docId: id, title: '검증 노트', conflicts: 0, details: [], baseless: true })
-  }, docId)
-  await p.waitForSelector('.dialog-host .modal')
-  const text = await p.locator('.dialog-host .modal').innerText()
-  check('확인 창: 기록 없이 합칠 때 제목·경고', text.includes('기록 없이 합치기') && text.includes('되살아날 수 있습니다'))
-  await p.getByRole('button', { name: '나중에' }).click()
-  check('확인 창: "나중에"는 later', (await p.evaluate(() => (window as unknown as { __answer: unknown }).__answer)) === 'later')
-  await p.evaluate(async (id) => {
-    const d = await import('/src/app/dialogs.tsx')
-    ;(window as unknown as { __answer: unknown }).__answer = d.mergeConfirmDialog({ docId: id, title: '검증 노트', conflicts: 2, details: [{ kind: 'chunk', id: 'x|0_0' }, { kind: 'page', id: 'p' }], baseless: false })
-  }, docId)
-  await p.waitForSelector('.dialog-host .modal')
-  await p.getByRole('button', { name: '이 기기 우선으로 합치기' }).click()
-  check('확인 창: "이 기기 우선"은 ours', (await p.evaluate(() => (window as unknown as { __answer: unknown }).__answer)) === 'ours')
 
   // ── 마이그레이션 백업 ──
   const backup = await q.evaluate(async () => {

@@ -471,6 +471,9 @@
 .doc-state.s-remote-new {
   color: var(--accent);
 }
+.doc-state.s-diverged {
+  color: var(--danger-ink);
+}
 .doc-more {
   position: absolute;
   right: 0;

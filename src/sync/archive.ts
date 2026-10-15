@@ -1,0 +1,176 @@
+// 보관함 관리 — 클라우드와 이 기기에 쌓이는 보관물을 보여 주고 정리한다 (docs/branch-merge.md §6).
+//
+//   기기 브랜치(Inkpad/branches/) · 옛 머지 백업(Inkpad/backups/) · 노트가 사라진 뒤 남은 파일 ·
+//   이 기기 로컬 스냅샷 · 되돌리기가 만든 자동 고정(이 기기 기록)
+//
+// 클라우드 파일은 지우지 않고 Drive 휴지통으로 옮긴다(30일 보관). 머지 안 된 브랜치는 부르는 쪽이 경고한 뒤에만 지운다.
+// 모두 사용자가 이 화면에서 누를 때만 네트워크를 쓴다.
+import type { ID } from '../shared/model'
+import { db } from '../storage/db'
+import { mergedOf } from './branch'
+import * as drive from './drive'
+import { ensureFolders, findBranchesFolder, getSync } from './folders'
+import { newestPerDoc } from './judge'
+import { withSyncLock } from './lock'
+import { AUTO_PIN_PREFIX, unpinDocRevision } from './revisions'
+import { snapshotUsage } from './snapshots'
+import { getDeviceId } from './token'
+
+/** 노트가 사라진 뒤 남은 파일로 볼 만큼 오래됐나 — 막 만든 노트의 main이 아직 안 올라간 순간을 지우지 않게 */
+const ORPHAN_AGE_MS = 24 * 3600_000
+
+export interface ArchiveBranch {
+  fileId: string
+  docId: ID
+  title: string
+  deviceId: string
+  device: string
+  seq: number
+  size: number
+  at: number
+  /** main에 다 들어갔거나 버린 것 — 지워도 잃는 것이 없다 */
+  merged: boolean
+  /** 노트(main)가 클라우드에 없다 */
+  orphan: boolean
+}
+
+export interface ArchiveDevice {
+  deviceId: string
+  device: string
+  mine: boolean
+  branches: number
+  bytes: number
+  unmerged: number
+  lastAt: number
+}
+
+export interface ArchiveReport {
+  branches: ArchiveBranch[]
+  devices: ArchiveDevice[]
+  /** 옛 머지 백업 파일 */
+  backups: { fileId: string; docId: ID; size: number; orphan: boolean }[]
+  snapshots: { count: number; bytes: number; docs: number }
+  autoPins: { key: string; fileId: string; revId: string; docId: ID }[]
+}
+
+async function findBackupsFolder(): Promise<string | null> {
+  const saved = await getSync<string>('backupsFolderId')
+  if (saved) {
+    const m = await drive.getMeta(saved)
+    if (m && !m.trashed) return saved
+  }
+  return drive.findFolder('backups', (await ensureFolders()).root)
+}
+
+/** 보관함 보고서 — Drive 목록 세 번(main·브랜치·백업) + 이 기기 기록 */
+export async function loadArchive(): Promise<ArchiveReport> {
+  const f = await ensureFolders()
+  const [branchFolder, backupFolder, me] = await Promise.all([findBranchesFolder(), findBackupsFolder(), getDeviceId()])
+  const [mains, branchFiles, backupFiles] = await Promise.all([
+    drive.listFiles(f.docs),
+    branchFolder ? drive.listFiles(branchFolder) : Promise.resolve([] as drive.RemoteFile[]),
+    backupFolder ? drive.listFiles(backupFolder) : Promise.resolve([] as drive.RemoteFile[])
+  ])
+  const mainByDoc = new Map(newestPerDoc(mains).map((m) => [m.appProperties!.docId, m]))
+  const old = (t: string) => Date.now() - (Date.parse(t) || 0) > ORPHAN_AGE_MS
+
+  const branches: ArchiveBranch[] = []
+  for (const b of branchFiles) {
+    const p = b.appProperties ?? {}
+    if (p.kind !== 'branch' || !p.docId || !p.dev) continue
+    const main = mainByDoc.get(p.docId)
+    const seq = Number(p.seq) || 0
+    let resolved = Number(p.resolved) || 0
+    if (p.dev === me) resolved = Math.max(resolved, (await getSync<{ resolved?: number }>(`br:${p.docId}`))?.resolved ?? 0)
+    const orphan = !main && old(b.modifiedTime)
+    branches.push({
+      fileId: b.id,
+      docId: p.docId,
+      title: main?.appProperties?.title || p.title || (await db.documents.get(p.docId))?.title || p.docId,
+      deviceId: p.dev,
+      device: p.device || p.dev,
+      seq,
+      size: Number(b.size ?? 0) || 0,
+      at: Number(p.updatedAt) || Date.parse(b.modifiedTime) || 0,
+      merged: orphan || (!!main && seq <= Math.max(mergedOf(main.appProperties)[p.dev] ?? 0, resolved)),
+      orphan
+    })
+  }
+
+  const devMap = new Map<string, ArchiveDevice>()
+  for (const b of branches) {
+    const d = devMap.get(b.deviceId) ?? { deviceId: b.deviceId, device: b.device, mine: b.deviceId === me, branches: 0, bytes: 0, unmerged: 0, lastAt: 0 }
+    d.branches++
+    d.bytes += b.size
+    if (!b.merged) d.unmerged++
+    if (b.at > d.lastAt) {
+      d.lastAt = b.at
+      d.device = b.device // 가장 최근에 쓰던 이름
+    }
+    devMap.set(b.deviceId, d)
+  }
+
+  const backups = backupFiles.map((b) => ({ fileId: b.id, docId: b.appProperties?.docId ?? '', size: Number(b.size ?? 0) || 0, orphan: !mainByDoc.has(b.appProperties?.docId ?? '') }))
+  const autoPins = (await db.syncState.where('key').startsWith(AUTO_PIN_PREFIX).toArray()).map((kv) => {
+    const [fileId, revId] = kv.key.slice(AUTO_PIN_PREFIX.length).split(':')
+    return { key: kv.key, fileId, revId, docId: (kv.value as { docId: ID }).docId }
+  })
+
+  return {
+    branches: branches.sort((a, b) => b.at - a.at),
+    devices: [...devMap.values()].sort((a, b) => Number(b.mine) - Number(a.mine) || b.lastAt - a.lastAt),
+    backups,
+    snapshots: await snapshotUsage(),
+    autoPins
+  }
+}
+
+/** 브랜치 파일들을 Drive 휴지통으로. 이 기기 브랜치면 기록한 파일 위치만 지운다(seq는 이어 센다 — 다음 올리기가 새 파일을 만든다) */
+export function trashBranches(list: Pick<ArchiveBranch, 'fileId' | 'docId' | 'deviceId'>[]): Promise<number> {
+  return withSyncLock(async () => {
+    const me = await getDeviceId()
+    let n = 0
+    for (const b of list) {
+      await drive.trash(b.fileId)
+      n++
+      if (b.deviceId === me) {
+        const row = await db.syncState.get(`br:${b.docId}`)
+        if (row?.value) {
+          const { fileId: _gone, ...rest } = row.value as { fileId?: string }
+          await db.syncState.put({ key: row.key, value: rest })
+        }
+      }
+    }
+    return n
+  })
+}
+
+/** 옛 머지 백업 파일들을 Drive 휴지통으로 */
+export async function trashFiles(fileIds: string[]): Promise<number> {
+  for (const id of fileIds) await drive.trash(id)
+  return fileIds.length
+}
+
+/**
+ * 자동 고정 정리 — 되돌리기가 내려받으려고 고정한 리비전의 고정을 푼다(내용은 고정 없는 리비전으로 남아 약 30일 뒤 정리).
+ * 이미 사라진 리비전이면 기록만 지운다. 고정 해제는 노트 파일을 다시 쓰므로 하나씩 한다.
+ */
+export async function releaseAutoPins(pins: ArchiveReport['autoPins']): Promise<{ released: number; failed: number }> {
+  let released = 0
+  let failed = 0
+  for (const p of pins) {
+    try {
+      const revs = await drive.listRevisions(p.fileId).catch(() => [])
+      const rev = revs.find((r) => r.id === p.revId)
+      if (rev?.keepForever) {
+        await unpinDocRevision(p.docId, p.revId)
+        released++
+      }
+      await db.syncState.delete(p.key)
+    } catch (e) {
+      console.warn('[archive] 자동 고정 해제 실패:', p, e)
+      failed++
+    }
+  }
+  return { released, failed }
+}

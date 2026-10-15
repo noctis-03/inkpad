@@ -160,6 +160,39 @@
   border: 1px solid var(--line);
   border-radius: var(--r-md);
 }
+/* 펼친 미리보기 — 첫 페이지 그림 + 지금 이 기기 대비 획 증감 */
+.rev-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+.rev-preview img {
+  display: block;
+  max-width: 100%;
+  border-radius: 4px;
+  box-shadow: var(--e1);
+  background: #fff;
+}
+.rev-diff {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.rev-diff .plus {
+  color: var(--success-ink);
+}
+.rev-diff .minus {
+  color: var(--danger-ink);
+}
+.rev-section-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.rev-section-title small {
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--muted);
+}
 .rev-row.is-head {
   border-color: var(--accent);
   background: var(--accent-soft);

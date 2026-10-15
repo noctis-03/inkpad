@@ -5,6 +5,7 @@
 //     (예전 기록은 노트 파일의 고정 리비전으로 남아 있고, 그대로 보인다).
 //
 // 되돌리기 후 업로드는 UI가 syncNow()로 처리한다.
+// 고정은 사용자가 직접 한 것만 — 되돌리기는 먼저 고정 없이 받아 보고, Drive가 요구할 때만 고정하며 '자동 고정'으로 기록한다.
 import type { ID } from '../shared/model'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
@@ -12,8 +13,11 @@ import { withDocExclusive } from '../storage/docGuard'
 import { enqueue } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
+import { withSyncLock } from './lock'
 import { REMOTE_EVENT } from './sync'
-import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
+import { ensureFolders, findBranchesFolder, getSync, putSync, type FileRecord } from './folders'
+import { loadSnapshot, takeSnapshot } from './snapshots'
+import { getDeviceId } from './token'
 import type { DocFileV1, RevMarker } from './pack'
 import { getCachedTag, putCachedTag, rememberRevTag, type RevTag } from './revTags'
 
@@ -115,9 +119,11 @@ export async function fetchRevisionTags(docId: ID, list: DocRevision[], onUpdate
   await Promise.all(Array.from({ length: Math.min(3, pending.length) }, () => worker()))
 }
 
-export async function pinDocRevision(docId: ID, revisionId: string): Promise<void> {
-  const rec = await fileRecordOf(docId)
-  await drive.setKeepForever(rec.fileId, revisionId, true)
+export function pinDocRevision(docId: ID, revisionId: string): Promise<void> {
+  return withSyncLock(async () => {
+    const rec = await fileRecordOf(docId)
+    await drive.setKeepForever(rec.fileId, revisionId, true)
+  })
 }
 
 /**
@@ -129,7 +135,12 @@ export async function pinDocRevision(docId: ID, revisionId: string): Promise<voi
  * 예전에는 3을 하지 않아 클라우드의 '현재'가 옛 버전 내용으로 바뀐 채 남았고, 다른 기기는 받기에서
  * 그 옛 내용을 받았다. 고정 해제할 버전이 곧 헤드면 1·2만 한다.
  */
-export async function unpinDocRevision(docId: ID, revisionId: string): Promise<void> {
+export function unpinDocRevision(docId: ID, revisionId: string): Promise<void> {
+  // 노트 파일을 세 번 다시 쓰므로 다른 탭의 올리기와 겹치지 않게 동기화 잠금 안에서 한다
+  return withSyncLock(() => unpinUnlocked(docId, revisionId))
+}
+
+async function unpinUnlocked(docId: ID, revisionId: string): Promise<void> {
   const rec = await fileRecordOf(docId)
   const revs = await drive.listRevisions(rec.fileId)
   const isHead = revs[revs.length - 1]?.id === revisionId
@@ -203,30 +214,97 @@ async function listBackupRevisions(docId: ID): Promise<DocRevision[]> {
   })
 }
 
+// ───────── 되돌리기 · 미리보기 ─────────
+// 되돌릴 수 있는 것: main의 Drive 리비전 · 옛 머지 백업 파일 · 기기 브랜치(그 기기의 최신 업로드) · 이 기기 로컬 스냅샷
+
+export type VersionRef = { kind: 'rev'; id: string } | { kind: 'branch'; fileId: string } | { kind: 'snapshot'; id: string }
+
+/** 리비전 내려받기가 고정을 요구했다 — 미리보기에서만 쓴다(되돌리기는 알아서 고정한다) */
+export class PinRequiredError extends Error {
+  constructor() {
+    super('이 버전은 Drive 규칙상 고정해야 내려받을 수 있습니다. 되돌리면 자동으로 고정하고, 보관함 관리에서 정리할 수 있습니다.')
+    this.name = 'PinRequiredError'
+  }
+}
+
+const isPinError = (e: unknown) => e instanceof Error && /고정되지 않아|keepForever/i.test(e.message)
+
+/** 자동 고정 기록 — 되돌리기가 내려받으려고 고정한 리비전. 보관함 관리가 정리한다(이 기기 기록) */
+export const AUTO_PIN_PREFIX = 'autoPin:'
+
+/**
+ * 그 버전의 노트 내용을 읽는다. 리비전은 먼저 고정 없이 받아 보고, Drive가 고정을 요구할 때만
+ * allowPin이면 고정하고(자동 고정으로 기록) 다시 받는다 — 아니면 PinRequiredError.
+ */
+export async function loadVersionFile(docId: ID, ref: VersionRef, opts: { allowPin?: boolean } = {}): Promise<DocFileV1> {
+  let file: DocFileV1
+  if (ref.kind === 'snapshot') file = await loadSnapshot(ref.id)
+  else if (ref.kind === 'branch') file = await drive.downloadJson<DocFileV1>(ref.fileId, drive.ENC_GZIP)
+  else {
+    const backup = backupFileIdOf(ref.id)
+    if (backup) file = await drive.downloadJson<DocFileV1>(backup, drive.ENC_GZIP) // 옛 머지 백업 파일
+    else {
+      const rec = await fileRecordOf(docId)
+      try {
+        file = await drive.downloadRevision<DocFileV1>(rec.fileId, ref.id)
+      } catch (e) {
+        if (!isPinError(e)) throw e
+        if (!opts.allowPin) throw new PinRequiredError()
+        const revs = await drive.listRevisions(rec.fileId)
+        if (!revs.some((r) => r.id === ref.id)) throw new Error('그 버전을 찾을 수 없습니다. 목록을 새로 고쳐 주세요.')
+        await drive.setKeepForever(rec.fileId, ref.id, true)
+        await putSync(`${AUTO_PIN_PREFIX}${rec.fileId}:${ref.id}`, { docId, at: Date.now() })
+        file = await drive.downloadRevision<DocFileV1>(rec.fileId, ref.id)
+      }
+    }
+  }
+  if (file?.kind !== 'inkpad-doc') throw new Error('그 버전을 읽을 수 없습니다.')
+  return file
+}
+
+/** 노트의 기기 브랜치들 (기기마다 최신 업로드 하나) — 버전 기록에 함께 보인다 */
+export interface DocBranch {
+  fileId: string
+  deviceId: string
+  device: string
+  seq: number
+  at: number
+  size: number
+  mine: boolean
+}
+
+export async function listDocBranches(docId: ID): Promise<DocBranch[]> {
+  const folder = await findBranchesFolder()
+  if (!folder) return []
+  const [files, me] = await Promise.all([drive.listFiles(folder, { docId }).catch(() => [] as drive.RemoteFile[]), getDeviceId()])
+  return files
+    .filter((f) => f.appProperties?.kind === 'branch')
+    .map((f) => {
+      const p = f.appProperties ?? {}
+      return { fileId: f.id, deviceId: p.dev ?? '', device: p.device || p.dev || '기기', seq: Number(p.seq) || 0, at: Number(p.updatedAt) || Date.parse(f.modifiedTime) || 0, size: Number(f.size ?? 0) || 0, mine: p.dev === me }
+    })
+    .sort((a, b) => b.at - a.at)
+}
+
 /**
  * 버전 되돌리기: 그 시점 내용을 이 기기에 적용하고 업로드 대기열에 올린다.
  * 실제 반영은 다음 동기화에서 일어나므로, 호출한 쪽에서 syncNow()를 이어서 부르면 된다.
+ * (예전 이름 유지 — 리비전 id 또는 'backup:' 백업 파일 id)
  */
 export async function restoreDocRevision(docId: ID, revisionId: string): Promise<void> {
-  let file: DocFileV1
-  const backup = backupFileIdOf(revisionId)
-  if (backup) {
-    file = await drive.downloadJson<DocFileV1>(backup, drive.ENC_GZIP) // 별도 백업 파일
-  } else {
-    const rec = await fileRecordOf(docId)
-    // 내려받으려면 먼저 "영구 보존"으로 표시해야 한다 (Drive 규칙)
-    const revs = await drive.listRevisions(rec.fileId)
-    const target = revs.find((r) => r.id === revisionId)
-    if (!target) throw new Error('그 버전을 찾을 수 없습니다. 목록을 새로 고쳐 주세요.')
-    if (!target.keepForever) await drive.setKeepForever(rec.fileId, revisionId, true)
-    file = await drive.downloadRevision<DocFileV1>(rec.fileId, revisionId)
-  }
-  if (file?.kind !== 'inkpad-doc') throw new Error('그 버전을 읽을 수 없습니다.')
+  return restoreVersion(docId, { kind: 'rev', id: revisionId })
+}
+
+/** 리비전·브랜치·스냅샷 어느 것이든 되돌린다. 덮기 직전 이 기기 내용은 스냅샷으로 남는다 */
+export async function restoreVersion(docId: ID, ref: VersionRef): Promise<void> {
+  const file = await loadVersionFile(docId, ref, { allowPin: true })
+  const revisionId = ref.kind === 'rev' ? ref.id : ref.kind === 'branch' ? `branch:${ref.fileId}` : `snapshot:${ref.id}`
   // 문서 ID는 그대로 유지하고 수정 시각만 갱신한다 (사본을 만들지 않는다)
   const payload: DocFileV1 = { ...file, doc: { ...file.doc, id: docId, updatedAt: Date.now() } }
   // 열린 편집 화면을 멈춘 채로 덮어쓰고, 다 쓴 뒤에 되돌린 내용으로 다시 열게 한다 (storage/docGuard).
   // 다른 탭에서 편집 중이면 DocBusyError — 버전 기록 패널이 그 메시지를 그대로 보여 준다
   await withDocExclusive(docId, async () => {
+    await takeSnapshot(docId, 'restore') // 되돌리기 직전 이 기기 내용 — 되돌린 것도 다시 되돌릴 수 있게
     await applyDocFile(payload, { force: true })
     await db.transaction('rw', db.outbox, async () => {
       await enqueue('document', docId)

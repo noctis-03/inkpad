@@ -888,9 +888,10 @@ export function Library() {
       case 'cloudPush':
         setBusy({ text: `"${d.title}" 올리는 중` })
         try {
-          await pushOneNote(d.id)
+          const r = await pushOneNote(d.id)
           void refresh() // 올리기가 끝나면 카드의 동기화 상태 점을 다시 계산한다
-          toast(`"${d.title}"을(를) 클라우드에 올렸습니다.`, 'success')
+          if (r === 'diverged') toast(`"${d.title}"은(는) 다른 기기에서도 바뀌어 이 기기 브랜치에만 올렸습니다(갈라짐).`, 'info')
+          else toast(`"${d.title}"을(를) 클라우드에 올렸습니다.`, 'success')
         } catch (e) {
           toast(e instanceof Error ? e.message : '올리지 못했습니다.', 'error')
         } finally {
@@ -900,7 +901,7 @@ export function Library() {
       case 'cloudPull':
         if (
           !(await confirmDialog('클라우드에 맞추기', {
-            message: `"${d.title}"의 이 기기 변경을 버리고 클라우드 버전으로 덮어씁니다.`,
+            message: `"${d.title}"을(를) 클라우드 버전으로 덮어씁니다. 이 기기의 변경은 이 기기 브랜치에 올려 보관하고, 머지할 것으로 보지 않습니다.`,
             ok: '맞추기',
             danger: true
           }))

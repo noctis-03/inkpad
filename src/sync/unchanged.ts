@@ -30,7 +30,7 @@ export async function pendingSeqsFor(docId: ID): Promise<number[]> {
  * 청크 배열은 (pageId·key)로, 블록·에셋은 id로 정돈한다(보관 순서는 비교에서 제외).
  * 페이지 배열 순서와 획의 z(쌓임)는 내용의 일부라 그대로 비교한다.
  */
-function canonical(file: DocFileV1): string {
+export function canonical(file: DocFileV1): string {
   return JSON.stringify({
     doc: { ...file.doc, updatedAt: 0 },
     pages: file.pages.map((p) => ({ ...p, updatedAt: 0 })),

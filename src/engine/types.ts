@@ -27,7 +27,6 @@ export interface Settings {
   streamline: number
   smoothing: number
   fingerDraw: boolean // 손가락·정전식 터치펜으로 그리기 (기본 끔)
-  eraserMode: 'stroke' | 'partial'
   // 지연·입력
   prediction: boolean
   coalesced: boolean
@@ -58,7 +57,6 @@ export const DEFAULT_SETTINGS: Settings = {
   streamline: 0.3,
   smoothing: 0.5,
   fingerDraw: false,
-  eraserMode: 'stroke',
   prediction: true,
   coalesced: true,
   palmWindowMs: 500,
