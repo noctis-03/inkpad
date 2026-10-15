@@ -2,6 +2,7 @@
 // 만료 60초 전이면 /api/auth/token으로 새 토큰을 받는다.
 // 동시에 여러 요청이 와도 갱신 요청은 한 번만 나간다.
 import { db } from '../storage/db'
+import { newDeviceId } from './branch'
 export class AuthRequiredError extends Error {}
 export class SyncNotConfiguredError extends Error {}
 
@@ -55,6 +56,18 @@ export async function getDeviceName(): Promise<string> {
   const auto = guessDeviceName()
   await db.syncState.put({ key: 'deviceName', value: auto })
   return auto
+}
+
+/**
+ * 이 기기의 ID — 브랜치 파일 이름과 main의 '반영된 브랜치' 표식에 쓴다. 처음 한 번 만들고 바꾸지 않는다
+ * (기기 이름은 언제든 바꿀 수 있어 브랜치를 가리키는 데 쓸 수 없다). 로컬 초기화하면 새 기기가 된다.
+ */
+export async function getDeviceId(): Promise<string> {
+  const row = await db.syncState.get('deviceId')
+  if (row?.value) return row.value as string
+  const id = newDeviceId()
+  await db.syncState.put({ key: 'deviceId', value: id })
+  return id
 }
 
 export async function setDeviceName(name: string): Promise<void> {

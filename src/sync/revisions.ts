@@ -12,6 +12,7 @@ import { withDocExclusive } from '../storage/docGuard'
 import { enqueue } from '../storage/repo'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
+import { withSyncLock } from './lock'
 import { REMOTE_EVENT } from './sync'
 import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
 import type { DocFileV1, RevMarker } from './pack'
@@ -115,9 +116,11 @@ export async function fetchRevisionTags(docId: ID, list: DocRevision[], onUpdate
   await Promise.all(Array.from({ length: Math.min(3, pending.length) }, () => worker()))
 }
 
-export async function pinDocRevision(docId: ID, revisionId: string): Promise<void> {
-  const rec = await fileRecordOf(docId)
-  await drive.setKeepForever(rec.fileId, revisionId, true)
+export function pinDocRevision(docId: ID, revisionId: string): Promise<void> {
+  return withSyncLock(async () => {
+    const rec = await fileRecordOf(docId)
+    await drive.setKeepForever(rec.fileId, revisionId, true)
+  })
 }
 
 /**
@@ -129,7 +132,12 @@ export async function pinDocRevision(docId: ID, revisionId: string): Promise<voi
  * 예전에는 3을 하지 않아 클라우드의 '현재'가 옛 버전 내용으로 바뀐 채 남았고, 다른 기기는 받기에서
  * 그 옛 내용을 받았다. 고정 해제할 버전이 곧 헤드면 1·2만 한다.
  */
-export async function unpinDocRevision(docId: ID, revisionId: string): Promise<void> {
+export function unpinDocRevision(docId: ID, revisionId: string): Promise<void> {
+  // 노트 파일을 세 번 다시 쓰므로 다른 탭의 올리기와 겹치지 않게 동기화 잠금 안에서 한다
+  return withSyncLock(() => unpinUnlocked(docId, revisionId))
+}
+
+async function unpinUnlocked(docId: ID, revisionId: string): Promise<void> {
   const rec = await fileRecordOf(docId)
   const revs = await drive.listRevisions(rec.fileId)
   const isHead = revs[revs.length - 1]?.id === revisionId

@@ -63,6 +63,11 @@
   --ts: var(--warn-soft);
   --tb: var(--warn-line);
 }
+.g-split {
+  --t: var(--danger-ink);
+  --ts: var(--danger-soft);
+  --tb: var(--danger-line);
+}
 .g-fresh {
   --t: var(--success-ink);
   --ts: var(--success-soft);
@@ -845,6 +850,14 @@
 }
 .push-stripe.recv {
   background: var(--accent);
+}
+.push-stripe.split {
+  background: var(--danger);
+}
+.push-note {
+  margin: 0 0 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
 }
 .push-device {
   flex-shrink: 0;

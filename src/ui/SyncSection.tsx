@@ -58,7 +58,7 @@ const STATUS_META: Record<SyncStatus, { label: string; tone: StatusTone; icon: s
 
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
-type GroupKey = 'recv' | 'push' | 'fresh' | 'gone'
+type GroupKey = 'split' | 'recv' | 'push' | 'fresh' | 'gone'
 type RowAction = 'download' | 'pushOne' | 'repush' | 'restore' | null
 
 /**
@@ -70,6 +70,8 @@ const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; icon:
   'remote-new': { group: 'recv', badge: '새 버전', icon: 'cloudDown', action: 'download' },
   new: { group: 'push', badge: '새 파일', icon: 'plus', action: 'pushOne' },
   pending: { group: 'push', badge: '변경됨', icon: 'edit', action: 'pushOne' },
+  // 갈라짐 — 이 기기 변경은 이 기기 브랜치에 올라가 있다. 받기로 덮지 않고, 머지 관리에서 합친다
+  diverged: { group: 'split', badge: '갈라짐', icon: 'alert', action: null },
   'cloud-deleted': { group: 'push', badge: '클라우드에 없음', icon: 'alert', action: 'repush' },
   same: { group: 'fresh', badge: '최신', icon: 'check', action: null },
   'deleted-local': { group: 'gone', badge: '이 기기에서 삭제', icon: 'trash', action: 'restore' }
@@ -83,8 +85,9 @@ const ACTION_UI: Record<Exclude<RowAction, null>, { label: string; icon: string 
   restore: { label: '되살리기', icon: 'restore' }
 }
 
-/** 목록 그룹 — 받을 것 → 올릴 것(새 파일·변경·클라우드 삭제 포함) → 최신(접힘) → 이 기기에서 삭제됨(접힘) */
+/** 목록 그룹 — 갈라짐 → 받을 것 → 올릴 것(새 파일·변경·클라우드 삭제 포함) → 최신(접힘) → 이 기기에서 삭제됨(접힘) */
 const GROUPS: { key: GroupKey; title: string; chip: string; states: CloudNoteState[]; startCollapsed: boolean }[] = [
+  { key: 'split', title: '갈라짐 — 머지 필요', chip: '갈라짐', states: ['diverged'], startCollapsed: false },
   { key: 'recv', title: '받을 것', chip: '받을 것', states: ['remote-new'], startCollapsed: false },
   { key: 'push', title: '올릴 것', chip: '올릴 것', states: ['new', 'pending', 'cloud-deleted'], startCollapsed: false },
   { key: 'fresh', title: '최신', chip: '최신', states: ['same'], startCollapsed: true },
@@ -100,7 +103,7 @@ interface CloudCounts extends Record<GroupKey, number> {
 }
 
 function countCloud(cloud: CloudNoteInfo[]): CloudCounts {
-  const c: CloudCounts = { recv: 0, push: 0, fresh: 0, gone: 0, pending: 0, new: 0, cdel: 0, bulkPush: 0 }
+  const c: CloudCounts = { split: 0, recv: 0, push: 0, fresh: 0, gone: 0, pending: 0, new: 0, cdel: 0, bulkPush: 0 }
   for (const n of cloud) {
     c[STATE_META[n.state].group]++
     if (n.state === 'pending') c.pending++
@@ -149,9 +152,9 @@ function CloudRow({
   const m = STATE_META[c.state]
   const rowBusy = busyId === c.docId
   const act = m.action ? ACTION_UI[m.action] : null
-  // 클라우드에 실제 파일이 있는 행(변경됨·새 버전)은 '클라우드에 맞추기'도 제공한다 —
-  // 이 기기의 바뀜을 버리고 클라우드 버전으로 덮어쓴다 (받기와 달리 수정 대기가 있어도 진행)
-  const canAlign = c.state === 'pending' || c.state === 'remote-new'
+  // 클라우드에 실제 파일이 있는 행(변경됨·새 버전·갈라짐)은 '클라우드에 맞추기'도 제공한다 —
+  // 이 기기 노트를 클라우드 버전으로 덮는다 (받기와 달리 수정 대기가 있거나 갈라져도 진행). 이 기기 변경은 브랜치에 남는다
+  const canAlign = c.state === 'pending' || c.state === 'remote-new' || c.state === 'diverged'
   // 모든 행에 ⋯ 메뉴를 두어 행 모양을 통일한다. 메뉴 항목은 클라우드에 실제 파일이 있는지로 정한다 —
   // new(한 번도 안 올림)는 일괄 올리기에서 뺄 수 있고, cloud-deleted는 클라우드에 지울 파일 자체가 없다
   const menuItem = (
@@ -204,6 +207,7 @@ function CloudRow({
           {c.device && <span>{c.device}</span>}
           <span>{formatDate(c.updatedAt)}</span>
           {c.state === 'cloud-deleted' && <span className="note">일괄 올리기에서 제외</span>}
+          {c.state === 'diverged' && <span className="note">이 기기 변경은 브랜치에 보관됨</span>}
         </div>
       </div>
 
@@ -591,11 +595,11 @@ export function SyncSection() {
   const doPull = async () => {
     try {
       const plan = await planPull()
-      if (!plan.docs.length) {
+      if (!plan.docs.length && !plan.diverged.length) {
         toast('이미 최신 상태입니다.', 'info')
         return
       }
-      setPullPreview(plan)
+      setPullPreview(plan) // 받을 것이 없어도 갈라진 노트가 있으면 받지 않는 이유를 보여 준다
     } catch (e) {
       toast(e instanceof Error ? e.message : '상태를 확인하지 못했습니다.', 'error')
     }
@@ -672,7 +676,7 @@ export function SyncSection() {
   const alignOne = async (info: CloudNoteInfo) => {
     if (
       !(await confirmDialog('클라우드에 맞추기', {
-        message: `"${info.title}"의 이 기기 변경을 버리고 클라우드 버전으로 덮어씁니다.`,
+        message: `"${info.title}"을(를) 클라우드 버전으로 덮어씁니다. 이 기기의 변경은 이 기기 브랜치에 올려 보관하고, 머지할 것으로 보지 않습니다.`,
         ok: '맞추기',
         danger: true
       }))
@@ -729,8 +733,9 @@ export function SyncSection() {
       return
     setBusyId(info.docId)
     try {
-      await pushOneNote(info.docId)
-      toast(repush ? `"${info.title}"을(를) 다시 올렸습니다.` : `"${info.title}"을(를) 올렸습니다.`)
+      const r = await pushOneNote(info.docId)
+      if (r === 'diverged') toast(`"${info.title}"은(는) 다른 기기에서도 바뀌어 이 기기 브랜치에만 올렸습니다(갈라짐).`, 'info')
+      else toast(repush ? `"${info.title}"을(를) 다시 올렸습니다.` : `"${info.title}"을(를) 올렸습니다.`)
       await loadCloud()
     } catch (e) {
       toast(e instanceof Error ? e.message : '올리기 실패', 'error')
@@ -1087,6 +1092,21 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
               ))}
             </section>
           ))}
+          {plan.diverged.length > 0 && (
+            <section className="push-group">
+              <h4 className="push-group-label">
+                <Icon name="alert" size={13} /> 받지 않음 · 갈라짐 <b>{plan.diverged.length}</b>
+              </h4>
+              <p className="push-note">이 기기와 다른 기기가 각각 고친 노트입니다. 이 기기 변경을 덮지 않도록 받지 않고, 머지 관리에서 합칩니다.</p>
+              {plan.diverged.map((d) => (
+                <div key={d.docId} className="push-row">
+                  <span className="push-stripe split" />
+                  <span className="push-name">{d.title}</span>
+                  <Icon name="alert" size={14} className="push-ico" />
+                </div>
+              ))}
+            </section>
+          )}
         </div>
 
         <div className="modal-actions">
@@ -1094,7 +1114,7 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
-          <button className="primary-btn" onClick={onConfirm} disabled={busy}>
+          <button className="primary-btn" onClick={onConfirm} disabled={busy || !plan.docs.length}>
             <Icon name="download" size={18} /> {plan.docs.length}건 받기
           </button>
         </div>

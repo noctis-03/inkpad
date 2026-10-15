@@ -1,27 +1,28 @@
-// 동기화 엔진 — 노트 1개 = Drive 파일 1개, git의 풀/푸시/머지를 노트 단위로.
+// 동기화 엔진 — 기기별 브랜치 + main (설계: docs/branch-merge.md). git의 브랜치·fast-forward를 노트 단위로.
 // 규칙:
 //  1. push(업로드) 먼저, pull(다운로드) 나중에
-//  2. 충돌 = 로컬도 고쳤고 다른 기기도 올렸음(Drive 버전이 마지막 동기화 값과 다름)
-//     → 마지막 동기화 스냅샷(base)으로 획(요소) 단위 3-way 머지 (sync/merge.ts).
-//       양쪽이 새로 그린 획은 모두 살고, 같은 획을 양쪽에서 다르게 고쳤을 때만 충돌.
-//       머지 전 이 기기 상태는 Drive 리비전으로 남겨 버전 기록에서 복구할 수 있다.
-//       충돌이 있거나 base가 없으면 적용 전에 확인 창으로 방향(원격 우선·이 기기 우선·나중에)을 묻는다.
-//  3. 업로드 중에 또 수정됐으면 outbox를 남겨 다음 라운드에서 다시 올린다
+//  2. 올리기 = 내 브랜치(branches/{docId}@{deviceId}.json)를 올리고, main(docs/{docId}.json)이 내 출발점 그대로면
+//     main도 이 내용으로 바꾼다(fast-forward). 브랜치는 그 기기만 쓰므로 업로드끼리 서로 덮는 일이 없다.
+//     main이 그 사이 바뀌었으면 main은 건드리지 않는다 → 갈라짐. 자동 머지는 없다 — 머지 관리에서 사용자가 합친다.
+//     main을 두 기기가 동시에 따라가 한쪽이 덮여도, 진 쪽 내용은 그 기기 브랜치에 있고 main의 '반영된 브랜치'(m.{기기})에
+//     그 seq가 없으므로 갈라짐으로 다시 보인다 — 필기는 사라지지 않는다.
+//  3. 받기 = main으로 따라가기. 갈라진 노트(이 기기 변경 또는 main에 아직 안 들어간 내 브랜치가 있는데 main도 바뀜)는 덮지 않는다
+//     판정은 sync/judge.ts noteSync 하나 — 받기·받기 미리보기·클라우드 목록이 같은 판정을 쓴다
 //  4. 삭제는 그 기기의 일 — 클라우드 사본은 남는다. 기기가 지운 노트는 gone 표식으로
 //     받기에서 제외되고(되살리지 않음), 클라우드 목록에는 빨간 점으로 표시되며
 //     목록의 노트별 "받기"로 명시적으로 되살릴 수 있다
 //  5. Drive 폴더가 통째로 사라졌으면 로컬을 지우지 않고 전부 재업로드
-//  6. 탭이 여러 개여도 navigator.locks로 동시에 하나만 실행
+//  6. 노트 파일을 쓰는 일은 탭이 여러 개여도 동기화 잠금(sync/lock.ts) 안에서 한 번에 하나만
 //  7. 원본 바이트(PDF·이미지)는 pull에서 내려받지 않는다 — 문서를 열 때 지연 로딩 (sync/assets.ts)
-//  8. 문서 JSON은 gzip으로 올린다(appProperties.enc 표식). appProperties에 제목·기기·
-//     카테고리를 함께 넣어, 클라우드 노트 목록을 메타만으로 그린다
+//  8. 문서 JSON은 gzip으로 올린다(appProperties.enc 표식). appProperties에 제목·기기·카테고리와 main 표식
+//     (gen·mid·m.{기기}, sync/branch.ts)을 함께 넣어, 클라우드 노트 목록과 상태를 메타만으로 그린다
 //  9. 폴더·카테고리 매핑·숨김은 기기별 로컬 전용 — Drive로 주고받지 않는다.
 //     카테고리는 문서 파일의 category 필드로 동기화하고, 숨긴 카테고리의 노트는 받기에서 건너뛴다
 //     앱·기타 파일은 노트 동기화와 분리 — 각 메뉴(sync/apps.ts, sync/files.ts)에서 관리
 // 10. 문서 위치 기록(doc:)의 version은 앞으로만 간다. Drive version은 실제보다 뒤처져 보일 수 있고
 //     (listFiles 인덱스 지연, 리비전 고정·해제 같은 메타데이터 전용 쓰기도 값을 올린다),
-//     뒤처진 값으로 덮으면 방금 올린 노트가 "받을 것"으로 오판된다
-// 11. 이 기기 DB의 노트 내용을 바꾸는 일(머지 적용·받기·맞추기)은 노트 보호(storage/docGuard) 안에서 한다.
+//     뒤처진 값으로 덮으면 방금 올린 노트가 "받을 것"으로 오판된다. 출발점 판정은 version이 아니라 main 신원(mid)으로 한다
+// 11. 이 기기 DB의 노트 내용을 바꾸는 일(받기·맞추기)은 노트 보호(storage/docGuard) 안에서 한다.
 //     이 탭의 편집 화면은 먼저 메모리의 변경을 기록하고 멈췄다가 바뀐 내용으로 다시 열리고,
 //     다른 탭이 편집 중인 노트는 건드리지 않고 건너뛴다(DocBusyError).
 // 12. 자동 동기화는 없다 — 네트워크는 사용자가 누른 동작이 직접 일으킬 때만 쓴다 (tools/e2e/stores.ts가 지킨다).
@@ -38,16 +39,31 @@ import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
 import { loadBase, putBaseBlob, saveBase } from './base'
-import { ensureBackupsFolder, ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
+import {
+  branchFileName,
+  computeModified,
+  genOf,
+  isUnmerged,
+  mainFileName,
+  mainMidOf,
+  mainProps,
+  mergedOf,
+  midOfFile,
+  newMid,
+  type BranchMarker,
+  type BranchState,
+  type MainFile,
+  type MainMarker
+} from './branch'
+import { ensureBranchesFolder, ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
-import { mergeDocs, type MergeConflictDetail } from './merge'
-import { isUpToDate, mergedUpdatedAt, newestPerDoc, pullSkipReason, verNum } from './judge'
+import { isUpToDate, knownBaseMid, newestPerDoc, noteSync, pullSkipReason, verNum, type NoteSync } from './judge'
+import { SYNC_LOCK, withSyncLock } from './lock'
 import { rememberRevTag } from './revTags'
-import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceName } from './token'
-import { clearPendingIfUnchanged, pendingSeqsFor } from './unchanged'
+import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceId, getDeviceName } from './token'
+import { clearPendingIfUnchanged } from './unchanged'
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 
-const SYNC_LOCK = 'inkpad-sync'
 
 // appProperties 표식 — 크기 제한은 drive.ts (키+값 124바이트). 본문에는 늘 온전한 값이 들어간다
 /** 제목은 넘치면 잘라서 넣는다 */
@@ -109,52 +125,18 @@ const emitProgress = (phase: SyncProgress['phase'], done: number, total: number)
 // ───────────────── 원격 변경 알림 ─────────────────
 
 export const REMOTE_EVENT = 'inkpad-remote-changed'
-/** 머지가 일어났을 때 (UI가 "버전 기록 보기" 안내를 띄운다) — detail: MergeEventDetail */
-export const CONFLICT_EVENT = 'inkpad-conflict-resolved'
 
-export interface MergeEventDetail {
-  docId: ID
-  revisionId: string
-  decision: 'theirs' | 'ours'
-  conflicts: number
-  baseless: boolean
-}
-
-// ───────── 머지 확인 게이트 ─────────
-// 충돌이 있는 머지는 적용 전에 사용자에게 방향을 묻는다. UI(App)가 setMergeConfirmHook으로
-// 응답자를 등록하고, 등록 전이면(테스트 등) 기존 규칙대로 원격 우선으로 진행한다.
-export type MergeDecision = 'theirs' | 'ours' | 'later'
-
-export interface MergeConfirmInfo {
-  docId: ID
-  title: string
-  /** 겹쳐 덮이는 부분의 수 */
-  conflicts: number
-  details: MergeConflictDetail[]
-  /** 마지막 동기화 기록(base)이 없어 양쪽을 모두 남겨 합친다 — 지운 획이 되살아날 수 있다 */
-  baseless: boolean
-}
-
-let mergeConfirmHook: ((info: MergeConfirmInfo) => Promise<MergeDecision>) | null = null
-
-/** 머지 확인 창의 응답자를 등록한다 — App이 뜰 때 한 번 등록한다 */
-export function setMergeConfirmHook(hook: ((info: MergeConfirmInfo) => Promise<MergeDecision>) | null): void {
-  mergeConfirmHook = hook
-}
-
-// ───────── 머지 기록 (기기 로컬 전용) ─────────
-// 이 기기에서 일어난 머지의 이력 — 동기화 패널의 "머지 기록"이 읽는다.
-// syncState에만 남기므로 다른 기기의 기록은 그 기기의 목록이 가진다.
+// ───────── 옛 머지 기록 (기기 로컬 전용, 읽기만) ─────────
+// 자동 머지를 쓰던 때 이 기기에서 일어난 머지의 이력 — 동기화 패널의 "머지 기록"이 읽는다.
+// 브랜치 방식에서는 새로 쌓이지 않는다(머지는 머지 관리에서, 기록은 main의 made 표식으로).
 export interface MergeLogEntry {
   docId: ID
   title: string
   device: string
   at: number
   conflicts: number
-  /** 원격 우선 · 이 기기 우선 (충돌 없이 자동으로 합쳐졌으면 conflicts가 0) */
   decision: 'theirs' | 'ours'
-  details: MergeConflictDetail[]
-  /** base 없이 양쪽을 모두 남겨 합쳤다 (옛 기록엔 없다) */
+  details: { kind: 'page' | 'chunk' | 'block'; id: string }[]
   baseless?: boolean
 }
 
@@ -184,16 +166,6 @@ export async function markMergeLogSeen(at: number): Promise<void> {
   await putSync(MERGE_LOG_SEEN_KEY, at)
 }
 
-async function logMerge(entry: MergeLogEntry): Promise<void> {
-  try {
-    const log = await listMergeLog()
-    log.unshift(entry)
-    await putSync(MERGE_LOG_KEY, log.slice(0, 50)) // 최근 50건만 — 무한히 남기지 않는다
-    emitMergeLogChanged()
-  } catch (e) {
-    console.warn('[sync] 머지 기록 남기기 실패 — 동기화는 계속됩니다:', e)
-  }
-}
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-sync') : null
 channel?.addEventListener('message', (ev: MessageEvent<string[]>) => {
   window.dispatchEvent(new CustomEvent(REMOTE_EVENT, { detail: new Set<string>(ev.data) }))
@@ -208,30 +180,67 @@ function emitRemoteChanged(ids: Set<string>) {
 
 // verNum·isUpToDate·newestPerDoc 등 "받아야 하나" 판정은 sync/judge.ts (테스트: npm run test:sync)
 
+// ───────── 브랜치 상태 (기기 로컬, br:{docId}) ─────────
+
+const brKey = (docId: ID) => `br:${docId}`
+const getBranchState = (docId: ID) => getSync<BranchState>(brKey(docId))
+async function putBranchState(docId: ID, patch: Partial<BranchState>): Promise<void> {
+  const cur = await getBranchState(docId)
+  await putSync(brKey(docId), { seq: 0, baseMid: null, baseGen: 0, ...cur, ...patch } satisfies BranchState)
+}
+
+/** 본문에서 동기화 표식을 뺀 노트 내용 — 출발점(base) 스냅샷으로 보관한다 */
+function plainDoc(file: DocFileV1 & { main?: unknown; branch?: unknown }): DocFileV1 {
+  const { main: _main, branch: _branch, rev: _rev, ...plain } = file
+  return plain
+}
+
+interface Judged {
+  sync: NoteSync
+  baseMid: string | null
+  mainMid: string
+}
+
+/** 노트 하나의 상태 — 받기·받기 미리보기·클라우드 목록이 같은 판정을 쓴다 (sync/judge.ts noteSync) */
+async function judgeNote(docId: ID, remote: drive.RemoteFile, local: DocumentMeta | undefined, pending: boolean, deviceId: string): Promise<Judged> {
+  const props = remote.appProperties
+  const mainMid = mainMidOf(props)
+  const st = await getBranchState(docId)
+  // 브랜치 이전에 맞춘 노트는 예전 판정(위치 기록 version·내용 표식)으로 출발점을 정한다
+  const legacy = isUpToDate(await getSync<FileRecord>(`doc:${docId}`), local, remote)
+  const baseMid = knownBaseMid(st?.baseMid, legacy, mainMid)
+  const unmerged = isUnmerged(st, mergedOf(props), deviceId)
+  return { sync: noteSync({ pending, unmerged, baseMid, mainMid }), baseMid, mainMid }
+}
+
+interface Candidate {
+  docId: ID
+  remote: drive.RemoteFile
+  local: DocumentMeta | undefined
+}
+
 /**
  * 받기 대상 — 받기(pull)와 받기 미리보기(planPull)가 같은 목록을 쓴다 (예전에는 따로 골라 서로 어긋났다).
- * 같은 노트의 중복 파일은 최신 하나만, 건너뛸 이유(지움·숨긴 카테고리·휴지통·올리기 대기·이미 맞춤)가 있으면 뺀다.
+ * 같은 노트의 중복 파일은 최신 하나만, 건너뛸 이유(지움·숨긴 카테고리·휴지통·올리기 대기·갈라짐·이미 맞춤)가 있으면 뺀다.
+ * 갈라진 노트는 따로 돌려준다 — 미리보기가 "받지 않는 이유"를 보여 준다.
  */
-async function pullCandidates(remotes: drive.RemoteFile[]): Promise<{ docId: ID; remote: drive.RemoteFile; local: DocumentMeta | undefined }[]> {
+async function pullCandidates(remotes: drive.RemoteFile[]): Promise<{ eligible: Candidate[]; diverged: Candidate[] }> {
   const outboxRows = await db.outbox.toArray()
   const pendingIds = new Set(outboxRows.filter((x) => x.entity === 'document').map((x) => x.entityId))
   const hidden = new Set(await getHiddenCategories())
-  const out: { docId: ID; remote: drive.RemoteFile; local: DocumentMeta | undefined }[] = []
+  const deviceId = await getDeviceId()
+  const eligible: Candidate[] = []
+  const diverged: Candidate[] = []
   for (const remote of newestPerDoc(remotes)) {
     const docId = remote.appProperties!.docId
     const remoteCat = remote.appProperties?.category
     const local = await db.documents.get(docId)
-    const skip = pullSkipReason({
-      gone: !!(await getSync(`gone:${docId}`)),
-      hidden: !!remoteCat && hidden.has(remoteCat),
-      local,
-      pending: pendingIds.has(docId),
-      rec: await getSync<FileRecord>(`doc:${docId}`),
-      remote
-    })
-    if (!skip) out.push({ docId, remote, local })
+    const { sync } = await judgeNote(docId, remote, local, pendingIds.has(docId), deviceId)
+    const skip = pullSkipReason({ gone: !!(await getSync(`gone:${docId}`)), hidden: !!remoteCat && hidden.has(remoteCat), local, sync })
+    if (!skip) eligible.push({ docId, remote, local })
+    else if (skip === 'diverged') diverged.push({ docId, remote, local })
   }
-  return out
+  return { eligible, diverged }
 }
 
 /**
@@ -275,8 +284,8 @@ export const CLOUD_STATES_EVENT = 'inkpad-cloud-states-changed'
 const cloudStatesChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-cloud-states') : null
 if (cloudStatesChannel) cloudStatesChannel.onmessage = () => window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
 
-/** 라이브러리 카드 점의 상태 — cloud-deleted·deleted-local은 'new'(회색)로 뭉갠다 */
-export type CardSyncState = 'new' | 'pending' | 'same' | 'remote-new'
+/** 라이브러리 카드 점의 상태 — cloud-deleted·deleted-local은 'new'(회색)로 뭉갠다. diverged는 갈라짐(머지 필요) */
+export type CardSyncState = 'new' | 'pending' | 'same' | 'remote-new' | 'diverged'
 
 /** 동기화창이 클라우드 노트 목록을 새로고침하면 그 판정을 캐시해 둔다 — 라이브러리 점이 함께 읽는다 */
 async function cacheCloudStates(infos: CloudNoteInfo[]): Promise<void> {
@@ -306,11 +315,14 @@ export async function cardSyncStates(): Promise<Map<ID, CardSyncState>> {
   for (const d of docs) {
     if (d.deletedAt) continue // 휴지통 노트는 점을 달지 않는다
     let s: CardSyncState
-    if (pending.has(d.id)) s = 'pending' // 이 기기 변경이 올리기 대기
+    const rec = await getSync<FileRecord>(`doc:${d.id}`)
+    const cached = cache?.states[d.id]
+    // 캐시가 낡았는지 — 위치 기록이 캐시 이후로 앞서 나갔으면(받기·따라가기 완료) 캐시 판정을 버린다
+    const cacheFresh = !rec || verNum(rec.version) < verNum(cache?.versions?.[d.id])
+    if (cached === 'diverged' && cacheFresh) s = 'diverged' // 갈라짐 — 머지 관리에서 합칠 때까지
+    else if (pending.has(d.id)) s = 'pending' // 이 기기 변경이 올리기 대기
     else {
-      const rec = await getSync<FileRecord>(`doc:${d.id}`)
-      const cached = cache?.states[d.id]
-      if (cached === 'remote-new' && (!rec || verNum(rec.version) < verNum(cache?.versions?.[d.id]))) s = 'remote-new'
+      if (cached === 'remote-new' && cacheFresh) s = 'remote-new'
       else if (!rec || cached === 'cloud-deleted') s = 'new' // 클라우드에 없음
       else s = 'same' // 위치 기록이 있고 대기도 없음 — 최신
     }
@@ -334,7 +346,7 @@ export async function pushNow(): Promise<void> {
       // 최초 동기화: 기존 로컬 데이터를 모두 업로드 큐에 올린다
       if (!(await db.syncState.get('rootFolderId'))) await enqueueEverything()
       const f = await ensureFolders()
-      const { uploaded, busy } = await push(f)
+      const { uploaded, diverged, busy } = await push(f)
       const pulled = await pull(f)
       await db.syncState.put({ key: 'lastPushAt', value: Date.now() })
       setStatus('idle')
@@ -345,19 +357,21 @@ export async function pushNow(): Promise<void> {
         window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
         cloudStatesChannel?.postMessage(Date.now())
       }
+      if (diverged > 0)
+        notifyToast(`다른 기기에서도 바뀐 노트 ${diverged}개는 이 기기 브랜치에만 올렸습니다(갈라짐). 필기는 그대로 남아 있습니다.`, 'info')
       const skipped = busy + pulled.busy
       if (skipped > 0) notifyToast(`다른 탭에서 편집 중인 노트 ${skipped}개는 건너뛰었습니다. 그 탭을 닫은 뒤 다시 올려 주세요.`, 'info')
     } catch (e) {
       handleSyncError(e)
-    } finally {
     }
   })
 }
 
 /** 실제로 Drive에 올라가는 노트만 돌려 실행한다. 삭제(묘비)·클라우드 삭제 제외 노트는 올라가는 게 없어
  * "노트 n/n 올리는 중"의 n에 끼면 표시가 실제와 어긋난다 — 집계에서도 뺀다.
- * busy: 다른 탭에서 편집 중이라 머지하지 못하고 남겨 둔 노트 수 (대기는 그대로 남아 다음에 다시 올린다) */
-async function push(f: { docs: string; assets: string }): Promise<{ uploaded: number; busy: number }> {
+ * uploaded: main까지 따라간 노트 / diverged: 갈라져 브랜치에만 올린 노트 /
+ * busy: 다른 탭에서 편집 중이라 남겨 둔 노트 수 (대기는 그대로 남아 다음에 다시 올린다) */
+async function push(f: { docs: string; assets: string }): Promise<{ uploaded: number; diverged: number; busy: number }> {
   // 이 탭의 편집 화면이 메모리에만 들고 있는 변경(저장 대기 0.5초)도 이번 올리기에 싣는다
   await flushOpenDocs()
   const rows = await db.outbox.toArray()
@@ -374,6 +388,7 @@ async function push(f: { docs: string; assets: string }): Promise<{ uploaded: nu
 
   let n = 0
   let uploaded = 0
+  let diverged = 0
   let busy = 0
   for (const [docId, info] of docs) {
     if (!uploadable.has(docId)) {
@@ -383,10 +398,12 @@ async function push(f: { docs: string; assets: string }): Promise<{ uploaded: nu
     }
     emitProgress('push', ++n, uploadable.size)
     try {
-      if (await pushDoc(docId, info, f)) uploaded++ // 되돌리기로 내용이 같아진 노트는 올리지 않고 뺀다
+      const r = await pushDoc(docId, info, f) // 되돌리기로 내용이 같아진 노트는 올리지 않고 뺀다('skipped')
+      if (r === 'ff') uploaded++
+      else if (r === 'diverged') diverged++
     } catch (e) {
       if (!(e instanceof DocBusyError)) throw e
-      busy++ // 다른 탭에서 편집 중 — 머지를 미루고 대기를 남긴다
+      busy++ // 다른 탭에서 편집 중 — 대기를 남긴다
     }
   }
 
@@ -395,39 +412,31 @@ async function push(f: { docs: string; assets: string }): Promise<{ uploaded: nu
     await db.outbox.delete(r.seq!)
   }
 
-  return { uploaded, busy }
+  return { uploaded, diverged, busy }
 }
 
-async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }): Promise<boolean> {
+/** 노트의 main 파일 — 기록한 위치가 살아 있으면 그것, 아니면 같은 이름의 살아 있는 파일(다른 기기가 만든 것) */
+async function findMain(docId: ID, docsFolderId: string): Promise<drive.RemoteFile | null> {
+  const rec = await getSync<FileRecord>(`doc:${docId}`)
+  let m = rec?.fileId ? await drive.getMeta(rec.fileId) : null
+  if (m?.trashed) m = null
+  // 같은 이름의 살아 있는 파일이 있으면 그 파일을 이어 쓴다 — 새 파일로 올리면 같은 docId가 main 2개로 분기한다
+  return m ?? (await drive.findByName(mainFileName(docId), docsFolderId))
+}
+
+/**
+ * 노트 하나 올리기 (규칙 2):
+ *  1. 내 브랜치를 올린다 — seq + 1, 출발점 대비 고친 목록(머지 관리가 '누가 고쳤나'를 가리는 데 쓴다)
+ *  2. main이 내 출발점 그대로면 main을 이 내용으로 바꾼다(ff). 쓰기 직전에 main을 다시 보고, 쓴 뒤에도 내가 쓴 것인지 확인한다
+ *  3. main이 그 사이 바뀌었으면 main은 건드리지 않는다 → 'diverged'
+ * 올리기 대기는 2·3이 끝난 뒤에 내린다 — main 쓰기가 실패하면 대기가 남아 다음 올리기에서 다시 따라간다.
+ */
+async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: string }): Promise<'ff' | 'diverged' | 'skipped'> {
   // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점과 같아졌으면 올리지 않고 대기를 내린다 —
   // 바뀐 게 없는데 리비전을 하나 더 만드는 일이 없게 한다.
   // '되돌림' 리비전(버전 기록 복원)은 내용이 같아도 사용자가 명시적으로 요청한 반영이므로 그대로 올린다.
   const restored = (await getSync<string>(`revKind:${docId}`)) === 'restore'
-  if (!restored && info.seqs.length > 0 && (await clearPendingIfUnchanged(docId, info.seqs))) return false
-
-  const record = await getSync<FileRecord>(`doc:${docId}`)
-  let remote: drive.RemoteFile | null = null
-  if (record?.fileId) {
-    remote = await drive.getMeta(record.fileId)
-    if (remote?.trashed) remote = null
-  }
-  if (!remote) {
-    // 기록이 없거나 기록한 파일이 사라졌다(폴더가 통째로 지워져 다른 기기가 먼저 재올린 경우 등).
-    // 같은 이름의 살아 있는 파일이 있으면 그 파일을 이어 쓴다 — 새 파일로 올리면 같은 docId가
-    // 파일 2개로 분기하고, 폴더 재생성 뒤에는 Drive version이 재시작돼 받기의 버전 비교로
-    // 분기를 구분하지 못해 두 기기가 발산한다.
-    const same = await drive.findByName(`docs/${docId}.json`, f.docs)
-    if (same) remote = same
-  }
-
-  // 머지: 다른 기기가 먼저 올렸거나(규칙 2), 기록과 다른 파일을 이어 쓰는 경우.
-  // 재생성된 파일의 Drive version은 재시작했으므로 버전이 같든 다르든 파일 신원이 바뀌었으면
-  // 머지로 합친다. 기록이 통째로 지워진 뒤(resetRemoteRecords)에도 마찬가지다 — 머지 없이
-  // 덮어쓰면 다른 기기가 방금 올린 상태를 흘린다. base가 없으면 무base 머지 규칙을 따른다.
-  if (remote && (!record?.version || remote.version !== record.version || remote.id !== record.fileId)) {
-    // 올리기 대기는 mergePush가 노트 보호 안에서 직접 내린다 — 편집 화면이 멈추며 막 기록한 변경까지
-    return mergePush(docId, remote, f.docs) // false = 확인 창에서 '나중에' — 대기를 남겨 다음 올리기 때 다시 묻는다
-  }
+  if (!restored && info.seqs.length > 0 && (await clearPendingIfUnchanged(docId, info.seqs))) return 'skipped'
 
   const file = await packDocument(docId)
   // 참조 원본을 먼저 올린다 — 노트 하나만 올릴 때도(올리기 버튼) 그 노트의 에셋 대기 항목을 치운다.
@@ -438,30 +447,103 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     await ensureAssetUploaded(am.id, f.assets)
     await db.outbox.where('[entity+entityId]').equals(['asset', am.id]).delete()
   }
-  const device = await getDeviceName()
-  // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
-  const rev: RevMarker = { kind: restored ? 'restore' : 'push', device, at: Date.now() }
+  const kind: RevMarker['kind'] = restored ? 'restore' : 'push'
+  // 1. 내 브랜치 — 이 기기만 쓰므로 다른 기기의 업로드와 서로 덮지 않는다
+  const { device, deviceId, at, seq, baseMid } = await uploadBranch(docId, file, kind, f.docs)
+  const updatedAt = String(file.doc.updatedAt)
+
+  // 2. main 따라가기 — 브랜치를 올리는 사이에 바뀌었을 수 있으므로 쓰기 직전에 다시 본다
+  const main = await findMain(docId, f.docs)
+  if (main && (!baseMid || mainMidOf(main.appProperties) !== baseMid)) {
+    // 3. 갈라짐 — main은 건드리지 않는다. 이 기기 변경은 브랜치에 있으므로 올리기 대기는 내린다
+    await settleBranchOnly(docId, file, info.seqs)
+    return 'diverged'
+  }
+  const props = main?.appProperties
+  const gen = genOf(props) + 1
+  const mid = newMid()
+  const merged = { ...mergedOf(props), [deviceId]: seq }
+  const marker: MainMarker = { gen, mid, merged, made: { kind: restored ? 'restore' : 'ff', deviceId, device, at } }
   const result = await drive.upload(
-    await gzipJson({ ...file, rev }),
+    await gzipJson({ ...file, rev: { kind, device, at }, main: marker }),
     {
-      name: `docs/${docId}.json`,
+      name: mainFileName(docId),
       mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(file.doc.updatedAt), ...titleProp(file.doc.title), device, enc: drive.ENC_GZIP, revKind: rev.kind, ...categoryProp(file.doc.category) }
+      appProperties: {
+        docId,
+        updatedAt,
+        ...titleProp(file.doc.title),
+        device,
+        enc: drive.ENC_GZIP,
+        revKind: kind,
+        ...categoryProp(file.doc.category),
+        ...mainProps({ gen, mid, merged, updatedAt: file.doc.updatedAt })
+      }
     },
     f.docs,
-    remote?.id
+    main?.id
   )
-  await rememberRevTag(result.id, { device, revKind: rev.kind }, restored)
-  // 업로드 직후의 메타 쓰기(리비전 고정 등)도 Drive version을 올린다. 업로드 응답의 version을
-  // 그대로 저장하면 기록이 한 발 뒤처져, 목록이 방금 올린 노트를 "받을 것"으로 오판한다.
-  // 그래서 헤드를 다시 읽어 저장한다 (규칙 10)
+  // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
+  await rememberRevTag(result.id, { device, revKind: kind }, restored)
+  // 업로드 직후의 메타 쓰기(리비전 고정 등)도 Drive version을 올린다 — 헤드를 다시 읽어 저장한다 (규칙 10).
+  // 그 사이 다른 기기가 main을 덮었으면 내 내용은 브랜치에만 있는 것이다 → 갈라짐 (규칙 2)
   const head = (await drive.getMeta(result.id).catch(() => null)) ?? result
-  await markSynced(docId, file, head, info.seqs)
-  return true
+  if (mainMidOf(head.appProperties) !== mid) {
+    await settleBranchOnly(docId, file, info.seqs)
+    return 'diverged'
+  }
+  await markSynced(docId, file, head, info.seqs, { mid, gen })
+  return 'ff'
 }
 
-/** 업로드가 끝난 뒤 로컬 상태 반영 (규칙 3) — base 스냅샷도 함께 갱신 */
-async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, seqs: number[]) {
+/**
+ * 내 브랜치를 올린다 — seq + 1, 출발점 대비 고친 목록(머지 관리가 '누가 고쳤나'를 가리는 데 쓴다).
+ * 출발점은 브랜치 상태에 있으면 그것, 없으면(브랜치 이전에 맞춘 노트) 예전 판정으로 지금 main과 맞춰져 있을 때만 그 main.
+ */
+async function uploadBranch(docId: ID, file: DocFileV1, kind: RevMarker['kind'], docsFolderId: string) {
+  const [device, deviceId] = await Promise.all([getDeviceName(), getDeviceId()])
+  const at = Date.now()
+  const st = await getBranchState(docId)
+  const before = await findMain(docId, docsFolderId)
+  const baseMid = before
+    ? knownBaseMid(st?.baseMid, isUpToDate(await getSync<FileRecord>(`doc:${docId}`), undefined, before), mainMidOf(before.appProperties))
+    : (st?.baseMid ?? null)
+  const baseGen = st?.baseMid ? st.baseGen : before && baseMid ? genOf(before.appProperties) : 0
+  const base = baseMid ? await loadBase(docId) : null
+  const bFolder = await ensureBranchesFolder()
+  const bName = branchFileName(docId, deviceId)
+  const target = await drive.liveFileIdFor(st?.fileId, bName, bFolder)
+  // seq는 앞으로만 — 이 기기 기록이 지워졌어도 클라우드 브랜치·main 표식에 남은 번호 다음부터 잇는다.
+  // 다시 1부터 세면 main에 이미 반영된 번호와 겹쳐, 이번 업로드가 '머지 안 됨'으로 보이지 않는다
+  const cloudSeq = !st?.seq && target ? Number((await drive.getMeta(target))?.appProperties?.seq) || 0 : 0
+  const seq = Math.max(st?.seq ?? 0, cloudSeq, mergedOf(before?.appProperties)[deviceId] ?? 0) + 1
+  const branch: BranchMarker = { deviceId, device, seq, baseGen, baseMid, modified: base ? computeModified(base, file) : {} }
+  const res = await drive.upload(
+    await gzipJson({ ...file, rev: { kind, device, at }, branch }),
+    {
+      name: bName,
+      mimeType: 'application/json',
+      appProperties: {
+        docId,
+        kind: 'branch',
+        dev: deviceId,
+        device,
+        seq: String(seq),
+        baseGen: String(baseGen),
+        updatedAt: String(file.doc.updatedAt),
+        enc: drive.ENC_GZIP,
+        ...titleProp(file.doc.title)
+      }
+    },
+    bFolder,
+    target
+  )
+  await putBranchState(docId, { fileId: res.id, seq, baseMid, baseGen })
+  return { device, deviceId, at, seq, baseMid }
+}
+
+/** main까지 따라간 뒤 로컬 상태 반영 — 출발점(base)을 이 내용으로 옮긴다 */
+async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, seqs: number[], main: { mid: string; gen: number }) {
   const base = await gzipJson(file)
   await db.transaction('rw', [db.documents, db.outbox, db.syncState], async () => {
     const cur = await db.documents.get(docId)
@@ -470,12 +552,24 @@ async function markSynced(docId: ID, file: DocFileV1, remote: drive.RemoteFile, 
     // 방금 올린 파일 표식 — 클라우드 목록이 이 파일 하나만 개별 확인하게 한다 (listCloudNotes)
     await putSync(`fresh:${docId}`, remote.id)
     await putBaseBlob(docId, base) // 저장 시각을 함께 남겨 되돌리기 판정의 요약 캐시가 새 base를 알아본다
+    await putBranchState(docId, { baseMid: main.mid, baseGen: main.gen })
     await db.syncState.delete(`gone:${docId}`) // 휴지통에서 살아나서 다시 올렸다
     await db.syncState.delete(`clouddel:${docId}`) // 클라우드에서 삭제됐던 노트를 다시 올렸다
     await db.syncState.delete(`curRev:${docId}`) // 되돌림 표식 해제 — 이제 헤드가 곧 이 기기의 현재
     await db.syncState.delete(`revKind:${docId}`)
     if (cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(seqs)
-    // 아니면 outbox가 남아 다음 라운드에서 다시 올려진다
+    // 아니면 outbox가 남아 다음 라운드에서 다시 올려진다 (규칙 3)
+  })
+}
+
+/** 브랜치에만 올리고 끝났을 때(갈라짐) — 출발점은 그대로 두고, 브랜치에 실린 변경의 올리기 대기만 내린다 */
+async function settleBranchOnly(docId: ID, file: DocFileV1, seqs: number[]) {
+  await db.transaction('rw', [db.documents, db.outbox, db.syncState], async () => {
+    const cur = await db.documents.get(docId)
+    if (!cur) return
+    await db.syncState.delete(`gone:${docId}`)
+    await db.syncState.delete(`revKind:${docId}`) // 되돌림은 브랜치에 실렸다 — 머지에서 합쳐진다
+    if (cur.updatedAt === file.doc.updatedAt) await db.outbox.bulkDelete(seqs)
   })
 }
 
@@ -506,116 +600,6 @@ async function ensureAssetUploaded(assetId: ID, assetsFolderId: string) {
   }
   const res = await drive.upload(row.blob, { name, mimeType: row.mime, appProperties: { sha256: row.sha256 } }, assetsFolderId)
   await putSync(key, { fileId: res.id, version: res.version })
-}
-
-// ───────────────── 머지 (규칙 2) ─────────────────
-
-/**
- * 노트 단위 머지: 다른 기기가 올린 노트에 이 기기의 편집이 얹혀 있을 때.
- *  1. 이 기기의 현재 상태를 먼저 올려 Drive 리비전으로 남긴다 (머지 전 모습 복구용)
- *  2. base(마지막 동기화 스냅샷)로 3-way 머지 → 이 기기에 적용하고 허브로 올린다
- */
-/**
- * @returns 머지를 끝까지 진행했는지 — 확인 창에서 '나중에'를 고르면 false (outbox가 남는다).
- * 다른 탭에서 편집 중인 노트면 DocBusyError (push가 건너뛴다).
- */
-async function mergePush(docId: ID, remote: drive.RemoteFile, docsFolderId: string): Promise<boolean> {
-  const theirs = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
-  if (theirs?.kind !== 'inkpad-doc') {
-    // 읽을 수 없는 원격 파일 위에 덮어쓰거나 대기를 버리지 않는다 — 이 기기 변경은 그대로 남긴다
-    console.warn('[sync] 원격 노트 파일을 읽지 못해 머지를 건너뜁니다:', docId, remote.id)
-    notifyToast(`클라우드의 "${remote.appProperties?.title || docId}" 파일을 읽지 못해 이 노트는 올리지 않았습니다.`, 'error')
-    return false
-  }
-  // 이 기기 상태를 읽어 머지하고 적용할 때까지 편집 화면을 멈춘다 (규칙 11) — 그 사이에 그린 획이
-  // 머지 결과에 덮여 사라지거나, 옛 화면이 머지 결과 위에 옛 청크를 다시 쓰는 일이 없게 한다
-  return withDocExclusive(docId, async () => {
-    const local = await packDocument(docId)
-    const base = await loadBase(docId)
-    const remoteFirst = mergeDocs(base, local, theirs)
-    const device = await getDeviceName()
-    const title = (await db.documents.get(docId))?.title || remote.appProperties?.title || '제목 없음'
-
-    // 충돌이 있거나 base가 없어 양쪽을 모두 남기는 경우는 적용 전에 묻는다 — 겹치지 않은 편집은 어느 쪽을 고르든 모두 산다.
-    // '나중에'면 아무것도 적용·올리지 않고 돌아간다(outbox가 남아 다음 올리기 때 다시 묻는다).
-    let decision: 'theirs' | 'ours' = 'theirs'
-    if (remoteFirst.conflicts > 0 || remoteFirst.baseless) {
-      const answer: MergeDecision = mergeConfirmHook
-        ? await mergeConfirmHook({ docId, title, conflicts: remoteFirst.conflicts, details: remoteFirst.details, baseless: remoteFirst.baseless }).catch(
-            () => 'later' as const // 창이 실패하면 아무것도 적용하지 않는다 — 다음에 다시
-          )
-        : 'theirs'
-      if (answer === 'later') return false
-      decision = answer
-    }
-    // '이 기기 우선' — 같은 3-way 머지에서 양쪽 인자를 바꿔 부르면 겹친 부분을 이 기기 것이 이긴다.
-    const outcome = decision === 'ours' ? mergeDocs(base, theirs, local) : remoteFirst
-    return finishMerge({ docId, title, device, decision, outcome, local, remote, docsFolderId })
-  })
-}
-
-/** 머지 결과를 기록·백업·적용·업로드한다 (mergePush의 노트 보호 구간 안에서만 부른다) */
-async function finishMerge(a: {
-  docId: ID
-  title: string
-  device: string
-  decision: 'theirs' | 'ours'
-  outcome: ReturnType<typeof mergeDocs>
-  local: DocFileV1
-  remote: drive.RemoteFile
-  docsFolderId: string
-}): Promise<boolean> {
-  const { docId, title, device, decision, outcome, local, remote, docsFolderId } = a
-  // 머지 결과는 양쪽 어느 것과도 다른 내용이므로 새 updatedAt을 단다 — 같은 값을 쓰면 먼저 올린 기기가
-  // 내용 표식(isUpToDate) 때문에 머지 결과를 '이미 맞춰짐'으로 보고 받지 못한다 (sync/judge.ts)
-  const merged: DocFileV1 = {
-    ...outcome.file,
-    doc: { ...outcome.file.doc, updatedAt: mergedUpdatedAt(local.doc.updatedAt, outcome.file.doc.updatedAt, Date.now()) }
-  }
-  const conflicts = outcome.conflicts
-
-  await logMerge({ docId, title, device, at: Date.now(), conflicts, decision, details: outcome.details, baseless: outcome.baseless })
-
-  // 머지 전 이 기기 상태를 남긴다 — 머지에서 밀린 편집의 백업('버려짐').
-  // 노트 파일이 아니라 별도 백업 파일(Inkpad/backups/)로 올린다. 예전에는 노트 파일에 먼저 올려
-  // 리비전으로 남겼는데, 그러면 머지 결과를 올리기 전까지 클라우드의 '현재'가 다른 기기 변경이 빠진
-  // 이 기기 상태가 된다 — 그 사이 업로드가 실패하면 그대로 남고, 다른 기기는 그걸 받아 자기 변경을 잃었다.
-  // 버전 기록은 이 백업 파일도 함께 보여 준다 (sync/revisions.ts).
-  const backupRev: RevMarker = { kind: 'merge-backup', device, at: Date.now(), conflicts }
-  await drive.upload(
-    await gzipJson({ ...local, rev: backupRev }),
-    {
-      name: `backups/${docId}-${backupRev.at}.json`,
-      mimeType: 'application/json',
-      appProperties: { docId, enc: drive.ENC_GZIP, revKind: backupRev.kind, device, at: String(backupRev.at), ...(conflicts ? { revConflicts: String(conflicts) } : {}) }
-    },
-    await ensureBackupsFolder()
-  )
-
-  await applyDocFile(merged, { force: true })
-  const mergedRev: RevMarker = { kind: 'merge', device, at: Date.now(), conflicts }
-  const result = await drive.upload(
-    await gzipJson({ ...merged, rev: mergedRev }),
-    {
-      name: `docs/${docId}.json`,
-      mimeType: 'application/json',
-      appProperties: { docId, updatedAt: String(merged.doc.updatedAt), ...titleProp(merged.doc.title), device, enc: drive.ENC_GZIP, revKind: mergedRev.kind, ...(conflicts ? { revConflicts: String(conflicts) } : {}), ...categoryProp(merged.doc.category) }
-    },
-    docsFolderId,
-    remote.id
-  )
-  await rememberRevTag(result.id, { device, revKind: mergedRev.kind, conflicts })
-  await putDocRecord(docId, result.id, result.version) // 앞으로만 (규칙 10)
-  await putSync(`fresh:${docId}`, result.id) // 방금 올린 파일 표식
-  await saveBase(docId, merged)
-  await db.syncState.delete(`curRev:${docId}`) // 머지 결과가 곧 이 기기의 현재
-  await db.syncState.delete(`revKind:${docId}`)
-  // 올리기 대기를 내린다 — 편집 화면이 멈춰 있어 그 뒤 새 변경은 없으므로, 머지에 실린 대기 전부다
-  await db.outbox.bulkDelete(await pendingSeqsFor(docId))
-  const detail: MergeEventDetail = { docId, revisionId: result.version, decision, conflicts, baseless: outcome.baseless }
-  window.dispatchEvent(new CustomEvent(CONFLICT_EVENT, { detail }))
-  emitRemoteChanged(new Set<string>([docId]))
-  return true
 }
 
 // ───────────────── Drive 파일 → 로컬 ─────────────────
@@ -658,20 +642,20 @@ async function pull(f: { docs: string; assets: string }): Promise<PullResult> {
 
   // 받아올 대상을 먼저 골라 총수를 확정한다 — "노트 n/N 받는 중" 진행 표시용.
   // 받기 미리보기(planPull)와 같은 함수로 고른다 — 미리보기에 뜬 목록이 곧 실제로 받는 목록이다
-  const eligible = (await pullCandidates(await drive.listFiles(f.docs))).map((c) => c.remote)
+  const eligible = (await pullCandidates(await drive.listFiles(f.docs))).eligible.map((c) => c.remote)
 
   let n = 0
   for (const remote of eligible) {
     emitProgress('pull', ++n, eligible.length)
     const docId = remote.appProperties?.docId
     if (!docId) continue
-    const file = await drive.downloadJson<DocFileV1>(remote.id, remote.appProperties?.enc)
+    const file = await drive.downloadJson<MainFile>(remote.id, remote.appProperties?.enc)
     if (file?.kind !== 'inkpad-doc') continue
     let applied = false
     try {
       // 규칙 11 — 이 탭에서 열려 있으면 편집 화면이 먼저 기록하고 멈춘다. 그때 막 기록된 변경이
-      // 있으면 applyDocFile이 적용하지 않는다(대기 중인 노트는 올리기의 머지가 맡는다)
-      applied = await withDocExclusive(docId, () => applyDocFile(file))
+      // 있으면 applyDocFile이 적용하지 않는다(대기 중인 노트는 올리기가 맡는다)
+      applied = await withDocExclusive(docId, () => applyDocFile(plainDoc(file)))
     } catch (e) {
       if (!(e instanceof DocBusyError)) throw e
       r.busy++ // 다른 탭에서 편집 중 — 다음 받기 때 다시
@@ -679,7 +663,7 @@ async function pull(f: { docs: string; assets: string }): Promise<PullResult> {
     }
     if (applied) {
       await putDocRecord(docId, remote.id, remote.version)
-      await saveBase(docId, file)
+      await followedMain(docId, file, remote.appProperties)
       changed.add(docId)
       r.docs++
     }
@@ -695,9 +679,15 @@ async function pull(f: { docs: string; assets: string }): Promise<PullResult> {
   return r
 }
 
+/** main을 받아 적용한 뒤 — 출발점(base)을 그 main으로 옮긴다. 신원은 받은 본문 기준(목록 표식과 어긋나도 내용과 맞게) */
+async function followedMain(docId: ID, file: MainFile, props?: Record<string, string>) {
+  await saveBase(docId, plainDoc(file))
+  await putBranchState(docId, { baseMid: midOfFile(file), baseGen: file.main?.gen ?? genOf(props) })
+}
+
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
-export type CloudNoteState = 'same' | 'remote-new' | 'new' | 'pending' | 'cloud-deleted' | 'deleted-local'
+export type CloudNoteState = 'same' | 'remote-new' | 'new' | 'pending' | 'diverged' | 'cloud-deleted' | 'deleted-local'
 
 export interface CloudNoteInfo {
   docId: ID
@@ -712,10 +702,13 @@ export interface CloudNoteInfo {
   state: CloudNoteState
 }
 
+const SYNC_TO_STATE: Record<NoteSync, CloudNoteState> = { same: 'same', pull: 'remote-new', push: 'pending', diverged: 'diverged' }
+
 /**
  * 클라우드 노트 목록 — Drive 메타와 이 기기의 로컬 전용 상태를 합쳐 그린다(본문 내려받지 않음).
  * 상태: same(최신) / remote-new(받을 업데이트·새 노트, 파란 점) /
- *       new(한 번도 올리지 않은 새 노트, 올릴 것) / pending(이 기기 변경이 올리기 대기) /
+ *       new(한 번도 올리지 않은 새 노트, 올릴 것) / pending(이 기기 변경이 올리기 대기 — 올리면 main도 따라간다) /
+ *       diverged(갈라짐 — 이 기기도 바뀌었고 main도 바뀌었다. 덮지 않고 머지 관리에서 합친다) /
  *       cloud-deleted(클라우드에서만 삭제됨 — 행을 눌러 다시 올린다) /
  *       deleted-local(이 기기에서 지운 노트, 빨간 점)
  */
@@ -745,6 +738,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
 
   const pending = await pendingDocs()
   const hidden = new Set(await getHiddenCategories())
+  const deviceId = await getDeviceId()
   // 같은 노트의 중복 파일은 최신 하나만 — 받기와 같은 규칙 (예전에는 목록에 두 번 뜰 수 있었다)
   const newest = newestPerDoc(remotes)
   const byDoc = new Set(newest.map((r) => r.appProperties!.docId))
@@ -753,8 +747,8 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
     const docId = remote.appProperties!.docId
     const local = await db.documents.get(docId)
     const rec = await getSync<FileRecord>(`doc:${docId}`)
-    // 받기와 같은 판정 (sync/judge.ts) — 위치 기록 version 또는 내용 표식(updatedAt)이 맞으면 최신
-    const same = isUpToDate(rec, local, remote)
+    // 받기와 같은 판정 (sync/judge.ts noteSync)
+    const { sync } = await judgeNote(docId, remote, local, pending.has(docId), deviceId)
     // 이 기기에서 지운 노트인지는 표식으로 판정한다 — 휴지통(deletedAt), gone 표식,
     // 영구 삭제(위치 기록은 남고 로컬 행만 없음). 로컬 행이 없다는 이유만으로 삭제됨으로
     // 보면 다른 기기에서 새로 만들어 아직 받지 않은 노트가 "이 기기에서 삭제됨"으로 오판된다
@@ -768,7 +762,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       fileId: remote.id,
       version: remote.version,
       enc: remote.appProperties?.enc,
-      state: gone ? 'deleted-local' : pending.has(docId) ? 'pending' : same ? 'same' : 'remote-new'
+      state: gone ? 'deleted-local' : SYNC_TO_STATE[sync]
     })
   }
 
@@ -806,6 +800,8 @@ export interface PullDoc {
 export interface PullPlan {
   docs: PullDoc[]
   bytes: number
+  /** 갈라져서 받지 않는 노트 — 이 기기 변경을 덮지 않는다(머지 관리에서 합친다) */
+  diverged: { docId: ID; title: string }[]
 }
 
 /**
@@ -818,7 +814,8 @@ export async function planPull(): Promise<PullPlan> {
   const docs: PullDoc[] = []
   let bytes = 0
   // 받기(pull)와 같은 함수로 고른다 — 미리보기 목록 = 실제로 받는 목록
-  for (const { docId, remote, local } of await pullCandidates(await drive.listFiles(f.docs))) {
+  const { eligible, diverged } = await pullCandidates(await drive.listFiles(f.docs))
+  for (const { docId, remote, local } of eligible) {
     const remoteUpdatedAt = Number(remote.appProperties?.updatedAt) || 0
     const size = Math.max(0, Number(remote.size ?? 0) || 0)
     bytes += size
@@ -831,30 +828,52 @@ export async function planPull(): Promise<PullPlan> {
       change: local ? 'remote-new' : 'add'
     })
   }
-  return { docs, bytes }
+  return { docs, bytes, diverged: diverged.map(({ docId, remote, local }) => ({ docId, title: local?.title || remote.appProperties?.title || docId })) }
 }
 
 /**
- * 클라우드 노트 한 개를 이 기기로 내려받는다. 삭제 대기 중이던 노트면 대기를 지우고 되살린다.
+ * 클라우드 노트 한 개를 이 기기로 내려받는다(main으로 맞춘다). 삭제 대기 중이던 노트면 대기를 지우고 되살린다.
  * 다른 탭에서 편집 중인 노트면 DocBusyError(메시지는 그대로 화면에 보여도 된다).
  */
-export async function downloadCloudNote(
-  info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>
-): Promise<'applied' | 'skipped' | 'notfound'> {
-  const file = await drive.downloadJson<DocFileV1>(info.fileId, info.enc)
+export function downloadCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>): Promise<'applied' | 'skipped' | 'notfound'> {
+  return withSyncLock(() => takeMain(info, { keepLocal: false }))
+}
+
+/**
+ * main을 받아 이 기기 노트를 덮는다 (동기화 잠금 안에서).
+ * keepLocal이면 덮기 전에 이 기기의 올리지 않은 변경을 내 브랜치에 먼저 올려 둔다 — 버리는 것이 아니라 브랜치에 남긴다.
+ * 이 기기가 main을 받기로 했으므로, 내 브랜치에서 main에 아직 안 들어간 내용은 버린 것(resolved)으로 표시한다 —
+ * 그 노트가 계속 갈라짐으로 남지 않는다. 브랜치 파일 자체는 지우지 않는다.
+ */
+async function takeMain(info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>, opts: { keepLocal: boolean }): Promise<'applied' | 'skipped' | 'notfound'> {
+  const file = await drive.downloadJson<MainFile>(info.fileId, info.enc)
   if (file?.kind !== 'inkpad-doc') return 'notfound'
+  const f = opts.keepLocal ? await ensureFolders() : null
   // 규칙 11 — 열린 편집 화면을 먼저 멈추고 기록하게 한 뒤에 대기를 지운다(그래야 방금 기록된 대기도 함께 치운다)
   const applied = await withDocExclusive(info.docId, async () => {
     const p = (await pendingDocs()).get(info.docId)
+    const doc = await db.documents.get(info.docId)
+    if (p && f && doc && !doc.deletedAt) await uploadBranch(info.docId, await packDocument(info.docId), 'push', f.docs)
     if (p) await db.outbox.bulkDelete(p.seqs) // 삭제 대기였다면 사용자가 명시적으로 받은 것이 우선
-    return applyDocFile(file)
+    return applyDocFile(plainDoc(file))
   })
   if (!applied) return 'skipped'
   await putDocRecord(info.docId, info.fileId, info.version) // 앞으로만 (규칙 10)
-  await saveBase(info.docId, file)
+  await followedMain(info.docId, file)
+  await resolveMyBranch(info.docId)
   await db.syncState.delete(`gone:${info.docId}`) // 명시적으로 받았으니 되살린 것
   emitRemoteChanged(new Set<string>([info.docId]))
   return 'applied'
+}
+
+/** 내 브랜치의 지금까지 내용은 버린 것으로 표시한다 — 이 기기와 (브랜치 파일 표식으로) 다른 기기가 함께 본다 */
+async function resolveMyBranch(docId: ID): Promise<void> {
+  const st = await getBranchState(docId)
+  if (!st?.seq || st.seq <= (st.resolved ?? 0)) return
+  await putBranchState(docId, { resolved: st.seq })
+  if (st.fileId) {
+    await drive.updateMeta(st.fileId, { appProperties: { resolved: String(st.seq) } }).catch((e) => console.warn('[sync] 브랜치 표식(resolved) 쓰기 실패 — 이 기기 판정은 그대로다:', e))
+  }
 }
 
 /**
@@ -862,40 +881,47 @@ export async function downloadCloudNote(
  * 이 기기에 위치 기록(fileId)이 없어도 파일 이름이 docId.json 이므로 이름으로 찾을 수 있다.
  * 보드 카드의 "받기"를 사용자가 눌렀을 때만 호출된다 — 자동 네트워크 사용은 없다.
  */
-export async function downloadMissingDoc(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
-  const f = await ensureFolders()
-  const remote = await drive.findByName(`docs/${docId}.json`, f.docs)
-  if (!remote) return 'notfound'
-  return downloadCloudNote({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc })
+export function downloadMissingDoc(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
+  return withSyncLock(async () => {
+    const f = await ensureFolders()
+    const remote = await drive.findByName(mainFileName(docId), f.docs)
+    if (!remote) return 'notfound'
+    return takeMain({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc }, { keepLocal: false })
+  })
 }
 
 /**
- * 클라우드에 맞추기 — 이 기기의 올리기 대기를 내리고 클라우드 버전으로 덮어쓴다.
- * 일반 '받기'는 이 기기에 수정 대기가 있으면 사양하지만, 이 함수는 메뉴에서 명시적으로
- * 골랐으므로 대기를 치우고 덮어쓴다 — 로컬의 바뀜은 버려진다 (확인 창을 한 번 거친다).
+ * 클라우드에 맞추기 — 이 기기 노트를 클라우드 main으로 덮는다.
+ * 일반 '받기'는 이 기기에 수정 대기가 있거나 갈라졌으면 사양하지만, 이 함수는 메뉴에서 명시적으로 골랐으므로 덮는다.
+ * 덮기 전에 이 기기의 올리지 않은 변경은 내 브랜치에 올려 둔다(확인 창을 한 번 거친다).
  */
-export async function alignWithCloud(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
-  const f = await ensureFolders()
-  const remote = await drive.findByName(`docs/${docId}.json`, f.docs)
-  if (!remote) return 'notfound'
-  // 덮어쓸 것이므로 이 기기의 올리기 대기는 downloadCloudNote가 노트 보호 안에서 내린다
-  // (편집 화면이 멈추며 막 기록한 변경의 대기까지 함께 — 밖에서 먼저 지우면 그 대기가 남아 '건너뜀'이 된다)
-  return downloadCloudNote({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc })
+export function alignWithCloud(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
+  return withSyncLock(async () => {
+    const f = await ensureFolders()
+    const remote = await drive.findByName(mainFileName(docId), f.docs)
+    if (!remote) return 'notfound'
+    return takeMain({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc }, { keepLocal: true })
+  })
 }
 
 /**
- * 클라우드 노트 삭제 — Drive 파일을 휴지통으로 옮긴다(30일 보관, 복구 가능).
+ * 클라우드 노트 삭제 — main과 모든 기기의 브랜치 파일을 휴지통으로 옮긴다(30일 보관, 복구 가능).
  * 공용 보관소에서 치우는 것일 뿐이라 각 기기의 로컬 사본은 그대로다.
  * 이후 이 기기에서 그 노트를 다시 고쳐 올리면 새 파일로 올라간다.
  */
-export async function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId'>): Promise<void> {
-  await drive.trash(info.fileId)
-  await db.syncState.delete(`doc:${info.docId}`)
-  await db.syncState.delete(`base:${info.docId}`)
-  await db.syncState.delete(`gone:${info.docId}`)
-  // "클라우드에서 삭제함" 표식 — 위치 기록이 지워져도 이 기기는 노트를 'cloud-deleted'로
-  // 분류하고 일괄 올리기에서 뺀다. 행을 눌러 다시 올리면 지운다.
-  await putSync(`clouddel:${info.docId}`, Date.now())
+export function deleteCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId'>): Promise<void> {
+  return withSyncLock(async () => {
+    await drive.trash(info.fileId)
+    const branches = await getSync<string>('branchesFolderId')
+    if (branches) for (const b of await drive.listFiles(branches, { docId: info.docId })) await drive.trash(b.id)
+    await db.syncState.delete(`doc:${info.docId}`)
+    await db.syncState.delete(`base:${info.docId}`)
+    await db.syncState.delete(`gone:${info.docId}`)
+    await db.syncState.delete(brKey(info.docId))
+    // "클라우드에서 삭제함" 표식 — 위치 기록이 지워져도 이 기기는 노트를 'cloud-deleted'로
+    // 분류하고 일괄 올리기에서 뺀다. 행을 눌러 다시 올리면 지운다.
+    await putSync(`clouddel:${info.docId}`, Date.now())
+  })
 }
 
 /**
@@ -952,14 +978,19 @@ export async function planPush(): Promise<PushPlan> {
   return plan
 }
 
-/** 이 노트 하나만 클라우드에 올린다 (노트 메뉴의 "클라우드에 올리기") */
-export async function pushOneNote(docId: ID): Promise<void> {
-  const doc = await db.documents.get(docId)
-  if (!doc || doc.deletedAt) throw new Error('이 기기에서 삭제된 노트입니다.')
-  const f = await ensureFolders()
-  await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 싣는다
-  const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
-  await pushDoc(docId, info, f) // 다른 탭에서 편집 중이라 머지할 수 없으면 DocBusyError — 화면에 그대로 알린다
+/**
+ * 이 노트 하나만 클라우드에 올린다 (노트 메뉴의 "클라우드에 올리기").
+ * 'diverged'면 main이 이 기기 출발점 이후 바뀌어 내 브랜치에만 올렸다 — 머지 관리에서 합친다.
+ */
+export function pushOneNote(docId: ID): Promise<'ff' | 'diverged' | 'skipped'> {
+  return withSyncLock(async () => {
+    const doc = await db.documents.get(docId)
+    if (!doc || doc.deletedAt) throw new Error('이 기기에서 삭제된 노트입니다.')
+    const f = await ensureFolders()
+    await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 싣는다
+    const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
+    return pushDoc(docId, info, f)
+  })
 }
 
 // ───────────────── 실행 (규칙 6) ─────────────────

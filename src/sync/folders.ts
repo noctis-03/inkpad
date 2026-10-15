@@ -36,7 +36,7 @@ export async function resetRemoteRecords() {
   await db.transaction('rw', db.syncState, async () => {
     const keys = (await db.syncState.toArray()).map((k) => k.key)
     await db.syncState.bulkDelete(
-      keys.filter((k) => k.startsWith('doc:') || k.startsWith('asset:') || k.startsWith('base:'))
+      keys.filter((k) => k.startsWith('doc:') || k.startsWith('asset:') || k.startsWith('base:') || k.startsWith('br:'))
     )
   })
   await enqueueEverything()
@@ -110,11 +110,17 @@ export async function ensureStoreFolder(name: string, key: string, onRecreated?:
 }
 
 /**
- * 머지 백업 폴더 (Inkpad/backups/) — 처음 쓸 때 만든다.
- * 머지 전 이 기기 상태를 노트 파일과 별도로 보관한다 (sync.ts finishMerge, 버전 기록이 함께 보여 준다).
- * 폴더가 사라졌어도 다시 올릴 것은 없다 — 백업은 그때그때 새로 만든다.
+ * 기기 브랜치 폴더 (Inkpad/branches/) — 처음 올릴 때 만든다 (docs/branch-merge.md).
+ * 폴더가 통째로 사라졌으면 기록해 둔 브랜치 파일 위치만 지운다 — 다음 올리기가 새 파일로 올린다.
  */
-export const ensureBackupsFolder = () => ensureStoreFolder('backups', 'backupsFolderId')
+export const ensureBranchesFolder = () =>
+  ensureStoreFolder('branches', 'branchesFolderId', async () => {
+    for (const kv of await db.syncState.toArray()) {
+      if (!kv.key.startsWith('br:')) continue
+      const { fileId: _gone, ...rest } = kv.value as { fileId?: string }
+      await db.syncState.put({ key: kv.key, value: rest })
+    }
+  })
 
 /**
  * 항목 하나를 지금 클라우드에 반영해 본다 (앱·기타 파일·보드 프리셋을 추가·수정한 직후).

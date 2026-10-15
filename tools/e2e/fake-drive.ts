@@ -2,7 +2,7 @@
  * 테스트용 가짜 Google Drive — Playwright route로 브라우저의 Drive API 요청을 가로챈다.
  * 이 앱이 쓰는 API만 흉내 낸다: 파일 목록·메타·내려받기, multipart·이어 올리기(resumable) 업로드,
  * 리비전(목록·고정·내려받기·삭제), 폴더 만들기, 휴지통, appProperties 검색.
- * 실패 주입: fail.nextDocUpload(노트 파일 업로드 한 번 403), fail.abortChunk(n번째 이어 올리기 조각에서 연결 끊기).
+ * 실패 주입: fail.nextDocUpload(노트 main 파일 덮어쓰기 한 번 403), fail.abortChunk(n번째 이어 올리기 조각에서 연결 끊기).
  */
 import { gunzipSync } from 'node:zlib'
 import type { BrowserContext, Request, Route } from 'playwright'
@@ -252,8 +252,17 @@ export function createFakeDrive() {
   const backupsOf = (docId: string) => [...files.values()].filter((f) => f.name.startsWith(`backups/${docId}-`) && !f.trashed)
   const revisionStrokes = (f: FakeFile) => f.revisions.map((r) => ({ id: r.id, keepForever: r.keepForever, strokes: strokeIds(ungz(r.content)) }))
   const headStrokes = (docId: string) => strokeIds(ungz(head(docFile(docId)!).content))
+  /** 그 노트의 기기 브랜치 파일들 (branches/{docId}@{deviceId}.json) */
+  const branchesOf = (docId: string) => [...files.values()].filter((f) => f.name.startsWith(`branches/${docId}@`) && !f.trashed)
+  const branchOf = (docId: string, deviceId: string) => branchesOf(docId).find((f) => f.name === `branches/${docId}@${deviceId}.json`)
+  const fileStrokes = (f: FakeFile) => strokeIds(ungz(head(f).content))
+  /** 그 노트의 파일(main·브랜치)이 휴지통까지 포함해 모두 휴지통에 있는가 */
+  const allTrashed = (docId: string) => {
+    const all = [...files.values()].filter((f) => f.name === `docs/${docId}.json` || f.name.startsWith(`branches/${docId}@`))
+    return all.length > 0 && all.every((f) => f.trashed)
+  }
 
-  return { attach, fail, stats, files, docFile, backupsOf, revisionStrokes, headStrokes, ungz, strokeIds }
+  return { attach, fail, stats, files, docFile, backupsOf, branchesOf, branchOf, fileStrokes, allTrashed, revisionStrokes, headStrokes, ungz, strokeIds }
 }
 
 export type FakeDrive = ReturnType<typeof createFakeDrive>

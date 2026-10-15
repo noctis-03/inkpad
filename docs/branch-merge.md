@@ -1,6 +1,6 @@
 # 브랜치 동기화 · 머지 관리 설계
 
-> 상태: **설계안 (구현 전 확인용)**. 이 문서가 확정되면 `src/sync/`의 자동 머지(`mergePush`)·머지 확인 창·머지 백업을 이 구조로 바꾼다.
+> 상태: **1단계(브랜치 기반) 구현됨** — 자동 머지(`mergePush`)·머지 확인 창·머지 백업 생성을 없애고 올리기 = 브랜치 + 따라가기, 받기 = 따라가기, 갈라짐 표시로 바꿨다(`src/sync/branch.ts`, `src/sync/sync.ts`). 2단계(머지 관리)부터는 아직이다 — 그 전까지 갈라진 노트는 덮이지 않고 기다리며, '클라우드에 맞추기'로만 정리할 수 있다.
 
 ## 0. 목표와 원칙
 
@@ -38,14 +38,19 @@ Inkpad/
   backups/                          ← 옛 머지 백업 (새로 만들지 않음, 보관함 관리에서 정리)
 ```
 
-- `branches/`는 한 폴더에 평평하게 두고 `appProperties`(`docId`, `deviceId`, `device`, `seq`, `baseGen`, `updatedAt`)로 찾는다. 목록 요청 1번으로 모든 브랜치 상태를 알 수 있다.
+- `branches/`는 한 폴더에 평평하게 두고 `appProperties`(`docId`, `kind: 'branch'`, `dev`(기기 ID), `device`, `seq`, `baseGen`, `updatedAt`, 버렸으면 `resolved`)로 찾는다. 목록 요청 1번으로 모든 브랜치 상태를 알 수 있다.
+- main의 `appProperties`에는 `gen`, `mid`, `midU`(mid를 쓸 때의 updatedAt), 기기마다 `m.{deviceId}=seq`를 단다. 옛 앱은 mid를 모른 채 appProperties를 덮어쓰는데 Drive는 PATCH에 없는 키를 남긴다 — `updatedAt ≠ midU`면 옛 앱이 쓴 것으로 보고 `legacy:{updatedAt}`을 신원으로 쓴다.
 - **기기 ID(`deviceId`)** 는 처음 한 번 만드는 ULID로, 바꿀 수 있는 기기 이름(`deviceName`, `src/sync/token.ts`)과 별개다. 이름을 바꿔도 브랜치는 같다.
 
 ### 2.1 main 파일에 더해지는 것
 
+본문에는 `main` 필드로 싣는다(`DocFileV1 & { main?: MainMarker }`, `src/sync/branch.ts`).
+
 ```ts
-interface MainFile extends DocFileV1 {
+interface MainMarker {
   gen: number
+  /** main을 쓸 때마다 새로 뽑는 신원 — 출발점 비교는 세대가 아니라 이것으로 한다(동시에 따라간 두 기기가 같은 gen을 쓴다) */
+  mid: string
   /** 이 main에 반영된 브랜치 — 기기별로 몇 번째 업로드(seq)까지 들어 있는가 */
   merged: Record<DeviceId, number>
   /** 이 세대를 만든 동작 — 'ff'(따라가기) | 'merge'(최종 머지) | 'restore'(되돌리기) */
@@ -55,11 +60,15 @@ interface MainFile extends DocFileV1 {
 
 ### 2.2 브랜치 파일
 
+본문에는 `branch` 필드로 싣는다(`DocFileV1 & { branch: BranchMarker }`).
+
 ```ts
-interface BranchFile extends DocFileV1 {
+interface BranchMarker {
   deviceId: DeviceId
-  seq: number          // 이 기기가 이 노트 브랜치를 올린 횟수 (1, 2, 3 …)
+  device: string
+  seq: number          // 이 기기가 이 노트 브랜치를 올린 횟수 (1, 2, 3 …) — 앞으로만 간다
   baseGen: number      // 출발점 main 세대
+  baseMid: string | null // 출발점 main 신원 (모르면 null)
   /** 출발점 대비 내용을 바꾼 것 — 키: 'el:{id}' | 'page:{id}' | 'block:{id}' | 'doc:title' | 'doc:category' | 'doc:mode' | 'doc:pageOrder' */
   modified: Record<string, /* 바꾸기 전 내용의 해시 */ string>
 }
@@ -245,7 +254,7 @@ interface BranchFile extends DocFileV1 {
 
 | 단계 | 내용 | 테스트 |
 |---|---|---|
-| **1. 브랜치 기반** | 기기 ID, 브랜치 파일, 고친 목록 계산, main `gen`/`merged`/`made`, 올리기 = 브랜치 + ff, 받기 = ff, "갈라짐" 상태 표시. 갈라진 노트는 머지 관리가 생길 때까지 안전하게 기다린다(아무것도 덮지 않음) | `test:merge`를 고친 목록·상태 판정 단위 테스트로 교체. e2e(가짜 Drive): 두 기기 ff, 갈라짐, main 동시 쓰기에서 진 쪽이 머지 관리에 다시 나타남 |
+| **1. 브랜치 기반** ✅ | 기기 ID, 브랜치 파일, 고친 목록 계산, main `gen`/`merged`/`made`, 올리기 = 브랜치 + ff, 받기 = ff, "갈라짐" 상태 표시. 갈라진 노트는 머지 관리가 생길 때까지 안전하게 기다린다(아무것도 덮지 않음) | `test:merge`를 고친 목록·상태 판정 단위 테스트로 교체. e2e(가짜 Drive): 두 기기 ff, 갈라짐, main 동시 쓰기에서 진 쪽이 머지 관리에 다시 나타남 |
 | **2. 머지 관리 목록 + 결과 미리보기** | 분류 엔진(§4), 머지 관리 화면, 레이어 보이기/숨기기·전부 버리기, 결과 미리보기(읽기 전용 캔버스), 최종 머지 | §4 표 각 줄, 페이지 끼워 넣기, 블록 삭제 표식, 3대 기기 차례 머지 |
 | **3. 머지 편집기** | 레이어 한정 올가미·지우개·다른 쪽 버전으로 바꾸기, 작업본 저장·다시 적용, 패드·컴퓨터 입력과 단축키 | e2e: 작업본이 앱을 다시 켜도 남음, 입력이 바뀐 뒤 다시 적용 |
 | **4. 보관함 관리** | 로컬 스냅샷, 자동 고정 제거, 보관함 관리 화면, 옛 백업 정리, 되돌리기 미리보기 | 보존 상한, 일괄 정리 |
