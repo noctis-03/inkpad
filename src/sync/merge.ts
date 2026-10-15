@@ -63,13 +63,50 @@ export interface MergePlan {
   bothCount: number
 }
 
-/** 사용자의 작업본 — 버린 항목, 기본 선택의 반대쪽을 쓰기로 한 항목(고친 것·문서 정보) */
+/**
+ * 사용자의 작업본 — 머지 화면에서 한 일. 항목은 키('el:{id}' 등)로 가리키므로, 입력(main·브랜치)이 새 판으로 바뀌어도
+ * 같은 키가 있으면 그대로 다시 얹힌다.
+ */
 export interface MergeDraft {
+  /** 버린 항목 (공통 항목은 버릴 수 없다) */
   discard: Set<string>
+  /** 기본 선택의 반대쪽을 쓰기로 한 항목 (고친 것·문서 정보) */
   flip: Set<string>
+  /** 옮긴 획 — 페이지(무한 캔버스는 월드) 좌표의 이동량. 여러 번 옮기면 더해진다 */
+  move: Map<string, { dx: number; dy: number }>
+  /** 색을 바꾼 획 */
+  color: Map<string, string>
 }
 
-export const emptyDraft = (): MergeDraft => ({ discard: new Set(), flip: new Set() })
+export const emptyDraft = (): MergeDraft => ({ discard: new Set(), flip: new Set(), move: new Map(), color: new Map() })
+
+/** 작업본을 저장 가능한 모양으로 (Set·Map → 배열) */
+export interface MergeDraftJson {
+  discard: string[]
+  flip: string[]
+  move: [string, { dx: number; dy: number }][]
+  color: [string, string][]
+}
+export const draftToJson = (d: MergeDraft): MergeDraftJson => ({ discard: [...d.discard], flip: [...d.flip], move: [...d.move], color: [...d.color] })
+export const draftFromJson = (j: Partial<MergeDraftJson> | undefined): MergeDraft => ({
+  discard: new Set(j?.discard ?? []),
+  flip: new Set(j?.flip ?? []),
+  move: new Map(j?.move ?? []),
+  color: new Map(j?.color ?? [])
+})
+
+/** 작업본에서 이 계획에 없는 항목을 뺀다 — 입력이 새 판으로 바뀌었을 때 다시 얹기 */
+export function retainDraft(d: MergeDraft, plan: MergePlan): MergeDraft {
+  const keys = new Set<string>([...plan.items.map((i) => i.key), ...plan.meta.map((m) => m.key)])
+  return {
+    discard: new Set([...d.discard].filter((k) => keys.has(k))),
+    flip: new Set([...d.flip].filter((k) => keys.has(k))),
+    move: new Map([...d.move].filter(([k]) => keys.has(k))),
+    color: new Map([...d.color].filter(([k]) => keys.has(k)))
+  }
+}
+
+export const isEmptyDraft = (d: MergeDraft) => !d.discard.size && !d.flip.size && !d.move.size && !d.color.size
 
 const j = (v: unknown) => JSON.stringify(v)
 const other = (s: Side): Side => (s === 'main' ? 'branch' : 'main')
@@ -181,6 +218,43 @@ export function resolveMeta(m: MetaItem, draft: MergeDraft): Side {
   return draft.flip.has(m.key) ? other(m.pick) : m.pick
 }
 
+/** 무한 캔버스의 청크 한 변 — shared/model.ts CHUNK_SIZE와 같은 값 (이 모듈은 node 테스트에서도 돌아 엔진을 부르지 않는다) */
+const CHUNK = 4096
+const q2 = (v: number) => Math.round(v * 100) / 100
+
+/**
+ * 작업본의 옮김·색을 요소에 얹는다. 무한 캔버스에서 옮긴 획은 시작점이 들어간 청크로 다시 배치한다
+ * (엔진도 획을 시작점의 청크에 둔다 — 청크 밖 좌표로 두면 화면 검색에서 빠진다).
+ */
+export function editPlaced(p: Placed, mv: { dx: number; dy: number } | undefined, color: string | undefined, infinite: boolean): Placed {
+  if (!mv && !color) return p
+  let el = p.el
+  if (color && 'color' in el) el = { ...el, color } as Element
+  if (!mv || (!mv.dx && !mv.dy)) return { ...p, el }
+  let { dx, dy } = mv
+  let key = p.key
+  if (infinite && el.type === 'stroke' && el.points.length >= 2) {
+    const [cx, cy] = p.key.split('_').map(Number)
+    const wx = cx * CHUNK + el.points[0] + dx
+    const wy = cy * CHUNK + el.points[1] + dy
+    const nx = Math.floor(wx / CHUNK)
+    const ny = Math.floor(wy / CHUNK)
+    key = `${nx}_${ny}`
+    dx += (cx - nx) * CHUNK // 새 청크 원점 기준으로
+    dy += (cy - ny) * CHUNK
+  }
+  if (el.type === 'stroke') {
+    const points = el.points.slice()
+    for (let i = 0; i + 1 < points.length; i += 4) {
+      points[i] = q2(points[i] + dx)
+      points[i + 1] = q2(points[i + 1] + dy)
+    }
+    const [x0, y0, x1, y1] = el.bbox
+    el = { ...el, points, bbox: [x0 + dx, y0 + dy, x1 + dx, y1 + dy] }
+  } else if ('x' in el && 'y' in el) el = { ...el, x: el.x + dx, y: el.y + dy } as Element
+  return { ...p, key, el }
+}
+
 const valueOf = <T>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
 
 /**
@@ -225,7 +299,7 @@ export function compose(main: DocFileV1, branch: DocFileV1, plan: MergePlan, dra
     const { side, discarded } = resolveItem(item, draft)
     if (discarded) continue
     if (item.kind === 'page') pages.push(valueOf<Page>(item, side))
-    else if (item.kind === 'el') placed.push(valueOf<Placed>(item, side))
+    else if (item.kind === 'el') placed.push(editPlaced(valueOf<Placed>(item, side), draft.move.get(item.key), draft.color.get(item.key), doc.mode === 'infinite'))
     else blocks.push(valueOf<Block>(item, side))
   }
   const live = new Set(pages.map((p) => p.id))

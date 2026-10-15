@@ -9,7 +9,7 @@
  *  - 옮긴 획은 ID로 따라가 두 군데 생기지 않는다
  *  - 작업본: 버린 항목은 빠지고, 반대쪽으로 바꾼 항목은 그쪽 내용
  */
-import { classify, compose, emptyDraft, mergePageOrder, resolveItem, type MergeDraft, type Side } from '../../src/sync/merge.ts'
+import { classify, compose, draftFromJson, draftToJson, editPlaced, emptyDraft, mergePageOrder, resolveItem, retainDraft, type MergeDraft, type Side } from '../../src/sync/merge.ts'
 import { computeModified } from '../../src/sync/branch.ts'
 import type { DocFileV1 } from '../../src/sync/pack.ts'
 import type { Block, Element, Page, Stroke } from '../../src/shared/model.ts'
@@ -20,6 +20,8 @@ const check = (name: string, cond: boolean, detail = '') => {
   if (cond) pass++
   else failures.push(`${name}${detail ? ' — ' + detail : ''}`)
 }
+/** 작업본 줄임말 — 안 준 것은 비어 있다 */
+const D = (d: Partial<MergeDraft>): MergeDraft => ({ ...emptyDraft(), ...d })
 const eqSet = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',')
 
 /* ── 테스트용 노트 ─────────────────────────────────────────────── */
@@ -100,7 +102,7 @@ function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer:
   const rb = run(base, main, branch, 'branch')
   check('M4 양쪽 고침 — 브랜치 기기가 머지하면 브랜치', (elOf(rb.out, 'a')!.el as Stroke).color === '#0000ffff')
   check('M4 양쪽 고침 개수', rm.plan.bothCount === 1)
-  const flipped = run(base, main, branch, 'main', { discard: new Set(), flip: new Set(['el:a']) })
+  const flipped = run(base, main, branch, 'main', D({ flip: new Set(['el:a']) }))
   check('M4 반대쪽으로 바꾸면 그쪽 내용', (elOf(flipped.out, 'a')!.el as Stroke).color === '#0000ffff')
 }
 
@@ -135,7 +137,7 @@ function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer:
   const bg = run(base, base, doc({ [P('p1')]: [], [P('p2')]: [] }, { pages: [page('p1', 'grid'), page('p2')] }))
   check('M7 브랜치만 바꾼 속지는 브랜치 쪽', bg.out.pages.find((p) => p.id === 'p1')!.background.type === 'grid' && bg.item('page:p1').pick === 'branch')
 
-  const discard = run(base, main, branch, 'main', { discard: new Set(['page:b9']), flip: new Set() })
+  const discard = run(base, main, branch, 'main', D({ discard: new Set(['page:b9']) }))
   check('M7 버린 페이지는 그 필기와 함께 빠진다', !discard.out.pages.some((p) => p.id === 'b9') && !ids(discard.out).includes('bb') && !discard.out.doc.pageOrder.includes('b9'))
 }
 
@@ -156,7 +158,7 @@ function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer:
   check('M9 main만 바꾼 제목은 main 쪽', onlyMain.out.doc.title === 'main 제목')
   const both = run(base, doc({ [P('p1')]: [] }, { title: 'M' }), doc({ [P('p1')]: [] }, { title: 'B' }), 'branch')
   check('M9 양쪽이 바꾼 제목은 머지하는 기기 쪽', both.out.doc.title === 'B' && both.plan.meta[0]?.both === true)
-  const flip = run(base, doc({ [P('p1')]: [] }, { title: 'M' }), doc({ [P('p1')]: [] }, { title: 'B' }), 'branch', { discard: new Set(), flip: new Set(['doc:title']) })
+  const flip = run(base, doc({ [P('p1')]: [] }, { title: 'M' }), doc({ [P('p1')]: [] }, { title: 'B' }), 'branch', D({ flip: new Set(['doc:title']) }))
   check('M9 제목도 반대쪽으로 바꿀 수 있다', flip.out.doc.title === 'M')
 }
 
@@ -176,9 +178,9 @@ function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer:
   const base = doc({ [P('p1')]: [stroke('a'), stroke('x')] })
   const main = doc({ [P('p1')]: [stroke('a'), stroke('x'), stroke('m')] })
   const branch = doc({ [P('p1')]: [stroke('a'), stroke('b')] })
-  const r = run(base, main, branch, 'main', { discard: new Set(['el:x', 'el:b', 'el:a']), flip: new Set() })
+  const r = run(base, main, branch, 'main', D({ discard: new Set(['el:x', 'el:b', 'el:a']) }))
   check('M11 버린 획은 빠진다(브랜치가 지운 x, 브랜치 새 획 b)', !ids(r.out).includes('x') && !ids(r.out).includes('b'))
-  check('M11 공통 획은 버릴 수 없다', ids(r.out).includes('a') && !resolveItem(r.item('el:a'), { discard: new Set(['el:a']), flip: new Set() }).discarded)
+  check('M11 공통 획은 버릴 수 없다', ids(r.out).includes('a') && !resolveItem(r.item('el:a'), D({ discard: new Set(['el:a']) })).discarded)
   check('M11 나머지는 남는다', ids(r.out).includes('m'))
 }
 
@@ -196,6 +198,35 @@ function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer:
   check('M12 중복 없음', noDuplicates(r.out))
   const again = run(base, main, branch)
   check('M12 같은 입력이면 같은 결과', JSON.stringify(again.out) === JSON.stringify(r.out))
+}
+
+/* ── M13 · 작업본: 옮기기·색 ─────────────────────────────────── */
+{
+  const base = doc({ [P('p1')]: [stroke('a')] })
+  const branch = doc({ [P('p1')]: [stroke('a'), stroke('b')] })
+  const r = run(base, base, branch, 'main', D({ move: new Map([['el:b', { dx: 30, dy: 5 }]]), color: new Map([['el:a', '#00ff00ff']]) }))
+  const b = elOf(r.out, 'b')!.el as Stroke
+  check('M13 옮긴 획은 점·상자가 함께 옮겨진다', b.points[0] === 30 && b.points[1] === 5 && b.points[4] === 40 && b.bbox[0] === 30 && b.bbox[3] === 15, JSON.stringify(b.points))
+  check('M13 색을 바꾼 획 (공통 획도 바꿀 수 있다)', (elOf(r.out, 'a')!.el as Stroke).color === '#00ff00ff')
+  check('M13 원래 입력은 그대로', (branch.chunks[0].elements[1] as Stroke).points[0] === 0)
+  // 무한 캔버스: 청크 밖으로 옮기면 시작점이 들어간 청크로 다시 배치 (엔진과 같은 규칙)
+  const moved = editPlaced({ pageId: 'p', key: '0_0', el: stroke('c', 4000) }, { dx: 200, dy: -10 }, undefined, true)
+  check('M13 무한 캔버스 — 새 청크로', moved.key === '1_-1', moved.key)
+  const pts = (moved.el as Stroke).points
+  check('M13 무한 캔버스 — 새 청크 원점 기준 좌표', pts[0] === 104 && pts[1] === 4086, JSON.stringify(pts.slice(0, 2)))
+  check('M13 문서형은 같은 페이지에', editPlaced({ pageId: 'p', key: '0_0', el: stroke('c', 590) }, { dx: 50, dy: 0 }, undefined, false).key === '0_0')
+}
+
+/* ── M14 · 작업본 저장·다시 얹기 ──────────────────────────────── */
+{
+  const d = D({ discard: new Set(['el:x', 'el:gone']), flip: new Set(['doc:title']), move: new Map([['el:x', { dx: 1, dy: 2 }]]), color: new Map([['el:gone', '#000']]) })
+  const back = draftFromJson(JSON.parse(JSON.stringify(draftToJson(d))))
+  check('M14 저장 모양으로 갔다 와도 같다', JSON.stringify(draftToJson(back)) === JSON.stringify(draftToJson(d)))
+  const base = doc({ [P('p1')]: [stroke('x')] })
+  const { plan } = run(base, base, doc({ [P('p1')]: [stroke('x')] }, { title: '새' }))
+  const kept = retainDraft(d, plan)
+  check('M14 새 입력에 없는 항목은 빠진다', !kept.discard.has('el:gone') && !kept.color.has('el:gone'))
+  check('M14 있는 항목은 그대로 얹힌다', kept.discard.has('el:x') && kept.move.get('el:x')?.dy === 2 && kept.flip.has('doc:title'))
 }
 
 /* ── 리포트 ─────────────────────────────────────────────────────── */

@@ -35,7 +35,7 @@ const mergeVia = (p: Page, docId: string, deviceIdOfBranch: string, discard: str
       if (!entry) return { error: 'no-entry' }
       const session = await s.openMerge(entry)
       try {
-        const r = await s.commitMerge(session, { discard: new Set(discard as string[]), flip: new Set() })
+        const r = await s.commitMerge(session, { discard: new Set(discard as string[]), flip: new Set(), move: new Map(), color: new Map() })
         return { ...r, plan: session.plan.items.filter((i) => i.kind === 'el').map((i) => ({ id: i.id, cls: i.cls, pick: i.pick })) }
       } catch (e) {
         return { error: (e as Error).name }
@@ -43,6 +43,27 @@ const mergeVia = (p: Page, docId: string, deviceIdOfBranch: string, discard: str
     },
     [docId, deviceIdOfBranch, discard] as const
   )
+
+/** 첫 페이지의 정한 자리(페이지 좌표)에 획 하나를 더한다 — 화면에서 올가미·지우개로 집을 수 있게 */
+const addStrokeAt = (p: Page, docId: string, sid: string, x: number, y: number) =>
+  p.evaluate(
+    async ([docId, sid, x, y]) => {
+      await new Promise((r) => setTimeout(r, 15))
+      const r = await import('/src/storage/repo.ts')
+      const d = await r.loadDocument(docId)
+      const pageId = d.pages[0].id
+      const els = d.chunks.find((c) => c.pageId === pageId)?.elements ?? []
+      const pts = [x, y, 0.5, 0, x + 6, y + 8, 0.5, 16, x + 12, y + 16, 0.5, 16]
+      els.push({ id: sid, type: 'stroke', layer: 'main', z: els.length + 1, createdAt: Date.now(), tool: 'pen', color: '#000000ff', width: 3, points: pts, bbox: [x - 2, y - 2, x + 14, y + 18], opts: { thinning: 0.5, smoothing: 0.5, streamline: 0.5, simulatePressure: false } })
+      await r.saveBatch({ documentId: docId, chunks: [{ pageId, key: '0_0', elements: els }] })
+    },
+    [docId, sid, x, y] as const
+  )
+const openMergeOf = (p: Page, docId: string) =>
+  p.evaluate(async (docId) => {
+    const entry = (await (await import('/src/sync/sync.ts')).listMergeQueue()).find((e) => e.docId === docId && e.mine)!
+    ;(await import('/src/ui/merge/MergeView.tsx')).openMergeView(entry)
+  }, docId)
 
 export default async function merge(ctx: Ctx) {
   const { base, check } = ctx
@@ -108,7 +129,7 @@ export default async function merge(ctx: Ctx) {
   const staleErr = await A.evaluate(async () => {
     const s = await import('/src/sync/sync.ts')
     try {
-      await s.commitMerge((window as unknown as { __session: Parameters<typeof s.commitMerge>[0] }).__session, { discard: new Set(), flip: new Set() })
+      await s.commitMerge((window as unknown as { __session: Parameters<typeof s.commitMerge>[0] }).__session, { discard: new Set(), flip: new Set(), move: new Map(), color: new Map() })
       return 'ok'
     } catch (e) {
       return (e as Error).name
@@ -157,7 +178,7 @@ export default async function merge(ctx: Ctx) {
   await A.locator('.merge-queue-row', { hasText: '화면 노트' }).click()
   await A.waitForSelector('.merge-view .merge-layer.l-branchOnly', { timeout: 15000 })
   await A.waitForTimeout(400)
-  await A.screenshot({ path: process.env.MERGE_SHOT_DIR ? `${process.env.MERGE_SHOT_DIR}/merge-wide.png` : undefined as unknown as string, fullPage: false }).catch(() => {})
+  if (process.env.MERGE_SHOT_DIR) await A.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/merge-wide.png` })
   const branchLayer = A.locator('.merge-layer.l-branchOnly')
   check('화면: 브랜치에만 레이어에 획 1', (await branchLayer.innerText()).includes('획 1'))
   check('화면: 페이지 캔버스를 그린다', (await A.locator('.merge-view .merge-canvas').count()) >= 1)
@@ -174,6 +195,70 @@ export default async function merge(ctx: Ctx) {
   await A.waitForSelector('.merge-view', { state: 'detached', timeout: 15000 })
   check('화면: 최종 머지 — 버린 PC 획은 main에 없다', sameSet(drive.headStrokes(H), ['h0', 'h-pad']), JSON.stringify(drive.headStrokes(H)))
   check('화면: PC 노트도 결과로', sameSet(await strokes(A, H), ['h0', 'h-pad']))
+
+  // ── 머지 편집기: 레이어 안에서 올가미로 옮기기, 지우개, 되돌리기, 작업본 유지 ──
+  // 앞에서 연 동기화 패널이 머지 뒤 목록을 다시 읽는 중일 수 있다 — 끝나고 닫은 뒤 이동한다(요청이 끊기지 않게)
+  await A.waitForFunction(() => ![...document.querySelectorAll('.merge-queue-row')].some((r) => r.textContent?.includes('화면 노트')), null, { timeout: 15000 })
+  await A.waitForSelector('.cloud-icon-btn:not(.spinning)')
+  await A.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setPanel('none'))
+  await A.goto(base + '/')
+  await A.waitForSelector('#root *')
+  const K = await createDoc(A, '편집 노트')
+  await addStrokeAt(A, K, 'k0', 100, 100)
+  await push(A)
+  await pull(B)
+  await addStrokeAt(A, K, 'k-pc', 100, 300) // PC(브랜치)에만
+  await addStrokeAt(B, K, 'k-pad1', 300, 300) // iPad(main)에만
+  await addStrokeAt(B, K, 'k-pad2', 300, 380) // 화면 아래 버튼 막대에 가리지 않는 높이
+  await push(B)
+  await push(A) // PC 갈라짐
+  await openMergeOf(A, K)
+  await A.waitForSelector('.merge-tools', { timeout: 15000 })
+  const overlay = A.locator('.merge-overlay').first()
+  await overlay.scrollIntoViewIfNeeded()
+  const box = (await overlay.boundingBox())!
+  const k = box.width / 595.28 // 페이지 좌표 → 화면
+  const at = (x: number, y: number) => ({ x: box.x + x * k, y: box.y + y * k })
+  const dragPath = async (pts: { x: number; y: number }[]) => {
+    await A.mouse.move(pts[0].x, pts[0].y)
+    await A.mouse.down()
+    for (const q of pts.slice(1)) await A.mouse.move(q.x, q.y, { steps: 4 })
+    await A.mouse.up()
+  }
+  await A.getByRole('radio', { name: '올가미' }).click()
+  await dragPath([at(80, 280), at(130, 280), at(130, 335), at(80, 335), at(80, 282)]) // k-pc 둘레
+  check('편집기: 올가미로 브랜치 획 하나를 고른다', (await A.locator('.merge-selcount').innerText()).includes('1'))
+  if (process.env.MERGE_SHOT_DIR) await A.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/merge-editor.png` })
+  await dragPath([at(106, 308), at(156, 308), at(206, 308)]) // 고른 획을 끌어 오른쪽으로 100pt
+  await A.getByRole('radio', { name: '지우개' }).click()
+  check('편집기: 지우개로 바꾸면 선택이 풀린다', (await A.locator('.merge-selbar').count()) === 0)
+  await dragPath([at(290, 388), at(320, 388)]) // k-pad2 위를 긋는다
+  const mainOnly = A.locator('.merge-layer.l-mainOnly')
+  check('편집기: 지우개로 지운 획은 버림', (await mainOnly.innerText()).includes('버림 1'))
+  await A.getByRole('button', { name: '되돌리기' }).click()
+  check('편집기: 되돌리기', !(await mainOnly.innerText()).includes('버림'))
+  await A.getByRole('button', { name: '다시 하기' }).click()
+  check('편집기: 다시 하기', (await mainOnly.innerText()).includes('버림 1'))
+  await dragPath([at(90, 108), at(120, 108)]) // 공통 획 k0는 지워지지 않는다
+  check('편집기: 공통 획은 지우개로 버려지지 않는다', !(await A.locator('.merge-layer.l-common').innerText()).includes('버림'))
+  await A.waitForTimeout(500) // 작업본 저장(0.3초 뒤)
+  await A.getByRole('button', { name: '나중에' }).click()
+  await A.waitForSelector('.merge-view', { state: 'detached' })
+  const drafts = await A.evaluate(async () => [...(await (await import('/src/sync/mergeDraft.ts')).mergeDraftKeys())])
+  check('작업본: 닫아도 이 기기에 남는다', drafts.some((d) => d.startsWith(K + '@')))
+  await openMergeOf(A, K)
+  await A.waitForSelector('.merge-layer.l-mainOnly', { timeout: 15000 })
+  check('작업본: 다시 열면 이어진다', (await A.locator('.merge-layer.l-mainOnly').innerText()).includes('버림 1'))
+  await A.getByRole('button', { name: '최종 머지' }).click()
+  await A.locator('.dialog-host').getByRole('button', { name: '머지', exact: true }).click()
+  await A.waitForSelector('.merge-view', { state: 'detached', timeout: 15000 })
+  check('편집기 결과: 지운 획은 빠지고 나머지는 남는다', sameSet(drive.headStrokes(K), ['k0', 'k-pc', 'k-pad1']), JSON.stringify(drive.headStrokes(K)))
+  const kpc = (drive.ungz(drive.docFile(K)!.revisions.at(-1)!.content) as { chunks: { elements: { id: string; points: number[] }[] }[] }).chunks
+    .flatMap((c) => c.elements)
+    .find((e) => e.id === 'k-pc')!
+  check('편집기 결과: 끌어 옮긴 획은 옮긴 자리에', Math.abs(kpc.points[0] - 200) < 3 && Math.abs(kpc.points[1] - 300) < 3, JSON.stringify(kpc.points.slice(0, 2)))
+  const left = await A.evaluate(async () => [...(await (await import('/src/sync/mergeDraft.ts')).mergeDraftKeys())])
+  check('작업본: 최종 머지 뒤 지워진다', !left.some((d) => d.startsWith(K + '@')))
 
   const warn = [...logsOf(A), ...logsOf(B)].filter((t) => /노트 보호\(withDocExclusive\) 밖|미구현|Error/.test(t) && !/favicon/.test(t))
   check('경고 없음', warn.length === 0, warn.join(' | '))

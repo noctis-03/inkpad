@@ -36,6 +36,7 @@ import { formatDate, formatBytes } from '../shared/util'
 import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
 import { MERGE_DONE_EVENT, openMergeView } from './merge/MergeView'
+import { mergeDraftKeys } from '../sync/mergeDraft'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -537,6 +538,7 @@ export function SyncSection() {
   const [last, setLast] = useState<number | null>(null)
   const [cloud, setCloud] = useState<CloudNoteInfo[] | null>(null)
   const [queue, setQueue] = useState<MergeQueueEntry[]>([])
+  const [drafts, setDrafts] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
@@ -581,6 +583,7 @@ export function SyncSection() {
       setChecked('방금 확인')
       // 머지할 것(다른 기기 브랜치 포함) — 목록을 새로 고칠 때 함께 읽는다(메타만, 목록 요청 1번)
       setQueue(await listMergeQueue().catch((e) => (console.warn('[sync] 머지할 것 목록을 읽지 못했습니다:', e), [] as MergeQueueEntry[])))
+      setDrafts(await mergeDraftKeys())
     } catch (e) {
       toast(e instanceof Error ? e.message : '클라우드 목록을 가져오지 못했습니다.', 'error')
     } finally {
@@ -884,7 +887,7 @@ export function SyncSection() {
       )}
 
       {/* 머지할 것 — 갈라진 브랜치(다른 기기 것 포함). 행을 누르면 머지 화면 */}
-      <MergeQueueCard queue={queue} />
+      <MergeQueueCard queue={queue} drafts={drafts} />
 
       {/* 목록 머리 — 새로 고침이 눌리는 동안 회전과 "확인 중…"으로 반응을 보여 준다 */}
       <div className="cloud-lhead">
@@ -1083,7 +1086,7 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
 }
 
 /** 머지 관리 — main에 아직 들어가지 않은 기기 브랜치 목록. 하나씩 머지 화면에서 합친다 */
-function MergeQueueCard({ queue }: { queue: MergeQueueEntry[] }) {
+function MergeQueueCard({ queue, drafts }: { queue: MergeQueueEntry[]; drafts: Set<string> }) {
   if (!queue.length) return null
   return (
     <section className="merge-queue" aria-label="머지 관리">
@@ -1093,7 +1096,10 @@ function MergeQueueCard({ queue }: { queue: MergeQueueEntry[] }) {
       </h4>
       {queue.map((e) => (
         <button key={e.branchFileId} className="merge-queue-row" onClick={() => openMergeView(e)}>
-          <span className="merge-queue-name">{e.title}</span>
+          <span className="merge-queue-name">
+            {e.title}
+            {drafts.has(`${e.docId}@${e.deviceId}`) && <span className="merge-queue-draft">작업 중</span>}
+          </span>
           <span className="merge-queue-meta">
             {e.mine ? '이 기기' : e.device} 브랜치 → main({e.mainDevice ?? '클라우드'}) · {formatDate(e.branchAt)}
           </span>

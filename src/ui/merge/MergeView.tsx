@@ -2,28 +2,27 @@
 // (설계: docs/branch-merge.md §5). 패드(펜·손가락)와 컴퓨터(마우스·키보드)에서 똑같이 쓴다.
 //
 // 레이어: 공통 / main에만 / 브랜치에만 / 양쪽에서 내용이 다름. 기본은 모두 살리기(머지에는 삭제가 없다).
-// 이 화면에서 하는 일은 작업본(버린 것·반대쪽으로 바꾼 것)에만 쌓이고, '최종 머지'를 눌러야 main이 바뀐다.
-// 미리보기는 편집 엔진이 아니라 가벼운 캔버스로 그린다 — 읽기 전용이고, 화면에 보이는 페이지만 그린다.
+// 도구는 강조한 레이어(없으면 보이는 레이어 전부)에만 닿는다: 올가미로 골라 옮기기·버리기·살리기·색·다른 쪽 버전,
+// 지우개로 버리기. 한 일은 작업본에만 쌓이고(되돌리기·다시 가능, 이 기기에 저장), '최종 머지'를 눌러야 main이 바뀐다.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
-import { useUI } from '../../app/store'
+import { PEN_COLORS, PEN_COLOR_NAMES, useUI } from '../../app/store'
 import { confirmDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
-import { drawPattern } from '../../engine/background'
-import { getPath } from '../../engine/scene'
-import { parseChunkKey } from '../../engine/layout'
-import { closePdf, openPdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
-import { db } from '../../storage/db'
+import { closePdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
 import { formatDate } from '../../shared/util'
 import type { ID, Page, Stroke } from '../../shared/model'
 import { commitMerge, listMergeQueue, MergeStaleError, openMerge, pushBeforeMerge, type MergeQueueEntry, type MergeSession } from '../../sync/sync'
+import { deleteMergeDraft, loadMergeDraft, saveMergeDraft } from '../../sync/mergeDraft'
 import {
   compose,
   emptyDraft,
+  isEmptyDraft,
   mergePageOrder,
   resolveItem,
   resolveMeta,
+  retainDraft,
   type ItemClass,
   type MergeDraft,
   type MergeItem,
@@ -31,13 +30,19 @@ import {
   type Placed,
   type Side
 } from '../../sync/merge'
+import { LAYER_COLOR, PageCanvas, type CanvasProps, type Selection, type Tool, type ViewPage, type Visible } from './MergeCanvas'
 
 /** 최종 머지가 끝났을 때 — 동기화 패널이 목록을 다시 읽는다 */
 export const MERGE_DONE_EVENT = 'inkpad-merge-done'
 
-const useMergeView = create<{ entry: MergeQueueEntry | null }>(() => ({ entry: null }))
+const useMergeView = create<{ entry: MergeQueueEntry | null }>(() => ({
+  entry: null
+}))
 export const openMergeView = (entry: MergeQueueEntry) => useMergeView.setState({ entry })
-const closeMergeView = () => useMergeView.setState({ entry: null })
+const closeMergeView = () => {
+  useMergeView.setState({ entry: null })
+  window.dispatchEvent(new Event(MERGE_DONE_EVENT)) // 작업본 표시('작업 중')가 바뀌었을 수 있다
+}
 
 const toast = (text: string, kind: 'info' | 'success' | 'error' = 'success') => useUI.getState().toast(text, kind)
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback)
@@ -48,30 +53,8 @@ export function MergeHost() {
   return entry ? <MergeView key={entry.docId + '@' + entry.deviceId} entry={entry} /> : null
 }
 
-// ───────── 레이어 ─────────
-
 const LAYERS: ItemClass[] = ['common', 'mainOnly', 'branchOnly', 'modified']
-/** 출처 테두리 색 — 노트 자체가 여러 색이라 획 색은 바꾸지 않고 둘레에만 칠한다 */
-const LAYER_COLOR: Record<ItemClass, string> = { common: 'transparent', mainOnly: '#e8890c', branchOnly: '#2f6fe0', modified: '#8b4fd6' }
-
-type Visible = Record<ItemClass, boolean>
-
-interface ViewEl {
-  item: MergeItem
-  placed: Placed
-  side: Side
-  discarded: boolean
-}
-
-interface ViewPage {
-  id: ID
-  item: MergeItem
-  page: Page
-  discarded: boolean
-  els: ViewEl[]
-  /** 이 페이지에서 공통이 아닌 항목 수 (페이지 자체 포함) */
-  changes: number
-}
+const ZOOMS = [1, 1.5, 2, 3]
 
 const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
 
@@ -82,7 +65,14 @@ function buildPages(s: MergeSession, draft: MergeDraft, resultOnly: boolean): Vi
     if (item.kind !== 'page') continue
     const { side, discarded } = resolveItem(item, draft)
     if (discarded && resultOnly) continue
-    pages.set(item.id, { id: item.id, item, page: pick<Page>(item, side), discarded, els: [], changes: item.cls === 'common' ? 0 : 1 })
+    pages.set(item.id, {
+      id: item.id,
+      item,
+      page: pick<Page>(item, side),
+      discarded,
+      els: [],
+      changes: item.cls === 'common' ? 0 : 1
+    })
   }
   for (const item of s.plan.items) {
     if (item.kind !== 'el') continue
@@ -91,7 +81,14 @@ function buildPages(s: MergeSession, draft: MergeDraft, resultOnly: boolean): Vi
     const placed = pick<Placed>(item, side)
     const vp = pages.get(placed.pageId)
     if (!vp) continue
-    vp.els.push({ item, placed, side, discarded })
+    vp.els.push({
+      item,
+      placed,
+      side,
+      discarded,
+      move: draft.move.get(item.key),
+      color: draft.color.get(item.key)
+    })
     if (item.cls !== 'common') vp.changes++
   }
   const orderMeta = s.plan.meta.find((m) => m.field === 'pageOrder')
@@ -100,26 +97,74 @@ function buildPages(s: MergeSession, draft: MergeDraft, resultOnly: boolean): Vi
   return mergePageOrder(primary ?? [], secondary ?? [], new Set(pages.keys())).map((id) => pages.get(id)!)
 }
 
-// ───────── 화면 ─────────
+/** 작업본을 고쳐 새 작업본을 만든다 (Set·Map은 복사해서 — 되돌리기가 옛 작업본을 그대로 들고 있게) */
+function edit(d: MergeDraft, fn: (n: MergeDraft) => void): MergeDraft {
+  const n: MergeDraft = {
+    discard: new Set(d.discard),
+    flip: new Set(d.flip),
+    move: new Map(d.move),
+    color: new Map(d.color)
+  }
+  fn(n)
+  return n
+}
 
 function MergeView({ entry }: { entry: MergeQueueEntry }) {
   const [session, setSession] = useState<MergeSession | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('불러오는 중…')
-  const [draft, setDraft] = useState<MergeDraft>(emptyDraft)
-  const [visible, setVisible] = useState<Visible>({ common: true, mainOnly: true, branchOnly: true, modified: true })
+  const [draft, setDraftRaw] = useState<MergeDraft>(emptyDraft)
+  const [past, setPast] = useState<MergeDraft[]>([])
+  const [future, setFuture] = useState<MergeDraft[]>([])
+  const [visible, setVisible] = useState<Visible>({
+    common: true,
+    mainOnly: true,
+    branchOnly: true,
+    modified: true
+  })
   const [focus, setFocus] = useState<ItemClass | null>(null)
   const [resultOnly, setResultOnly] = useState(false)
   const [outline, setOutline] = useState(true)
   const [busy, setBusy] = useState(false)
   const [panelOpen, setPanelOpen] = useState(true)
+  const [tool, setTool] = useState<Tool>('view')
+  const [selection, setSelection] = useState<Selection | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const fingerTool = useUI((s) => s.settings.fingerDraw)
   const pdfs = useRef(new Map<ID, Promise<PDFDocumentProxy | null>>())
+
+  /** 지금 작업본 — 한 틱에 여러 번 바꿔도 앞의 바꿈 위에 쌓이게 상태와 따로 든다 */
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  /** 작업본 바꾸기 — 되돌리기 줄에 앞 상태를 쌓는다 */
+  const apply = useCallback((next: MergeDraft | ((d: MergeDraft) => MergeDraft)) => {
+    const cur = draftRef.current
+    const n = typeof next === 'function' ? next(cur) : next
+    if (n === cur) return
+    draftRef.current = n
+    setPast((p) => [...p.slice(-99), cur])
+    setFuture([])
+    setDraftRaw(n)
+  }, [])
+  const undo = () => {
+    if (!past.length) return
+    setFuture((f) => [draft, ...f])
+    setDraftRaw(past[past.length - 1])
+    setPast((p) => p.slice(0, -1))
+  }
+  const redo = () => {
+    if (!future.length) return
+    setPast((p) => [...p, draft])
+    setDraftRaw(future[0])
+    setFuture((f) => f.slice(1))
+  }
 
   /** 머지할 것을 연다. refind면 목록에서 같은 노트·같은 기기 브랜치를 다시 찾는다(그 사이 올라온 새 판). keep은 이어 쓸 작업본 */
   const load = useCallback(
     async (opts: { refind?: boolean; keep?: MergeDraft } = {}) => {
       setSession(null)
       setError(null)
+      setSelection(null)
       try {
         setStatus('이 기기 변경을 먼저 올리는 중…')
         const pushed = await pushBeforeMerge(entry.docId) // 이 기기의 올리지 않은 변경이 머지에 들어가게
@@ -130,15 +175,25 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
         }
         if (!target) {
           toast('이 노트는 이제 머지할 것이 없습니다.', 'info')
-          window.dispatchEvent(new Event(MERGE_DONE_EVENT))
+          await deleteMergeDraft(entry.docId, entry.deviceId)
           closeMergeView()
           return
         }
         setStatus('클라우드에서 양쪽 내용을 받는 중…')
         const s = await openMerge(target)
-        const keys = new Set([...s.plan.items.map((i) => i.key), ...s.plan.meta.map((m) => m.key)])
-        const keep = opts.keep
-        setDraft(keep ? { discard: new Set([...keep.discard].filter((k) => keys.has(k))), flip: new Set([...keep.flip].filter((k) => keys.has(k))) } : emptyDraft())
+        // 이어 쓸 작업본 — 방금 쓰던 것(다시 불러오기), 아니면 이 기기에 저장해 둔 것
+        let start = opts.keep ?? null
+        if (!start) {
+          const saved = await loadMergeDraft(entry.docId, entry.deviceId)
+          if (saved) {
+            start = saved.draft
+            const changed = saved.mainMid !== s.mainMid || saved.branchSeq !== s.branch.branch.seq
+            toast(changed ? '저장해 둔 작업본을 그 사이 올라온 새 내용에 다시 얹었습니다.' : '저장해 둔 작업본을 이어서 엽니다.', 'info')
+          }
+        }
+        setDraftRaw(start ? retainDraft(start, s.plan) : emptyDraft())
+        setPast([])
+        setFuture([])
         setSession(s)
       } catch (e) {
         setError(errText(e, '머지할 내용을 불러오지 못했습니다.'))
@@ -149,6 +204,17 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   useEffect(() => {
     void load()
   }, [load])
+
+  // 작업본은 이 기기에 저장한다 — 화면을 닫거나 앱이 꺼져도 이어서 한다
+  useEffect(() => {
+    if (!session) return
+    const t = setTimeout(() => {
+      void saveMergeDraft(entry.docId, entry.deviceId, { mainMid: session.mainMid, branchSeq: session.branch.branch.seq }, draft).catch((e) =>
+        console.warn('[merge] 작업본 저장 실패:', e)
+      )
+    }, 300)
+    return () => clearTimeout(t)
+  }, [draft, session, entry])
 
   // PDF 문서는 이 화면에서만 열어 두고, 닫을 때 정리한다
   useEffect(() => {
@@ -162,41 +228,31 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   const pages = useMemo(() => (session ? buildPages(session, draft, resultOnly) : []), [session, draft, resultOnly])
   const result = useMemo(() => (session ? compose(session.main, session.branch, session.plan, draft) : null), [session, draft])
   const resultStrokes = result ? result.chunks.reduce((n, c) => n + c.elements.length, 0) : 0
+  const itemByKey = useMemo(() => new Map((session?.plan.items ?? []).map((i) => [i.key, i])), [session])
 
   const mainName = `main · ${entry.mainDevice ?? '클라우드'}`
   const branchName = `${entry.device} 브랜치`
   const sideName = (s: Side) => (s === 'main' ? mainName : branchName)
 
-  // ── 작업본 바꾸기 ──
+  // ── 레이어 단위 ──
   const itemsOf = (cls: ItemClass) => session?.plan.items.filter((i) => i.cls === cls) ?? []
   const toggleDiscardLayer = (cls: ItemClass) =>
-    setDraft((d) => {
+    apply((d) => {
       const keys = itemsOf(cls).map((i) => i.key)
       const all = keys.length > 0 && keys.every((k) => d.discard.has(k))
-      const discard = new Set(d.discard)
-      for (const k of keys) {
-        if (all) discard.delete(k)
-        else discard.add(k)
-      }
-      return { ...d, discard }
+      return edit(d, (n) => keys.forEach((k) => (all ? n.discard.delete(k) : n.discard.add(k))))
     })
-  const toggleDiscard = (key: string) =>
-    setDraft((d) => {
-      const discard = new Set(d.discard)
-      if (discard.has(key)) discard.delete(key)
-      else discard.add(key)
-      return { ...d, discard }
-    })
+  const toggleDiscard = (key: string) => apply((d) => edit(d, (n) => (n.discard.has(key) ? n.discard.delete(key) : n.discard.add(key))))
   /** 고친 항목 전체를 한쪽으로 — 'auto'는 기본 규칙(한쪽만 고침 → 고친 쪽, 양쪽 → 머지하는 기기 쪽) */
   const setModifiedSide = (to: 'auto' | Side) =>
-    setDraft((d) => {
-      const flip = new Set(d.flip)
-      for (const i of itemsOf('modified')) {
-        if (to === 'auto' || i.pick === to) flip.delete(i.key)
-        else flip.add(i.key)
-      }
-      return { ...d, flip }
-    })
+    apply((d) =>
+      edit(d, (n) => {
+        for (const i of itemsOf('modified')) {
+          if (to === 'auto' || i.pick === to) n.flip.delete(i.key)
+          else n.flip.add(i.key)
+        }
+      })
+    )
   const modifiedMode = (): 'auto' | Side => {
     const mods = itemsOf('modified')
     if (!mods.length || mods.every((i) => !draft.flip.has(i.key))) return 'auto'
@@ -204,13 +260,56 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     if (mods.every((i) => resolveItem(i, draft).side === 'branch')) return 'branch'
     return 'auto'
   }
-  const setMetaSide = (m: MetaItem, side: Side) =>
-    setDraft((d) => {
-      const flip = new Set(d.flip)
-      if (side === m.pick) flip.delete(m.key)
-      else flip.add(m.key)
-      return { ...d, flip }
-    })
+  const setMetaSide = (m: MetaItem, side: Side) => apply((d) => edit(d, (n) => (side === m.pick ? n.flip.delete(m.key) : n.flip.add(m.key))))
+
+  // ── 도구 ──
+  const editable = useCallback((item: MergeItem) => visible[item.cls] && (!focus || item.cls === focus), [visible, focus])
+  const selKeys = selection ? [...selection.keys] : []
+  const selItems = selKeys.map((k) => itemByKey.get(k)).filter((i): i is MergeItem => !!i)
+  const discardSelected = () => {
+    const keys = selItems.filter((i) => i.cls !== 'common').map((i) => i.key)
+    if (keys.length < selItems.length) toast('공통 획은 버릴 수 없어 빼고 버렸습니다 (머지에는 삭제가 없다).', 'info')
+    if (keys.length) apply((d) => edit(d, (n) => keys.forEach((k) => n.discard.add(k))))
+  }
+  const restoreSelected = () => apply((d) => edit(d, (n) => selKeys.forEach((k) => n.discard.delete(k))))
+  const flipSelected = () => {
+    const mods = selItems.filter((i) => i.cls === 'modified')
+    if (!mods.length) return toast('고른 획 중에 양쪽에서 내용이 다른 획이 없습니다.', 'info')
+    apply((d) => edit(d, (n) => mods.forEach((i) => (n.flip.has(i.key) ? n.flip.delete(i.key) : n.flip.add(i.key)))))
+  }
+  const colorSelected = (hex: string) =>
+    apply((d) =>
+      edit(d, (n) => {
+        for (const i of selItems) {
+          const el = pick<Placed>(i, resolveItem(i, d).side).el
+          if (el.type !== 'stroke') continue
+          const orig = (el as Stroke).color
+          n.color.set(i.key, hex.slice(0, 7) + (orig.length === 9 ? orig.slice(7) : 'ff')) // 형광펜의 투명도는 그대로
+        }
+      })
+    )
+  const canvasHandlers: Pick<CanvasProps, 'onSelect' | 'onMove' | 'onErase'> = {
+    onSelect: (pageId, keys) => setSelection(keys.length ? { pageId, keys: new Set(keys) } : null),
+    onMove: (keys, dx, dy) =>
+      apply((d) =>
+        edit(d, (n) => {
+          for (const k of keys) {
+            const m = n.move.get(k) ?? { dx: 0, dy: 0 }
+            n.move.set(k, { dx: m.dx + dx, dy: m.dy + dy })
+          }
+        })
+      ),
+    onErase: (keys) => {
+      const items = keys.map((k) => itemByKey.get(k)).filter((i): i is MergeItem => !!i)
+      const ok = items.filter((i) => i.cls !== 'common').map((i) => i.key)
+      if (ok.length < items.length) toast('공통 획은 지울 수 없습니다 — 머지에는 삭제가 없습니다. 머지 뒤 지우고 올려 주세요.', 'info')
+      if (ok.length) apply((d) => edit(d, (n) => ok.forEach((k) => n.discard.add(k))))
+    }
+  }
+  const chooseTool = (t: Tool) => {
+    setTool(t)
+    if (t !== 'lasso') setSelection(null)
+  }
 
   // ── 변경 있는 페이지로 이동 ──
   const pageRefs = useRef(new Map<ID, HTMLElement>())
@@ -234,13 +333,13 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     setBusy(true)
     try {
       const r = await commitMerge(session, draft)
+      await deleteMergeDraft(entry.docId, entry.deviceId)
       toast(
         r.keptLocal
-          ? `머지했습니다. 이 기기 브랜치에도 머지할 것이 남아 있어 이 기기 노트는 그대로 두었습니다 — 머지 관리에서 이어서 합쳐 주세요.`
+          ? '머지했습니다. 이 기기 브랜치에도 머지할 것이 남아 있어 이 기기 노트는 그대로 두었습니다 — 머지 관리에서 이어서 합쳐 주세요.'
           : `“${entry.title}”을(를) 머지했습니다.`,
         r.keptLocal ? 'info' : 'success'
       )
-      window.dispatchEvent(new Event(MERGE_DONE_EVENT))
       closeMergeView()
     } catch (e) {
       if (e instanceof MergeStaleError) {
@@ -256,13 +355,34 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || document.querySelector('.dialog-host')) return
-      if (e.key === 'Escape' && !busy) closeMergeView()
-      else if (/^[1-4]$/.test(e.key)) {
+      const mod = e.metaKey || e.ctrlKey
+      const k = e.key.toLowerCase()
+      if (mod && k === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+      } else if (mod && k === 'y') {
+        e.preventDefault()
+        redo()
+      } else if (mod) return
+      else if (e.key === 'Escape') {
+        if (selection) setSelection(null)
+        else if (!busy) closeMergeView()
+      } else if (/^[1-4]$/.test(e.key)) {
         const cls = LAYERS[Number(e.key) - 1]
         setFocus((f) => (f === cls ? null : cls))
       } else if (e.key === ']') jump(1)
       else if (e.key === '[') jump(-1)
-      else if (e.key.toLowerCase() === 'h' && focus) setVisible((v) => ({ ...v, [focus]: !v[focus] }))
+      else if (k === 'h' && focus) setVisible((v) => ({ ...v, [focus]: !v[focus] }))
+      else if (k === 'v') chooseTool('view')
+      else if (k === 'l') chooseTool('lasso')
+      else if (k === 'e') chooseTool('eraser')
+      else if ((e.key === 'Backspace' || e.key === 'Delete') && selection) {
+        e.preventDefault()
+        discardSelected()
+      } else if (e.key === 'Enter' && selection) restoreSelected()
+      else if (e.key === '+' || e.key === '=') setZoom((z) => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + 1)])
+      else if (e.key === '-') setZoom((z) => ZOOMS[Math.max(0, ZOOMS.indexOf(z) - 1)])
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -275,11 +395,12 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     modified: '양쪽에서 내용이 다름'
   }
   const layerHint: Record<ItemClass, string> = {
-    common: '양쪽에 같은 내용으로 있는 획',
+    common: '양쪽에 같은 내용으로 있는 획 — 버릴 수 없다',
     mainOnly: 'main 쪽에서 새로 그렸거나, 브랜치에서 지운 획 — 기본은 살린다',
     branchOnly: '브랜치에서 새로 그렸거나, main 쪽에서 지운 획 — 기본은 살린다',
     modified: `한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽`
   }
+  const target = focus ? layerLabel[focus] : '보이는 레이어 전부'
 
   return (
     <div className="merge-view" role="dialog" aria-modal="true" aria-label="머지">
@@ -302,6 +423,57 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
         </button>
       </header>
 
+      {session && (
+        <div className="merge-tools" role="toolbar" aria-label="머지 도구">
+          <div className="merge-tool-group" role="radiogroup" aria-label="도구">
+            {(
+              [
+                ['view', 'move', '보기', 'V'],
+                ['lasso', 'lasso', '올가미', 'L'],
+                ['eraser', 'eraser', '지우개', 'E']
+              ] as const
+            ).map(([t, icon, label, key]) => (
+              <button
+                key={t}
+                role="radio"
+                aria-checked={tool === t}
+                className={'merge-tool' + (tool === t ? ' on' : '')}
+                onClick={() => chooseTool(t)}
+                title={`${label} (${key})`}
+              >
+                <Icon name={icon} size={18} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          <span className="merge-target" title="도구가 닿는 레이어 — 레이어 패널에서 고른다">
+            대상: <b>{target}</b>
+          </span>
+          <div className="merge-tool-group">
+            <button className="tb-btn" onClick={undo} disabled={!past.length} aria-label="되돌리기" title="되돌리기 (⌘Z)">
+              <Icon name="undo" />
+            </button>
+            <button className="tb-btn" onClick={redo} disabled={!future.length} aria-label="다시 하기" title="다시 하기 (⇧⌘Z)">
+              <Icon name="redo" />
+            </button>
+          </div>
+          <div className="merge-tool-group">
+            <button className="tb-btn" onClick={() => setZoom((z) => ZOOMS[Math.max(0, ZOOMS.indexOf(z) - 1)])} disabled={zoom === ZOOMS[0]} aria-label="축소">
+              <Icon name="minus" />
+            </button>
+            <span className="merge-zoom">{Math.round(zoom * 100)}%</span>
+            <button
+              className="tb-btn"
+              onClick={() => setZoom((z) => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + 1)])}
+              disabled={zoom === ZOOMS[ZOOMS.length - 1]}
+              aria-label="확대"
+            >
+              <Icon name="plus" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {!session ? (
         <div className="merge-loading">
           {error ? (
@@ -321,7 +493,57 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
         </div>
       ) : (
         <div className={'merge-body' + (panelOpen ? '' : ' panel-closed')}>
-          <MergePreview pages={pages} visible={visible} focus={focus} resultOnly={resultOnly} outline={outline} pdfs={pdfs.current} pageRefs={pageRefs.current} onTogglePage={toggleDiscard} sideName={sideName} />
+          <div className="merge-stage">
+            <MergePreview
+              pages={pages}
+              zoom={zoom}
+              visible={visible}
+              focus={focus}
+              resultOnly={resultOnly}
+              outline={outline}
+              tool={tool}
+              fingerTool={fingerTool}
+              selection={selection}
+              editable={editable}
+              pdfs={pdfs.current}
+              pageRefs={pageRefs.current}
+              onTogglePage={toggleDiscard}
+              sideName={sideName}
+              {...canvasHandlers}
+            />
+
+            {selection && selItems.length > 0 && (
+              <div className="merge-selbar" role="toolbar" aria-label="고른 획">
+                <span className="merge-selcount">획 {selItems.length}개</span>
+                <button className="text-btn danger" onClick={discardSelected}>
+                  버리기
+                </button>
+                <button className="text-btn" onClick={restoreSelected}>
+                  살리기
+                </button>
+                {selItems.some((i) => i.cls === 'modified') && (
+                  <button className="text-btn" onClick={flipSelected}>
+                    다른 쪽 버전
+                  </button>
+                )}
+                <span className="merge-colors" role="group" aria-label="색 바꾸기">
+                  {PEN_COLORS.slice(0, 6).map((c, i) => (
+                    <button
+                      key={c}
+                      className="merge-color"
+                      style={{ background: c.slice(0, 7) }}
+                      onClick={() => colorSelected(c)}
+                      aria-label={`${PEN_COLOR_NAMES[i]}으로`}
+                      title={PEN_COLOR_NAMES[i]}
+                    />
+                  ))}
+                </span>
+                <button className="tb-btn" onClick={() => setSelection(null)} aria-label="선택 해제">
+                  <Icon name="close" size={18} />
+                </button>
+              </div>
+            )}
+          </div>
 
           <aside className="merge-panel" aria-label="레이어">
             <div className="merge-nav">
@@ -354,7 +576,12 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
                     >
                       <Icon name={visible[cls] ? 'eye' : 'eyeOff'} size={16} />
                     </button>
-                    <button className="merge-layer-main" onClick={() => setFocus((f) => (f === cls ? null : cls))} aria-pressed={focus === cls} title={`${i + 1}`}>
+                    <button
+                      className="merge-layer-main"
+                      onClick={() => setFocus((f) => (f === cls ? null : cls))}
+                      aria-pressed={focus === cls}
+                      title={`강조·도구 대상 (${i + 1})`}
+                    >
                       <i className="merge-swatch" style={{ background: LAYER_COLOR[cls] }} aria-hidden="true" />
                       <span className="merge-layer-name">{layerLabel[cls]}</span>
                       <span className="merge-layer-count">
@@ -412,7 +639,18 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
             <label className="merge-check">
               <input type="checkbox" checked={outline} onChange={(e) => setOutline(e.target.checked)} /> 출처를 획 둘레 색으로 표시
             </label>
-            <p className="merge-keys">단축키: 1–4 레이어 강조 · H 숨기기 · [ ] 이전/다음 변경 · Esc 닫기</p>
+            {!isEmptyDraft(draft) && (
+              <button className="text-btn danger merge-reset" onClick={() => apply(emptyDraft())}>
+                작업본 처음부터 다시
+              </button>
+            )}
+            <p className="merge-keys">
+              도구는 강조한 레이어(없으면 보이는 레이어 전부)에만 닿습니다. 패드에서는 펜이 도구, 손가락은 화면 이동입니다. 작업본은 이 기기에 저장돼 닫아도
+              이어서 할 수 있습니다.
+            </p>
+            <p className="merge-keys">
+              단축키: V 보기 · L 올가미 · E 지우개 · Delete 버리기 · Enter 살리기 · ⌘Z / ⇧⌘Z · 1–4 레이어 강조 · H 숨기기 · [ ] 변경 이동 · +/− 확대 · Esc
+            </p>
           </aside>
         </div>
       )}
@@ -430,7 +668,12 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   )
 }
 
-const META_LABEL: Record<MetaItem['field'], string> = { title: '제목', category: '카테고리', mode: '형식', pageOrder: '페이지 순서' }
+const META_LABEL: Record<MetaItem['field'], string> = {
+  title: '제목',
+  category: '카테고리',
+  mode: '형식',
+  pageOrder: '페이지 순서'
+}
 
 function metaText(m: MetaItem, side: Side): string {
   const v = side === 'main' ? m.main : m.branch
@@ -441,31 +684,32 @@ function metaText(m: MetaItem, side: Side): string {
   return `${who}: ${String(v ?? '')}`
 }
 
-// ───────── 미리보기 ─────────
+// ───────── 미리보기 (페이지 목록) ─────────
 
-function MergePreview(props: {
-  pages: ViewPage[]
-  visible: Visible
-  focus: ItemClass | null
-  resultOnly: boolean
-  outline: boolean
-  pdfs: Map<ID, Promise<PDFDocumentProxy | null>>
-  pageRefs: Map<ID, HTMLElement>
-  onTogglePage: (key: string) => void
-  sideName: (s: Side) => string
-}) {
+function MergePreview(
+  props: Omit<CanvasProps, 'width' | 'scroller'> & {
+    pages: ViewPage[]
+    zoom: number
+    pageRefs: Map<ID, HTMLElement>
+    onTogglePage: (key: string) => void
+    sideName: (s: Side) => string
+  }
+) {
   const ref = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
+  const [fit, setFit] = useState(0)
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const ro = new ResizeObserver(() => setWidth(Math.min(900, Math.max(200, el.clientWidth - 32))))
+    setScroller(el)
+    const ro = new ResizeObserver(() => setFit(Math.min(900, Math.max(200, el.clientWidth - 32))))
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  const width = Math.round(fit * props.zoom)
   return (
-    <div className="merge-preview" ref={ref}>
-      {width > 0 &&
+    <div className={'merge-preview' + (props.tool !== 'view' ? ' tooling' : '')} ref={ref}>
+      {fit > 0 &&
         props.pages.map((p, i) => (
           <section
             key={p.id}
@@ -485,10 +729,10 @@ function MergePreview(props: {
                 </button>
               )}
             </div>
-            <PageCanvas vp={p} width={width} visible={props.visible} focus={props.focus} resultOnly={props.resultOnly} outline={props.outline} pdfs={props.pdfs} />
+            <PageCanvas {...props} vp={p} width={width} scroller={scroller} />
           </section>
         ))}
-      {width > 0 && !props.pages.length && <p className="merge-empty">페이지가 없습니다.</p>}
+      {fit > 0 && !props.pages.length && <p className="merge-empty">페이지가 없습니다.</p>}
     </div>
   )
 }
@@ -497,142 +741,4 @@ function pageChip(item: MergeItem, sideName: (s: Side) => string): string {
   if (item.cls === 'mainOnly') return `${sideName('main')}에만 있는 페이지`
   if (item.cls === 'branchOnly') return `${sideName('branch')}에만 있는 페이지`
   return `속지·크기가 다름 → ${sideName(item.pick)}`
-}
-
-/** 획 외곽선은 비싸다 — 같은 획 객체는 한 번만 만든다 */
-const pathCache = new WeakMap<Stroke, Path2D>()
-const pathOf = (s: Stroke) => {
-  let p = pathCache.get(s)
-  if (!p) pathCache.set(s, (p = getPath({ stroke: s })))
-  return p
-}
-
-/** 아래 레이어(형광펜) → 위 레이어(펜), 같은 레이어는 z 순 — 엔진과 같은 쌓임 */
-const byLayerZ = (a: ViewEl, b: ViewEl) => {
-  const sa = a.placed.el
-  const sb = b.placed.el
-  return sa.layer === sb.layer ? sa.z - sb.z : sa.layer === 'under' ? -1 : 1
-}
-
-function PageCanvas(props: {
-  vp: ViewPage
-  width: number
-  visible: Visible
-  focus: ItemClass | null
-  resultOnly: boolean
-  outline: boolean
-  pdfs: Map<ID, Promise<PDFDocumentProxy | null>>
-}) {
-  const { vp, width } = props
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const [seen, setSeen] = useState(false)
-
-  // 무한 캔버스(페이지 크기 없음)는 필기가 있는 범위를 페이지로 본다
-  const frame = useMemo(() => {
-    if (vp.page.size) return { x: 0, y: 0, w: vp.page.size.w, h: vp.page.size.h, infinite: false }
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const v of vp.els) {
-      const s = v.placed.el
-      if (s.type !== 'stroke') continue
-      const o = parseChunkKey(v.placed.key)
-      minX = Math.min(minX, o.ox + s.bbox[0])
-      minY = Math.min(minY, o.oy + s.bbox[1])
-      maxX = Math.max(maxX, o.ox + s.bbox[2])
-      maxY = Math.max(maxY, o.oy + s.bbox[3])
-    }
-    if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 800, h: 500, infinite: true }
-    const pad = 40
-    return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: Math.max(200, maxY - minY + pad * 2), infinite: true }
-  }, [vp])
-  const height = Math.round((width * frame.h) / frame.w)
-
-  useEffect(() => {
-    const el = canvas.current
-    if (!el || seen) return
-    const io = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && setSeen(true), { rootMargin: '600px' })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [seen])
-
-  useEffect(() => {
-    const el = canvas.current
-    if (!el || !seen) return
-    let cancelled = false
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    el.width = Math.max(1, Math.round(width * dpr))
-    el.height = Math.max(1, Math.round(height * dpr))
-    const ctx = el.getContext('2d')
-    if (!ctx) return
-    const scale = (width * dpr) / frame.w
-    void (async () => {
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, el.width, el.height)
-      let drewPdf = false
-      if (vp.page.pdf && !frame.infinite) drewPdf = await drawPdf(ctx, vp.page, el.width, el.height, props.pdfs)
-      if (cancelled) return
-      ctx.setTransform(scale, 0, 0, scale, -frame.x * scale, -frame.y * scale)
-      if (!drewPdf && !frame.infinite) drawPattern(ctx, vp.page.background, frame.w, frame.h, scale)
-      for (const v of [...vp.els].sort(byLayerZ)) {
-        const s = v.placed.el
-        if (s.type !== 'stroke' || !props.visible[v.item.cls]) continue
-        let alpha = 1
-        if (v.discarded) alpha = props.resultOnly ? 0 : 0.14
-        else if (props.focus && props.focus !== v.item.cls) alpha = 0.22
-        if (alpha <= 0) continue
-        const o = vp.page.size ? { ox: 0, oy: 0 } : parseChunkKey(v.placed.key)
-        const path = pathOf(s)
-        ctx.save()
-        ctx.translate(o.ox, o.oy)
-        ctx.globalAlpha = alpha
-        ctx.fillStyle = s.color
-        ctx.fill(path)
-        if (props.outline && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
-          ctx.globalAlpha = Math.min(1, alpha + 0.3)
-          ctx.strokeStyle = LAYER_COLOR[v.item.cls]
-          ctx.lineWidth = 1.6 / (scale / dpr)
-          ctx.stroke(path)
-        }
-        ctx.restore()
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [seen, width, height, frame, vp, props.visible, props.focus, props.resultOnly, props.outline, props.pdfs])
-
-  return <canvas ref={canvas} className="merge-canvas" style={{ width, height }} />
-}
-
-/** PDF 속지 — 원본이 이 기기에 있을 때만 그린다(지연 로딩 원칙: 여기서 받아오지 않는다) */
-async function drawPdf(ctx: CanvasRenderingContext2D, page: Page, w: number, h: number, pdfs: Map<ID, Promise<PDFDocumentProxy | null>>): Promise<boolean> {
-  const ref = page.pdf!
-  let doc = pdfs.get(ref.assetId)
-  if (!doc) {
-    doc = (async () => {
-      const asset = await db.assets.get(ref.assetId)
-      if (!asset?.blob) return null
-      return openPdf(await asset.blob.arrayBuffer()).catch(() => null)
-    })()
-    pdfs.set(ref.assetId, doc)
-  }
-  const pdf = await doc
-  if (!pdf) return false
-  try {
-    const p = await pdf.getPage(ref.pageIndex + 1)
-    const rotation = (p.rotate + ref.rotation) % 360
-    const base = p.getViewport({ scale: 1, rotation })
-    const vp = p.getViewport({ scale: w / base.width, rotation })
-    const c = document.createElement('canvas')
-    c.width = Math.max(1, Math.round(vp.width))
-    c.height = Math.max(1, Math.round(vp.height))
-    await p.render({ canvas: null, canvasContext: c.getContext('2d')!, viewport: vp }).promise
-    ctx.drawImage(c, 0, 0, w, h)
-    return true
-  } catch {
-    return false
-  }
 }
