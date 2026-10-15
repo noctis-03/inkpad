@@ -109,6 +109,18 @@ export async function ensureStoreFolder(name: string, key: string, onRecreated?:
   return id
 }
 
+/** 기기 브랜치 폴더를 찾기만 한다(만들지 않는다) — 머지할 것 목록처럼 읽기만 하는 곳이 쓴다. 없으면 null */
+export async function findBranchesFolder(): Promise<string | null> {
+  const saved = await getSync<string>('branchesFolderId')
+  if (saved) {
+    const m = await drive.getMeta(saved)
+    if (m && !m.trashed) return saved
+  }
+  const id = await drive.findFolder('branches', (await ensureFolders()).root)
+  if (id) await putSync('branchesFolderId', id)
+  return id
+}
+
 /**
  * 기기 브랜치 폴더 (Inkpad/branches/) — 처음 올릴 때 만든다 (docs/branch-merge.md).
  * 폴더가 통째로 사라졌으면 기록해 둔 브랜치 파일 위치만 지운다 — 다음 올리기가 새 파일로 올린다.

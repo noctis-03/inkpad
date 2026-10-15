@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useUI, type Toast } from './store'
 import { DialogHost } from './dialogs'
+import { MergeHost } from '../ui/merge/MergeView'
 import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
 import { Editor } from '../ui/editor/Editor'
@@ -73,6 +74,7 @@ export function App() {
       <InstallHint />
       <Toasts />
       <Busy />
+      <MergeHost />
       <DialogHost />
     </div>
   )

@@ -7,6 +7,7 @@ import {
   deleteCloudNote,
   excludeFromPush,
   listCloudNotes,
+  listMergeQueue,
   onSyncProgress,
   onSyncStatus,
   planPull,
@@ -23,6 +24,7 @@ import {
   type CloudNoteInfo,
   type CloudNoteState,
   type MergeLogEntry,
+  type MergeQueueEntry,
   type PullPlan,
   type PushPlan,
   type SyncProgress,
@@ -33,6 +35,7 @@ import { db } from '../storage/db'
 import { formatDate, formatBytes } from '../shared/util'
 import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
+import { MERGE_DONE_EVENT, openMergeView } from './merge/MergeView'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -59,7 +62,7 @@ const STATUS_META: Record<SyncStatus, { label: string; tone: StatusTone; icon: s
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
 type GroupKey = 'split' | 'recv' | 'push' | 'fresh' | 'gone'
-type RowAction = 'download' | 'pushOne' | 'repush' | 'restore' | null
+type RowAction = 'download' | 'pushOne' | 'repush' | 'restore' | 'merge' | null
 
 /**
  * 행 표시의 단일 출처 — 배지·아이콘·그룹과 행의 주 동작까지 데이터로 둔다.
@@ -71,7 +74,7 @@ const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; icon:
   new: { group: 'push', badge: '새 파일', icon: 'plus', action: 'pushOne' },
   pending: { group: 'push', badge: '변경됨', icon: 'edit', action: 'pushOne' },
   // 갈라짐 — 이 기기 변경은 이 기기 브랜치에 올라가 있다. 받기로 덮지 않고, 머지 관리에서 합친다
-  diverged: { group: 'split', badge: '갈라짐', icon: 'alert', action: null },
+  diverged: { group: 'split', badge: '갈라짐', icon: 'alert', action: 'merge' },
   'cloud-deleted': { group: 'push', badge: '클라우드에 없음', icon: 'alert', action: 'repush' },
   same: { group: 'fresh', badge: '최신', icon: 'check', action: null },
   'deleted-local': { group: 'gone', badge: '이 기기에서 삭제', icon: 'trash', action: 'restore' }
@@ -82,7 +85,8 @@ const ACTION_UI: Record<Exclude<RowAction, null>, { label: string; icon: string 
   download: { label: '받기', icon: 'download' },
   pushOne: { label: '올리기', icon: 'upload' },
   repush: { label: '다시 올리기', icon: 'upload' },
-  restore: { label: '되살리기', icon: 'restore' }
+  restore: { label: '되살리기', icon: 'restore' },
+  merge: { label: '머지', icon: 'swap' }
 }
 
 /** 목록 그룹 — 갈라짐 → 받을 것 → 올릴 것(새 파일·변경·클라우드 삭제 포함) → 최신(접힘) → 이 기기에서 삭제됨(접힘) */
@@ -532,6 +536,7 @@ export function SyncSection() {
   const [status, setStatus] = useState<SyncStatus>('idle')
   const [last, setLast] = useState<number | null>(null)
   const [cloud, setCloud] = useState<CloudNoteInfo[] | null>(null)
+  const [queue, setQueue] = useState<MergeQueueEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [fetching, setFetching] = useState<{ loaded: number; total: number | null } | null>(null)
@@ -574,12 +579,21 @@ export function SyncSection() {
       // 이 기기의 대기 변경이 방금 올려졌다면 먼저 비워 버전 판정이 정확해진다
       setCloud(await listCloudNotes())
       setChecked('방금 확인')
+      // 머지할 것(다른 기기 브랜치 포함) — 목록을 새로 고칠 때 함께 읽는다(메타만, 목록 요청 1번)
+      setQueue(await listMergeQueue().catch((e) => (console.warn('[sync] 머지할 것 목록을 읽지 못했습니다:', e), [] as MergeQueueEntry[])))
     } catch (e) {
       toast(e instanceof Error ? e.message : '클라우드 목록을 가져오지 못했습니다.', 'error')
     } finally {
       setLoading(false)
     }
   }, [])
+
+  // 최종 머지가 끝나면 목록을 다시 읽는다
+  useEffect(() => {
+    const onDone = () => void loadCloud()
+    window.addEventListener(MERGE_DONE_EVENT, onDone)
+    return () => window.removeEventListener(MERGE_DONE_EVENT, onDone)
+  }, [loadCloud])
 
   useEffect(() => {
     void db.syncState.get('lastPushAt').then((v) => setLast((v?.value as number) ?? null))
@@ -654,7 +668,16 @@ export function SyncSection() {
   const onPrimary = (info: CloudNoteInfo) => {
     const a = STATE_META[info.state].action
     if (a === 'pushOne' || a === 'repush') void pushOneRow(info)
+    else if (a === 'merge') openMergeFor(info)
     else void downloadOne(info)
+  }
+
+  /** 갈라진 노트의 '머지' — 이 기기 브랜치(없으면 그 노트의 다른 브랜치)를 머지 화면으로 연다 */
+  const openMergeFor = (info: CloudNoteInfo) => {
+    const mine = queue.filter((e) => e.docId === info.docId)
+    const target = mine.find((e) => e.mine) ?? mine[0]
+    if (target) openMergeView(target)
+    else toast('머지할 것을 찾지 못했습니다. 목록을 새로 고친 뒤 다시 시도해 주세요.', 'info')
   }
 
   const downloadOne = async (info: CloudNoteInfo) => {
@@ -860,6 +883,9 @@ export function SyncSection() {
         </div>
       )}
 
+      {/* 머지할 것 — 갈라진 브랜치(다른 기기 것 포함). 행을 누르면 머지 화면 */}
+      <MergeQueueCard queue={queue} />
+
       {/* 목록 머리 — 새로 고침이 눌리는 동안 회전과 "확인 중…"으로 반응을 보여 준다 */}
       <div className="cloud-lhead">
         <span className="tt">
@@ -890,7 +916,7 @@ export function SyncSection() {
         onPushPreview={() => void doPush()}
       />
 
-      {/* 이 기기에서 일어난 머지의 기록 — 확인 창에서 '나중에'를 골랐던 노트를 찾을 때도 쓴다 */}
+      {/* 자동 머지를 쓰던 때 이 기기에서 일어난 머지의 기록 (읽기만 — 새로 쌓이지 않는다) */}
       <MergeLogList />
 
       {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 */}
@@ -1053,6 +1079,30 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
         </div>
       </div>
     </div>
+  )
+}
+
+/** 머지 관리 — main에 아직 들어가지 않은 기기 브랜치 목록. 하나씩 머지 화면에서 합친다 */
+function MergeQueueCard({ queue }: { queue: MergeQueueEntry[] }) {
+  if (!queue.length) return null
+  return (
+    <section className="merge-queue" aria-label="머지 관리">
+      <h4 className="merge-queue-head">
+        <Icon name="swap" size={15} /> 머지 관리 <b>{queue.length}</b>
+        <small>양쪽이 각각 고친 노트 — 직접 확인하고 합칩니다</small>
+      </h4>
+      {queue.map((e) => (
+        <button key={e.branchFileId} className="merge-queue-row" onClick={() => openMergeView(e)}>
+          <span className="merge-queue-name">{e.title}</span>
+          <span className="merge-queue-meta">
+            {e.mine ? '이 기기' : e.device} 브랜치 → main({e.mainDevice ?? '클라우드'}) · {formatDate(e.branchAt)}
+          </span>
+          <span className="merge-queue-go">
+            머지 <Icon name="chevronRight" size={14} />
+          </span>
+        </button>
+      ))}
+    </section>
   )
 }
 

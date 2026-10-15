@@ -50,12 +50,14 @@ import {
   mergedOf,
   midOfFile,
   newMid,
+  type BranchFile,
   type BranchMarker,
   type BranchState,
   type MainFile,
   type MainMarker
 } from './branch'
-import { ensureBranchesFolder, ensureFolders, enqueueEverything, getSync, putSync, type FileRecord } from './folders'
+import { classify, compose, type MergeDraft, type MergePlan, type Side } from './merge'
+import { ensureBranchesFolder, ensureFolders, enqueueEverything, findBranchesFolder, getSync, putSync, type FileRecord } from './folders'
 import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './pack'
 import { isUpToDate, knownBaseMid, newestPerDoc, noteSync, pullSkipReason, verNum, type NoteSync } from './judge'
 import { SYNC_LOCK, withSyncLock } from './lock'
@@ -990,6 +992,186 @@ export function pushOneNote(docId: ID): Promise<'ff' | 'diverged' | 'skipped'> {
     await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 싣는다
     const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
     return pushDoc(docId, info, f)
+  })
+}
+
+// ───────────────── 머지 관리 (docs/branch-merge.md §3.4·§5.4) ─────────────────
+// 갈라진 브랜치를 main에 하나씩 합친다. 머지 화면이 목록을 받아(listMergeQueue) 한 건을 열고(openMerge),
+// 사용자가 작업본을 정하면 최종 머지(commitMerge)로 main을 쓴다. 자동으로 일어나는 머지는 없다.
+
+/** 머지할 것 하나 = main에 아직 들어가지 않은 기기 브랜치 하나 */
+export interface MergeQueueEntry {
+  docId: ID
+  title: string
+  branchFileId: string
+  deviceId: string
+  device: string
+  seq: number
+  /** 브랜치 내용의 수정 시각 */
+  branchAt: number
+  /** 이 기기의 브랜치인가 */
+  mine: boolean
+  mainFileId: string
+  mainEnc?: string
+  /** main을 마지막으로 쓴 기기 */
+  mainDevice?: string
+  mainAt: number
+}
+
+/**
+ * 머지할 것 목록 — Drive 목록 두 번(main·브랜치)으로 메타만 읽는다.
+ * 브랜치 seq가 main의 '반영된 브랜치'(m.{기기})보다 크고 버리지도 않았으면(resolved) 머지할 것이다.
+ */
+export async function listMergeQueue(): Promise<MergeQueueEntry[]> {
+  const f = await ensureFolders()
+  const folder = await findBranchesFolder()
+  if (!folder) return []
+  const [mains, branches, me] = await Promise.all([drive.listFiles(f.docs), drive.listFiles(folder), getDeviceId()])
+  const mainByDoc = new Map(newestPerDoc(mains).map((r) => [r.appProperties!.docId, r]))
+  const out: MergeQueueEntry[] = []
+  for (const b of branches) {
+    const p = b.appProperties
+    if (p?.kind !== 'branch' || !p.docId || !p.dev) continue
+    const main = mainByDoc.get(p.docId)
+    if (!main) continue // main이 없으면 합칠 곳이 없다 — 그 기기가 다시 올리면 main이 새로 생긴다
+    const seq = Number(p.seq) || 0
+    let resolved = Number(p.resolved) || 0
+    if (p.dev === me) resolved = Math.max(resolved, (await getBranchState(p.docId))?.resolved ?? 0) // 이 기기 기록이 더 빠를 수 있다
+    if (seq <= Math.max(mergedOf(main.appProperties)[p.dev] ?? 0, resolved)) continue
+    out.push({
+      docId: p.docId,
+      title: main.appProperties?.title || p.title || (await db.documents.get(p.docId))?.title || p.docId,
+      branchFileId: b.id,
+      deviceId: p.dev,
+      device: p.device || p.dev,
+      seq,
+      branchAt: Number(p.updatedAt) || Date.parse(b.modifiedTime) || 0,
+      mine: p.dev === me,
+      mainFileId: main.id,
+      mainEnc: main.appProperties?.enc,
+      mainDevice: main.appProperties?.device,
+      mainAt: Number(main.appProperties?.updatedAt) || Date.parse(main.modifiedTime) || 0
+    })
+  }
+  return out.sort((a, b) => b.branchAt - a.branchAt)
+}
+
+/**
+ * 머지 화면을 열기 전에 — 이 기기의 올리지 않은 변경을 먼저 올린다. 이 기기의 최신 상태가 브랜치(또는 따라간 main)에
+ * 있어야 머지에 들어가고, 최종 머지가 이 기기 노트를 덮어도 잃는 것이 없다. 올렸으면 그 결과, 올릴 게 없으면 null.
+ */
+export async function pushBeforeMerge(docId: ID): Promise<'ff' | 'diverged' | 'skipped' | null> {
+  await flushOpenDocs()
+  if (!(await pendingDocs()).has(docId)) return null
+  return pushOneNote(docId)
+}
+
+export interface MergeSession {
+  entry: MergeQueueEntry
+  /** 연 순간의 main·브랜치 내용 (동기화 표식 포함) */
+  main: MainFile
+  branch: BranchFile
+  /** 연 순간의 main 신원 — 최종 머지 직전에 그 사이 main이 바뀌었는지 본다 */
+  mainMid: string
+  /** 양쪽이 다 고친 것을 어느 쪽으로 — 머지하는 기기가 그 브랜치 기기면 브랜치, 아니면 main */
+  prefer: Side
+  plan: MergePlan
+}
+
+/** 머지할 것 하나를 연다 — main과 브랜치를 내려받아 분류한다(읽기만 한다) */
+export async function openMerge(entry: MergeQueueEntry): Promise<MergeSession> {
+  const [main, branch, me] = await Promise.all([
+    drive.downloadJson<MainFile>(entry.mainFileId, entry.mainEnc),
+    drive.downloadJson<BranchFile>(entry.branchFileId, drive.ENC_GZIP),
+    getDeviceId()
+  ])
+  if (main?.kind !== 'inkpad-doc' || branch?.kind !== 'inkpad-doc' || !branch.branch) throw new Error('클라우드의 노트 파일을 읽지 못했습니다.')
+  const prefer: Side = entry.deviceId === me ? 'branch' : 'main'
+  const plan = classify(plainDoc(main), plainDoc(branch), { modified: branch.branch.modified ?? {}, hasBase: !!branch.branch.baseMid, prefer })
+  return { entry, main, branch, mainMid: midOfFile(main), prefer, plan }
+}
+
+/** 머지 화면을 연 뒤 그 사이 main이나 그 브랜치가 바뀌었다 — 다시 열어 작업본을 새 내용에 얹어야 한다 */
+export class MergeStaleError extends Error {
+  constructor() {
+    super('머지 화면을 연 뒤에 다른 기기가 이 노트를 올렸습니다. 새 내용으로 다시 불러왔으니 확인한 뒤 다시 머지해 주세요.')
+    this.name = 'MergeStaleError'
+  }
+}
+
+export interface MergeCommitResult {
+  /** 이 기기 노트에도 결과를 적용했나 */
+  applied: boolean
+  /** 이 기기 브랜치에 아직 머지 안 된 내용이 있어 이 기기 노트는 그대로 두었다 (그 브랜치도 머지 관리에 남는다) */
+  keptLocal: boolean
+}
+
+/**
+ * 최종 머지 — 작업본을 얹은 결과로 main을 쓴다(세대 + 1, 그 브랜치를 '반영됨'으로).
+ * 쓰기 직전에 main과 브랜치가 연 순간 그대로인지 확인하고, 바뀌었으면 MergeStaleError(아무것도 쓰지 않는다).
+ * 이 기기 노트에는 결과를 적용한다 — 단, 이 기기에 아직 머지 안 된 자기 브랜치가 있으면 적용하지 않는다
+ * (덮으면 화면에서 그 변경이 사라지고, 다음 올리기가 결과를 '이 기기 변경'으로 올려 그 브랜치를 묻어 버린다).
+ */
+export function commitMerge(session: MergeSession, draft: MergeDraft): Promise<MergeCommitResult> {
+  return withSyncLock(async () => {
+    const { entry } = session
+    const docId = entry.docId
+    const [head, bHead] = await Promise.all([drive.getMeta(entry.mainFileId), drive.getMeta(entry.branchFileId)])
+    if (!head || head.trashed || mainMidOf(head.appProperties) !== session.mainMid) throw new MergeStaleError()
+    if (!bHead || bHead.trashed || (Number(bHead.appProperties?.seq) || 0) !== session.branch.branch.seq) throw new MergeStaleError()
+
+    const result = compose(plainDoc(session.main), plainDoc(session.branch), session.plan, draft)
+    const f = await ensureFolders()
+    const [device, me] = await Promise.all([getDeviceName(), getDeviceId()])
+    const at = Date.now()
+    const gen = genOf(head.appProperties) + 1
+    const mid = newMid()
+    const prev = mergedOf(head.appProperties)
+    const merged = { ...prev, [entry.deviceId]: Math.max(prev[entry.deviceId] ?? 0, session.branch.branch.seq) }
+    const marker: MainMarker = { gen, mid, merged, made: { kind: 'merge', deviceId: me, device, at } }
+    const res = await drive.upload(
+      await gzipJson({ ...result, rev: { kind: 'merge', device, at }, main: marker }),
+      {
+        name: mainFileName(docId),
+        mimeType: 'application/json',
+        appProperties: {
+          docId,
+          updatedAt: String(result.doc.updatedAt),
+          ...titleProp(result.doc.title),
+          device,
+          enc: drive.ENC_GZIP,
+          revKind: 'merge',
+          ...categoryProp(result.doc.category),
+          ...mainProps({ gen, mid, merged, updatedAt: result.doc.updatedAt })
+        }
+      },
+      f.docs,
+      head.id
+    )
+    await rememberRevTag(res.id, { device, revKind: 'merge' })
+    const after = (await drive.getMeta(res.id).catch(() => null)) ?? res
+    if (mainMidOf(after.appProperties) !== mid) throw new MergeStaleError() // 쓰는 순간 다른 기기가 덮었다 — 그 브랜치는 머지 관리에 남는다
+
+    // 이 기기 노트에 적용 (규칙 11 — 노트 보호 안에서, 그 사이 이 기기에서 고쳤으면 applyDocFile이 적용하지 않는다)
+    const keptLocal = isUnmerged(await getBranchState(docId), merged, me)
+    const local = await db.documents.get(docId)
+    let applied = false
+    if (!keptLocal && local && !local.deletedAt && !(await getSync(`gone:${docId}`))) {
+      try {
+        applied = await withDocExclusive(docId, () => applyDocFile(result))
+      } catch (e) {
+        if (!(e instanceof DocBusyError)) throw e // 다른 탭에서 편집 중 — 다음 받기 때 따라온다
+      }
+      if (applied) {
+        await putDocRecord(docId, after.id, after.version)
+        await saveBase(docId, result)
+        await putBranchState(docId, { baseMid: mid, baseGen: gen })
+      }
+    }
+    emitRemoteChanged(new Set<string>([docId]))
+    window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
+    cloudStatesChannel?.postMessage(Date.now())
+    return { applied, keptLocal }
   })
 }
 

@@ -893,3 +893,361 @@
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ───────── 머지 관리 카드 (동기화 패널) ───────── */
+.merge-queue {
+  margin: 10px 0 14px;
+  padding: 10px;
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-lg);
+  background: var(--danger-soft);
+}
+.merge-queue-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+  color: var(--danger-ink);
+}
+.merge-queue-head small {
+  flex-basis: 100%;
+  font-weight: 400;
+  color: var(--muted);
+}
+.merge-queue-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.merge-queue-row + .merge-queue-row {
+  margin-top: 6px;
+}
+.merge-queue-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merge-queue-meta {
+  grid-column: 1;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.merge-queue-go {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--danger-ink);
+}
+
+/* ───────── 머지 화면 (전체 화면, 패드·컴퓨터 공용) ───────── */
+/* 시트(50) 위, 알림(60)·대화상자(80) 아래 — 최종 머지 확인 창이 이 화면 위에 뜬다 */
+.merge-view {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+}
+.merge-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.merge-title {
+  flex: 1;
+  min-width: 0;
+}
+.merge-title h2 {
+  margin: 0;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merge-title p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.merge-side.main {
+  color: #b9690a;
+  font-weight: 600;
+}
+.merge-side.branch {
+  color: #2459c4;
+  font-weight: 600;
+}
+.merge-panel-toggle {
+  display: none;
+}
+.merge-result-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.merge-result-btn.on {
+  border-color: var(--accent-line-2);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.merge-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+}
+.merge-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.merge-preview {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+.merge-page {
+  width: fit-content;
+  margin: 0 auto 20px;
+}
+.merge-page-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 32px;
+  margin-bottom: 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.merge-page-changes {
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+.merge-chip {
+  padding: 1px 7px;
+  border-radius: 99px;
+  color: #fff;
+}
+.merge-chip.l-mainOnly {
+  background: #e8890c;
+}
+.merge-chip.l-branchOnly {
+  background: #2f6fe0;
+}
+.merge-chip.l-modified {
+  background: #8b4fd6;
+}
+.merge-canvas {
+  display: block;
+  border-radius: 4px;
+  box-shadow: var(--e1);
+  background: #fff;
+}
+.merge-page.discarded .merge-canvas {
+  opacity: 0.35;
+  outline: 2px dashed var(--danger-2);
+}
+.merge-empty {
+  text-align: center;
+  color: var(--muted);
+}
+.merge-panel {
+  width: 340px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 12px;
+  border-left: 1px solid var(--line);
+  background: var(--paper-2);
+}
+.merge-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.merge-nav span {
+  flex: 1;
+}
+.merge-layers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.merge-layer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.merge-layer + .merge-layer {
+  margin-top: 8px;
+}
+.merge-layer.focused {
+  border-color: var(--accent-line-2);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.merge-layer.hidden .merge-layer-main {
+  opacity: 0.5;
+}
+.merge-eye {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.merge-layer-main {
+  /* 눈 버튼 옆 한 줄을 다 쓴다 — 버리기 버튼·선택은 그 아래 줄로 */
+  flex: 1 1 calc(100% - 60px);
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 8px;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.merge-swatch {
+  grid-row: 1 / span 3;
+  align-self: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.merge-layer-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.merge-layer-count {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+.merge-layer-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.merge-layer > .text-btn {
+  min-height: 40px;
+  margin-left: 50px;
+}
+.merge-seg {
+  flex-basis: 100%;
+}
+.merge-meta {
+  margin-top: 14px;
+}
+.merge-meta h4 {
+  margin: 0 0 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.merge-meta-row {
+  margin-bottom: 8px;
+}
+.merge-meta-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.merge-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+}
+.merge-keys {
+  margin: 4px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.merge-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+.merge-total {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+/* 좁은 화면(패드 세로·작은 창): 레이어는 아래쪽 시트, 머리의 버튼으로 접고 편다 */
+@media (max-width: 899px) {
+  .merge-panel-toggle {
+    display: grid;
+  }
+  .merge-body {
+    flex-direction: column;
+  }
+  .merge-panel {
+    width: auto;
+    max-height: 45vh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .merge-body.panel-closed .merge-panel {
+    display: none;
+  }
+}
