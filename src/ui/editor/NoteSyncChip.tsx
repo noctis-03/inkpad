@@ -17,6 +17,7 @@ import {
   type CardSyncState
 } from '../../sync/sync'
 import { MERGE_DONE_EVENT, openMergeView } from '../merge/MergeView'
+import { openChanges } from '../ChangesView'
 import { Menu, MenuItem } from '../Menu'
 
 type ChipState = CardSyncState | 'queued'
@@ -32,7 +33,7 @@ const LABEL: Record<ChipState, string> = {
 /** 같은 색 점 — 머지 대기는 갈라짐과 같은 색 */
 const DOT: Record<ChipState, CardSyncState> = { same: 'same', pending: 'pending', 'remote-new': 'remote-new', diverged: 'diverged', queued: 'diverged', new: 'new' }
 
-export function NoteSyncChip({ docId }: { docId: ID }) {
+export function NoteSyncChip({ docId, title }: { docId: ID; title: string }) {
   const saveState = useUI((s) => s.saveState)
   const setPanel = useUI((s) => s.setPanel)
   const toast = useUI((s) => s.toast)
@@ -86,14 +87,14 @@ export function NoteSyncChip({ docId }: { docId: ID }) {
       if (r === 'diverged') toast('다른 기기에서도 바뀌어 이 기기 브랜치에만 올렸습니다(갈라짐). 머지해 주세요.', 'info', { label: '머지', run: () => void openMerge() })
       else toast(r === 'skipped' ? '바뀐 내용이 없어 올리지 않았습니다.' : '이 노트를 올렸습니다.', r === 'skipped' ? 'info' : 'success')
     })
+  // 받기 = 클라우드로 맞추기. 이 기기에서 바꾼 것이 있으면 바로 덮지 않고 비교 화면에서 고른다
   const pull = () =>
     act(async () => {
       const r = await pullOneNote(docId)
-      const msg: Record<typeof r, [string, 'info' | 'success' | 'error']> = {
+      if (r === 'pending' || r === 'diverged') return openChanges({ docId, title, actions: ['align', 'push'] })
+      const msg: Record<'applied' | 'same' | 'notfound', [string, 'info' | 'success' | 'error']> = {
         applied: ['클라우드의 새 버전을 받았습니다.', 'success'],
         same: ['이미 최신입니다.', 'info'],
-        pending: ['이 기기에 올리지 않은 변경이 있어 받지 않았습니다. 먼저 올려 주세요.', 'info'],
-        diverged: ['이 기기와 다른 기기가 각각 고쳐 갈라졌습니다. 덮지 않고 머지 관리에서 합칩니다.', 'info'],
         notfound: ['클라우드에 이 노트가 없습니다. 먼저 올려 주세요.', 'info']
       }
       toast(...msg[r])
@@ -125,6 +126,9 @@ export function NoteSyncChip({ docId }: { docId: ID }) {
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem icon="upload" label="이 노트 올리기" onClick={() => void push()} />
           <MenuItem icon="download" label="이 노트 받기" onClick={() => void pull()} />
+          {(state === 'pending' || state === 'diverged') && (
+            <MenuItem icon="undo" label="변경 버리기…" onClick={() => (setMenu(null), openChanges({ docId, title, actions: ['discard'] }))} />
+          )}
           {(state === 'diverged' || state === 'queued') && <MenuItem icon="swap" label="머지 열기" onClick={() => act(openMerge)} />}
           <MenuItem icon="restore" label="버전 기록" onClick={() => (setMenu(null), setPanel('history'))} />
           <MenuItem icon="cloud" label="동기화 패널" onClick={() => (setMenu(null), setPanel('sync'))} />

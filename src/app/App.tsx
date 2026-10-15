@@ -3,6 +3,7 @@ import { useUI, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { MergeHost } from '../ui/merge/MergeView'
 import { ArchiveHost } from '../ui/ArchiveSheet'
+import { ChangesHost } from '../ui/ChangesView'
 import { installSyncReminders } from './syncReminders'
 import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
@@ -81,6 +82,7 @@ export function App() {
       <Busy />
       <MergeHost />
       <ArchiveHost />
+      <ChangesHost />
       <DialogHost />
     </div>
   )

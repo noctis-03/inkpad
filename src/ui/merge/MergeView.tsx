@@ -12,14 +12,13 @@ import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
 import { closePdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
 import { formatDate } from '../../shared/util'
-import type { ID, Page, Stroke } from '../../shared/model'
+import type { ID, Stroke } from '../../shared/model'
 import { commitMerge, listMergeQueue, MergeStaleError, openMerge, pushBeforeMerge, type MergeQueueEntry, type MergeSession } from '../../sync/sync'
 import { deleteMergeDraft, loadMergeDraft, saveMergeDraft } from '../../sync/mergeDraft'
 import {
   compose,
   emptyDraft,
   isEmptyDraft,
-  mergePageOrder,
   resolveItem,
   resolveMeta,
   retainDraft,
@@ -30,7 +29,7 @@ import {
   type Placed,
   type Side
 } from '../../sync/merge'
-import { LAYER_COLOR, PageCanvas, type CanvasProps, type Selection, type Tool, type ViewPage, type Visible } from './MergeCanvas'
+import { LAYER_COLOR, PageCanvas, buildPages, type CanvasProps, type Selection, type Tool, type ViewPage, type Visible } from './MergeCanvas'
 
 /** 최종 머지가 끝났을 때 — 동기화 패널이 목록을 다시 읽는다 */
 export const MERGE_DONE_EVENT = 'inkpad-merge-done'
@@ -57,45 +56,6 @@ const LAYERS: ItemClass[] = ['common', 'mainOnly', 'branchOnly', 'modified']
 const ZOOMS = [1, 1.5, 2, 3]
 
 const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
-
-/** 작업본을 얹어 페이지별로 묶는다. resultOnly가 아니면 버린 것도(흐리게 그리려고) 함께 둔다 */
-function buildPages(s: MergeSession, draft: MergeDraft, resultOnly: boolean): ViewPage[] {
-  const pages = new Map<ID, ViewPage>()
-  for (const item of s.plan.items) {
-    if (item.kind !== 'page') continue
-    const { side, discarded } = resolveItem(item, draft)
-    if (discarded && resultOnly) continue
-    pages.set(item.id, {
-      id: item.id,
-      item,
-      page: pick<Page>(item, side),
-      discarded,
-      els: [],
-      changes: item.cls === 'common' ? 0 : 1
-    })
-  }
-  for (const item of s.plan.items) {
-    if (item.kind !== 'el') continue
-    const { side, discarded } = resolveItem(item, draft)
-    if (discarded && resultOnly) continue
-    const placed = pick<Placed>(item, side)
-    const vp = pages.get(placed.pageId)
-    if (!vp) continue
-    vp.els.push({
-      item,
-      placed,
-      side,
-      discarded,
-      move: draft.move.get(item.key),
-      color: draft.color.get(item.key)
-    })
-    if (item.cls !== 'common') vp.changes++
-  }
-  const orderMeta = s.plan.meta.find((m) => m.field === 'pageOrder')
-  const orderSide = orderMeta ? resolveMeta(orderMeta, draft) : 'main'
-  const [primary, secondary] = orderSide === 'main' ? [s.main.doc.pageOrder, s.branch.doc.pageOrder] : [s.branch.doc.pageOrder, s.main.doc.pageOrder]
-  return mergePageOrder(primary ?? [], secondary ?? [], new Set(pages.keys())).map((id) => pages.get(id)!)
-}
 
 /** 작업본을 고쳐 새 작업본을 만든다 (Set·Map은 복사해서 — 되돌리기가 옛 작업본을 그대로 들고 있게) */
 function edit(d: MergeDraft, fn: (n: MergeDraft) => void): MergeDraft {

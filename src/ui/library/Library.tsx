@@ -38,8 +38,9 @@ import {
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
-import { alignWithCloud, CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
+import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
+import { openChanges } from '../ChangesView'
 import { THUMBS_EVENT } from '../../io/docThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
@@ -917,26 +918,8 @@ export function Library() {
         }
         break
       case 'cloudPull':
-        if (
-          !(await confirmDialog('클라우드에 맞추기', {
-            message: `"${d.title}"을(를) 클라우드 버전으로 덮어씁니다. 이 기기의 변경은 이 기기 브랜치에 올려 보관하고, 머지할 것으로 보지 않습니다.`,
-            ok: '맞추기',
-            danger: true
-          }))
-        )
-          return
-        setBusy({ text: `"${d.title}" 맞추는 중` })
-        try {
-          const r = await alignWithCloud(d.id)
-          if (r === 'applied') toast(`"${d.title}"을(를) 클라우드 버전으로 맞췄습니다.`, 'success')
-          else if (r === 'skipped') toast('이 기기에서 수정 중인 노트라 맞추지 못했습니다. 잠시 뒤 다시 시도해 주세요.', 'info')
-          else toast('클라우드에 그 노트가 없습니다. 먼저 올려 주세요.', 'error')
-        } catch (e) {
-          toast(e instanceof Error ? e.message : '맞추지 못했습니다.', 'error')
-        } finally {
-          setBusy(null)
-        }
-        await refresh()
+        // 이 기기에서 바꾼 것을 비교 화면에서 보고 덮는다 (이 기기 내용은 스냅샷으로 남는다)
+        openChanges({ docId: d.id, title: d.title, actions: ['align', 'push'] })
         break
       case 'trash':
         await trashDocument(d.id)

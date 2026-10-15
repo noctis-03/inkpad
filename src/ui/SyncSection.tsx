@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
-  alignWithCloud,
   downloadCloudNote,
   deleteCloudNote,
   excludeFromPush,
@@ -25,6 +24,8 @@ import {
   type CloudNoteState,
   type MergeLogEntry,
   type MergeQueueEntry,
+  type LocalChangedDoc,
+  type PullChoices,
   type PullPlan,
   type PushPlan,
   type SyncProgress,
@@ -38,6 +39,8 @@ import { Icon } from './Icon'
 import { MERGE_DONE_EVENT, openMergeView } from './merge/MergeView'
 import { mergeDraftKeys } from '../sync/mergeDraft'
 import { openArchive } from './ArchiveSheet'
+import { openChanges } from './ChangesView'
+import { Segmented } from './Segmented'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -613,22 +616,27 @@ export function SyncSection() {
   const doPull = async () => {
     try {
       const plan = await planPull()
-      if (!plan.docs.length && !plan.diverged.length) {
+      if (!plan.docs.length && !plan.local.length) {
         toast('이미 최신 상태입니다.', 'info')
         return
       }
-      setPullPreview(plan) // 받을 것이 없어도 갈라진 노트가 있으면 받지 않는 이유를 보여 준다
+      setPullPreview(plan) // 이 기기 변경이 있는 노트가 있으면 덮을지·올릴지 고르게 한다
     } catch (e) {
       toast(e instanceof Error ? e.message : '상태를 확인하지 못했습니다.', 'error')
     }
   }
 
-  const confirmPull = async () => {
+  const confirmPull = async (choices: PullChoices) => {
     setPullPreview(null)
-    const r = await pullNow()
+    const r = await pullNow(choices)
     if (r) {
+      const parts = [
+        r.docs ? `노트 ${r.docs}개를 받았습니다` : '',
+        r.overwritten ? `${r.overwritten}개를 클라우드로 덮었습니다(이 기기 내용은 스냅샷에 남음)` : '',
+        r.pushed ? `${r.pushed}개를 올렸습니다` : ''
+      ].filter(Boolean)
       const busy = r.busy ? `다른 탭에서 편집 중인 노트 ${r.busy}개는 건너뛰었습니다. 그 탭을 닫은 뒤 다시 받아 주세요.` : ''
-      if (r.docs) toast(`노트 ${r.docs}개를 받았습니다.${busy ? ' ' + busy : ''}`, 'success')
+      if (parts.length) toast(parts.join(' · ') + '.' + (busy ? ' ' + busy : ''), 'success')
       else toast(busy || '이미 최신 상태입니다.', 'info')
       void loadCloud()
     }
@@ -699,29 +707,8 @@ export function SyncSection() {
     }
   }
 
-  /** 행 메뉴의 "클라우드에 맞추기" — 이 기기의 바뀜을 버리고 클라우드 버전으로 덮어쓴다 (변경됨·새 버전 행) */
-  const alignOne = async (info: CloudNoteInfo) => {
-    if (
-      !(await confirmDialog('클라우드에 맞추기', {
-        message: `"${info.title}"을(를) 클라우드 버전으로 덮어씁니다. 이 기기의 변경은 이 기기 브랜치에 올려 보관하고, 머지할 것으로 보지 않습니다.`,
-        ok: '맞추기',
-        danger: true
-      }))
-    )
-      return
-    setBusyId(info.docId)
-    try {
-      const r = await alignWithCloud(info.docId)
-      if (r === 'applied') toast(`"${info.title}"을(를) 클라우드 버전으로 맞췄습니다.`, 'success')
-      else if (r === 'skipped') toast('이 기기에서 수정 중인 노트라 맞추지 못했습니다. 잠시 뒤 다시 시도해 주세요.', 'info')
-      else toast('클라우드에서 그 노트를 찾지 못했습니다.', 'error')
-      await loadCloud()
-    } catch (e) {
-      toast(e instanceof Error ? e.message : '맞추기 실패', 'error')
-    } finally {
-      setBusyId(null)
-    }
-  }
+  /** 행 메뉴의 "클라우드에 맞추기" — 이 기기에서 바꾼 것을 비교 화면에서 보고 덮는다(이 기기 내용은 스냅샷으로 남는다) */
+  const alignOne = (info: CloudNoteInfo) => openChanges({ docId: info.docId, title: info.title, actions: ['align', 'push'] })
 
   const deleteOne = async (info: CloudNoteInfo) => {
     if (
@@ -942,7 +929,7 @@ export function SyncSection() {
       />
 
       {preview && <PushPreview plan={preview} pull={pullPlan} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
-      {pullPreview && <PullPreview plan={pullPreview} busy={status === 'syncing'} onConfirm={() => void confirmPull()} onClose={() => setPullPreview(null)} />}
+      {pullPreview && <PullPreview plan={pullPreview} busy={status === 'syncing'} onConfirm={(c) => void confirmPull(c)} onClose={() => setPullPreview(null)} />}
     </section>
   )
 }
@@ -1119,21 +1106,38 @@ function MergeQueueCard({ queue, drafts }: { queue: MergeQueueEntry[]; drafts: S
   )
 }
 
-/** 받기 미리보기 — 다른 기기가 올린 변경 중 이 기기가 받아올 목록 */
-function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+type LocalChoice = 'overwrite' | 'push' | 'skip'
+
+/**
+ * 받기 미리보기 — 받기는 클라우드로 완전 동기화다. 다른 기기가 올린 변경은 그대로 받고,
+ * 이 기기 변경이 있는 노트는 행마다 덮기(기본)·올리기·건너뛰기를 고른다. '비교'로 지금 쓴 것을 확인한다.
+ */
+function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy: boolean; onConfirm: (c: PullChoices) => void; onClose: () => void }) {
+  const [choice, setChoice] = useState<Record<string, LocalChoice>>(() => Object.fromEntries(plan.local.map((d) => [d.docId, 'overwrite' as LocalChoice])))
   const groups = [
     { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
     { key: 'remote-new' as const, label: '새 버전', icon: 'cloudDown', items: plan.docs.filter((d) => d.change === 'remote-new') }
   ].filter((g) => g.items.length > 0)
+  const overwrite = plan.local.filter((d) => choice[d.docId] === 'overwrite').map((d) => d.docId)
+  const push = plan.local.filter((d) => choice[d.docId] === 'push').map((d) => d.docId)
+  const count = plan.docs.length + overwrite.length + push.length
+  const changeText = (d: LocalChangedDoc) =>
+    !d.changes
+      ? '비교 기록 없음'
+      : d.changes.total === 0
+        ? d.sync === 'diverged'
+          ? '바꾼 것 없음 · 올려 둔 이 기기 브랜치가 머지 대기에서 빠짐'
+          : '바꾼 것 없음'
+        : `이 기기에서 쓴 것 획 +${d.changes.added}` + (d.changes.removed ? ` · 지운 것 −${d.changes.removed}` : '') + (d.changes.modified ? ` · 고친 것 ${d.changes.modified}` : '') + (d.changes.other ? ` · 그 밖 ${d.changes.other}` : '')
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="받기 미리보기">
         <header className="push-head">
-          <span className="push-count">{plan.docs.length}</span>
+          <span className="push-count">{count}</span>
           <div>
             <h2 className="modal-title">받기 미리보기</h2>
             <p className="push-sub">
-              클라우드에서 이 기기로 받아옵니다{plan.bytes > 0 ? ` · 약 ${formatBytes(plan.bytes)}` : ''}
+              클라우드와 똑같이 맞춥니다{plan.bytes > 0 ? ` · 약 ${formatBytes(plan.bytes)}` : ''}
             </p>
           </div>
         </header>
@@ -1155,17 +1159,37 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
               ))}
             </section>
           ))}
-          {plan.diverged.length > 0 && (
+          {plan.local.length > 0 && (
             <section className="push-group">
               <h4 className="push-group-label">
-                <Icon name="alert" size={13} /> 받지 않음 · 갈라짐 <b>{plan.diverged.length}</b>
+                <Icon name="alert" size={13} /> 이 기기 내용이 덮이는 노트 <b>{plan.local.length}</b>
               </h4>
-              <p className="push-note">이 기기와 다른 기기가 각각 고친 노트입니다. 이 기기 변경을 덮지 않도록 받지 않고, 머지 관리에서 합칩니다.</p>
-              {plan.diverged.map((d) => (
-                <div key={d.docId} className="push-row">
-                  <span className="push-stripe split" />
-                  <span className="push-name">{d.title}</span>
-                  <Icon name="alert" size={14} className="push-ico" />
+              <p className="push-note">
+                이 기기에서 바꾼 것이 있는 노트입니다. 덮으면 클라우드와 같아지고, 지금 내용은 이 기기 스냅샷으로만 남습니다(버전 기록에서 되돌릴 수 있음). 진짜 필기라면 '올리기'를 고르세요.
+              </p>
+              {plan.local.map((d) => (
+                <div key={d.docId} className="pull-local-row">
+                  <div className="pull-local-main">
+                    <span className="push-name">{d.title}</span>
+                    <span className="pull-local-meta">
+                      {changeText(d)}
+                      {d.remoteChanged ? ' · 클라우드도 바뀜' : ''}
+                    </span>
+                  </div>
+                  <button className="text-btn small" onClick={() => openChanges({ docId: d.docId, title: d.title, actions: [] })}>
+                    비교
+                  </button>
+                  <Segmented
+                    className="pull-local-seg"
+                    label={`${d.title} 처리`}
+                    value={choice[d.docId]}
+                    options={[
+                      ['overwrite', '덮기'],
+                      ['push', '올리기'],
+                      ['skip', '건너뛰기']
+                    ]}
+                    onChange={(v) => setChoice((c) => ({ ...c, [d.docId]: v }))}
+                  />
                 </div>
               ))}
             </section>
@@ -1177,8 +1201,8 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
-          <button className="primary-btn" onClick={onConfirm} disabled={busy || !plan.docs.length}>
-            <Icon name="download" size={18} /> {plan.docs.length}건 받기
+          <button className="primary-btn" onClick={() => onConfirm({ overwrite, push })} disabled={busy || !count}>
+            <Icon name="download" size={18} /> {count}건 맞추기
           </button>
         </div>
       </div>

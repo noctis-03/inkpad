@@ -94,9 +94,12 @@ export default async function comfort(ctx: Ctx) {
   await A.waitForSelector('.sync-btn .sync-badge', { timeout: 5000 })
   check('라이브러리 배지: 올릴 노트 1', (await A.locator('.sync-btn .sync-badge').innerText()) === '1')
   if (process.env.MERGE_SHOT_DIR) await A.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/library-badge.png` })
-  await toast.getByRole('button', { name: '올리기' }).click()
+  await toast.getByRole('button', { name: '정리' }).click() // 비교 화면에서 올리기
+  await A.waitForSelector('.changes-sheet .changes-chip.add')
+  check('닫을 때 알림: "정리"는 비교 화면 — 쓴 획이 보인다', (await A.locator('.changes-sheet .changes-chip.add').innerText()).includes('+1'))
+  await A.locator('.changes-sheet').getByRole('button', { name: '올리기' }).click()
   await A.waitForSelector('.sync-btn .sync-badge', { state: 'detached', timeout: 15000 })
-  check('닫을 때 알림: "올리기"로 올리면 배지가 사라진다', drive.headStrokes(D).length === before + 2)
+  check('닫을 때 알림: 비교 화면에서 올리면 배지가 사라진다', drive.headStrokes(D).length === before + 2)
 
   // ── 앱 아이콘 배지 (Badging API — 테스트에서는 흉내) ──
   const badge = await A.evaluate(async (D) => {

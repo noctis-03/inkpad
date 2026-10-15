@@ -11,7 +11,8 @@ import { hitStroke, strokeInPolygon } from '../../engine/geometry'
 import { openPdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
 import { db } from '../../storage/db'
 import type { ID, Page, Stroke } from '../../shared/model'
-import type { ItemClass, MergeItem, Placed, Side } from '../../sync/merge'
+import { mergePageOrder, resolveItem, resolveMeta, type ItemClass, type MergeDraft, type MergeItem, type MergePlan, type Placed, type Side } from '../../sync/merge'
+import type { DocFileV1 } from '../../sync/pack'
 
 export type Tool = 'view' | 'lasso' | 'eraser'
 export type Visible = Record<ItemClass, boolean>
@@ -51,7 +52,6 @@ export interface Selection {
 }
 
 export interface CanvasProps {
-  pages: ViewPage[]
   width: number
   visible: Visible
   focus: ItemClass | null
@@ -68,6 +68,36 @@ export interface CanvasProps {
   onErase: (keys: string[]) => void
   scroller: HTMLElement | null
   pdfs: Map<ID, Promise<PDFDocumentProxy | null>>
+}
+
+const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
+
+/**
+ * 분류 결과에 작업본을 얹어 페이지별로 묶는다. resultOnly가 아니면 버린 것도(흐리게 그리려고) 함께 둔다.
+ * 머지 화면과 비교 화면(이 기기 변경)이 함께 쓴다.
+ */
+export function buildPages(s: { plan: MergePlan; main: DocFileV1; branch: DocFileV1 }, draft: MergeDraft, resultOnly: boolean): ViewPage[] {
+  const pages = new Map<ID, ViewPage>()
+  for (const item of s.plan.items) {
+    if (item.kind !== 'page') continue
+    const { side, discarded } = resolveItem(item, draft)
+    if (discarded && resultOnly) continue
+    pages.set(item.id, { id: item.id, item, page: pick<Page>(item, side), discarded, els: [], changes: item.cls === 'common' ? 0 : 1 })
+  }
+  for (const item of s.plan.items) {
+    if (item.kind !== 'el') continue
+    const { side, discarded } = resolveItem(item, draft)
+    if (discarded && resultOnly) continue
+    const placed = pick<Placed>(item, side)
+    const vp = pages.get(placed.pageId)
+    if (!vp) continue
+    vp.els.push({ item, placed, side, discarded, move: draft.move.get(item.key), color: draft.color.get(item.key) })
+    if (item.cls !== 'common') vp.changes++
+  }
+  const orderMeta = s.plan.meta.find((m) => m.field === 'pageOrder')
+  const orderSide = orderMeta ? resolveMeta(orderMeta, draft) : 'main'
+  const [primary, secondary] = orderSide === 'main' ? [s.main.doc.pageOrder, s.branch.doc.pageOrder] : [s.branch.doc.pageOrder, s.main.doc.pageOrder]
+  return mergePageOrder(primary ?? [], secondary ?? [], new Set(pages.keys())).map((id) => pages.get(id)!)
 }
 
 /** 획 외곽선은 비싸다 — 같은 획 객체는 한 번만 만든다 */

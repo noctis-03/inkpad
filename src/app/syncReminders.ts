@@ -1,11 +1,11 @@
 // 수동 동기화 편의 — 네트워크를 저절로 쓰지 않는 원칙을 지키면서 '올릴 것·받을 것·머지할 것'을 놓치지 않게 한다.
 //
 //  - 앱 아이콘 배지: 올리지 않은 노트 + 머지 대기 수 (Badging API, 지원하는 곳만 — 설치한 PWA 등). 네트워크 없음
-//  - 노트를 닫을 때 알림: 그 노트에 올리지 않은 변경이 있으면 '올리기' 버튼이 달린 알림. 네트워크 없음(누르면 올린다)
+//  - 노트를 닫을 때 알림: 그 노트에 올리지 않은 변경이 있으면 '정리' 버튼이 달린 알림 → 비교 화면에서 올리기·변경 버리기
 //  - 앱을 열 때 클라우드 확인: 설정에서 켰을 때만(기본 끔). 노트 목록·브랜치 목록 메타만 읽는다(본문은 받지 않는다) —
 //    노트 100개에 약 35KB, 300개에 약 100KB(gzip 전송 기준). 30분 안에 다시 열면 확인하지 않는다.
 import { useUI } from './store'
-import { CLOUD_STATES_EVENT, listCloudNotes, listMergeQueue, notifySyncChanged, pushOneNote, syncSummary } from '../sync/sync'
+import { CLOUD_STATES_EVENT, listCloudNotes, listMergeQueue, notifySyncChanged, syncSummary } from '../sync/sync'
 import { getSync, putSync } from '../sync/folders'
 import { pendingSeqsFor } from '../sync/unchanged'
 import type { ID } from '../shared/model'
@@ -53,16 +53,10 @@ export function remindOnLeave(docId: ID, title: string): void {
   window.setTimeout(async () => {
     try {
       if (!(await syncConfigured()) || !(await pendingSeqsFor(docId)).length) return
+      // '정리'는 비교 화면 — 지금 쓴 것을 보고 올리거나(진짜 필기) 버린다(써 보며 공부한 것)
       toast(`“${title || '제목 없음'}”에 올리지 않은 변경이 있습니다.`, 'info', {
-        label: '올리기',
-        run: () =>
-          void pushOneNote(docId)
-            .then((r) =>
-              r === 'diverged'
-                ? toast('다른 기기에서도 바뀌어 이 기기 브랜치에만 올렸습니다(갈라짐). 머지 관리에서 합쳐 주세요.', 'info')
-                : toast(r === 'skipped' ? '바뀐 내용이 없어 올리지 않았습니다.' : '올렸습니다.')
-            )
-            .catch((e) => toast(e instanceof Error ? e.message : '올리지 못했습니다.', 'error'))
+        label: '정리',
+        run: () => void import('../ui/ChangesView').then(({ openChanges }) => openChanges({ docId, title, actions: ['push', 'discard'] }))
       })
     } catch {
       /* 알림은 덤 */

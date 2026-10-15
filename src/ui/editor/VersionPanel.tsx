@@ -41,7 +41,7 @@ interface Preview {
   error?: string
 }
 
-const WHY_LABEL: Record<SnapshotWhy, string> = { pull: '받기 전', align: '클라우드에 맞추기 전', merge: '머지 전', restore: '되돌리기 전' }
+const WHY_LABEL: Record<SnapshotWhy, string> = { pull: '받기 전', align: '클라우드로 덮기 전', merge: '머지 전', restore: '되돌리기 전', discard: '변경 버리기 전' }
 
 const errText = (e: unknown, fallback: string) =>
   e instanceof AuthRequiredError ? '먼저 Google로 로그인해 주세요.' : e instanceof SyncNotConfiguredError ? '서버에 OAuth 설정이 없습니다.' : e instanceof Error ? e.message : fallback
