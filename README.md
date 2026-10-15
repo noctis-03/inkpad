@@ -27,7 +27,7 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 단계별로 구현 중.
 
 **도구**
 - 펜(색 8 + 직접 선택, 굵기 6단계), 형광펜(반투명, 필기 아래 레이어), 프리셋 5개(탭 = 적용, 길게 누르기 = 현재 펜으로 저장)
-- 지우개: 획 단위 / 부분(닿은 곳만 잘라내는 획 분할)
+- 지우개: 획 단위 (닿은 획을 통째로 지운다 — 획을 잘라 조각을 만들지 않아 기기 간 머지가 단순하다)
 - 올가미: 선택 → 끌어서 이동, 삭제, 복제, 색 바꾸기 (문서형에서는 다른 페이지로 옮기면 해당 페이지 소속으로 바뀜)
 - Undo/Redo 200단계 (페이지 삭제·복제·순서 변경·속지 변경 포함, 페이지 삭제 되돌리기 시 필기도 함께 복원)
 - 빠른 전환 버튼(펜 ↔ 지우개, 끌어서 위치 이동)
@@ -109,7 +109,7 @@ iPad + Apple Pencil용 개인 필기 웹앱 (PWA). 단계별로 구현 중.
 src/
   shared/    model.ts(데이터 모델·상수), ulid, util
   engine/    engine(입력·제스처·Command·저장 예약), layout(페이지 배치·청크), scene(R-tree), render(레이어),
-             pressure(필압 방식·자동 감지), geometry(외곽선·부분 지우개·올가미), background(속지), history,
+             pressure(필압 방식·자동 감지), geometry(외곽선·지우개 판정·올가미), background(속지), history,
              pdf/(pdf.js 로더, 비트맵 LRU 캐시)
   storage/   db(Dexie 스키마), repo(문서·페이지·청크·에셋·outbox), compress(gzip), migrate, tabLock
   io/        pdfImport, pdfExport + exportWorker(pdf-lib), inkpadFormat(.inkpad/백업), download

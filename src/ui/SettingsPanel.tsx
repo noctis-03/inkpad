@@ -275,9 +275,6 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         <Row label="외곽선 매끄럽게">
           <Slider k="smoothing" min={0} max={1} step={0.05} />
         </Row>
-        <Row label="지우개 방식">
-          <Select k="eraserMode" options={[['stroke', '획 단위'], ['partial', '부분 (닿은 곳만)']]} />
-        </Row>
       </section>
 
       <PressureSection />
