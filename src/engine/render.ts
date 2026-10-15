@@ -1,11 +1,10 @@
 import { Camera } from './camera'
 import { MAX_CANVAS_PIXELS } from './constants'
 import { drawPattern } from './background'
-import { centerlinePath, outlineToPath, strokeOutline } from './geometry'
+import { outlineToPath, strokeOutline } from './geometry'
 import type { Layout } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
-import { isHairline, MIN_STROKE_DEVICE_PX } from './quality'
-import { getCenter, getPath, type Scene, type StrokeRec } from './scene'
+import { getPath, type Scene, type StrokeRec } from './scene'
 import type { Background, StrokeOpts } from '../shared/model'
 
 export interface Box {
@@ -209,15 +208,6 @@ export class Renderer {
 
   private drawRec(ctx: CanvasRenderingContext2D, rec: StrokeRec, cam: Camera, k: number) {
     ctx.setTransform(k, 0, 0, k, (rec.ox - cam.x) * k, (rec.oy - cam.y) * k)
-    // 축소해서 화면 두께가 1.5px도 안 되는 획은 면으로 채우면 회색으로 번진다 → 중심선 한 줄로 또렷하게
-    if (isHairline(rec.stroke.width, k)) {
-      ctx.strokeStyle = rec.stroke.color
-      ctx.lineWidth = MIN_STROKE_DEVICE_PX / k
-      ctx.lineJoin = 'round'
-      ctx.lineCap = 'round'
-      ctx.stroke(getCenter(rec))
-      return
-    }
     ctx.fillStyle = rec.stroke.color
     ctx.fill(getPath(rec))
   }
@@ -341,17 +331,8 @@ export class Renderer {
         ctx.clip()
       }
       ctx.setTransform(k, 0, 0, k, (stroke.ox - cam.x) * k, (stroke.oy - cam.y) * k)
-      // 입력 중인 획도 확정 레이어와 같은 규칙을 쓴다 (축소 상태에서 꼬리가 번지지 않게)
-      if (isHairline(stroke.width, k)) {
-        ctx.strokeStyle = stroke.color
-        ctx.lineWidth = MIN_STROKE_DEVICE_PX / k
-        ctx.lineJoin = 'round'
-        ctx.lineCap = 'round'
-        ctx.stroke(centerlinePath(stroke.points, stroke.predicted))
-      } else {
-        ctx.fillStyle = stroke.color
-        ctx.fill(outlineToPath(strokeOutline(stroke.points, stroke.width, stroke.opts, false, stroke.predicted)))
-      }
+      ctx.fillStyle = stroke.color
+      ctx.fill(outlineToPath(strokeOutline(stroke.points, stroke.width, stroke.opts, false, stroke.predicted)))
       ctx.restore()
       const b = liveStrokeBox(stroke)
       boxes.push({

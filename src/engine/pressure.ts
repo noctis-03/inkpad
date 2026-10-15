@@ -26,10 +26,8 @@ export function strokeOptsFor(mode: ResolvedPressure, s: Settings, tool: 'pen' |
     case 'pressure':
       return { thinning: s.thinning, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: false }
     case 'velocity':
-      // 속도 기반은 변화가 과하면 어색하므로 폭을 줄인다.
-      // 굵기는 엔진이 점마다 "화면 기준 속도"로 계산해 넘기므로, 라이브러리의 거리 기반 추정은 끈다
-      // (거리/굵기 비율로 추정하면 배율이 바뀔 때 같은 손 동작이 다른 굵기가 된다).
-      return { thinning: s.thinning * 0.7, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: false }
+      // 속도 기반은 변화가 과하면 어색하므로 폭을 줄인다
+      return { thinning: s.thinning * 0.7, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: true }
     case 'constant':
       return { thinning: 0, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: false }
   }

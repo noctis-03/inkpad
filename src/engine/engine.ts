@@ -6,7 +6,7 @@ import { History, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
-import { minPointDist, OneEuroFilter, VELOCITY_START_PRESSURE, velocityPressure } from './quality'
+import { minPointDist, smoothPressure } from './quality'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
 import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
 import { drawPattern } from './background'
@@ -64,8 +64,6 @@ interface ActiveStroke {
   pressure: ResolvedPressure
   /** 직전까지의 평활된 필압 (-1 = 아직 없음) */
   smoothP: number
-  /** 필압 평활 필터 (획마다 새로 만든다) */
-  oe: OneEuroFilter
   // 지우개
   removed: Map<ID, Entry>
   added: Map<ID, Entry>
@@ -1184,7 +1182,6 @@ export class Engine {
       opts: strokeOptsFor(pressure, this.settings, hl ? 'highlighter' : 'pen'),
       pressure,
       smoothP: -1,
-      oe: OneEuroFilter.forSmoothing(this.settings.pressureSmoothing),
       removed: new Map(),
       added: new Map(),
       lasso: [],
@@ -1224,12 +1221,9 @@ export class Engine {
   private toChunkPoint(a: ActiveStroke, ev: PointerEvent): number[] {
     const p = this.local(ev)
     const w = this.cam.screenToWorld(p.x, p.y)
-    // 필압 모드가 아니면(속도·일정) 지금 적용 중인 굵기를 그대로 쓴다.
-    // 예측 점만 0.5로 그리면 꼬리에서 굵기가 튄다.
-    if (a.pressure !== 'pressure') return [w.x - a.ox, w.y - a.oy, a.smoothP >= 0 ? a.smoothP : 0.5]
     const m = this.mappedPressure(ev, a)
     const pr = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
-    return [w.x - a.ox, w.y - a.oy, pr]
+    return [w.x - a.ox, w.y - a.oy, a.pressure === 'pressure' ? pr : 0.5]
   }
 
   private addPoint(a: ActiveStroke, ev: PointerEvent) {
@@ -1252,25 +1246,19 @@ export class Engine {
       return
     }
     if (a.pointerType === 'pen') a.raw.push(ev.pressure)
-    const n = a.points.length
+    // 필압: 곡선·최소값 적용 → 지수 평활(직전 값과 섞어 굵기가 계단처럼 변하지 않게)
+    const m = this.mappedPressure(ev, a)
+    let pr: number
+    if (m < 0) {
+      // 이 이벤트는 필압을 보내지 않았다 → 직전 값 유지 (평활 상태는 건드리지 않는다)
+      pr = a.smoothP >= 0 ? a.smoothP : a.points.length >= 4 ? a.points[a.points.length - 2] : 0.5
+    } else {
+      pr = a.smoothP < 0 ? m : smoothPressure(a.smoothP, m, this.settings.pressureSmoothing)
+      a.smoothP = pr
+    }
     const qx = q2(w.x - a.ox)
     const qy = q2(w.y - a.oy)
-    const dt = Math.max(0, Math.round(ev.timeStamp - a.lastT))
-    // 굵기 원값: 필압 펜은 원시 필압(곡선·최소값 적용), 그 외에는 "화면 기준 속도"로 만든다.
-    // 속도를 월드 거리로 재면 같은 손 동작이 배율마다 다른 굵기가 된다 — 화면 px/s로 잰다.
-    let raw: number
-    if (a.pressure === 'velocity') {
-      raw = n >= 4
-        ? velocityPressure(qx - a.points[n - 4], qy - a.points[n - 3], dt, this.cam.zoom)
-        : VELOCITY_START_PRESSURE
-    } else {
-      const m = this.mappedPressure(ev, a)
-      // 이 이벤트는 필압을 보내지 않았다 → 직전 값 유지 (평활 상태는 건드리지 않는다)
-      raw = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
-    }
-    // 1€ 필터: 가만히 있을 땐 떨림을 눌러 두고, 빠르게 변할 땐 지연 없이 따라간다
-    const pr = a.smoothP < 0 ? raw : a.oe.filter(raw, dt || 1)
-    a.smoothP = pr
+    const n = a.points.length
     if (n >= 4) {
       // 화면에서 sub-pixel만큼 움직인 점은 떨림으로 보고 점을 만들지 않는다.
       // 선이 매끄러워지고 점 수가 줄어 프레임 비용(입력 지연)도 함께 줄어든다.
@@ -1282,6 +1270,7 @@ export class Engine {
         return
       }
     }
+    const dt = Math.max(0, Math.round(ev.timeStamp - a.lastT))
     a.lastT = ev.timeStamp
     a.points.push(qx, qy, q2(pr), dt)
   }
