@@ -1,5 +1,5 @@
 import RBush from 'rbush'
-import { outlineToPath, strokeOutline } from './geometry'
+import { centerlinePath, outlineToPath, strokeOutline } from './geometry'
 import type { Layout } from './layout'
 import type { Element, ID, Stroke } from '../shared/model'
 
@@ -24,6 +24,8 @@ export interface StrokeRec extends Entry {
   oy: number
   item: IndexItem
   path?: Path2D
+  /** 중심선 (축소 상태에서 외곽선 대신 긋는 얇은 선) */
+  center?: Path2D
 }
 
 export const groupKey = (pageId: ID, key: string) => `${pageId}|${key}`
@@ -34,6 +36,11 @@ export function getPath(rec: { stroke: Stroke; path?: Path2D }): Path2D {
     rec.path = outlineToPath(strokeOutline(s.points, s.width, s.opts, true))
   }
   return rec.path
+}
+
+export function getCenter(rec: { stroke: Stroke; center?: Path2D }): Path2D {
+  if (!rec.center) rec.center = centerlinePath(rec.stroke.points)
+  return rec.center
 }
 
 /**
