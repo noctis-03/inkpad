@@ -18,6 +18,7 @@ import { REMOTE_EVENT } from './sync'
 import { ensureFolders, findBranchesFolder, getSync, putSync, type FileRecord } from './folders'
 import { loadSnapshot, takeSnapshot } from './snapshots'
 import { getDeviceId } from './token'
+import { isNoteFile, resolveNote, type StoredNote } from './objects'
 import type { DocFileV1, RevMarker } from './pack'
 import { getCachedTag, putCachedTag, rememberRevTag, type RevTag } from './revTags'
 
@@ -144,13 +145,14 @@ async function unpinUnlocked(docId: ID, revisionId: string): Promise<void> {
   const rec = await fileRecordOf(docId)
   const revs = await drive.listRevisions(rec.fileId)
   const isHead = revs[revs.length - 1]?.id === revisionId
-  const file = await drive.downloadRevision<DocFileV1>(rec.fileId, revisionId)
-  if (file?.kind !== 'inkpad-doc') throw new Error('그 버전을 읽을 수 없습니다.')
+  // 받은 그대로(매니페스트면 매니페스트) 다시 올린다 — 조각은 그대로 있으니 노트 전체를 오가지 않는다
+  const file = await drive.downloadRevision<StoredNote>(rec.fileId, revisionId)
+  if (!isNoteFile(file)) throw new Error('그 버전을 읽을 수 없습니다.')
   const meta = await drive.getMeta(rec.fileId)
   const headProps = { ...(meta?.appProperties ?? {}), docId, enc: drive.ENC_GZIP }
   // 3에서 다시 올릴 헤드 내용 — 1이 헤드를 바꾸기 전에 받아 둔다
-  const head = isHead ? null : await drive.downloadJson<DocFileV1>(rec.fileId, meta?.appProperties?.enc)
-  if (!isHead && head?.kind !== 'inkpad-doc') throw new Error('클라우드 최신본을 읽지 못해 고정을 해제하지 않았습니다.')
+  const head = isHead ? null : await drive.downloadJson<StoredNote>(rec.fileId, meta?.appProperties?.enc)
+  if (!isHead && !isNoteFile(head)) throw new Error('클라우드 최신본을 읽지 못해 고정을 해제하지 않았습니다.')
   const { docs } = await ensureFolders()
   const name = `docs/${docId}.json`
 
@@ -237,16 +239,16 @@ export const AUTO_PIN_PREFIX = 'autoPin:'
  * allowPin이면 고정하고(자동 고정으로 기록) 다시 받는다 — 아니면 PinRequiredError.
  */
 export async function loadVersionFile(docId: ID, ref: VersionRef, opts: { allowPin?: boolean } = {}): Promise<DocFileV1> {
-  let file: DocFileV1
+  let file: StoredNote
   if (ref.kind === 'snapshot') file = await loadSnapshot(ref.id)
-  else if (ref.kind === 'branch') file = await drive.downloadJson<DocFileV1>(ref.fileId, drive.ENC_GZIP)
+  else if (ref.kind === 'branch') file = await drive.downloadJson<StoredNote>(ref.fileId, drive.ENC_GZIP)
   else {
     const backup = backupFileIdOf(ref.id)
-    if (backup) file = await drive.downloadJson<DocFileV1>(backup, drive.ENC_GZIP) // 옛 머지 백업 파일
+    if (backup) file = await drive.downloadJson<StoredNote>(backup, drive.ENC_GZIP) // 옛 머지 백업 파일
     else {
       const rec = await fileRecordOf(docId)
       try {
-        file = await drive.downloadRevision<DocFileV1>(rec.fileId, ref.id)
+        file = await drive.downloadRevision<StoredNote>(rec.fileId, ref.id)
       } catch (e) {
         if (!isPinError(e)) throw e
         if (!opts.allowPin) throw new PinRequiredError()
@@ -254,12 +256,12 @@ export async function loadVersionFile(docId: ID, ref: VersionRef, opts: { allowP
         if (!revs.some((r) => r.id === ref.id)) throw new Error('그 버전을 찾을 수 없습니다. 목록을 새로 고쳐 주세요.')
         await drive.setKeepForever(rec.fileId, ref.id, true)
         await putSync(`${AUTO_PIN_PREFIX}${rec.fileId}:${ref.id}`, { docId, at: Date.now() })
-        file = await drive.downloadRevision<DocFileV1>(rec.fileId, ref.id)
+        file = await drive.downloadRevision<StoredNote>(rec.fileId, ref.id)
       }
     }
   }
-  if (file?.kind !== 'inkpad-doc') throw new Error('그 버전을 읽을 수 없습니다.')
-  return file
+  if (!isNoteFile(file)) throw new Error('그 버전을 읽을 수 없습니다.')
+  return resolveNote(file, docId) // 매니페스트면 조각을 모은다(이 기기에 있는 조각은 받지 않는다)
 }
 
 /** 노트의 기기 브랜치들 (기기마다 최신 업로드 하나) — 버전 기록에 함께 보인다 */

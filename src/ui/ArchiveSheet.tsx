@@ -1,11 +1,11 @@
-// 보관함 관리 — 기기 브랜치·옛 머지 백업·이 기기 스냅샷·자동 고정을 한눈에 보고 정리한다 (sync/archive.ts).
+// 보관함 관리 — 기기 브랜치·옛 머지 백업·이 기기 스냅샷·자동 고정·안 쓰는 노트 조각을 한눈에 보고 정리한다 (sync/archive.ts).
 // 동기화 패널의 '보관함 관리'로 연다. 클라우드 파일은 Drive 휴지통으로 옮긴다(30일 보관).
 import { useCallback, useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { formatBytesShort, formatDate } from '../shared/util'
-import { loadArchive, releaseAutoPins, trashBranches, trashFiles, type ArchiveReport } from '../sync/archive'
+import { cleanObjects, loadArchive, releaseAutoPins, scanObjects, trashBranches, trashFiles, type ArchiveReport, type ObjectScan } from '../sync/archive'
 import { clearSnapshots, pruneSnapshots } from '../sync/snapshots'
 import { Icon } from './Icon'
 
@@ -24,6 +24,22 @@ function ArchiveSheet() {
   const [report, setReport] = useState<ArchiveReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  /** 조각 검사 결과 — 누를 때만 (노트 파일을 모두 읽는다) */
+  const [scan, setScan] = useState<ObjectScan | null | undefined>(undefined)
+  const [scanProgress, setScanProgress] = useState<string | null>(null)
+
+  const runScan = async () => {
+    setBusy('scan')
+    setScanProgress('살펴보는 중…')
+    try {
+      setScan(await scanObjects((d, t) => setScanProgress(`노트 파일 ${d}/${t} 살펴보는 중…`)))
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '조각을 살펴보지 못했습니다.', 'error')
+    } finally {
+      setBusy(null)
+      setScanProgress(null)
+    }
+  }
 
   const load = useCallback(async () => {
     setError(null)
@@ -186,6 +202,46 @@ function ArchiveSheet() {
                   >
                     모두 지우기
                   </button>
+                </div>
+              </section>
+
+              <section className="archive-section">
+                <h3>노트 조각</h3>
+                <p className="hint">
+                  노트는 페이지마다 조각으로 올라가 바뀐 페이지만 오갑니다. 노트를 고치면 옛 조각이 남는데, 아무 노트·브랜치·고정한 버전도 쓰지 않는 조각은
+                  정리에서 '안 씀'으로 표시하고, 45일 뒤 다시 정리할 때도 여전히 안 쓰면 Drive 휴지통으로 옮깁니다(그사이 옛 버전 되돌리기가 쓸 수 있게).
+                </p>
+                {scan === null && <p className="hint">아직 조각이 없습니다.</p>}
+                {scan && (
+                  <p className="hint">
+                    조각 {scan.total}개 · {formatBytesShort(scan.bytes)} — 안 쓰는 조각 {scan.unused.length}개 · {formatBytesShort(scan.unusedBytes)}
+                    {scan.ready > 0 ? ` (이번 정리에 휴지통으로 ${scan.ready}개 · ${formatBytesShort(scan.readyBytes)})` : ''}. 노트 파일 {scan.files}개를
+                    살펴봤습니다.
+                  </p>
+                )}
+                <div className="btn-row">
+                  <button className="text-btn" disabled={!!busy} onClick={() => void runScan()}>
+                    {scanProgress ?? (scan ? '다시 살펴보기' : '조각 살펴보기')}
+                  </button>
+                  {scan && (
+                    <button
+                      className="text-btn"
+                      disabled={!!busy || (!scan.unused.length && !scan.revived.length)}
+                      onClick={() =>
+                        void run('objects', null, async () => {
+                          const r = await cleanObjects(scan)
+                          setScan(undefined)
+                          return r.trashed
+                            ? `안 쓰는 조각 ${r.trashed}개를 휴지통으로 옮겼습니다${r.marked ? `(새로 표시 ${r.marked}개)` : ''}.`
+                            : r.marked
+                              ? `안 쓰는 조각 ${r.marked}개를 표시했습니다 — 45일 뒤 정리할 때도 안 쓰면 휴지통으로 옮깁니다.`
+                              : '정리할 조각이 없습니다.'
+                        })
+                      }
+                    >
+                      안 쓰는 조각 정리
+                    </button>
+                  )}
                 </div>
               </section>
 

@@ -10,7 +10,7 @@ const pull = (p: Page) => p.evaluate(async () => (await import('/src/sync/sync.t
 const planPull = (p: Page) =>
   p.evaluate(async () => {
     const plan = await (await import('/src/sync/sync.ts')).planPull()
-    return { docs: plan.docs.map((d) => d.docId), diverged: plan.diverged.map((d) => d.docId) }
+    return { docs: plan.docs.map((d) => d.docId), local: plan.local.map((d) => ({ id: d.docId, sync: d.sync })) }
   })
 const cloudState = (p: Page, docId: string) =>
   p.evaluate(async (docId) => (await (await import('/src/sync/sync.ts')).listCloudNotes()).find((n) => n.docId === docId)?.state, docId)
@@ -61,7 +61,7 @@ export default async function sync(ctx: Ctx) {
   check('갈라짐: A 목록 상태', (await cloudState(A, D)) === 'diverged', String(await cloudState(A, D)))
   check('갈라짐: A 카드 상태', (await cardState(A, D)) === 'diverged', String(await cardState(A, D)))
   const planA = await planPull(A)
-  check('갈라짐: 받기 미리보기는 받지 않는 이유로 보여 준다', !planA.docs.includes(D) && planA.diverged.includes(D))
+  check('갈라짐: 받기 미리보기는 그냥 받지 않고 "이 기기 내용이 덮이는 노트"로 고르게 한다', !planA.docs.includes(D) && planA.local.some((l) => l.id === D && l.sync === 'diverged'))
   await pull(A)
   check('갈라짐: 받기가 A 노트를 덮지 않는다', sameSet(await strokes(A, D), ['a', 'b', 'c']))
   check('갈라짐: main에 A의 두 번째 업로드는 반영되지 않았다', mainProps(D)[`m.${devA}`] === '1' && drive.branchOf(D, devA)!.appProperties.seq === '2')
@@ -81,7 +81,14 @@ export default async function sync(ctx: Ctx) {
   await addStroke(B, D, 'f')
   await push(B)
   await A.evaluate(async (D) => (await import('/src/sync/sync.ts')).alignWithCloud(D), D)
-  check('맞추기: 올리지 않은 변경은 덮기 전에 A 브랜치에 남는다', drive.fileStrokes(drive.branchOf(D, devA)!).includes('lost?'))
+  check('맞추기: 올리지 않은 변경은 브랜치에 올리지 않는다(데이터 절약)', !drive.fileStrokes(drive.branchOf(D, devA)!).includes('lost?'))
+  const snapA = await A.evaluate(async (D) => {
+    const sn = await import('/src/sync/snapshots.ts')
+    const last = (await sn.listSnapshots(D))[0]
+    const file = await sn.loadSnapshot(last.id)
+    return { why: last.why, ids: file.chunks.flatMap((c) => c.elements.map((e) => e.id)) }
+  }, D)
+  check('맞추기: 덮기 전 내용은 이 기기 스냅샷으로 남는다', snapA.why === 'align' && snapA.ids.includes('lost?'), JSON.stringify(snapA))
   check('맞추기: A 노트는 main(f 포함)', (await strokes(A, D)).includes('f') && !(await strokes(A, D)).includes('lost?'))
 
   // ── main 쓰기 실패: 대기가 남고, 다시 올리면 따라간다 ──

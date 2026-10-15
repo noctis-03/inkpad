@@ -16,7 +16,7 @@ export const SNAP_PER_DOC = 20
 export const SNAP_TOTAL_BYTES = 200 * 1024 * 1024
 
 /** 무엇을 하기 직전에 남겼나 */
-export type SnapshotWhy = 'pull' | 'align' | 'merge' | 'restore'
+export type SnapshotWhy = 'pull' | 'align' | 'merge' | 'restore' | 'discard'
 
 export interface SnapshotInfo {
   id: string

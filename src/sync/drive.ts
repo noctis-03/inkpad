@@ -119,19 +119,35 @@ export async function createFolder(name: string, parentId?: string): Promise<str
 }
 
 /** 폴더 안의 파일 목록. where: appProperties로 좁히기 (예: { docId: '…' } — 값은 ULID처럼 따옴표가 없는 것만) */
-export async function listFiles(folderId: string, where?: Record<string, string>): Promise<RemoteFile[]> {
+/** modifiedAfter(RFC 3339)를 주면 그 뒤에 바뀐 파일만 — 받기의 목록을 줄인다 (sync.ts listDocs) */
+export async function listFiles(folderId: string, where?: Record<string, string>, modifiedAfter?: string): Promise<RemoteFile[]> {
   const out: RemoteFile[] = []
   let pageToken = ''
   const props = Object.entries(where ?? {})
     .map(([k, v]) => ` and appProperties has { key='${k}' and value='${v.replace(/['\\]/g, '')}' }`)
     .join('')
-  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false${props}`)
+  const since = modifiedAfter ? ` and modifiedTime > '${modifiedAfter.replace(/[^0-9TZ:.+-]/g, '')}'` : ''
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false${props}${since}`)
   do {
     const url =
       `${API}/files?q=${q}&pageSize=1000&fields=nextPageToken,files(${FIELDS})` +
       (pageToken ? `&pageToken=${pageToken}` : '')
     const page = await ok<{ files: RemoteFile[]; nextPageToken?: string }>(await driveFetch(url))
     out.push(...page.files)
+    pageToken = page.nextPageToken ?? ''
+  } while (pageToken)
+  return out
+}
+
+/** 폴더에서 휴지통에 있는 파일 (id만) — 조각 정리가 휴지통으로 보낸 조각을 다시 가리키지 않게 (sync/objects.ts) */
+export async function listTrashedIds(folderId: string): Promise<Set<string>> {
+  const out = new Set<string>()
+  let pageToken = ''
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=true`)
+  do {
+    const url = `${API}/files?q=${q}&pageSize=1000&fields=nextPageToken,files(id)` + (pageToken ? `&pageToken=${pageToken}` : '')
+    const page = await ok<{ files: { id: string }[]; nextPageToken?: string }>(await driveFetch(url))
+    for (const f of page.files) out.add(f.id)
     pageToken = page.nextPageToken ?? ''
   } while (pageToken)
   return out
