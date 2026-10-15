@@ -1,10 +1,11 @@
 import { Camera } from './camera'
 import { MAX_CANVAS_PIXELS } from './constants'
 import { drawPattern } from './background'
-import { outlineToPath, strokeOutline } from './geometry'
+import { centerlinePath, outlineToPath, strokeOutline } from './geometry'
 import type { Layout } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
-import { getPath, type Scene, type StrokeRec } from './scene'
+import { isHairline, MIN_STROKE_DEVICE_PX } from './quality'
+import { getCenter, getPath, type Scene, type StrokeRec } from './scene'
 import type { Background, StrokeOpts } from '../shared/model'
 
 export interface Box {
@@ -18,6 +19,8 @@ export interface LiveDraw {
   ox: number
   oy: number
   points: number[]
+  /** 이 점 인덱스(개수)부터 그린다 — 앞부분은 이미 확정 레이어에 굳혀 두었다(증분 렌더링) */
+  from: number
   predicted: number[][]
   width: number
   color: string
@@ -42,7 +45,8 @@ export interface Overlay {
  * 레이어 (아래 → 위)
  *  1. 배경 레이어 canvas: 무한 캔버스 = CSS 점/격자 패턴, 문서형 = 종이 + 속지 + PDF 비트맵
  *  2. 확정 레이어 canvas: 끝난 획. 팬/줌 중에는 CSS transform만 적용할 수 있다.
- *  3. 입력 레이어 canvas: 입력 중인 획 + 커서 + 올가미 + 이동 중인 선택 영역.
+ *     입력 중인 획의 앞부분도 여기에 굳힌다(증분 렌더링 — 아래 freezeLive).
+ *  3. 입력 레이어 canvas: 입력 중인 획의 최근 구간 + 커서 + 올가미 + 이동 중인 선택 영역.
  */
 export class Renderer {
   readonly root: HTMLElement
@@ -208,6 +212,15 @@ export class Renderer {
 
   private drawRec(ctx: CanvasRenderingContext2D, rec: StrokeRec, cam: Camera, k: number) {
     ctx.setTransform(k, 0, 0, k, (rec.ox - cam.x) * k, (rec.oy - cam.y) * k)
+    // 축소해서 화면 두께가 1.5px도 안 되는 획은 면으로 채우면 회색으로 번진다 → 중심선 한 줄로 또렷하게
+    if (isHairline(rec.stroke.width, k)) {
+      ctx.strokeStyle = rec.stroke.color
+      ctx.lineWidth = MIN_STROKE_DEVICE_PX / k
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.stroke(getCenter(rec))
+      return
+    }
     ctx.fillStyle = rec.stroke.color
     ctx.fill(getPath(rec))
   }
@@ -274,6 +287,37 @@ export class Renderer {
     this.visibleCount++
   }
 
+  /**
+   * 입력 중인 획의 앞부분을 확정 레이어에 굳힌다 (라이브 외곽선 증분화).
+   *
+   * 매 프레임 누적된 전체 점으로 외곽선을 다시 만들면 프레임 비용이 점 수에 비례해 커진다
+   * (한 획 동안 누적 O(n²)) — 길게 이어 쓰면 뒤로 갈수록 밀린다. 앞부분은 여기서 한 번만 굳혀
+   * 두고 최근 창(window)만 다시 계산하면 프레임 비용이 획 길이와 무관해진다.
+   *
+   * fromPoint를 조금 겹쳐 다시 그려 이음매(외곽선이 구간마다 새로 시작하는 단차)를 숨긴다.
+   * 확정 레이어에 그리므로 팬/줌 중에는 쓰지 않는다 — engine이 카메라가 맞을 때만 부른다.
+   */
+  freezeLive(cam: Camera, stroke: LiveDraw, fromPoint: number, uptoPoint: number) {
+    if (uptoPoint <= fromPoint) return
+    const tail = stroke.points.slice(Math.max(0, fromPoint) * 4, uptoPoint * 4)
+    if (tail.length < 4) return
+    const ctx = this.cctx
+    const k = cam.zoom * this.scale
+    ctx.save()
+    ctx.setTransform(k, 0, 0, k, (stroke.ox - cam.x) * k, (stroke.oy - cam.y) * k)
+    if (isHairline(stroke.width, k)) {
+      ctx.strokeStyle = stroke.color
+      ctx.lineWidth = MIN_STROKE_DEVICE_PX / k
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.stroke(centerlinePath(tail))
+    } else {
+      ctx.fillStyle = stroke.color
+      ctx.fill(outlineToPath(strokeOutline(tail, stroke.width, stroke.opts, false)))
+    }
+    ctx.restore()
+  }
+
   private transformFor(cam: Camera) {
     const r = this.renderedCam
     const k = cam.zoom / r.zoom
@@ -322,25 +366,39 @@ export class Renderer {
       }
     }
     if (stroke && stroke.points.length) {
-      ctx.save()
-      if (stroke.clip) {
-        const c = stroke.clip
-        ctx.setTransform(k, 0, 0, k, -cam.x * k, -cam.y * k)
-        ctx.beginPath()
-        ctx.rect(c.minX, c.minY, c.maxX - c.minX, c.maxY - c.minY)
-        ctx.clip()
+      // 앞부분(from)은 확정 레이어에 이미 굳혀 두었다 — 여기서는 최근 구간만 그린다
+      const from = Math.max(0, stroke.from) * 4
+      const pts = from > 0 ? stroke.points.slice(from) : stroke.points
+      if (pts.length) {
+        ctx.save()
+        if (stroke.clip) {
+          const c = stroke.clip
+          ctx.setTransform(k, 0, 0, k, -cam.x * k, -cam.y * k)
+          ctx.beginPath()
+          ctx.rect(c.minX, c.minY, c.maxX - c.minX, c.maxY - c.minY)
+          ctx.clip()
+        }
+        ctx.setTransform(k, 0, 0, k, (stroke.ox - cam.x) * k, (stroke.oy - cam.y) * k)
+        // 입력 중인 획도 확정 레이어와 같은 규칙을 쓴다 (축소 상태에서 꼬리가 번지지 않게)
+        if (isHairline(stroke.width, k)) {
+          ctx.strokeStyle = stroke.color
+          ctx.lineWidth = MIN_STROKE_DEVICE_PX / k
+          ctx.lineJoin = 'round'
+          ctx.lineCap = 'round'
+          ctx.stroke(centerlinePath(pts, stroke.predicted))
+        } else {
+          ctx.fillStyle = stroke.color
+          ctx.fill(outlineToPath(strokeOutline(pts, stroke.width, stroke.opts, false, stroke.predicted)))
+        }
+        ctx.restore()
+        const b = liveStrokeBox(pts, stroke.predicted, stroke.ox, stroke.oy, stroke.width)
+        boxes.push({
+          x0: (b.minX - cam.x) * k,
+          y0: (b.minY - cam.y) * k,
+          x1: (b.maxX - cam.x) * k,
+          y1: (b.maxY - cam.y) * k
+        })
       }
-      ctx.setTransform(k, 0, 0, k, (stroke.ox - cam.x) * k, (stroke.oy - cam.y) * k)
-      ctx.fillStyle = stroke.color
-      ctx.fill(outlineToPath(strokeOutline(stroke.points, stroke.width, stroke.opts, false, stroke.predicted)))
-      ctx.restore()
-      const b = liveStrokeBox(stroke)
-      boxes.push({
-        x0: (b.minX - cam.x) * k,
-        y0: (b.minY - cam.y) * k,
-        x1: (b.maxX - cam.x) * k,
-        y1: (b.maxY - cam.y) * k
-      })
     }
     if (overlay?.lasso && overlay.lasso.length >= 4) {
       const l = overlay.lasso
@@ -399,9 +457,14 @@ interface LiveBox {
   y1: number
 }
 
-/** 입력 중인 획이 차지하는 월드 bbox (외곽선 두께·예측 점 포함) */
-function liveStrokeBox(stroke: LiveDraw): { minX: number; minY: number; maxX: number; maxY: number } {
-  const pts = stroke.points
+/** 그린 구간이 차지하는 월드 bbox (외곽선 두께·예측 점 포함) */
+function liveStrokeBox(
+  pts: number[],
+  predicted: number[][],
+  ox: number,
+  oy: number,
+  width: number
+): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (let i = 0; i < pts.length; i += 4) {
     if (pts[i] < minX) minX = pts[i]
@@ -409,15 +472,15 @@ function liveStrokeBox(stroke: LiveDraw): { minX: number; minY: number; maxX: nu
     if (pts[i + 1] < minY) minY = pts[i + 1]
     if (pts[i + 1] > maxY) maxY = pts[i + 1]
   }
-  for (const p of stroke.predicted) {
+  for (const p of predicted) {
     if (p[0] < minX) minX = p[0]
     if (p[0] > maxX) maxX = p[0]
     if (p[1] < minY) minY = p[1]
     if (p[1] > maxY) maxY = p[1]
   }
   if (minX === Infinity) return { minX: 0, minY: 0, maxX: 0, maxY: 0 }
-  const pad = stroke.width + 2
-  return { minX: minX + stroke.ox - pad, minY: minY + stroke.oy - pad, maxX: maxX + stroke.ox + pad, maxY: maxY + stroke.oy + pad }
+  const pad = width + 2
+  return { minX: minX + ox - pad, minY: minY + oy - pad, maxX: maxX + ox + pad, maxY: maxY + oy + pad }
 }
 
 function unionLiveBoxes(list: LiveBox[]): LiveBox | null {

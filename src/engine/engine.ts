@@ -6,7 +6,7 @@ import { History, type Command, type PageSnapshot } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
-import { minPointDist, smoothPressure } from './quality'
+import { minPointDist, OneEuroFilter, taperStrokeEnd, VELOCITY_START_PRESSURE, velocityPressure } from './quality'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
 import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
 import { drawPattern } from './background'
@@ -64,6 +64,20 @@ interface ActiveStroke {
   pressure: ResolvedPressure
   /** 직전까지의 평활된 필압 (-1 = 아직 없음) */
   smoothP: number
+  /** 필압·속도 평활 필터 (획마다 새로 만든다) */
+  oe: OneEuroFilter
+  /** 위치 안정화 필터 — 손떨림 보정(GoodNotes Stroke Stabilization) */
+  fx: OneEuroFilter
+  fy: OneEuroFilter
+  /** 직전 "원시" 화면 좌표·시각 — 속도는 안정화된 좌표가 아니라 손의 실제 움직임으로 잰다 */
+  rsx: number
+  rsy: number
+  rt: number
+  hasRaw: boolean
+  /** 획 끝 날카로움으로 실제 깎은 세기 (통계·검증용) */
+  tapered: number
+  /** 확정 레이어에 이미 굳힌 점 개수 (증분 라이브 렌더링) */
+  frozen: number
   // 지우개
   removed: Map<ID, Entry>
   added: Map<ID, Entry>
@@ -80,6 +94,8 @@ interface TouchInfo {
   sx: number
   sy: number
   ignored: boolean
+  /** 펜을 뗀 직후의 접촉 — 두 번째 접촉이 오면 되살려 제스처로 쓴다 (손바닥 후보) */
+  provisional?: boolean
 }
 
 interface Gesture {
@@ -98,6 +114,8 @@ const LAT_SAMPLES = 120
 const SAVE_DEBOUNCE_MS = 500
 /** 미리보기에 쓰는 예측 점 상한 — 너무 많으면 펜 끝이 실제보다 길게 튀어나온다 */
 const MAX_PREDICTED = 6
+/** 라이브 외곽선을 확정 레이어에 굳힐 때 겹쳐 다시 그리는 점 개수 — 구간 이음매를 숨긴다 */
+const LIVE_FREEZE_OVERLAP = 8
 
 /** 페이지 기준 상대 좌표를 허용 범위(페이지 밖 BLOCK_MAX_OUTSIDE까지)로 clamp한다 */
 const clampBlockRel = (v: number, max: number) => Math.min(Math.max(v, -BLOCK_MAX_OUTSIDE), Math.max(-BLOCK_MAX_OUTSIDE, max))
@@ -1013,11 +1031,31 @@ export class Engine {
     const penBusy = !!this.active && this.active.pointerType !== 'touch'
     const inPalmWindow = performance.now() - this.lastPenUp < this.settings.palmWindowMs
     const bigContact = this.settings.palmMaxContact > 0 && Math.max(e.width, e.height) > this.settings.palmMaxContact
-    if (penBusy || inPalmWindow || bigContact) {
+    if (penBusy || bigContact) {
       t.ignored = true
       this.palmRejected++
       this.touches.set(e.pointerId, t)
       return
+    }
+    if (inPalmWindow) {
+      // 펜을 뗀 직후의 홑접촉은 손바닥으로 본다. 다만 그 사이에 두 번째 접촉이 오면
+      // (곧바로 두 손가락 스크롤·핀치를 하려는 것) 앞의 예비 접촉을 되살려 제스처로 쓴다 —
+      // 예전에는 이 창(기본 500ms)이 필기 직후의 모든 제스처와 두/세 손가락 탭을 막았다.
+      const provisional = [...this.touches.values()].filter((x) => x.provisional)
+      if (!provisional.length) {
+        t.provisional = true
+        t.ignored = true
+        this.palmRejected++
+        this.touches.set(e.pointerId, t)
+        return
+      }
+      for (const x of provisional) {
+        x.ignored = false
+        x.provisional = false
+        x.sx = x.x // 제스처 기준점을 지금으로 옮긴다 (아니면 되살린 접촉이 큰 이동으로 보인다)
+        x.sy = x.y
+      }
+      this.palmRejected = Math.max(0, this.palmRejected - provisional.length)
     }
     this.capture(e.pointerId)
     this.touches.set(e.pointerId, t)
@@ -1182,6 +1220,15 @@ export class Engine {
       opts: strokeOptsFor(pressure, this.settings, hl ? 'highlighter' : 'pen'),
       pressure,
       smoothP: -1,
+      oe: OneEuroFilter.forSmoothing(this.settings.pressureSmoothing),
+      fx: OneEuroFilter.forStabilization(this.settings.streamline),
+      fy: OneEuroFilter.forStabilization(this.settings.streamline),
+      rsx: p.x,
+      rsy: p.y,
+      rt: eventTimeToPerf(e.timeStamp),
+      hasRaw: false,
+      tapered: 0,
+      frozen: 0,
       removed: new Map(),
       added: new Map(),
       lasso: [],
@@ -1201,6 +1248,9 @@ export class Engine {
     this.cursor = null
     this.markEvent(e)
     this.addPoint(a, e)
+    // 확정 레이어가 아직 이 카메라와 어긋나 있으면(팬/줌 직후) 먼저 다시 그리게 한다 —
+    // 증분 라이브 렌더링은 확정 레이어에 굳히므로 좌표계가 맞아야 한다.
+    if (!this.renderer.inSync(this.cam)) this.committedDirty = true
     this.liveDirty = true
   }
 
@@ -1222,8 +1272,11 @@ export class Engine {
     const p = this.local(ev)
     const w = this.cam.screenToWorld(p.x, p.y)
     const m = this.mappedPressure(ev, a)
+    // 필압 모드가 아니면(속도·일정) 지금 적용 중인 굵기를 그대로 쓴다.
+    // 예측 점만 0.5로 그리면 꼬리에서 굵기가 튄다.
+    if (a.pressure !== 'pressure') return [w.x - a.ox, w.y - a.oy, a.smoothP >= 0 ? a.smoothP : 0.5]
     const pr = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
-    return [w.x - a.ox, w.y - a.oy, a.pressure === 'pressure' ? pr : 0.5]
+    return [w.x - a.ox, w.y - a.oy, pr]
   }
 
   private addPoint(a: ActiveStroke, ev: PointerEvent) {
@@ -1246,18 +1299,42 @@ export class Engine {
       return
     }
     if (a.pointerType === 'pen') a.raw.push(ev.pressure)
-    // 필압: 곡선·최소값 적용 → 지수 평활(직전 값과 섞어 굵기가 계단처럼 변하지 않게)
-    const m = this.mappedPressure(ev, a)
-    let pr: number
-    if (m < 0) {
-      // 이 이벤트는 필압을 보내지 않았다 → 직전 값 유지 (평활 상태는 건드리지 않는다)
-      pr = a.smoothP >= 0 ? a.smoothP : a.points.length >= 4 ? a.points[a.points.length - 2] : 0.5
+    const ts = eventTimeToPerf(ev.timeStamp)
+    const rdt = Math.max(0, Math.round(ts - a.rt)) // 이벤트 사이 실제 경과 시간 — 평활 계수의 기준
+
+    // 1) 굵기 원값.
+    //    필압 펜은 원시 필압(곡선·최소값 적용), 그 외에는 "화면 기준 속도"로 만든다.
+    //    속도를 월드 거리로 재면 같은 손 동작이 배율마다 다른 굵기가 된다 — 화면 px/s로 잰다.
+    let rawP: number
+    if (a.pressure === 'velocity') {
+      rawP = a.hasRaw ? velocityPressure(p.x - a.rsx, p.y - a.rsy, rdt) : VELOCITY_START_PRESSURE
     } else {
-      pr = a.smoothP < 0 ? m : smoothPressure(a.smoothP, m, this.settings.pressureSmoothing)
-      a.smoothP = pr
+      const m = this.mappedPressure(ev, a)
+      // 이 이벤트가 필압을 보내지 않았다 → 직전 값 유지
+      rawP = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
     }
-    const qx = q2(w.x - a.ox)
-    const qy = q2(w.y - a.oy)
+
+    // 2) 시간 기준 1€ 평활 — 이벤트 개수가 아니라 경과 시간으로 계수를 잡아
+    //    60/120Hz·coalesced 배수가 달라도 같은 감각이 된다.
+    const pr = a.smoothP < 0 ? rawP : a.oe.filter(rawP, rdt || 1)
+    a.smoothP = pr
+
+    // 3) 위치 안정화(GoodNotes Stroke Stabilization) — 잔떨림만 눌러 두고 빠른 획은 따라간다.
+    //    여기서 만든 점이 그대로 저장되므로 확정된 획과 입력 중 미리보기의 모양이 같다.
+    let px = w.x
+    let py = w.y
+    if (a.hasRaw) {
+      const sp = this.cam.screenToWorld(a.fx.filter(p.x, rdt || 1), a.fy.filter(p.y, rdt || 1))
+      px = sp.x
+      py = sp.y
+    }
+    a.rsx = p.x
+    a.rsy = p.y
+    a.rt = ts
+    a.hasRaw = true
+
+    const qx = q2(px - a.ox)
+    const qy = q2(py - a.oy)
     const n = a.points.length
     if (n >= 4) {
       // 화면에서 sub-pixel만큼 움직인 점은 떨림으로 보고 점을 만들지 않는다.
@@ -1270,8 +1347,8 @@ export class Engine {
         return
       }
     }
-    const dt = Math.max(0, Math.round(ev.timeStamp - a.lastT))
-    a.lastT = ev.timeStamp
+    const dt = Math.max(0, Math.round(ts - a.lastT))
+    a.lastT = ts
     a.points.push(qx, qy, q2(pr), dt)
   }
 
@@ -1341,6 +1418,8 @@ export class Engine {
     this.stats.pressureSource = PRESSURE_LABEL[a.pressure]
     if (!commit || a.points.length === 0) return
     const hl = a.tool === 'highlighter'
+    // 획 끝 날카로움 (GoodNotes Tip Sharpness) — 빠르게 스쳐 끝난 획만 끝을 가늘게 다듬는다
+    if (!hl) a.tapered = taperStrokeEnd(a.points, this.settings.tipSharpness, this.cam.zoom)
     const stroke: Stroke = {
       id: ulid(),
       type: 'stroke',
@@ -1360,7 +1439,9 @@ export class Engine {
     this.markDirty(a.pageId, a.key)
     this.bumpPage(a.pageId)
     if (this.renderer.inSync(this.cam)) {
-      if (stroke.layer === 'under') this.renderer.redrawRegion(this.scene, this.cam, rec.item)
+      // 입력 중 확정 레이어에 굳혀 둔 부분이 있으면 그 위에 겹쳐 그리면 안 된다
+      // (형광펜은 겹친 만큼 진해진다) → 그 영역을 지우고 장면에서 다시 그린다.
+      if (a.frozen > 0 || stroke.layer === 'under') this.renderer.redrawRegion(this.scene, this.cam, rec.item)
       else this.renderer.drawIncremental(rec, this.cam)
     } else this.committedDirty = true
     this.scheduleSave()
@@ -1609,6 +1690,8 @@ export class Engine {
 
     if (this.committedDirty) {
       this.committedDirty = false
+      // 확정 레이어를 다시 그리면 입력 중 굳혀 둔 부분도 함께 지워진다 → 처음부터 다시 굳힌다
+      if (this.active && this.active.frozen > 0) this.active.frozen = 0
       const moving = (this.gesture !== null && this.touches.size > 0) || this.momentum !== null
       const mode = this.settings.gestureRender
       const cheap = r.lastFullMs < AUTO_REDRAW_BUDGET_MS
@@ -1648,10 +1731,20 @@ export class Engine {
       this.liveDirty = false
       const t0 = performance.now()
       const a = this.active
-      const live: LiveDraw | null =
-        a && (a.tool === 'pen' || a.tool === 'highlighter')
-          ? { ox: a.ox, oy: a.oy, points: a.points, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts }
-          : null
+      let live: LiveDraw | null = null
+      if (a && (a.tool === 'pen' || a.tool === 'highlighter')) {
+        live = { ox: a.ox, oy: a.oy, points: a.points, from: 0, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts }
+        // 라이브 외곽선 증분화: 창(window)을 넘긴 앞부분은 확정 레이어에 한 번만 굳히고
+        // 매 프레임 다시 계산하지 않는다 → 프레임 비용이 획 길이와 무관해진다.
+        const total = a.points.length / 4
+        const win = Math.max(4, Math.round(this.settings.liveWindow))
+        if (total - a.frozen > win && r.inSync(this.cam)) {
+          const cut = total - Math.floor(win / 2)
+          r.freezeLive(this.cam, live, Math.max(0, a.frozen - LIVE_FREEZE_OVERLAP), cut)
+          a.frozen = cut
+        }
+        live.from = a.frozen
+      }
       let overlay: Overlay | null = null
       if (a && a.tool === 'lasso' && !a.moveFrom) overlay = { lasso: a.lasso }
       if (this.selection.length) {

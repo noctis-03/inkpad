@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import {
+  applySettingsPatch,
   DEFAULT_SETTINGS,
+  profileSettings,
   type EngineStats,
   type SelectionInfo,
   type Settings,
@@ -172,6 +174,7 @@ interface UIState {
   setTool: (t: Tool) => void
   toggleQuick: () => void
   setSettings: (p: Partial<Settings>) => void
+  applyInkProfile: (id: Settings['inkProfile']) => void
   resetSettings: () => void
   setStyle: (s: ToolStyle) => void
   setLibrary: (p: Partial<LibraryPrefs>) => void
@@ -257,7 +260,14 @@ export const useUI = create<UIState>((set, get) => ({
     set({ tool: next, prevTool: tool })
   },
   setSettings: (p) => {
-    const settings = { ...get().settings, ...p }
+    // 프로파일이 정하는 값을 손으로 바꾸면 '직접 맞춤'으로 표시한다 (칩이 실제 값과 어긋나지 않게)
+    const settings = applySettingsPatch(get().settings, p)
+    save(LS_SETTINGS, settings)
+    set({ settings })
+  },
+  applyInkProfile: (id) => {
+    // 프로파일 = 펜 종류 한 벌 — 필압·평활·안정화·획 끝 값을 한꺼번에 맞춘다
+    const settings = profileSettings(get().settings, id)
     save(LS_SETTINGS, settings)
     set({ settings })
   },

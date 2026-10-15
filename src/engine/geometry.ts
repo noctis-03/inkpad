@@ -25,6 +25,35 @@ export function strokeOutline(
   })
 }
 
+/**
+ * 점 배열 [x,y,p,dt,...] → 중심선 Path2D.
+ * 축소해서 화면 두께가 1~2px도 안 될 때 외곽선 면 대신 이 선을 긋는다 (회색 번짐 방지).
+ * extra = 예측 점 (저장하지 않고 입력 레이어에만 사용).
+ */
+export function centerlinePath(points: number[], extra: number[][] = []): Path2D {
+  const path = new Path2D()
+  let started = false
+  for (let i = 0; i < points.length; i += 4) {
+    const x = points[i]
+    const y = points[i + 1]
+    if (started) path.lineTo(x, y)
+    else {
+      path.moveTo(x, y)
+      started = true
+    }
+  }
+  for (const p of extra) {
+    if (started) path.lineTo(p[0], p[1])
+    else {
+      path.moveTo(p[0], p[1])
+      started = true
+    }
+  }
+  // 점 하나뿐인 획은 둥근 캡이 붙도록 아주 짧은 선분을 준다
+  if (started && points.length === 4 && extra.length === 0) path.lineTo(points[0] + 0.01, points[1])
+  return path
+}
+
 /** 외곽선 다각형 → 곡선으로 매끄럽게 이은 Path2D */
 export function outlineToPath(pts: number[][]): Path2D {
   const path = new Path2D()
