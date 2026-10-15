@@ -18,18 +18,28 @@ export function resolvePressure(s: Settings, pointerType: string): ResolvedPress
   }
 }
 
+/**
+ * 이 획의 외곽선 파라미터.
+ *
+ * streamline(perfect-freehand 내부 리샘플링 평활)은 항상 0으로 저장한다 — 손떨림 보정은 엔진이
+ * 점을 만들 때 "시간 기준"으로 이미 적용하므로(engine.addPoint), 라이브러리에도 맡기면 이중으로
+ * 눌리고 이벤트 주기에 따라 달라진다. 이미 그려 둔 획은 자기 opts를 그대로 쓰므로 모양이 변하지 않는다.
+ *
+ * 속도 모드(velocity)는 엔진이 점마다 "화면 기준 속도"로 굵기를 만들어 넘기므로 라이브러리의
+ * 거리 기반 추정(simulatePressure)을 끈다 (거리/굵기 비율로 추정하면 배율마다 굵기가 달라진다).
+ */
 export function strokeOptsFor(mode: ResolvedPressure, s: Settings, tool: 'pen' | 'highlighter'): StrokeOpts {
   if (tool === 'highlighter') {
-    return { thinning: 0, smoothing: 0.5, streamline: Math.max(0.4, s.streamline), simulatePressure: false }
+    return { thinning: 0, smoothing: 0.5, streamline: 0, simulatePressure: false }
   }
   switch (mode) {
     case 'pressure':
-      return { thinning: s.thinning, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: false }
+      return { thinning: s.thinning, smoothing: s.smoothing, streamline: 0, simulatePressure: false }
     case 'velocity':
       // 속도 기반은 변화가 과하면 어색하므로 폭을 줄인다
-      return { thinning: s.thinning * 0.7, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: true }
+      return { thinning: s.thinning * 0.7, smoothing: s.smoothing, streamline: 0, simulatePressure: false }
     case 'constant':
-      return { thinning: 0, smoothing: s.smoothing, streamline: s.streamline, simulatePressure: false }
+      return { thinning: 0, smoothing: s.smoothing, streamline: 0, simulatePressure: false }
   }
 }
 

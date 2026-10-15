@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useUI } from '../app/store'
-import type { PressureMode, Settings } from '../engine/types'
+import { INK_PROFILE_ORDER, INK_PROFILES, type InkProfile, type PressureMode, type Settings } from '../engine/types'
 import { Icon } from './Icon'
 import { NetUsageSection } from './NetUsageDebug'
 import { Segmented } from './Segmented'
@@ -99,6 +99,34 @@ const MODE_INFO: Record<PressureMode, { title: string; desc: string }> = {
 }
 
 const CAP_LABEL = { unknown: '아직 모름 (펜으로 몇 획 그려 보세요)', yes: '필압 지원 ✓', no: '필압 없음 (고정값만 보냄)' }
+
+/**
+ * 필기 프로파일 — GoodNotes의 펜 종류(볼펜·만년필·붓펜)에 대응한다.
+ * 한 번 누르면 필압·평활·안정화·획 끝 값이 그 펜에 맞게 한꺼번에 바뀐다.
+ */
+function InkProfilePicker() {
+  const cur = useUI((s) => s.settings.inkProfile)
+  const apply = useUI((s) => s.applyInkProfile)
+  return (
+    <div className="pressure-modes" role="radiogroup" aria-label="필기 프로파일">
+      {INK_PROFILE_ORDER.map((id: InkProfile) => {
+        const p = id === 'custom' ? null : INK_PROFILES[id]
+        return (
+          <button
+            key={id}
+            role="radio"
+            aria-checked={cur === id}
+            className={'pressure-mode' + (cur === id ? ' is-active' : '')}
+            onClick={() => apply(id)}
+          >
+            <strong>{p ? p.label : '직접 맞춤'}</strong>
+            <small>{p ? p.hint : '아래 필압·필기 값을 직접 맞춥니다'}</small>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 export function PressureSection() {
   const s = useUI((st) => st.settings)
@@ -269,8 +297,18 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
 
       <section className="panel-section">
         <h3>필기</h3>
-        <Row label="손떨림 보정" hint="높을수록 부드럽지만 펜 끝에서 뒤처짐">
+        <div className="setting-row">
+          <span className="setting-label">
+            필기 프로파일
+            <small>GoodNotes의 펜 종류에 대응합니다. 고르면 아래 필압·필기 값이 함께 맞춰집니다</small>
+          </span>
+        </div>
+        <InkProfilePicker />
+        <Row label="손떨림 보정" hint="Stroke Stabilization — 높을수록 잔떨림을 눌러 주고, 펜 끝이 조금 뒤처집니다">
           <Slider k="streamline" min={0} max={0.9} step={0.05} />
+        </Row>
+        <Row label="획 끝 날카로움" hint="Tip Sharpness — 빠르게 스쳐 끝난 획의 끝만 가늘게. 천천히 멈춘 획은 그대로 둡니다">
+          <Slider k="tipSharpness" min={0} max={1} step={0.05} />
         </Row>
         <Row label="외곽선 매끄럽게">
           <Slider k="smoothing" min={0} max={1} step={0.05} />
@@ -309,7 +347,7 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
           <Row label="중간 점 수집" hint="getCoalescedEvents">
             <Toggle k="coalesced" />
           </Row>
-          <Row label="팜 리젝션 시간" hint="펜을 뗀 뒤 터치 무시">
+          <Row label="손바닥 무시 시간" hint="펜을 뗀 뒤 이 시간의 '홑접촉'만 손바닥으로 봅니다. 두 번째 손가락이 오면 곧바로 제스처로 씁니다">
             <Slider k="palmWindowMs" min={0} max={1500} step={50} fmt={(v) => `${v}ms`} />
           </Row>
           <Row label="큰 접촉면 무시" hint="0 = 끔">
@@ -332,9 +370,12 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
             <Row label="해상도" hint="낮추면 빠르지만 흐려짐">
               <Slider k="resolution" min={0.5} max={1} step={0.25} fmt={(v) => `${v * 100}%`} />
             </Row>
-            <Row label="성능 표시 (HUD)">
-              <Toggle k="showHud" />
-            </Row>
+          <Row label="성능 표시 (HUD)">
+            <Toggle k="showHud" />
+          </Row>
+          <Row label="라이브 창 (점)" hint="입력 중 매 프레임 다시 그리는 최근 점 개수. 그 앞부분은 한 번만 굳혀 두어 획이 길어져도 지연이 늘지 않습니다">
+            <Slider k="liveWindow" min={8} max={128} step={8} />
+          </Row>
           </section>
         )}
 
