@@ -62,6 +62,7 @@ import { assetFileName, packDocument, type DocFileV1, type RevMarker } from './p
 import { isUpToDate, knownBaseMid, newestPerDoc, noteSync, pullSkipReason, verNum, type NoteSync } from './judge'
 import { SYNC_LOCK, withSyncLock } from './lock'
 import { rememberRevTag } from './revTags'
+import { takeSnapshot } from './snapshots'
 import { AuthRequiredError, SyncNotConfiguredError, getAccessToken, getDeviceId, getDeviceName } from './token'
 import { clearPendingIfUnchanged } from './unchanged'
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
@@ -485,8 +486,9 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
     f.docs,
     main?.id
   )
-  // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 기록에서 찾기 쉽게 고정까지 한다
-  await rememberRevTag(result.id, { device, revKind: kind }, restored)
+  // 되돌리기로 큐에 들어갔으면 이 업로드는 '되돌림' 리비전이 된다 — 표식만 남기고 고정은 하지 않는다
+  // (고정은 사용자가 버전 기록에서 직접 한 것만 — 자동 고정은 쌓이기만 하고 정리하기 어렵다)
+  await rememberRevTag(result.id, { device, revKind: kind })
   // 업로드 직후의 메타 쓰기(리비전 고정 등)도 Drive version을 올린다 — 헤드를 다시 읽어 저장한다 (규칙 10).
   // 그 사이 다른 기기가 main을 덮었으면 내 내용은 브랜치에만 있는 것이다 → 갈라짐 (규칙 2)
   const head = (await drive.getMeta(result.id).catch(() => null)) ?? result
@@ -657,7 +659,10 @@ async function pull(f: { docs: string; assets: string }): Promise<PullResult> {
     try {
       // 규칙 11 — 이 탭에서 열려 있으면 편집 화면이 먼저 기록하고 멈춘다. 그때 막 기록된 변경이
       // 있으면 applyDocFile이 적용하지 않는다(대기 중인 노트는 올리기가 맡는다)
-      applied = await withDocExclusive(docId, () => applyDocFile(plainDoc(file)))
+      applied = await withDocExclusive(docId, async () => {
+        await takeSnapshot(docId, 'pull') // 덮기 직전 이 기기 내용 (네트워크 없이 되돌릴 수 있게)
+        return applyDocFile(plainDoc(file))
+      })
     } catch (e) {
       if (!(e instanceof DocBusyError)) throw e
       r.busy++ // 다른 탭에서 편집 중 — 다음 받기 때 다시
@@ -857,6 +862,7 @@ async function takeMain(info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version'
     const doc = await db.documents.get(info.docId)
     if (p && f && doc && !doc.deletedAt) await uploadBranch(info.docId, await packDocument(info.docId), 'push', f.docs)
     if (p) await db.outbox.bulkDelete(p.seqs) // 삭제 대기였다면 사용자가 명시적으로 받은 것이 우선
+    await takeSnapshot(info.docId, opts.keepLocal ? 'align' : 'pull') // 덮기 직전 이 기기 내용
     return applyDocFile(plainDoc(file))
   })
   if (!applied) return 'skipped'
@@ -1158,7 +1164,10 @@ export function commitMerge(session: MergeSession, draft: MergeDraft): Promise<M
     let applied = false
     if (!keptLocal && local && !local.deletedAt && !(await getSync(`gone:${docId}`))) {
       try {
-        applied = await withDocExclusive(docId, () => applyDocFile(result))
+        applied = await withDocExclusive(docId, async () => {
+          await takeSnapshot(docId, 'merge') // 덮기 직전 이 기기 내용
+          return applyDocFile(result)
+        })
       } catch (e) {
         if (!(e instanceof DocBusyError)) throw e // 다른 탭에서 편집 중 — 다음 받기 때 따라온다
       }

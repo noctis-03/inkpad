@@ -37,6 +37,7 @@ import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
 import { MERGE_DONE_EVENT, openMergeView } from './merge/MergeView'
 import { mergeDraftKeys } from '../sync/mergeDraft'
+import { openArchive } from './ArchiveSheet'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -921,6 +922,12 @@ export function SyncSection() {
 
       {/* 자동 머지를 쓰던 때 이 기기에서 일어난 머지의 기록 (읽기만 — 새로 쌓이지 않는다) */}
       <MergeLogList />
+
+      {/* 보관함 관리 — 기기 브랜치·옛 백업·스냅샷·자동 고정 정리 */}
+      <button className="cloud-archive-btn" onClick={openArchive}>
+        <Icon name="files" size={16} /> 보관함 관리
+        <small>브랜치·옛 백업·스냅샷·자동 고정 정리</small>
+      </button>
 
       {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 */}
       <DeviceFoot

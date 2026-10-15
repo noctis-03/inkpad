@@ -101,6 +101,20 @@ export async function regenerateThumbnail(docId: ID): Promise<boolean> {
   return true
 }
 
+/**
+ * 노트 파일(버전 기록의 한 버전) 첫 페이지 미리보기 — 되돌리기 전에 보여 준다. 저장하지 않는다.
+ * 무한 캔버스이거나 그릴 게 없으면 null.
+ */
+export async function renderFilePreview(file: { doc: { pageOrder: ID[] }; pages: Page[]; chunks: { pageId: ID; elements: { type: string }[] }[] }): Promise<Blob | null> {
+  const first = file.pages.find((p) => p.id === file.doc.pageOrder[0]) ?? file.pages[0]
+  if (!first) return null
+  const strokes = file.chunks
+    .filter((c) => c.pageId === first.id)
+    .flatMap((c) => c.elements)
+    .filter((e): e is Stroke => e.type === 'stroke')
+  return renderPageBlob(first, strokes)
+}
+
 /** 이 문서에 미리보기가 이미 저장돼 있는지 */
 export async function hasThumbnail(docId: ID): Promise<boolean> {
   return !!(await db.thumbnails.get(docId))

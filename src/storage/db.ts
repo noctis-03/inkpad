@@ -41,6 +41,19 @@ export interface OutboxRow {
   createdAt: number
 }
 
+/** 로컬 백업(마이그레이션 전 원본·폴더 설정·노트 스냅샷). 아래 선택 필드는 노트 스냅샷만 쓴다 (색인 없음 — 스키마 그대로) */
+export interface BackupRow {
+  id: string
+  createdAt: number
+  reason: string
+  data: Blob
+  docId?: ID
+  why?: string
+  title?: string
+  strokes?: number
+  hash?: string
+}
+
 export interface KV {
   key: string
   value: unknown
@@ -57,7 +70,7 @@ export class InkpadDB extends Dexie {
   syncState!: Table<KV, string>
   settings!: Table<KV, string>
   blocks!: Table<Block, ID>
-  backups!: Table<{ id: string; createdAt: number; reason: string; data: Blob }, string>
+  backups!: Table<BackupRow, string>
   apps!: Table<HtmlApp, ID>
   appStorage!: Table<{ appId: ID; data: Record<string, string> }, ID>
   files!: Table<FileRow, ID>

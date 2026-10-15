@@ -1378,3 +1378,88 @@
     display: none;
   }
 }
+
+/* ───────── 보관함 관리 ───────── */
+.cloud-archive-btn {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.cloud-archive-btn small {
+  font-weight: 400;
+  color: var(--muted);
+}
+/* 동기화 시트 위에 뜬다 */
+.modal-backdrop.archive-host {
+  z-index: 56;
+}
+.archive-sheet .sheet-scroll {
+  padding: 4px 16px 16px;
+}
+.archive-section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.archive-section:last-child {
+  border-bottom: 0;
+}
+.archive-section h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.archive-section .hint {
+  margin: 0 0 8px;
+}
+.archive-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.archive-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.archive-row + .archive-row {
+  margin-top: 6px;
+}
+.archive-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.archive-main b {
+  font-size: 14px;
+  color: var(--ink);
+}
+.archive-main em {
+  font-style: normal;
+  color: var(--danger-ink);
+}
+.archive-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: var(--fs-xs);
+}
