@@ -135,45 +135,9 @@ const emitProgress = (phase: SyncProgress['phase'], done: number, total: number)
 
 export const REMOTE_EVENT = 'inkpad-remote-changed'
 
-// ───────── 옛 머지 기록 (기기 로컬 전용, 읽기만) ─────────
-// 자동 머지를 쓰던 때 이 기기에서 일어난 머지의 이력 — 동기화 패널의 "머지 기록"이 읽는다.
-// 브랜치 방식에서는 새로 쌓이지 않는다(머지는 머지 관리에서, 기록은 main의 made 표식으로).
-export interface MergeLogEntry {
-  docId: ID
-  title: string
-  device: string
-  at: number
-  conflicts: number
-  decision: 'theirs' | 'ours'
-  details: { kind: 'page' | 'chunk' | 'block'; id: string }[]
-  baseless?: boolean
-}
-
-const MERGE_LOG_KEY = 'mergeLog'
-
-/** 머지 기록이 바뀌었을 때 — UI(배지 등)가 즉시 다시 읽도록 알린다 */
-export const MERGE_LOG_EVENT = 'inkpad-mergelog-changed'
-const emitMergeLogChanged = () => window.dispatchEvent(new Event(MERGE_LOG_EVENT))
-
-export async function listMergeLog(): Promise<MergeLogEntry[]> {
-  return (await getSync<MergeLogEntry[]>(MERGE_LOG_KEY)) ?? []
-}
-
-export async function clearMergeLog(): Promise<void> {
-  await putSync(MERGE_LOG_KEY, [])
-  emitMergeLogChanged()
-}
-
-const MERGE_LOG_SEEN_KEY = 'mergeLogSeenAt'
-
-/** 이 기기에서 마지막으로 머지 기록 서랍을 확인한 시각 — 그 뒤에 일어난 머지가 '확인하지 않은 머지'다 */
-export async function getMergeLogSeenAt(): Promise<number> {
-  return (await getSync<number>(MERGE_LOG_SEEN_KEY)) ?? 0
-}
-
-export async function markMergeLogSeen(at: number): Promise<void> {
-  await putSync(MERGE_LOG_SEEN_KEY, at)
-}
+// 옛 머지 기록 — 자동 머지를 쓰던 때 이 기기에 남긴 이력. 브랜치 방식에서는 쌓이지 않고(머지 결과는 main의 made 표식과
+// 버전 기록에, 덮기 전 내용은 스냅샷에), 보여 주던 목록도 없앴다. 남은 기록은 앱을 열 때 지운다
+const OLD_MERGE_LOG_KEYS = ['mergeLog', 'mergeLogSeenAt']
 
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('inkpad-sync') : null
 channel?.addEventListener('message', (ev: MessageEvent<string[]>) => {
@@ -1492,6 +1456,7 @@ export async function syncNow(): Promise<void> {
 // 동기화는 사용자가 "받기"/"올리기" 버튼을 눌렀을 때만 실행된다 (자동 백그라운드 동기화 없음).
 // 여기서는 온라인/오프라인 상태 표시와 세션 확인(네트워크 확인만, Drive 호출 없음)만 한다.
 export function startSync() {
+  void db.syncState.bulkDelete(OLD_MERGE_LOG_KEYS).catch(() => {})
   window.addEventListener('online', () => setStatus('idle'))
   window.addEventListener('offline', () => setStatus('offline'))
   getAccessToken().catch((e) => {
