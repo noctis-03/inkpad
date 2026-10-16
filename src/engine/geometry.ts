@@ -13,6 +13,9 @@ export function strokeOutline(
   for (let i = 0; i < points.length; i += 4) input.push([points[i], points[i + 1], points[i + 2]])
   if (extra) for (const p of extra) input.push(p)
   if (input.length === 0) return []
+  // 펜 굵기보다 짧은 획(크게 확대해 살짝 그은 것·탭)은 perfect-freehand가 한쪽이 납작한 반달이나
+  // 꼬리 달린 점(점 하나면 (1, 1) 떨어진 가짜 점을 더한다)을 만든다 — 점마다 원을 놓고 감싼 모양으로 그린다
+  if (pathLength(input) < width * SHORT_STROKE) return shortOutline(input, width, opts)
   return getStroke(input, {
     size: width,
     thinning: opts.thinning,
@@ -23,6 +26,51 @@ export function strokeOutline(
     start: { cap: true, taper: 0 },
     end: { cap: true, taper: 0 }
   })
+}
+
+/** 이보다 짧은(펜 굵기 배수) 획은 shortOutline으로 그린다 — perfect-freehand는 굵기의 0.8배 길이부터 모양이 바르다 */
+const SHORT_STROKE = 1
+
+function pathLength(pts: number[][]): number {
+  let n = 0
+  for (let i = 1; i < pts.length; i++) n += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+  return n
+}
+
+/** perfect-freehand와 같은 반지름 — size × (0.5 − thinning × (0.5 − 필압)) */
+const radiusOf = (size: number, thinning: number, p: number) => Math.max(size * 0.2, size * (0.5 - thinning * (0.5 - p)))
+
+/** 짧은 획 — 점마다 반지름 r인 원을 놓고 그 전체를 감싸는 볼록 다각형(짧은 획은 거의 볼록이다). 점 하나면 원 */
+function shortOutline(pts: number[][], size: number, opts: StrokeOpts): number[][] {
+  const SEG = 20
+  const ring: number[][] = []
+  for (const [x, y, p] of pts) {
+    const r = radiusOf(size, opts.thinning, opts.simulatePressure ? 0.5 : (p ?? 0.5))
+    for (let k = 0; k < SEG; k++) {
+      const t = (k / SEG) * Math.PI * 2
+      ring.push([x + Math.cos(t) * r, y + Math.sin(t) * r])
+    }
+  }
+  return convexHull(ring)
+}
+
+/** 볼록 껍질 (Andrew 단조 사슬) */
+function convexHull(pts: number[][]): number[][] {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  if (p.length < 3) return p
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const lower: number[][] = []
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop()
+    lower.push(q)
+  }
+  const upper: number[][] = []
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop()
+    upper.push(q)
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1))
 }
 
 /** 외곽선 다각형 → 곡선으로 매끄럽게 이은 Path2D */
