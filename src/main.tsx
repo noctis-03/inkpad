@@ -10,6 +10,9 @@ if (isNetMeterEnabled()) installNetMeter()
 
 createRoot(document.getElementById('root')!).render(<App />)
 
+// 시작 화면(index.html) — 첫 화면이 그려진 뒤에 닫게 한다(모션 한 번은 다 보인 뒤에 사라진다)
+requestAnimationFrame(() => requestAnimationFrame(() => (window as unknown as { __inkpadReady?: () => void }).__inkpadReady?.()))
+
 // 저장소 보존 요청 — 브라우저가 공간이 부족할 때 데이터를 지우지 않게. Safari는 홈 화면 설치 시 허용하는 경우가 많다.
 navigator.storage?.persist?.().catch(() => {})
 

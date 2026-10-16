@@ -2,7 +2,7 @@
  * 브라우저 시나리오 실행기 — 개발 서버를 띄우고 실제 앱 코드를 Chromium에서 돌린다.
  *
  * 실행:  npm run test:e2e              (처음 한 번: npx playwright install chromium)
- *        npm run test:e2e -- sync      (이름으로 골라 실행: editor · sync · merge · archive · comfort · study · delta · scratch · stores · bigfile · idle · board)
+ *        npm run test:e2e -- sync      (이름으로 골라 실행: editor · sync · merge · archive · comfort · study · delta · scratch · splash · stores · bigfile · idle · board)
  *        PW_CHROMIUM=/path/to/chrome npm run test:e2e   (이미 설치된 다른 Chromium을 쓸 때)
  *
  * 동기화 시나리오는 진짜 Google Drive 대신 가짜 Drive(fake-drive.ts)를 쓴다 — 네트워크·계정 없이 돈다.
@@ -19,12 +19,13 @@ import comfort from './comfort.ts'
 import study from './study.ts'
 import delta from './delta.ts'
 import scratch from './scratch.ts'
+import splash from './splash.ts'
 import bigfile from './bigfile.ts'
 import idle from './idle.ts'
 import stores from './stores.ts'
 import board from './board.ts'
 
-const SCENARIOS: Record<string, (ctx: Ctx) => Promise<void>> = { editor, sync, merge, archive, comfort, study, delta, scratch, stores, bigfile, idle, board }
+const SCENARIOS: Record<string, (ctx: Ctx) => Promise<void>> = { editor, sync, merge, archive, comfort, study, delta, scratch, splash, stores, bigfile, idle, board }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const picked = process.argv.slice(2).filter((a) => !a.startsWith('-'))
