@@ -1,5 +1,5 @@
 // 편집 화면 툴바의 노트 동기화 칩 — 이 노트의 상태(최신·올리기 필요·새 버전·갈라짐·머지 대기·클라우드 없음)를
-// 라이브러리 카드와 같은 점으로 보여 주고, 누르면 이 노트만 올리기·이 기기 변경사항 확인(받기)·변경 버리기·머지를 고른다.
+// 라이브러리 카드와 같은 점으로 보여 주고, 누르면 이 노트만 올리기·받기·변경 버리기·머지를 고른다.
 // 버전 기록·동기화 패널은 툴바 오른쪽 메뉴에 있어 여기서는 뺀다.
 // 상태는 이 기기 DB와 마지막으로 본 판정만 읽는다(네트워크 없음). 네트워크는 메뉴를 눌렀을 때만 쓴다.
 import { useCallback, useEffect, useState, type MouseEvent } from 'react'
@@ -87,15 +87,14 @@ export function NoteSyncChip({ docId, title }: { docId: ID; title: string }) {
       if (r === 'diverged') toast('다른 기기에서도 바뀌어 이 기기 브랜치에만 올렸습니다(갈라짐). 머지해 주세요.', 'info', { label: '머지', run: () => void openMerge() })
       else toast(r === 'skipped' ? '바뀐 내용이 없어 올리지 않았습니다.' : '이 노트를 올렸습니다.', r === 'skipped' ? 'info' : 'success')
     })
-  // 이 기기 변경사항 확인 = 받기(클라우드로 맞추기). 이 기기에서 바꾼 것이 있으면 바로 덮지 않고 비교 화면에서 고른다.
-  // 바꾼 것이 없으면 클라우드의 새 버전을 그대로 받는다
+  // 받기 = 클라우드로 맞추기. 이 기기에서 바꾼 것이 있으면 바로 덮지 않고 비교 화면에서 고른다
   const pull = () =>
     act(async () => {
       const r = await pullOneNote(docId)
       if (r === 'pending' || r === 'diverged') return openChanges({ docId, title, actions: ['align', 'push'] })
       const msg: Record<'applied' | 'same' | 'notfound', [string, 'info' | 'success' | 'error']> = {
-        applied: ['이 기기에서 바꾼 것이 없어 클라우드의 새 버전을 받았습니다.', 'success'],
-        same: ['이 기기에서 바꾼 것이 없고, 클라우드와 같습니다.', 'info'],
+        applied: ['클라우드의 새 버전을 받았습니다.', 'success'],
+        same: ['이미 최신입니다.', 'info'],
         notfound: ['클라우드에 이 노트가 없습니다. 먼저 올려 주세요.', 'info']
       }
       toast(...msg[r])
@@ -126,7 +125,7 @@ export function NoteSyncChip({ docId, title }: { docId: ID; title: string }) {
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem icon="upload" label="이 노트 올리기" onClick={() => void push()} />
-          <MenuItem icon="download" label="이 기기 변경사항 확인" onClick={() => void pull()} />
+          <MenuItem icon="download" label="이 노트 받기" onClick={() => void pull()} />
           {(state === 'pending' || state === 'diverged') && (
             <MenuItem icon="undo" label="변경 버리기…" onClick={() => (setMenu(null), openChanges({ docId, title, actions: ['discard'] }))} />
           )}
