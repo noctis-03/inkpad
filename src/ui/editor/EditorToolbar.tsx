@@ -19,6 +19,8 @@ export function EditorToolbar(props: {
   engine: Engine | null
   doc: DocumentMeta | null
   readOnly: boolean
+  /** 낙서 모드 — 저장 상태 대신 '저장 안 됨', 이름 바꾸기·노트 칩·버전 기록을 내지 않는다 */
+  scratch?: boolean
   onRename: (t: string) => void
   onBack: () => void
 }) {
@@ -88,16 +90,21 @@ export function EditorToolbar(props: {
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
           ) : (
-            <button className="doc-title-btn" onClick={() => !props.readOnly && setEditingTitle(true)} title="이름 바꾸기">
+            <button className="doc-title-btn" onClick={() => !props.readOnly && !props.scratch && setEditingTitle(true)} title={props.scratch ? undefined : '이름 바꾸기'}>
               <span className="doc-title-text">{doc?.title ?? ''}</span>
-              {!props.readOnly && <Icon name="edit" size={14} className="doc-title-edit" />}
+              {!props.readOnly && !props.scratch && <Icon name="edit" size={14} className="doc-title-edit" />}
             </button>
           )}
         </nav>
 
         <div className="toolbar-spacer" />
 
-        {saveState === 'error' ? (
+        {props.scratch ? (
+          <span className="save-state scratch" aria-label="낙서 모드 — 저장되지 않음">
+            <Icon name="pen" size={14} />
+            <span className="save-label">저장 안 됨</span>
+          </span>
+        ) : saveState === 'error' ? (
           <button className="save-state error" onClick={() => setPanel('sync')} aria-label="저장 실패 — 눌러서 동기화 패널 열기">
             <Icon name="alert" size={14} />
             <span className="save-label">{SAVE_LABEL.error}</span>
@@ -115,7 +122,7 @@ export function EditorToolbar(props: {
         )}
 
         {/* 이 노트의 동기화 상태 — 읽기 전용(다른 탭에서 편집 중·뷰어)이면 내지 않는다 */}
-        {doc && !props.readOnly && <NoteSyncChip docId={doc.id} title={doc.title} />}
+        {doc && !props.readOnly && !props.scratch && <NoteSyncChip docId={doc.id} title={doc.title} />}
 
         <nav className="toolbar-group" aria-label="문서">
           {doc?.mode === 'paged' && (
@@ -136,7 +143,7 @@ export function EditorToolbar(props: {
 
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
-          <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />
+          {!props.scratch && <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />}
           <MenuItem icon="share" label="내보내기" onClick={run(() => setPanel('export'))} />
           <MenuItem icon="gear" label="설정" onClick={run(() => setPanel('settings'))} />
           <MenuItem icon="cloud" label="동기화" onClick={run(() => setPanel('sync'))} />
