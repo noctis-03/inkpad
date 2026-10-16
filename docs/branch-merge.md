@@ -265,7 +265,7 @@ interface BranchMarker {
 |---|---|
 | `sync.ts` `mergePush` · `finishMerge` (자동 3-way 머지, 머지 백업 업로드) | 삭제. 올리기 = 브랜치 업로드 + ff |
 | 머지 확인 창 (`setMergeConfirmHook`, 원격 우선 / 이 기기 우선 / 나중에) | 삭제. 머지 관리 화면으로 대체 |
-| 머지 기록(`mergeLog`, 기기 로컬 50건) | main의 `made` 기록 + 버전 기록 패널로 대체 |
+| 머지 기록(`mergeLog`, 기기 로컬 50건) | main의 `made` 기록 + 버전 기록 패널로 대체 — 목록과 남은 기록도 없앰(앱을 열 때 지운다) |
 | `merge.ts` `mergeDocs` | 분류 `classify(main, branch, mergingDeviceId) → layers`와 결과 생성 `compose(layers, draft)`로 다시 작성. 요소 색인·`sig` 부분은 재사용 |
 | `base.ts` 출발점 스냅샷 | 유지. `baseGen`이 더해지고, 고친 목록 계산에 쓴다 |
 | `judge.ts` 받기 판정 | §3.1 표 기준으로 다시 작성(순수 함수 유지) |

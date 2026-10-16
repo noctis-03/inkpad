@@ -15,14 +15,8 @@ import {
   pushNow,
   pushOneNote,
   syncNow,
-  MERGE_LOG_EVENT,
-  clearMergeLog,
-  getMergeLogSeenAt,
-  listMergeLog,
-  markMergeLogSeen,
   type CloudNoteInfo,
   type CloudNoteState,
-  type MergeLogEntry,
   type MergeQueueEntry,
   type LocalChangedDoc,
   type PullChoices,
@@ -444,97 +438,6 @@ function CloudList({
   )
 }
 
-// ───────────────── 머지 충돌 기록 ─────────────────
-
-/** 이 기기에서 일어난 충돌 머지의 이력 — 행을 누르면 그 노트를 열고, 되돌리기는 편집 화면의 버전 기록으로 한다.
- *  충돌 없이 자동으로 합쳐진 머지는 목록에 내지 않는다 (기록 자체는 계속 저장된다). */
-function MergeLogList() {
-  const [log, setLog] = useState<MergeLogEntry[] | null>(null)
-  const [seenAt, setSeenAt] = useState(0)
-  const [open, setOpen] = useState(false)
-  const navigate = useUI((s) => s.navigate)
-
-  // 머지 기록은 이 기기의 syncState에만 있다 — 서랍이 닫혀 있어도 배지 개수는 알아야 하므로
-  // 마운트 때와 기록이 바뀔 때마다 읽는다 (열어야 갱신되던 문제)
-  useEffect(() => {
-    const reload = () => {
-      void listMergeLog().then(setLog)
-      void getMergeLogSeenAt().then(setSeenAt)
-    }
-    reload()
-    window.addEventListener(MERGE_LOG_EVENT, reload)
-    return () => window.removeEventListener(MERGE_LOG_EVENT, reload)
-  }, [])
-
-  // 패널이 '머지 충돌 기록'이므로 충돌났거나 기록 없이 합친(확인 창을 거친) 머지만 내보인다 — 자동으로 합쳐진 기록은 저장만 남긴다
-  const conflictsOnly = log?.filter((e) => e.conflicts > 0 || e.baseless) ?? null
-
-  // 서랍을 펼치면 그 시점의 최신 기록까지 확인한 것으로 친다 — '확인하지 않은 머지' 표시가 사라진다
-  const unseen = conflictsOnly ? conflictsOnly.filter((e) => e.at > seenAt).length : 0
-  useEffect(() => {
-    if (!open || log === null) return
-    const newest = log[0]?.at ?? 0
-    if (newest > seenAt) {
-      setSeenAt(newest)
-      void markMergeLogSeen(newest)
-    }
-  }, [open, log, seenAt])
-
-  const clear = async () => {
-    if (
-      !(await confirmDialog('머지 충돌 기록 비우기', {
-        message: '이 기기의 머지 충돌 기록을 모두 지웁니다. 클라우드 버전 기록은 그대로 남습니다.',
-        ok: '비우기',
-        danger: true
-      }))
-    )
-      return
-    await clearMergeLog()
-    setLog([])
-  }
-
-  return (
-    <div className="merge-log">
-      <div className="cloud-lhead">
-        <span className="tt">
-          머지 충돌 기록<span>{conflictsOnly?.length ?? 0}</span>
-        </span>
-        {unseen > 0 && <span className="unseen">확인하지 않은 머지 {unseen}건</span>}
-        {open && !!log?.length && (
-          <button className="sync-link muted" onClick={() => void clear()}>
-            비우기
-          </button>
-        )}
-        <button className="cloud-icon-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)} aria-label="머지 충돌 기록 펼치기">
-          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={16} />
-        </button>
-      </div>
-      {open && (
-        <div className="merge-log-list">
-          {conflictsOnly === null ? (
-            <p className="hint">읽는 중…</p>
-          ) : conflictsOnly.length === 0 ? (
-            <p className="hint">아직 충돌 낸 머지가 없습니다. 이 기기와 클라우드가 다르게 바뀐 노트를 올리면 머지가 일어나고, 양쪽이 모두 바뀌었을 때 충돌로 기록됩니다.</p>
-          ) : (
-            conflictsOnly.map((e, i) => (
-              <button key={`${e.docId}-${e.at}-${i}`} className="merge-row" onClick={() => navigate({ name: 'editor', docId: e.docId })}>
-                <span className="t">{e.title}</span>
-                <span className="m">
-                  {e.baseless && <span className="bdg warn">기록 없이 합침</span>}
-                  {e.conflicts > 0 && <span className="bdg warn">충돌 {e.conflicts}곳</span>}
-                  <span>{e.decision === 'ours' ? '이 기기 우선' : '원격 우선'}</span>
-                  {e.device && <span>{e.device}</span>}
-                  <span>{formatDate(e.at)}</span>
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ───────────────── 섹션 ─────────────────
 
 export function SyncSection() {
@@ -906,9 +809,6 @@ export function SyncSection() {
         onPullCategory={(c) => void pullCategory(c)}
         onPushPreview={() => void doPush()}
       />
-
-      {/* 자동 머지를 쓰던 때 이 기기에서 일어난 머지의 기록 (읽기만 — 새로 쌓이지 않는다) */}
-      <MergeLogList />
 
       {/* 보관함 관리 — 기기 브랜치·옛 백업·스냅샷·자동 고정 정리 */}
       <button className="cloud-archive-btn" onClick={openArchive}>
