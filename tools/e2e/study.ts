@@ -105,6 +105,35 @@ export default async function study(ctx: Ctx) {
   await A.waitForFunction(() => document.querySelector('.note-sync')?.textContent?.includes('동기화됨'), null, { timeout: 15000 })
   check('화면: 칩의 변경 버리기로 그린 획이 사라진다', (await strokes(A, D)).length === n - 1)
 
+  // ── 종이 밖으로 나간 획도 보인다 (비교·머지 화면이 그 페이지만 넓혀 그린다) ──
+  const E = await createDoc(A, '넘친 노트')
+  await addStroke(A, E, 'inside')
+  await push(A)
+  await A.evaluate(async (E) => {
+    const r = await import('/src/storage/repo.ts')
+    const d = await r.loadDocument(E)
+    const pageId = d.pages[0].id
+    const els = d.chunks.find((c) => c.pageId === pageId)?.elements ?? []
+    const pts: number[] = []
+    for (let k = 0; k < 30; k++) pts.push(560 + k * 6, 300 + Math.sin(k / 3) * 10, 0.6, 8) // 종이 폭 595를 넘어 734까지
+    els.push({ id: 'outside', type: 'stroke', layer: 'main', z: 99, createdAt: Date.now(), tool: 'pen', color: '#000000ff', width: 3, points: pts, bbox: [555, 285, 740, 315], opts: { thinning: 0.5, smoothing: 0.5, streamline: 0.5, simulatePressure: false } })
+    await r.saveBatch({ documentId: E, chunks: [{ pageId, key: '0_0', elements: els }] })
+  }, E)
+  await A.evaluate(async (E) => (await import('/src/ui/ChangesView.tsx')).openChanges({ docId: E, title: '넘친 노트', actions: [] }), E)
+  await A.waitForSelector('.changes-sheet .merge-canvas')
+  await sleep(500)
+  const over = await A.evaluate(() => {
+    const c = document.querySelector('.changes-sheet .merge-canvas') as HTMLCanvasElement
+    const d = c.getContext('2d')!.getImageData(Math.round(c.width * 0.9), 0, Math.round(c.width * 0.1), c.height).data
+    let ink = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] < 90 && d[i + 1] < 90 && d[i + 2] < 90) ink++
+    return { ratio: c.width / c.height, ink }
+  })
+  check('종이 밖 획: 그 페이지는 넓혀 그린다', over.ratio > 595.28 / 841.89 + 0.05, JSON.stringify(over))
+  check('종이 밖 획: 종이 밖 부분도 보인다', over.ink > 0, JSON.stringify(over))
+  if (process.env.MERGE_SHOT_DIR) await A.locator('.changes-sheet .merge-page').first().screenshot({ path: `${process.env.MERGE_SHOT_DIR}/overflow.png` })
+  await A.locator('.changes-sheet').getByRole('button', { name: '닫기' }).first().click()
+
   const warn = [...logsOf(A), ...logsOf(B)].filter((t) => /노트 보호\(withDocExclusive\) 밖|미구현/.test(t))
   check('경고 없음', warn.length === 0, warn.join(' | '))
   await A.context().close()

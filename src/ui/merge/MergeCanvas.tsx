@@ -25,8 +25,11 @@ export const LAYER_COLOR: Record<ItemClass, string> = {
   modified: '#8b4fd6'
 }
 const SELECT_COLOR = '#3355c8'
+/** 종이 밖(넘친 획이 있을 때 넓힌 자리)의 바탕 */
+const DESK_COLOR = '#e7e4de'
 /** 흐리게 그릴 때의 투명도 — 강조하지 않은 레이어, 빛 테두리를 켰을 때의 원래 있던 획 모두 같게 */
 const DIM_ALPHA = 0.22
+/** 지우개 — 지나가며 닿은 획, 버린 획의 테두리 */
 const ERASE_COLOR = '#dc2626'
 
 export interface ViewEl {
@@ -172,13 +175,23 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   /** 끌고 있는 동안 아래 캔버스에서 뺄 항목(선택) — 덮개가 옮긴 자리에 그린다 */
   const [dragging, setDragging] = useState(false)
 
-  // 무한 캔버스(페이지 크기 없음)는 필기가 있는 범위를 페이지로 본다. 작업본의 옮김은 범위에 넣지 않는다(옮길 때마다 틀이 흔들리지 않게)
+  // 그리는 범위. 무한 캔버스(페이지 크기 없음)는 필기가 있는 범위를 페이지로 본다.
+  // 종이 노트는 종이 크기 — 종이 밖으로 나간 획이 있으면 그 획까지 넓힌다(종이 밖은 회색 바탕).
+  // 작업본의 옮김은 범위에 넣지 않는다(옮길 때마다 틀이 흔들리지 않게)
   const frame = useMemo(() => {
-    if (vp.page.size) return { x: 0, y: 0, w: vp.page.size.w, h: vp.page.size.h }
     const b = boxOf(
       vp.els.map((v) => ({ ...v, move: undefined })),
-      false
+      !!vp.page.size
     )
+    if (vp.page.size) {
+      const { w, h } = vp.page.size
+      const tol = 2
+      if (!b || (b.x0 >= -tol && b.y0 >= -tol && b.x1 <= w + tol && b.y1 <= h + tol)) return { x: 0, y: 0, w, h }
+      const pad = 24
+      const x0 = Math.min(0, b.x0 - pad)
+      const y0 = Math.min(0, b.y0 - pad)
+      return { x: x0, y: y0, w: Math.max(w, b.x1 + pad) - x0, h: Math.max(h, b.y1 + pad) - y0 }
+    }
     if (!b) return { x: 0, y: 0, w: 800, h: 500 }
     const pad = 60
     return {
@@ -217,13 +230,30 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
     if (!ctx) return
     void (async () => {
       ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, el.width, el.height)
+      // 종이 자리(화면 픽셀) — 종이 밖까지 넓혔으면 바깥은 회색 바탕, 종이는 흰색 + 옅은 그림자
+      const paper = paged
+        ? { x: -frame.x * scale, y: -frame.y * scale, w: vp.page.size!.w * scale, h: vp.page.size!.h * scale }
+        : { x: 0, y: 0, w: el.width, h: el.height }
+      const overflow = paged && (frame.x < 0 || frame.y < 0 || frame.w > vp.page.size!.w || frame.h > vp.page.size!.h)
+      if (overflow) {
+        ctx.fillStyle = DESK_COLOR
+        ctx.fillRect(0, 0, el.width, el.height)
+        ctx.save()
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.18)'
+        ctx.shadowBlur = 6 * dpr
+        ctx.shadowOffsetY = 1 * dpr
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(paper.x, paper.y, paper.w, paper.h)
+        ctx.restore()
+      } else {
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, el.width, el.height)
+      }
       let drewPdf = false
-      if (vp.page.pdf && paged) drewPdf = await drawPdf(ctx, vp.page, el.width, el.height, props.pdfs)
+      if (vp.page.pdf && paged) drewPdf = await drawPdf(ctx, vp.page, paper, props.pdfs)
       if (cancelled) return
       ctx.setTransform(scale, 0, 0, scale, -frame.x * scale, -frame.y * scale)
-      if (!drewPdf && paged) drawPattern(ctx, vp.page.background, frame.w, frame.h, scale)
+      if (!drewPdf && paged) drawPattern(ctx, vp.page.background, vp.page.size!.w, vp.page.size!.h, scale)
       for (const v of [...vp.els].sort(byLayerZ)) {
         const s = v.placed.el
         if (s.type !== 'stroke' || !props.visible[v.item.cls]) continue
@@ -241,6 +271,13 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         ctx.globalAlpha = alpha
         ctx.fillStyle = v.color ?? s.color
         ctx.fill(path)
+        if (v.discarded) {
+          // 버린 획(지우개·버리기·모두 버리기) — 흐린 획 둘레에 연한 빨간 테두리. 다른 레이어를 강조 중이면 더 연하게
+          ctx.globalAlpha = props.focus && props.focus !== v.item.cls ? 0.2 : 0.45
+          ctx.strokeStyle = ERASE_COLOR
+          ctx.lineWidth = (1.4 * dpr) / scale
+          ctx.stroke(path)
+        }
         if (props.outline && !glowing && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
           ctx.globalAlpha = Math.min(1, alpha + 0.3)
           ctx.strokeStyle = colorOf(v.item.cls)
@@ -505,7 +542,12 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
 }
 
 /** PDF 속지 — 원본이 이 기기에 있을 때만 그린다(지연 로딩 원칙: 여기서 받아오지 않는다) */
-async function drawPdf(ctx: CanvasRenderingContext2D, page: Page, w: number, h: number, pdfs: Map<ID, Promise<PDFDocumentProxy | null>>): Promise<boolean> {
+async function drawPdf(
+  ctx: CanvasRenderingContext2D,
+  page: Page,
+  at: { x: number; y: number; w: number; h: number },
+  pdfs: Map<ID, Promise<PDFDocumentProxy | null>>
+): Promise<boolean> {
   const ref = page.pdf!
   let doc = pdfs.get(ref.assetId)
   if (!doc) {
@@ -522,7 +564,7 @@ async function drawPdf(ctx: CanvasRenderingContext2D, page: Page, w: number, h: 
     const p = await pdf.getPage(ref.pageIndex + 1)
     const rotation = (p.rotate + ref.rotation) % 360
     const base = p.getViewport({ scale: 1, rotation })
-    const vp = p.getViewport({ scale: w / base.width, rotation })
+    const vp = p.getViewport({ scale: at.w / base.width, rotation })
     const c = document.createElement('canvas')
     c.width = Math.max(1, Math.round(vp.width))
     c.height = Math.max(1, Math.round(vp.height))
@@ -531,7 +573,7 @@ async function drawPdf(ctx: CanvasRenderingContext2D, page: Page, w: number, h: 
       canvasContext: c.getContext('2d')!,
       viewport: vp
     }).promise
-    ctx.drawImage(c, 0, 0, w, h)
+    ctx.drawImage(c, at.x, at.y, at.w, at.h)
     return true
   } catch {
     return false

@@ -261,6 +261,20 @@ export default async function merge(ctx: Ctx) {
   check('편집기: 되돌리기', !(await mainOnly.innerText()).includes('버림'))
   await A.getByRole('button', { name: '다시 하기' }).click()
   check('편집기: 다시 하기', (await mainOnly.innerText()).includes('버림 1'))
+  await A.waitForTimeout(300)
+  const redPx = await A.evaluate(() => {
+    let n = 0
+    for (const c of document.querySelectorAll<HTMLCanvasElement>('.merge-view .merge-canvas')) {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 190 && d[i + 2] < 190 && d[i] - d[i + 1] > 40) n++
+    }
+    return n
+  })
+  check('편집기: 버린 획은 연한 빨간 테두리로', redPx > 0, String(redPx))
+  if (process.env.MERGE_SHOT_DIR) {
+    const p0 = at(270, 370)
+    await A.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/merge-erased.png`, clip: { x: p0.x, y: p0.y, width: 160, height: 60 } })
+  }
   await dragPath([at(90, 108), at(120, 108)]) // 공통 획 k0는 지워지지 않는다
   check('편집기: 공통 획은 지우개로 버려지지 않는다', !(await A.locator('.merge-layer.l-common').innerText()).includes('버림'))
   await A.waitForTimeout(500) // 작업본 저장(0.3초 뒤)
