@@ -1010,10 +1010,10 @@ type LocalChoice = 'overwrite' | 'push' | 'skip'
 
 /**
  * 받기 미리보기 — 받기는 클라우드로 완전 동기화다. 다른 기기가 올린 변경은 그대로 받고,
- * 이 기기 변경이 있는 노트는 행마다 덮기(기본)·올리기·건너뛰기를 고른다. '비교'로 지금 쓴 것을 확인한다.
+ * 이 기기 변경이 있는 노트는 행마다 덮기·올리기·건너뛰기(기본 — 이 기기 내용 그대로)를 고른다. '비교'로 지금 쓴 것을 확인한다.
  */
 function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy: boolean; onConfirm: (c: PullChoices) => void; onClose: () => void }) {
-  const [choice, setChoice] = useState<Record<string, LocalChoice>>(() => Object.fromEntries(plan.local.map((d) => [d.docId, 'overwrite' as LocalChoice])))
+  const [choice, setChoice] = useState<Record<string, LocalChoice>>(() => Object.fromEntries(plan.local.map((d) => [d.docId, 'skip' as LocalChoice])))
   const groups = [
     { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
     { key: 'remote-new' as const, label: '새 버전', icon: 'cloudDown', items: plan.docs.filter((d) => d.change === 'remote-new') }
@@ -1062,10 +1062,10 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
           {plan.local.length > 0 && (
             <section className="push-group">
               <h4 className="push-group-label">
-                <Icon name="alert" size={13} /> 이 기기 내용이 덮이는 노트 <b>{plan.local.length}</b>
+                <Icon name="alert" size={13} /> 이 기기에서 바꾼 노트 <b>{plan.local.length}</b>
               </h4>
               <p className="push-note">
-                이 기기에서 바꾼 것이 있는 노트입니다. 덮으면 클라우드와 같아지고, 지금 내용은 이 기기 스냅샷으로만 남습니다(버전 기록에서 되돌릴 수 있음). 진짜 필기라면 '올리기'를 고르세요.
+                기본은 건너뛰기 — 이 기기 내용을 그대로 둡니다. 덮으면 클라우드와 같아지고 지금 내용은 이 기기 스냅샷으로만 남습니다(버전 기록에서 되돌릴 수 있음). 진짜 필기라면 '올리기'를 고르세요.
               </p>
               {plan.local.map((d) => (
                 <div key={d.docId} className="pull-local-row">
@@ -1097,7 +1097,9 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
         </div>
 
         <div className="modal-actions">
-          <span className="push-total">예상 용량 {plan.bytes > 0 ? `약 ${formatBytes(plan.bytes)}` : '0 B'}</span>
+          <span className="push-total">
+            {!count && plan.local.length ? '받을 것이 없습니다 — 덮거나 올릴 노트를 고르세요' : `예상 용량 ${plan.bytes > 0 ? `약 ${formatBytes(plan.bytes)}` : '0 B'}`}
+          </span>
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
