@@ -86,6 +86,7 @@ export default async function study(ctx: Ctx) {
   await A.waitForSelector('.changes-sheet .changes-chip.add')
   check('화면: 비교 화면에 쓴 획 +1', (await A.locator('.changes-sheet .changes-chip.add').innerText()).includes('+1'))
   check('화면: 바뀐 페이지를 그린다', (await A.locator('.changes-sheet .merge-canvas').count()) >= 1)
+  check('화면: 바뀐 획은 빛 테두리로(파란 펜 획과 구분)', (await A.locator('.changes-sheet .merge-glow').count()) >= 1)
   await A.locator('.changes-sheet').getByRole('button', { name: '닫기' }).first().click()
   await A.getByRole('button', { name: /건 맞추기/ }).click()
   await A.waitForFunction(() => !document.querySelector('.pull-local-row'), null, { timeout: 15000 })
