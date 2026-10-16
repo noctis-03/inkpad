@@ -68,6 +68,11 @@ export interface CanvasProps {
   onErase: (keys: string[]) => void
   scroller: HTMLElement | null
   pdfs: Map<ID, Promise<PDFDocumentProxy | null>>
+  /**
+   * 바뀐 획을 얇은 테두리 대신 일렁이는 빛 테두리로 (비교 화면) — 파란 펜으로 쓴 획과 '새로 쓴 획' 표시가 헷갈리지 않게.
+   * 빛은 따로 겹친 캔버스에 한 번 그리고 CSS가 투명도만 바꾼다(다시 그리지 않는다). 바뀌지 않은 획은 조금 흐리게
+   */
+  glow?: boolean
 }
 
 const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
@@ -158,6 +163,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   const paged = !!vp.page.size
   const base = useRef<HTMLCanvasElement>(null)
   const over = useRef<HTMLCanvasElement>(null)
+  const glowEl = useRef<HTMLCanvasElement>(null)
   const [seen, setSeen] = useState(false)
   /** 끌고 있는 동안 아래 캔버스에서 뺄 항목(선택) — 덮개가 옮긴 자리에 그린다 */
   const [dragging, setDragging] = useState(false)
@@ -218,6 +224,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         let alpha = 1
         if (v.discarded) alpha = props.resultOnly ? 0 : 0.14
         else if (props.focus && props.focus !== v.item.cls) alpha = 0.22
+        else if (props.glow && v.item.cls === 'common') alpha = 0.5 // 바뀐 획이 도드라지게
         if (alpha <= 0) continue
         const o = originOf(v, paged)
         const path = pathOf(s)
@@ -226,7 +233,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         ctx.globalAlpha = alpha
         ctx.fillStyle = v.color ?? s.color
         ctx.fill(path)
-        if (props.outline && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
+        if (props.outline && !props.glow && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
           ctx.globalAlpha = Math.min(1, alpha + 0.3)
           ctx.strokeStyle = LAYER_COLOR[v.item.cls]
           ctx.lineWidth = (1.6 * dpr) / scale
@@ -235,11 +242,54 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         ctx.restore()
       }
       drawOverlay()
+      drawGlow()
     })()
     return () => {
       cancelled = true
     }
-  }, [seen, width, height, frame, vp, props.visible, props.focus, props.resultOnly, props.outline, props.pdfs, dragging, selectedHere])
+  }, [seen, width, height, frame, vp, props.visible, props.focus, props.resultOnly, props.outline, props.pdfs, dragging, selectedHere, props.glow])
+
+  // ── 빛 테두리 (glow) — 바뀐 획 둘레만. 획 자리는 도려내 원래 색이 그대로 보인다 ──
+  const drawGlow = () => {
+    const el = glowEl.current
+    if (!el) return
+    el.width = Math.max(1, Math.round(width * dpr))
+    el.height = Math.max(1, Math.round(height * dpr))
+    const ctx = el.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(scale, 0, 0, scale, -frame.x * scale, -frame.y * scale)
+    const px = dpr / scale
+    const changed = vp.els.filter((v) => v.placed.el.type === 'stroke' && v.item.cls !== 'common' && !v.discarded && props.visible[v.item.cls])
+    for (const cut of [false, true]) {
+      for (const v of changed) {
+        const s = v.placed.el
+        if (s.type !== 'stroke') continue
+        const o = originOf(v, paged)
+        const path = pathOf(s)
+        ctx.save()
+        ctx.translate(o.ox, o.oy)
+        if (cut) {
+          // 획 자리와 그 둘레 조금을 도려낸다 — 획과 빛 사이에 흰 틈이 생겨 같은 색(파란 펜 + 파란 빛)이어도 갈린다
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.fill(path)
+          ctx.lineJoin = 'round'
+          ctx.lineWidth = 3 * px
+          ctx.stroke(path)
+        } else {
+          const color = LAYER_COLOR[v.item.cls]
+          ctx.lineJoin = 'round'
+          ctx.lineCap = 'round'
+          ctx.strokeStyle = color
+          ctx.shadowColor = color
+          ctx.shadowBlur = 7 * dpr // 그림자 흐림은 화면 픽셀 단위
+          ctx.globalAlpha = 0.8
+          ctx.lineWidth = 8 * px
+          ctx.stroke(path)
+        }
+        ctx.restore()
+      }
+    }
+  }
 
   // ── 덮개 ──
   const gesture = useRef<{
@@ -424,6 +474,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   return (
     <div className={'merge-canvas-wrap' + (toolOn ? ' tool-' + props.tool : '')} style={{ width, height }}>
       <canvas ref={base} className="merge-canvas" style={{ width, height }} />
+      {props.glow && <canvas ref={glowEl} className="merge-glow" style={{ width, height }} aria-hidden />}
       <canvas
         ref={over}
         className="merge-overlay"

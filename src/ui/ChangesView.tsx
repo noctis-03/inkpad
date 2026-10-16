@@ -2,6 +2,7 @@
 // 받기 미리보기의 '비교', 편집 화면 노트 칩의 '변경 버리기'·'받기'(이 기기 변경이 있을 때), 노트를 닫을 때 알림,
 // 동기화 목록·라이브러리의 '클라우드에 맞추기'가 연다. 비교 자체는 네트워크를 쓰지 않는다(sync/localChanges.ts).
 //
+//   (일렁이는 빛 테두리로 — 파란 펜 획과 헷갈리지 않게)
 //   파랑 = 이 기기에서 새로 쓴 획(버리거나 덮으면 사라짐) · 주황 = 이 기기에서 지운 획(버리거나 덮으면 돌아옴) · 보라 = 고친 획
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
@@ -136,7 +137,7 @@ function ChangesView({ docId, title, actions }: Opened) {
         </div>
         {lc && lc.total > 0 && (
           <p className="changes-legend">
-            <i className="add" /> 새로 쓴 획(버리거나 덮으면 사라짐) <i className="del" /> 지운 획(버리거나 덮으면 돌아옴) <i className="mod" /> 고친 획
+            빛나는 테두리 — <i className="add" /> 새로 쓴 획(버리거나 덮으면 사라짐) <i className="del" /> 지운 획(버리거나 덮으면 돌아옴) <i className="mod" /> 고친 획
           </p>
         )}
 
@@ -155,6 +156,7 @@ function ChangesView({ docId, title, actions }: Opened) {
                   focus={null}
                   resultOnly={false}
                   outline
+                  glow
                   tool="view"
                   fingerTool={false}
                   selection={null}
