@@ -32,8 +32,40 @@ console.log('짧은 획 모양')
   check('굵기보다 짧은 획(1.5): 길이 = 획 길이 + 굵기', Math.abs(b.x1 - b.x0 - 4) < 0.05, JSON.stringify(b))
 }
 {
-  const b = box(strokeOutline(flat([[0, 0, 0.1], [0.5, 0, 0.9]]), 2.5, opts, true))
-  check('필압이 바뀌어도 가장 굵은 곳 기준(perfect-freehand와 같은 반지름)', Math.abs(b.y1 - 2.5 * (0.5 - 0.5 * (0.5 - 0.9))) < 0.05, JSON.stringify(b))
+  const b = box(strokeOutline(flat([[0, 0, 0.1], [0.25, 0, 0.9], [0.5, 0, 0.9]]), 2.5, opts, true))
+  check('펜을 댈 때 약한 필압에 끌리지 않는 굵기(필압 중앙값, perfect-freehand와 같은 반지름)', Math.abs(b.y1 - 2.5 * (0.5 - 0.5 * (0.5 - 0.9))) < 0.05, JSON.stringify(b))
+}
+// 굵기의 1~4배 — 조금 더 길게 살짝 그은 획
+const capsule = (o: number[][], len: number, r: number) => {
+  // 중심선 (0,0)→(len,0), 반지름 r인 캡슐에서 가장 멀리 벗어난 거리
+  return Math.max(...o.map(([x, y]) => Math.abs(Math.hypot(x - Math.min(len, Math.max(0, x)), y) - r)))
+}
+{
+  // 펜처럼: 약하게 대고 → 눌렀다 → 떼면서 오른쪽 아래로 짧게 꺾임(갈고리)
+  const pts = Array.from({ length: 12 }, (_, i) => {
+    const t = i / 11
+    const p = Math.sin(Math.PI * Math.min(1, t * 1.1)) * 0.6 + 0.15
+    return t <= 0.9 ? [t * 6, 0, p] : [5.4 + (t - 0.9) * 3, (t - 0.9) * 6, p]
+  })
+  const o = strokeOutline(flat(pts), 2.5, opts, true)
+  const b = box(o)
+  check('짧은 획(굵기의 2배): 떼면서 생긴 갈고리는 떼어 내 끝이 혹으로 부풀지 않는다', b.y1 < 1.25 * 1.15 + 0.05, JSON.stringify(b))
+  check('짧은 획: 대고 떼는 약한 필압에도 굵기가 하나 — 올챙이가 아니다', Math.abs(b.y1 + b.y0) < 0.1, JSON.stringify(b))
+}
+{
+  // 마우스처럼: 좌표가 0.05씩 오르내린다
+  const pts = Array.from({ length: 40 }, (_, i) => [i * 0.2, Math.round(Math.sin(i / 2) * 1.2) * 0.05, 0.5])
+  const o = strokeOutline(flat(pts), 2.5, { ...opts, simulatePressure: true }, true)
+  const len = 39 * 0.2
+  const far = capsule(o, len, 2.5 * (0.5 - 0.5 * (0.5 - 0.5)))
+  check('짧은 획(굵기의 3배): 떨림이 가장자리 물결·양끝 혹으로 드러나지 않는 둥근 막대', far < 0.08, far.toFixed(3))
+}
+{
+  // 듬성한 점 넷이 살짝 휘었다
+  const pts = [[0, 0, 0.5], [2, 0.3, 0.5], [4, 0.3, 0.5], [6, 0, 0.5]]
+  const o = strokeOutline(flat(pts), 2.5, opts, true)
+  const b = box(o)
+  check('듬성한 점의 짧은 획: 꺾인 자리가 모나지 않고 둥근 막대 굵기 그대로', b.y1 - b.y0 < 2.5 + 0.35 && b.x1 - b.x0 > 6 + 2.4, JSON.stringify(b))
 }
 {
   const pts = Array.from({ length: 21 }, (_, i) => [i * 0.5, Math.sin(i / 3), 0.5])
