@@ -186,6 +186,24 @@ export default async function merge(ctx: Ctx) {
   await A.getByRole('button', { name: '결과만 보기' }).click()
   check('화면: 결과만 보기에서는 빛 테두리를 끈다', (await A.locator('.merge-view .merge-glow').count()) === 0)
   await A.getByRole('button', { name: '결과만 보기' }).click()
+  const common = A.locator('.merge-layer.l-common')
+  check('화면: 공통 레이어 이름은 "원래 있던 내용"', (await common.innerText()).includes('원래 있던 내용'))
+  // 원래 있던 내용을 고르면 그 획만 흐림 없이 — 다른 레이어 획은 그리지 않는다
+  const inkOf = () =>
+    A.evaluate(() => {
+      const c = document.querySelector('.merge-view .merge-canvas') as HTMLCanvasElement
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
+      let dark = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i] < 128 && d[i + 1] < 128 && d[i + 2] < 128) dark++
+      return dark
+    })
+  const inkAll = await inkOf()
+  await common.locator('.merge-layer-main').click()
+  await A.waitForTimeout(300)
+  if (process.env.MERGE_SHOT_DIR) await A.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/merge-common.png`, clip: { x: 0, y: 120, width: 400, height: 200 } })
+  const inkCommon = await inkOf()
+  check('화면: 원래 있던 내용을 고르면 그것만 진하게 보인다', inkCommon > 0 && inkCommon < inkAll, JSON.stringify({ inkAll, inkCommon }))
+  await common.locator('.merge-layer-main').click()
   await branchLayer.getByRole('button', { name: '모두 버리기' }).click()
   check('화면: 버린 개수가 보인다', (await branchLayer.innerText()).includes('버림 1'))
   check('화면: 결과 합계', (await A.locator('.merge-total').innerText()).includes('획 2개'))

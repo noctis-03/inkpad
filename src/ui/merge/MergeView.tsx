@@ -1,7 +1,7 @@
 // 머지 화면 — main과 기기 브랜치 하나를 레이어로 나눠 보여 주고, 사용자가 고른 대로 최종 머지한다
 // (설계: docs/branch-merge.md §5). 패드(펜·손가락)와 컴퓨터(마우스·키보드)에서 똑같이 쓴다.
 //
-// 레이어: 공통 / main에만 / 브랜치에만 / 양쪽에서 내용이 다름. 기본은 모두 살리기(머지에는 삭제가 없다).
+// 레이어: 원래 있던 내용(공통) / main에만 / 브랜치에만 / 양쪽에서 내용이 다름. 기본은 모두 살리기(머지에는 삭제가 없다).
 // 도구는 강조한 레이어(없으면 보이는 레이어 전부)에만 닿는다: 올가미로 골라 옮기기·버리기·살리기·색·다른 쪽 버전,
 // 지우개로 버리기. 한 일은 작업본에만 쌓이고(되돌리기·다시 가능, 이 기기에 저장), '최종 머지'를 눌러야 main이 바뀐다.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -228,7 +228,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   const selItems = selKeys.map((k) => itemByKey.get(k)).filter((i): i is MergeItem => !!i)
   const discardSelected = () => {
     const keys = selItems.filter((i) => i.cls !== 'common').map((i) => i.key)
-    if (keys.length < selItems.length) toast('공통 획은 버릴 수 없어 빼고 버렸습니다 (머지에는 삭제가 없다).', 'info')
+    if (keys.length < selItems.length) toast('원래 있던 획은 버릴 수 없어 빼고 버렸습니다 (머지에는 삭제가 없다).', 'info')
     if (keys.length) apply((d) => edit(d, (n) => keys.forEach((k) => n.discard.add(k))))
   }
   const restoreSelected = () => apply((d) => edit(d, (n) => selKeys.forEach((k) => n.discard.delete(k))))
@@ -262,7 +262,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     onErase: (keys) => {
       const items = keys.map((k) => itemByKey.get(k)).filter((i): i is MergeItem => !!i)
       const ok = items.filter((i) => i.cls !== 'common').map((i) => i.key)
-      if (ok.length < items.length) toast('공통 획은 지울 수 없습니다 — 머지에는 삭제가 없습니다. 머지 뒤 지우고 올려 주세요.', 'info')
+      if (ok.length < items.length) toast('원래 있던 획은 지울 수 없습니다 — 머지에는 삭제가 없습니다. 머지 뒤 지우고 올려 주세요.', 'info')
       if (ok.length) apply((d) => edit(d, (n) => ok.forEach((k) => n.discard.add(k))))
     }
   }
@@ -349,13 +349,13 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   })
 
   const layerLabel: Record<ItemClass, string> = {
-    common: '공통',
+    common: '원래 있던 내용',
     mainOnly: `${mainName}에만`,
     branchOnly: `${branchName}에만`,
     modified: '양쪽에서 내용이 다름'
   }
   const layerHint: Record<ItemClass, string> = {
-    common: '양쪽에 같은 내용으로 있는 획 — 버릴 수 없다',
+    common: '양쪽에 같은 내용으로 있는 획 — 버릴 수 없다. 고르면 이것만 또렷하게 보인다',
     mainOnly: 'main 쪽에서 새로 그렸거나, 브랜치에서 지운 획 — 기본은 살린다',
     branchOnly: '브랜치에서 새로 그렸거나, main 쪽에서 지운 획 — 기본은 살린다',
     modified: `한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽`
