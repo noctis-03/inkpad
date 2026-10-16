@@ -1072,31 +1072,21 @@
   inset: 0;
   display: block;
 }
-/* 비교 화면의 빛 테두리 — 처음 세 번은 또렷하게 숨쉬고, 그 뒤로는 은은하게 계속. 투명도만 바뀌어 다시 그리지 않는다 */
+/* 바뀐 획의 빛 테두리(비교·머지 화면) — 또렷하게 계속 숨쉰다. 투명도만 바뀌어 다시 그리지 않는다 */
 .merge-glow {
   position: absolute;
   inset: 0;
   display: block;
   pointer-events: none;
   will-change: opacity;
-  animation:
-    merge-glow-strong 1.1s ease-in-out 0s 6 alternate,
-    merge-glow-soft 2.8s ease-in-out 6.6s infinite alternate;
+  animation: merge-glow 1.1s ease-in-out infinite alternate;
 }
-@keyframes merge-glow-strong {
+@keyframes merge-glow {
   from {
     opacity: 0.15;
   }
   to {
     opacity: 1;
-  }
-}
-@keyframes merge-glow-soft {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0.5;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1595,8 +1585,8 @@
   color: #2459c4;
 }
 .changes-chip.del {
-  background: #e8890c1f;
-  color: #a85d06;
+  background: #e5484d1a;
+  color: #c4282d;
 }
 .changes-chip.mod {
   background: #8b4fd61a;
@@ -1631,13 +1621,13 @@
   box-shadow:
     0 0 0 2px var(--c),
     0 0 6px 2px var(--c);
-  animation: merge-glow-soft 2.8s ease-in-out infinite alternate;
+  animation: merge-glow 1.1s ease-in-out infinite alternate;
 }
 .changes-legend i.add {
   --c: #2f6fe0;
 }
 .changes-legend i.del {
-  --c: #e8890c;
+  --c: #e5484d;
 }
 .changes-legend i.mod {
   --c: #8b4fd6;

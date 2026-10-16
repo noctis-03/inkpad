@@ -73,6 +73,8 @@ export interface CanvasProps {
    * 빛은 따로 겹친 캔버스에 한 번 그리고 CSS가 투명도만 바꾼다(다시 그리지 않는다). 바뀌지 않은 획은 조금 흐리게
    */
   glow?: boolean
+  /** 출처 색 바꾸기 — 비교 화면은 지운 획(mainOnly)을 빨강으로 (머지 화면은 빨강이 지우개 색이라 주황 그대로) */
+  colors?: Partial<Record<ItemClass, string>>
 }
 
 const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
@@ -198,6 +200,9 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   }, [seen])
 
   const selectedHere = props.selection?.pageId === vp.id ? props.selection.keys : null
+  /** 빛 테두리를 그리나 — 출처 표시를 켰고 결과만 보기가 아닐 때 */
+  const glowing = !!props.glow && props.outline && !props.resultOnly
+  const colorOf = (cls: ItemClass) => props.colors?.[cls] ?? LAYER_COLOR[cls]
 
   // ── 아래 캔버스 ──
   useEffect(() => {
@@ -224,7 +229,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         let alpha = 1
         if (v.discarded) alpha = props.resultOnly ? 0 : 0.14
         else if (props.focus && props.focus !== v.item.cls) alpha = 0.22
-        else if (props.glow && v.item.cls === 'common') alpha = 0.5 // 바뀐 획이 도드라지게
+        else if (glowing && v.item.cls === 'common') alpha = 0.5 // 바뀐 획이 도드라지게
         if (alpha <= 0) continue
         const o = originOf(v, paged)
         const path = pathOf(s)
@@ -233,9 +238,9 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         ctx.globalAlpha = alpha
         ctx.fillStyle = v.color ?? s.color
         ctx.fill(path)
-        if (props.outline && !props.glow && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
+        if (props.outline && !glowing && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
           ctx.globalAlpha = Math.min(1, alpha + 0.3)
-          ctx.strokeStyle = LAYER_COLOR[v.item.cls]
+          ctx.strokeStyle = colorOf(v.item.cls)
           ctx.lineWidth = (1.6 * dpr) / scale
           ctx.stroke(path)
         }
@@ -247,7 +252,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
     return () => {
       cancelled = true
     }
-  }, [seen, width, height, frame, vp, props.visible, props.focus, props.resultOnly, props.outline, props.pdfs, dragging, selectedHere, props.glow])
+  }, [seen, width, height, frame, vp, props.visible, props.focus, props.resultOnly, props.outline, props.pdfs, dragging, selectedHere, glowing, props.colors])
 
   // ── 빛 테두리 (glow) — 바뀐 획 둘레만. 획 자리는 도려내 원래 색이 그대로 보인다 ──
   const drawGlow = () => {
@@ -259,7 +264,15 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
     if (!ctx) return
     ctx.setTransform(scale, 0, 0, scale, -frame.x * scale, -frame.y * scale)
     const px = dpr / scale
-    const changed = vp.els.filter((v) => v.placed.el.type === 'stroke' && v.item.cls !== 'common' && !v.discarded && props.visible[v.item.cls])
+    const changed = vp.els.filter(
+      (v) =>
+        v.placed.el.type === 'stroke' &&
+        v.item.cls !== 'common' &&
+        !v.discarded &&
+        props.visible[v.item.cls] &&
+        (!props.focus || props.focus === v.item.cls) && // 강조한 레이어만 빛난다
+        !(dragging && selectedHere?.has(v.item.key)) // 끄는 동안은 덮개가 옮긴 자리에 그린다
+    )
     for (const cut of [false, true]) {
       for (const v of changed) {
         const s = v.placed.el
@@ -276,7 +289,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
           ctx.lineWidth = 3 * px
           ctx.stroke(path)
         } else {
-          const color = LAYER_COLOR[v.item.cls]
+          const color = colorOf(v.item.cls)
           ctx.lineJoin = 'round'
           ctx.lineCap = 'round'
           ctx.strokeStyle = color
@@ -474,7 +487,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   return (
     <div className={'merge-canvas-wrap' + (toolOn ? ' tool-' + props.tool : '')} style={{ width, height }}>
       <canvas ref={base} className="merge-canvas" style={{ width, height }} />
-      {props.glow && <canvas ref={glowEl} className="merge-glow" style={{ width, height }} aria-hidden />}
+      {glowing && <canvas ref={glowEl} className="merge-glow" style={{ width, height }} aria-hidden />}
       <canvas
         ref={over}
         className="merge-overlay"

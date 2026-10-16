@@ -461,6 +461,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
               focus={focus}
               resultOnly={resultOnly}
               outline={outline}
+              glow
               tool={tool}
               fingerTool={fingerTool}
               selection={selection}
@@ -597,7 +598,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
             )}
 
             <label className="merge-check">
-              <input type="checkbox" checked={outline} onChange={(e) => setOutline(e.target.checked)} /> 출처를 획 둘레 색으로 표시
+              <input type="checkbox" checked={outline} onChange={(e) => setOutline(e.target.checked)} /> 출처를 빛나는 테두리로 표시
             </label>
             {!isEmptyDraft(draft) && (
               <button className="text-btn danger merge-reset" onClick={() => apply(emptyDraft())}>

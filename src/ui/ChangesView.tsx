@@ -3,7 +3,7 @@
 // 동기화 목록·라이브러리의 '클라우드에 맞추기'가 연다. 비교 자체는 네트워크를 쓰지 않는다(sync/localChanges.ts).
 //
 //   (일렁이는 빛 테두리로 — 파란 펜 획과 헷갈리지 않게)
-//   파랑 = 이 기기에서 새로 쓴 획(버리거나 덮으면 사라짐) · 주황 = 이 기기에서 지운 획(버리거나 덮으면 돌아옴) · 보라 = 고친 획
+//   파랑 = 이 기기에서 새로 쓴 획(버리거나 덮으면 사라짐) · 빨강 = 이 기기에서 지운 획(버리거나 덮으면 돌아옴) · 보라 = 고친 획
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../app/store'
@@ -38,6 +38,8 @@ export function ChangesHost() {
 const toast = (text: string, kind: 'info' | 'success' | 'error' = 'success') => useUI.getState().toast(text, kind)
 const noop = () => {}
 const VISIBLE = { common: true, mainOnly: true, branchOnly: true, modified: true }
+/** 지운 획은 빨강 (머지 화면의 출처 색은 주황 그대로 — 거기서 빨강은 지우개) */
+const CHANGE_COLORS = { mainOnly: '#e5484d' }
 
 function ChangesView({ docId, title, actions }: Opened) {
   const [lc, setLc] = useState<LocalChanges | null | undefined>(undefined)
@@ -157,6 +159,7 @@ function ChangesView({ docId, title, actions }: Opened) {
                   resultOnly={false}
                   outline
                   glow
+                  colors={CHANGE_COLORS}
                   tool="view"
                   fingerTool={false}
                   selection={null}
