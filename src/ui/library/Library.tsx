@@ -405,7 +405,7 @@ export function Library() {
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
 
-  /** 사이드바 카테고리 배치 — [묶음] 없는 것 먼저, 그다음 묶음마다 구분선 아래 모아서(이름 순) */
+  /** 사이드바 카테고리 배치 — 묶음마다 구분선 아래 모아서(이름 순), 그다음 빈 구분선 뒤에 [묶음] 없는 것 → 미분류 */
   const categoryLayout = useMemo(() => {
     const plain: string[] = []
     const groups = new Map<string, string[]>()
@@ -1113,7 +1113,6 @@ export function Library() {
               <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
             </button>
             <div className="tree-label">카테고리</div>
-            {categoryLayout.plain.map((c) => categoryItem(c, c))}
             {categoryLayout.groups.map((g) => (
               <Fragment key={'group:' + g.name}>
                 <div className="tree-group" role="separator" aria-label={g.name}>
@@ -1123,6 +1122,7 @@ export function Library() {
               </Fragment>
             ))}
             {categoryLayout.groups.length > 0 && <div className="tree-group" role="separator" />}
+            {categoryLayout.plain.map((c) => categoryItem(c, c))}
             <button
               data-indicator-key="uncategorized"
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
