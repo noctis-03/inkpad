@@ -1464,6 +1464,26 @@
   font-size: var(--fs-xs);
 }
 
+/* 항목이 어디에 있나 — 클라우드 · 이 기기 */
+.archive-where {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  vertical-align: 2px;
+}
+.archive-where.cloud {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.archive-where.device {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
 /* ───────── 편집 화면의 노트 동기화 칩 ───────── */
 .note-sync {
   display: inline-flex;
