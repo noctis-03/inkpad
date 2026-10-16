@@ -227,9 +227,10 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         if (s.type !== 'stroke' || !props.visible[v.item.cls]) continue
         if (dragging && selectedHere?.has(v.item.key)) continue // 덮개가 옮긴 자리에 그린다
         let alpha = 1
-        if (v.discarded) alpha = props.resultOnly ? 0 : 0.14
+        if (props.focus === 'common' && v.item.cls !== 'common') alpha = 0 // '원래 있던 내용'을 고르면 그것만 또렷하게
+        else if (v.discarded) alpha = props.resultOnly ? 0 : 0.14
         else if (props.focus && props.focus !== v.item.cls) alpha = 0.22
-        else if (glowing && v.item.cls === 'common') alpha = 0.5 // 바뀐 획이 도드라지게
+        else if (glowing && v.item.cls === 'common' && props.focus !== 'common') alpha = 0.5 // 바뀐 획이 도드라지게
         if (alpha <= 0) continue
         const o = originOf(v, paged)
         const path = pathOf(s)
