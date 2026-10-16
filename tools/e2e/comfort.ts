@@ -63,9 +63,10 @@ export default async function comfort(ctx: Ctx) {
   await chipB.waitFor()
   check('노트 칩: 받을 것이면 "새 버전"', (await chipB.innerText()).includes('새 버전'), await chipB.innerText())
   await chipB.click()
-  await B.getByRole('menuitem', { name: '이 노트 받기' }).or(B.getByRole('button', { name: '이 노트 받기' })).first().click()
+  check('노트 칩 메뉴: 버전 기록·동기화 패널은 없다(툴바 메뉴에 있다)', (await B.getByRole('menuitem', { name: '버전 기록' }).count()) === 0 && (await B.getByRole('menuitem', { name: '동기화 패널' }).count()) === 0)
+  await B.getByRole('menuitem', { name: '이 기기 변경사항 확인' }).click()
   await B.waitForFunction(() => document.querySelector('.note-sync')?.textContent?.includes('동기화됨'), null, { timeout: 15000 })
-  check('노트 칩: 받기로 새 버전을 받았다', (await strokes(B, D)).includes('b'))
+  check('노트 칩: 바꾼 것이 없으면 "이 기기 변경사항 확인"이 새 버전을 받는다', (await strokes(B, D)).includes('b'))
 
   // ── 노트 칩: 그리면 '올리기 필요' → 올리기 ──
   await openEditor(A, base, D)
