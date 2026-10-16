@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useUI } from '../app/store'
 import { Icon } from './Icon'
 
-const LS_POS = 'inkpad.quickpos.v1'
+// v2: 필기 영역 기준 좌표 — v1은 창 좌표로 계산해 영역에 놓아 상단바 높이만큼 아래로 밀렸다
+const LS_POS = 'inkpad.quickpos.v2'
 const SIZE = 56
 
 /** env(safe-area-inset-*)는 CSS env()에서만 읽히므로 숨은 탐침 요소로 재 산출한다 */
@@ -17,40 +18,48 @@ function safeInset(): { top: number; bottom: number } {
   return out
 }
 
-/** 상단바(--toolbar-h) + safe-area — 버튼이 문서 바 아래로 못 올라가게 한다 */
-function topLimit(): number {
-  const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbar-h')) || 52
-  return h + safeInset().top
-}
-
 /**
  * 빠른 도구 전환 버튼. Pencil 더블탭/스퀴즈는 웹에 전달되지 않으므로 화면 버튼으로 대신한다.
  * 탭: 펜 ↔ 지우개 / 길게 끌기: 위치 이동.
- * 기본 위치는 왼쪽 아래 — 노트 모드 페이지 사이드바(왼쪽 위)와 겹치지 않는다.
+ * 자리는 필기 영역(.editor-area) 기준 좌표 — 기본은 그 왼쪽 아래(페이지 사이드바·상단바를 가리지 않는다).
+ * 영역 크기가 바뀌면(회전·사이드바) 영역 안으로 다시 맞춘다.
  */
 export function QuickSwitch() {
   const tool = useUI((s) => s.tool)
   const toggle = useUI((s) => s.toggleQuick)
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+  const btn = useRef<HTMLButtonElement>(null)
+  /** 필기 영역 크기 — 처음 그리기 전에는 모른다(0) */
+  const [area, setArea] = useState({ w: 0, h: 0 })
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
     try {
       return JSON.parse(localStorage.getItem(LS_POS) || '') as { x: number; y: number }
     } catch {
-      return { x: 16, y: window.innerHeight - SIZE - 24 - safeInset().bottom }
+      return null // 기본 자리 — 영역 크기를 안 뒤에 왼쪽 아래로
     }
   })
+  useLayoutEffect(() => {
+    const el = btn.current?.parentElement
+    if (!el) return
+    const read = () => setArea({ w: el.clientWidth, h: el.clientHeight })
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const drag = useRef<{ id: number; dx: number; dy: number; moved: boolean; sx: number; sy: number } | null>(null)
 
   const clamp = (x: number, y: number) => ({
-    x: Math.max(4, Math.min(window.innerWidth - SIZE - 8, x)),
-    y: Math.max(topLimit() + 8, Math.min(window.innerHeight - SIZE - 8 - safeInset().bottom, y))
+    x: Math.max(4, Math.min(area.w - SIZE - 8, x)),
+    y: Math.max(8, Math.min(area.h - SIZE - 8 - safeInset().bottom, y))
   })
-  const p = clamp(pos.x, pos.y)
+  const p = clamp(pos?.x ?? 16, pos?.y ?? Infinity)
 
   return (
     <button
+      ref={btn}
       id="quick-switch"
       className={'quick-switch' + (tool === 'eraser' ? ' is-eraser' : '')}
-      style={{ left: p.x, top: p.y }}
+      style={{ left: p.x, top: p.y, visibility: area.w ? undefined : 'hidden' }}
       aria-label="펜과 지우개 전환"
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)

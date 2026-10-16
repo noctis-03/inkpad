@@ -4,7 +4,8 @@ import type { ToolbarPos } from '../../app/store'
 
 export type Orient = 'h' | 'v'
 export type Density = 'full' | 'medium' | 'compact' | 'dense' | 'tiny'
-export type OvKey = 'undo' | 'redo' | 'fit' | 'collapse' | 'block'
+/** 폭이 모자랄 때 바에서 ⋯ 메뉴로 옮기는 버튼 (블록·전체 보기·접기는 늘 ⋯ 메뉴에 있다) */
+export type OvKey = 'undo' | 'redo'
 export interface Insets {
   l: number
   r: number
@@ -29,11 +30,9 @@ export const STEPS: [Density, OvKey[]][] = [
   ['medium', []],
   ['compact', []],
   ['dense', []],
-  ['dense', ['collapse']],
-  ['dense', ['collapse', 'fit']],
-  ['dense', ['collapse', 'fit', 'redo']],
-  ['tiny', ['block', 'collapse', 'fit', 'redo']],
-  ['tiny', ['block', 'collapse', 'fit', 'redo', 'undo']]
+  ['dense', ['redo']],
+  ['tiny', ['redo']],
+  ['tiny', ['redo', 'undo']]
 ]
 
 const clamp = (v: number, a: number, b: number) => Math.min(Math.max(v, a), Math.max(a, b))

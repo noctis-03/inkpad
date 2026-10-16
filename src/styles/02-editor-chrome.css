@@ -175,7 +175,7 @@
 
 /* ───────── 빠른 전환 ───────── */
 .quick-switch {
-  position: absolute;
+  position: absolute; /* 필기 영역 기준 좌표 (ui/QuickSwitch.tsx) */
   width: 56px;
   height: 56px;
   border-radius: 50%;
