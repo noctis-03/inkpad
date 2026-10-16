@@ -59,6 +59,27 @@ function thick(tool: Tool, w: number) {
   return clamp(w * 1.4, 1.5, 12)
 }
 
+/** 바에 바로 보이는 굵기 3개(가늘게·보통·굵게) — 나머지는 펼친 창에서. 지금 굵기가 셋에 없으면 가장 가까운 자리에 넣는다 */
+function inlineWidths(widths: number[], cur: number): number[] {
+  if (widths.length <= 3) return widths
+  const base = [widths[1], widths[2], widths[4]]
+  if (base.includes(cur)) return base
+  let at = 0
+  base.forEach((w, i) => Math.abs(w - cur) < Math.abs(base[at] - cur) && (at = i))
+  base[at] = cur
+  return base.sort((a, b) => a - b)
+}
+
+/** 지금 펜 미리보기 — 색·굵기 그대로의 짧은 획(지우개는 원) */
+function previewOf(tool: Tool, color: string, w: number) {
+  if (tool === 'eraser') return <span className="ft-edot" style={{ ['--s' as string]: `${clamp(thick(tool, w) * 0.7, 6, 16)}px` }} />
+  return (
+    <svg className="ft-mini" viewBox="0 0 24 16" aria-hidden="true">
+      <path d="M3 11 C7 3 11 3 12 8 S17 13 21 5" fill="none" stroke={color} strokeWidth={clamp(thick(tool, w) * 0.7, 1.6, 6)} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 /** 굵기 표시(가로 선 / 지우개 원) */
 function widthMarkOf(tool: Tool, color: string, w: number) {
   return tool === 'eraser' ? (
@@ -83,7 +104,6 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const setPos = useUI((s) => s.setToolbarPos)
   const collapsed = useUI((s) => s.toolbarCollapsed)
   const setCollapsed = useUI((s) => s.setToolbarCollapsed)
-  const blocksVisible = useUI((s) => s.blocksVisible)
   const placingBlock = useUI((s) => s.placingBlock)
   const setPlacingBlock = useUI((s) => s.setPlacingBlock)
 
@@ -97,6 +117,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const [pop, setPop] = useState<{ kind: PopKind; anchor: HTMLElement } | null>(null)
   const toolsRef = useRef<HTMLDivElement>(null)
   const widthsRef = useRef<HTMLDivElement>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
 
   // ── 현재 스타일 파생값 (기존 EditorToolbar 로직과 동일) ──
   const isHl = tool === 'highlighter'
@@ -106,6 +127,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const curColor = isHl ? style.highlighter.color : isEr ? '#9ca3afff' : style.pen.color
   const curWidth = isHl ? style.highlighter.width : isEr ? style.eraserSize : style.pen.width
   const inlineColors = isHl ? HL_COLORS : PEN_COLORS.slice(0, 5)
+  const barWidths = inlineWidths(widths, curWidth)
 
   const pickColor = (c: string) => {
     if (isHl) setStyle({ ...style, highlighter: { ...style.highlighter, color: c } })
@@ -362,20 +384,12 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
           ))}
         </div>
 
-        <span className="ft-sep ft-hide ft-blocks-sep" />
-        <button
-          className={'ft-btn ft-k-block' + (placingBlock ? ' is-active' : '')}
-          data-hidden={blocksVisible ? undefined : ''}
-          aria-label="블록 추가"
-          aria-pressed={!!placingBlock}
-          onClick={(e) => {
-            // 배치 모드 중 다시 탭하면 취소
-            if (placingBlock) return setPlacingBlock(null)
-            togglePop('blocks', e.currentTarget)
-          }}
-        >
-          <Icon name="blocks" />
-        </button>
+        {/* 블록을 놓는 중일 때만 — 다시 누르면 취소 (블록 추가는 ⋯ 메뉴) */}
+        {placingBlock && (
+          <button className="ft-btn ft-k-block is-active" aria-label="블록 놓기 취소" aria-pressed onClick={() => setPlacingBlock(null)}>
+            <Icon name="blocks" />
+          </button>
+        )}
 
         <span className="ft-sep ft-hide ft-style" />
         <div className="ft-group ft-hide ft-style" aria-label="색상과 굵기">
@@ -392,7 +406,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
               ))}
           </div>
           <div className="ft-widths" ref={widthsRef}>
-            {widths.map((w) => (
+            {barWidths.map((w) => (
               <button
                 key={`${tool}:${w}`}
                 data-indicator-key={`${tool}:${w}`}
@@ -407,17 +421,11 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
           </div>
           <button
             className={'ft-btn ft-chip' + (pop?.kind === 'style' ? ' is-open' : '')}
-            style={{
-              ['--c' as string]: opaque(curColor),
-              ['--d' as string]: `${clamp(thick(tool, curWidth) * (isEr ? 0.6 : 1), 4, 14)}px`
-            }}
-            aria-label="색상·굵기"
+            aria-label="색상·굵기 더 보기"
             aria-expanded={pop?.kind === 'style'}
             onClick={(e) => togglePop('style', e.currentTarget)}
           >
-            <span className="ft-ring">
-              <span className="ft-dot" />
-            </span>
+            {previewOf(tool, opaque(curColor), curWidth)}
           </button>
         </div>
 
@@ -429,23 +437,11 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
           <button className="ft-btn ft-k-redo" disabled={!view.canRedo} onClick={() => engine?.redo()} aria-label="다시 실행">
             <Icon name="redo" />
           </button>
-          <button className="ft-btn ft-k-fit" onClick={() => engine?.fitAll()} aria-label="전체 보기">
-            <Icon name="fit" />
-          </button>
         </div>
 
         <button
-          className="ft-btn ft-k-collapse"
-          onClick={() => {
-            setPop(null)
-            setCollapsed(!collapsed)
-          }}
-          aria-label={collapsed ? '도구 메뉴 펼치기' : '도구 메뉴 접기'}
-        >
-          <Icon name={collapsed ? 'maximize' : 'minimize'} />
-        </button>
-        <button
-          className={'ft-btn ft-hide ft-more' + (pop?.kind === 'more' ? ' is-open' : '')}
+          ref={moreRef}
+          className={'ft-btn ft-more' + (pop?.kind === 'more' ? ' is-open' : '')}
           aria-label="더보기"
           onClick={(e) => togglePop('more', e.currentTarget)}
         >
@@ -483,40 +479,32 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
                   다시 실행
                 </button>
               )}
-              {hide.includes('fit') && (
-                <button
-                  className="menu-item"
-                  onClick={() => {
-                    engine?.fitAll()
-                    setPop(null)
-                  }}
-                >
-                  <Icon name="fit" />
-                  전체 보기
-                </button>
-              )}
-              {hide.includes('collapse') && (
-                <button
-                  className="menu-item"
-                  onClick={() => {
-                    setPop(null)
-                    setCollapsed(!collapsed)
-                  }}
-                >
-                  <Icon name={collapsed ? 'maximize' : 'minimize'} />
-                  {collapsed ? '메뉴 펼치기' : '메뉴 접기'}
-                </button>
-              )}
-              {hide.includes('block') && (
-                <button
-                  className="menu-item"
-                  onClick={(e) => togglePop('blocks', e.currentTarget)}
-                >
-                  <Icon name="blocks" />
-                  블록 추가
-                </button>
-              )}
+              {(hide.includes('undo') || hide.includes('redo')) && <div className="ft-menu-sep" />}
+              <button className="menu-item" onClick={() => moreRef.current && setPop({ kind: 'blocks', anchor: moreRef.current })}>
+                <Icon name="blocks" />
+                블록 추가
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => {
+                  engine?.fitAll()
+                  setPop(null)
+                }}
+              >
+                <Icon name="fit" />
+                전체 보기
+              </button>
               <div className="ft-menu-sep" />
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setPop(null)
+                  setCollapsed(!collapsed)
+                }}
+              >
+                <Icon name={collapsed ? 'maximize' : 'minimize'} />
+                {collapsed ? '도구 메뉴 펼치기' : '도구 메뉴 접기'}
+              </button>
               <button
                 className="menu-item"
                 onClick={() => {
