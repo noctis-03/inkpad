@@ -457,3 +457,53 @@
     max-width: 170px;
   }
 }
+
+/* ── 낙서 모드 — 저장되지 않는다는 것을 늘 보이게 ── */
+.save-state.scratch {
+  color: #b26a00;
+}
+.scratch-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 6;
+  transform: translateX(-50%);
+  max-width: calc(100% - 200px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid #e8a33d;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--e1);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.scratch-banner > svg {
+  flex: none;
+  color: #b26a00;
+}
+.scratch-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scratch-banner b {
+  color: #b26a00;
+}
+.scratch-clear {
+  flex: none;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #e8a33d22;
+  color: #8a5200;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scratch-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

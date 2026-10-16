@@ -232,9 +232,9 @@ export function Library() {
     if (prefs.view !== 'grid') return onOpen()
     setRevealKey(key)
   }
-  /** 노트 열기 — 편집모드(false) / 뷰어보드(true) */
-  const openIn = (d: DocumentMeta, card: HTMLElement | null | undefined, viewOnly: boolean) => {
-    useUI.setState({ viewOnly })
+  /** 노트 열기 — 편집모드(false) / 뷰어보드(true) / 낙서모드('scratch', 저장하지 않는다) */
+  const openIn = (d: DocumentMeta, card: HTMLElement | null | undefined, how: boolean | 'scratch') => {
+    useUI.setState({ viewOnly: how === true, scratch: how === 'scratch' })
     open(d, card)
   }
 
@@ -1392,6 +1392,16 @@ export function Library() {
                                 }}
                               >
                                 <Icon name="external" size={14} /> 뷰어보드
+                              </button>
+                              <button
+                                className="doc-open-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRevealKey(null)
+                                  openIn(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'), 'scratch')
+                                }}
+                              >
+                                <Icon name="pen" size={14} /> 낙서모드
                               </button>
                             </div>
                           </div>

@@ -32,6 +32,7 @@ import { dur } from '../motion/motion'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
 import { Menu, MenuItem } from '../Menu'
+import { Icon } from '../Icon'
 
 export function Editor({ docId }: { docId: ID }) {
   const hostRef = useRef<HTMLElement>(null)
@@ -41,8 +42,20 @@ export function Editor({ docId }: { docId: ID }) {
   const [doc, setDoc] = useState<DocumentMeta | null>(null)
   const [pages, setPages] = useState<Page[]>([])
   const [error, setError] = useState<string | null>(null)
-  /** 편집 잠금 결과 — 'pending'(확인 중) · 'edit'(이 탭이 편집) · 'read'(다른 탭이 편집 중이거나 뷰어로 엶) */
-  const [access, setAccess] = useState<'pending' | 'edit' | 'read'>('pending')
+  /**
+   * 낙서 모드(1회 읽는다) — 쓸 수 있지만 아무것도 저장하지 않는다. 노트는 DB에서 읽기만 하고 기록·편집 잠금·노트 보호·
+   * 보던 위치·카드 미리보기·닫을 때 알림을 모두 건너뛴다. 나가면 쓴 것은 사라진다
+   */
+  const [scratch] = useState(() => {
+    const on = useUI.getState().scratch
+    if (on) useUI.setState({ scratch: false })
+    return on
+  })
+  /** 낙서 모드에서 무언가 썼나 — '모두 지우기'와 나갈 때 알림 */
+  const [scribbled, setScribbled] = useState(false)
+  const scribbledRef = useRef(false)
+  /** 편집 잠금 결과 — 'pending'(확인 중) · 'edit'(이 탭이 편집) · 'read'(다른 탭이 편집 중이거나 뷰어로 엶) · 'scratch'(낙서 모드) */
+  const [access, setAccess] = useState<'pending' | 'edit' | 'read' | 'scratch'>(scratch ? 'scratch' : 'pending')
   const accessRef = useRef(access)
   accessRef.current = access
   const readOnly = access === 'read' // 확인 중(pending)에는 예전처럼 편집 도구를 그대로 보인다
@@ -96,6 +109,7 @@ export function Editor({ docId }: { docId: ID }) {
 
   // 편집 잠금 — 노트를 연 동안 쥐고 있는다. 엔진을 다시 만들어도(동기화 뒤 다시 열기) 놓지 않는다.
   useEffect(() => {
+    if (scratch) return // 낙서 모드는 쓰지 않으므로 잠그지 않는다 — 다른 탭이 이 노트를 편집해도 된다
     let alive = true
     // 뷰어보드 의도(1회) — 읽기 전용 판정은 acquireDocLock 한 곳으로 합쳐진다 (탭 충돌과 같은 경로)
     const wantView = useUI.getState().viewOnly
@@ -116,7 +130,7 @@ export function Editor({ docId }: { docId: ID }) {
         .then(() => engineGone.current)
         .finally(() => releaseDocLock(docId))
     }
-  }, [docId, toast])
+  }, [docId, toast, scratch])
 
   // 엔진 생성 / 해제 — 잠금 결과가 나온 뒤, 그리고 다시 열 때(epoch)마다
   useEffect(() => {
@@ -156,8 +170,12 @@ export function Editor({ docId }: { docId: ID }) {
           style: st.style,
           doc: loaded,
           pdf,
-          readOnly: access !== 'edit',
+          readOnly: access === 'read',
           persist: async (b) => {
+            if (access === 'scratch') {
+              scribbledRef.current = true
+              return setScribbled(true) // 낙서 모드 — 기록하지 않는다
+            }
             await saveBatch(b)
             // 되돌리기(실행 취소)로 내용이 마지막 동기화 시점으로 돌아왔으면 '올리기 필요'를 내린다 —
             // 저장마다 노트 전체를 비교하지 않고, 되돌리기가 멈춘 뒤 한 번만 본다 (저장 흐름을 막지 않는다)
@@ -171,6 +189,7 @@ export function Editor({ docId }: { docId: ID }) {
             onView: (v) => useUI.setState({ view: v }),
             onSelection: (s) => useUI.setState({ selection: s }),
             onSaveState: (s, err) => {
+              if (access === 'scratch') return // 저장하지 않으니 '저장됨'도 보이지 않는다
               useUI.setState({ saveState: s })
               if (s === 'error') {
                 const quota = (err as DOMException)?.name === 'QuotaExceededError'
@@ -209,7 +228,12 @@ export function Editor({ docId }: { docId: ID }) {
       engineRef.current = null
       setEngine(null)
       useUI.setState({ selection: null, stats: null })
-      if (e) {
+      if (e && access === 'scratch') {
+        engineGone.current = (async () => {
+          await e.destroy()
+          await pdf.destroy()
+        })().catch((err) => console.warn('[editor] 낙서 화면 정리 중 오류', err))
+      } else if (e) {
         const view = e.getViewState()
         engineGone.current = (async () => {
           await e.destroy()
@@ -352,9 +376,24 @@ export function Editor({ docId }: { docId: ID }) {
 
   const paged = doc?.mode === 'paged'
 
+  const leave = async () => {
+    useUI.setState({ returnDocId: docId })
+    if (scratch) {
+      await engineRef.current?.flush().catch(() => {}) // 방금 쓴 획도 '썼다'로 센다(기록은 하지 않는다)
+      if (scribbledRef.current) toast('낙서는 저장하지 않았습니다.', 'info')
+    } else if (!readOnly) remindOnLeave(docId, doc?.title ?? '')
+    navigate(useUI.getState().returnRoute ?? { name: 'library' })
+  }
+  /** 낙서 모두 지우기 — 노트를 처음 연 상태로 다시 연다 */
+  const clearScratch = () => {
+    scribbledRef.current = false
+    setScribbled(false)
+    setEpoch((n) => n + 1)
+  }
+
   return (
-    <div className="editor" ref={rootRef}>
-      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} onRename={rename} onBack={() => { useUI.setState({ returnDocId: docId }); if (!readOnly) remindOnLeave(docId, doc?.title ?? ''); navigate(useUI.getState().returnRoute ?? { name: 'library' }) }} />
+    <div className={'editor' + (scratch ? ' is-scratch' : '')} ref={rootRef}>
+      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} scratch={scratch} onRename={rename} onBack={() => void leave()} />
       <div className="editor-body">
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
         <div className="editor-area">
@@ -369,6 +408,17 @@ export function Editor({ docId }: { docId: ID }) {
             <div className="loading">
               원본 받는 중… {formatBytesShort(fetching.loaded)}
               {fetching.total ? ` / ${formatBytesShort(fetching.total)}` : ''}
+            </div>
+          )}
+          {scratch && (
+            <div className="scratch-banner" role="status">
+              <Icon name="pen" size={14} />
+              <span>
+                <b>낙서 모드</b> — 쓴 것은 저장되지 않고, 나가면 사라집니다
+              </span>
+              <button className="scratch-clear" onClick={clearScratch} disabled={!scribbled}>
+                모두 지우기
+              </button>
             </div>
           )}
           <Hud />
