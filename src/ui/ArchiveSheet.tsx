@@ -124,7 +124,7 @@ function ArchiveSheet() {
                         <div className="archive-main">
                           <b>
                             {d.device}
-                            {d.mine && <span className="archive-tag">이 기기</span>}
+                            {d.mine && <span className="archive-tag">사용 중인 기기</span>}
                           </b>
                           <span>
                             브랜치 {d.branches}개 · {formatBytesShort(d.bytes)}
