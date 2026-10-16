@@ -18,6 +18,19 @@ export function ArchiveHost() {
   return useArchive((s) => s.open) ? <ArchiveSheet /> : null
 }
 
+/** 이 항목이 어디에 있나 — 클라우드(모든 기기가 함께 쓴다, 한 기기에서 정리하면 된다) · 이 기기(기기마다 따로) */
+function Where({ at }: { at: 'cloud' | 'device' }) {
+  return at === 'cloud' ? (
+    <span className="archive-where cloud" title="Google Drive에 있습니다 — 모든 기기가 함께 쓰고, 어느 기기에서 정리해도 같습니다">
+      클라우드
+    </span>
+  ) : (
+    <span className="archive-where device" title="이 기기에만 있습니다 — 기기마다 따로 정리합니다">
+      이 기기
+    </span>
+  )
+}
+
 const toast = (text: string, kind: 'info' | 'success' | 'error' = 'success') => useUI.getState().toast(text, kind)
 
 function ArchiveSheet() {
@@ -98,7 +111,9 @@ function ArchiveSheet() {
           {report && (
             <>
               <section className="archive-section">
-                <h3>기기 브랜치</h3>
+                <h3>
+                  기기 브랜치 <Where at="cloud" />
+                </h3>
                 <p className="hint">기기마다 노트별로 마지막으로 올린 상태입니다. 머지가 끝난 브랜치는 지워도 잃는 것이 없습니다(main에 들어갔거나 버린 것).</p>
                 {report.devices.length === 0 ? (
                   <p className="hint">브랜치가 없습니다.</p>
@@ -157,7 +172,9 @@ function ArchiveSheet() {
               </section>
 
               <section className="archive-section">
-                <h3>옛 머지 백업</h3>
+                <h3>
+                  옛 머지 백업 <Where at="cloud" />
+                </h3>
                 <p className="hint">자동 머지를 쓰던 때 머지에서 밀린 이 기기 상태를 따로 올려 둔 파일입니다. 이제는 새로 만들지 않습니다.</p>
                 <button
                   className="text-btn"
@@ -176,7 +193,9 @@ function ArchiveSheet() {
               </section>
 
               <section className="archive-section">
-                <h3>이 기기 스냅샷</h3>
+                <h3>
+                  이 기기 스냅샷 <Where at="device" />
+                </h3>
                 <p className="hint">
                   받기·맞추기·머지·되돌리기로 노트가 덮이기 직전에 이 기기에 자동으로 남긴 것입니다(노트당 최근 20개, 전체 200MB까지). 지금 {report.snapshots.count}개 ·{' '}
                   {formatBytesShort(report.snapshots.bytes)} · 노트 {report.snapshots.docs}개.
@@ -206,7 +225,9 @@ function ArchiveSheet() {
               </section>
 
               <section className="archive-section">
-                <h3>노트 조각</h3>
+                <h3>
+                  노트 조각 <Where at="cloud" />
+                </h3>
                 <p className="hint">
                   노트는 페이지마다 조각으로 올라가 바뀐 페이지만 오갑니다. 노트를 고치면 옛 조각이 남는데, 아무 노트·브랜치·고정한 버전도 쓰지 않는 조각은
                   정리에서 '안 씀'으로 표시하고, 45일 뒤 다시 정리할 때도 여전히 안 쓰면 Drive 휴지통으로 옮깁니다(그사이 옛 버전 되돌리기가 쓸 수 있게).
@@ -246,7 +267,9 @@ function ArchiveSheet() {
               </section>
 
               <section className="archive-section">
-                <h3>자동 고정</h3>
+                <h3>
+                  자동 고정 <Where at="cloud" />
+                </h3>
                 <p className="hint">
                   옛 버전으로 되돌릴 때 Drive가 고정을 요구해 이 기기가 대신 고정한 버전입니다(파일당 200개 한도). 고정을 풀어도 내용은 약 30일 동안 버전 기록에 남습니다. 지금{' '}
                   {report.autoPins.length}개.

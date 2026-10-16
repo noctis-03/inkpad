@@ -127,6 +127,7 @@ export default async function archive(ctx: Ctx) {
   await A.waitForSelector('.archive-sheet .archive-row', { timeout: 15000 })
   check('보관함 화면: 기기 목록', (await A.locator('.archive-sheet .archive-row').count()) >= 1)
   check('보관함 화면: 정리 버튼들', (await A.locator('.archive-sheet').innerText()).includes('머지 끝난 브랜치 지우기'))
+  check('보관함 화면: 항목마다 클라우드·이 기기 표시', (await A.locator('.archive-sheet .archive-where.cloud').count()) === 4 && (await A.locator('.archive-sheet .archive-where.device').count()) === 1)
   if (process.env.MERGE_SHOT_DIR) await A.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/archive.png` })
 
   const warn = [...logsOf(A), ...logsOf(B)].filter((t) => /노트 보호\(withDocExclusive\) 밖|미구현|스냅샷을 남기지 못했/.test(t))
