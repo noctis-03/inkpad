@@ -25,6 +25,8 @@ export const LAYER_COLOR: Record<ItemClass, string> = {
   modified: '#8b4fd6'
 }
 const SELECT_COLOR = '#3355c8'
+/** 흐리게 그릴 때의 투명도 — 강조하지 않은 레이어, 빛 테두리를 켰을 때의 원래 있던 획 모두 같게 */
+const DIM_ALPHA = 0.22
 const ERASE_COLOR = '#dc2626'
 
 export interface ViewEl {
@@ -70,7 +72,7 @@ export interface CanvasProps {
   pdfs: Map<ID, Promise<PDFDocumentProxy | null>>
   /**
    * 바뀐 획을 얇은 테두리 대신 일렁이는 빛 테두리로 (비교 화면) — 파란 펜으로 쓴 획과 '새로 쓴 획' 표시가 헷갈리지 않게.
-   * 빛은 따로 겹친 캔버스에 한 번 그리고 CSS가 투명도만 바꾼다(다시 그리지 않는다). 바뀌지 않은 획은 조금 흐리게
+   * 빛은 따로 겹친 캔버스에 한 번 그리고 CSS가 투명도만 바꾼다(다시 그리지 않는다). 바뀌지 않은 획은 흐리게(DIM_ALPHA)
    */
   glow?: boolean
   /** 출처 색 바꾸기 — 비교 화면은 지운 획(mainOnly)을 빨강으로 (머지 화면은 빨강이 지우개 색이라 주황 그대로) */
@@ -229,8 +231,8 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         let alpha = 1
         if (props.focus === 'common' && v.item.cls !== 'common') alpha = 0 // '원래 있던 내용'을 고르면 그것만 또렷하게
         else if (v.discarded) alpha = props.resultOnly ? 0 : 0.14
-        else if (props.focus && props.focus !== v.item.cls) alpha = 0.22
-        else if (glowing && v.item.cls === 'common' && props.focus !== 'common') alpha = 0.5 // 바뀐 획이 도드라지게
+        else if (props.focus && props.focus !== v.item.cls) alpha = DIM_ALPHA
+        else if (glowing && v.item.cls === 'common' && props.focus !== 'common') alpha = DIM_ALPHA // 바뀐 획이 도드라지게 — 레이어를 고를 때와 같은 흐림
         if (alpha <= 0) continue
         const o = originOf(v, paged)
         const path = pathOf(s)
