@@ -61,7 +61,7 @@ export default async function sync(ctx: Ctx) {
   check('갈라짐: A 목록 상태', (await cloudState(A, D)) === 'diverged', String(await cloudState(A, D)))
   check('갈라짐: A 카드 상태', (await cardState(A, D)) === 'diverged', String(await cardState(A, D)))
   const planA = await planPull(A)
-  check('갈라짐: 받기 미리보기는 그냥 받지 않고 "이 기기 내용이 덮이는 노트"로 고르게 한다', !planA.docs.includes(D) && planA.local.some((l) => l.id === D && l.sync === 'diverged'))
+  check('갈라짐: 받기 미리보기는 그냥 받지 않고 "이 기기에서 바꾼 노트"로 고르게 한다', !planA.docs.includes(D) && planA.local.some((l) => l.id === D && l.sync === 'diverged'))
   await pull(A)
   check('갈라짐: 받기가 A 노트를 덮지 않는다', sameSet(await strokes(A, D), ['a', 'b', 'c']))
   check('갈라짐: main에 A의 두 번째 업로드는 반영되지 않았다', mainProps(D)[`m.${devA}`] === '1' && drive.branchOf(D, devA)!.appProperties.seq === '2')

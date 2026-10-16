@@ -919,7 +919,7 @@ export interface PullDoc {
   change: 'add' | 'remote-new'
 }
 
-/** 받기 미리보기의 '이 기기 내용이 덮이는 노트' 한 행 */
+/** 받기 미리보기의 '이 기기에서 바꾼 노트' 한 행 */
 export interface LocalChangedDoc {
   docId: ID
   title: string
@@ -934,7 +934,7 @@ export interface LocalChangedDoc {
 export interface PullPlan {
   docs: PullDoc[]
   bytes: number
-  /** 이 기기 변경이 있는 노트 — 받기 미리보기에서 덮기(기본)·올리기·건너뛰기를 고른다 */
+  /** 이 기기 변경이 있는 노트 — 받기 미리보기에서 덮기·올리기·건너뛰기(기본)를 고른다 */
   local: LocalChangedDoc[]
 }
 
