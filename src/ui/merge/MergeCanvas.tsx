@@ -27,6 +27,7 @@ export const LAYER_COLOR: Record<ItemClass, string> = {
 const SELECT_COLOR = '#3355c8'
 /** 흐리게 그릴 때의 투명도 — 강조하지 않은 레이어, 빛 테두리를 켰을 때의 원래 있던 획 모두 같게 */
 const DIM_ALPHA = 0.22
+/** 지우개 — 지나가며 닿은 획, 버린 획의 테두리 */
 const ERASE_COLOR = '#dc2626'
 
 export interface ViewEl {
@@ -241,6 +242,13 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         ctx.globalAlpha = alpha
         ctx.fillStyle = v.color ?? s.color
         ctx.fill(path)
+        if (v.discarded) {
+          // 버린 획(지우개·버리기·모두 버리기) — 흐린 획 둘레에 연한 빨간 테두리. 다른 레이어를 강조 중이면 더 연하게
+          ctx.globalAlpha = props.focus && props.focus !== v.item.cls ? 0.2 : 0.45
+          ctx.strokeStyle = ERASE_COLOR
+          ctx.lineWidth = (1.4 * dpr) / scale
+          ctx.stroke(path)
+        }
         if (props.outline && !glowing && v.item.cls !== 'common' && !v.discarded && !props.resultOnly) {
           ctx.globalAlpha = Math.min(1, alpha + 0.3)
           ctx.strokeStyle = colorOf(v.item.cls)
