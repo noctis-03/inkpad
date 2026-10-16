@@ -20,6 +20,17 @@ export function categoryColor(name: string | null | undefined): string {
 }
 
 /**
+ * 카테고리 이름 앞의 [묶음] — "[과제] 디지털 시스템" → { group: '과제', label: '디지털 시스템' }.
+ * 사이드바가 같은 묶음의 카테고리를 구분선 아래 모은다. 카테고리 자체(이름·색·노트에 붙은 값)는 그대로다
+ */
+export function splitCategory(name: string): { group: string | null; label: string } {
+  const m = /^\s*\[([^\]]*)\]\s*(.*)$/.exec(name)
+  const group = m?.[1].trim().replace(/\s+/g, ' ')
+  if (!m || !group) return { group: null, label: name }
+  return { group, label: m[2].trim() || name }
+}
+
+/**
  * 카테고리 태그용 색 — 글자색 + 테두리색 + 바탕(파스텔).
  * 바탕은 카테고리 색을 흰색 쪽으로 옅게 섞은 불투명 파스텔이다 — 필기 미리보기 위에
  * 얹히므로 반투명이면 글씨가 비쳐 읽히지 않는다(그래서 알파가 아니라 흰색과 섞는다).

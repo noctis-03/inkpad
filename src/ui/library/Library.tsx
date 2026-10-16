@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
@@ -18,7 +18,7 @@ import { Menu, MenuItem } from '../Menu'
 import { CategoryPicker, FolderTree, SyncPill, ThumbRefreshButton, TitleText } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
-import { categoryColor, formatDate } from '../../shared/util'
+import { categoryColor, formatDate, splitCategory } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import {
   createFolder,
@@ -404,6 +404,19 @@ export function Library() {
 
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
+
+  /** 사이드바 카테고리 배치 — [묶음] 없는 것 먼저, 그다음 묶음마다 구분선 아래 모아서(이름 순) */
+  const categoryLayout = useMemo(() => {
+    const plain: string[] = []
+    const groups = new Map<string, string[]>()
+    for (const c of shownCategories) {
+      const { group } = splitCategory(c)
+      if (!group) plain.push(c)
+      else groups.set(group, [...(groups.get(group) ?? []), c])
+    }
+    const sorted = [...groups].sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    return { plain, groups: sorted.map(([name, cats]) => ({ name, cats: cats.sort((a, b) => splitCategory(a).label.localeCompare(splitCategory(b).label, 'ko')) })) }
+  }, [shownCategories])
 
   // 보고 있던 카테고리가 숨김 처리되면 전체로 — 데이터를 다 읽기 전(복원 직후)에는 빈 목록으로 판정하지 않는다
   useEffect(() => {
@@ -991,6 +1004,22 @@ export function Library() {
                   ? '기타 파일'
                   : '전체'
 
+  /** 사이드바 카테고리 한 줄 — label은 보이는 이름([묶음] 아래면 그 부분을 뗀 이름) */
+  const categoryItem = (c: string, label: string) => (
+    <button
+      key={c}
+      data-indicator-key={'cat:' + c}
+      className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
+      onClick={() => pickSection({ kind: 'category', name: c })}
+      title={label === c ? undefined : c}
+    >
+      <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+      <span className="tree-name">{label}</span>
+      {section.kind === 'category' && section.name === c && recentActive && recentTag}
+      <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
+    </button>
+  )
+
   return (
     <div className="library" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <header className="library-header">
@@ -1084,19 +1113,16 @@ export function Library() {
               <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
             </button>
             <div className="tree-label">카테고리</div>
-            {shownCategories.map((c) => (
-              <button
-                key={c}
-                data-indicator-key={'cat:' + c}
-                className={'tree-item' + (section.kind === 'category' && section.name === c ? ' is-active' : '')}
-                onClick={() => pickSection({ kind: 'category', name: c })}
-              >
-                <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
-                <span className="tree-name">{c}</span>
-                {section.kind === 'category' && section.name === c && recentActive && recentTag}
-                <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
-              </button>
+            {categoryLayout.plain.map((c) => categoryItem(c, c))}
+            {categoryLayout.groups.map((g) => (
+              <Fragment key={'group:' + g.name}>
+                <div className="tree-group" role="separator" aria-label={g.name}>
+                  <span>{g.name}</span>
+                </div>
+                {g.cats.map((c) => categoryItem(c, splitCategory(c).label))}
+              </Fragment>
             ))}
+            {categoryLayout.groups.length > 0 && <div className="tree-group" role="separator" />}
             <button
               data-indicator-key="uncategorized"
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
