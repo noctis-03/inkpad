@@ -569,4 +569,27 @@ export async function setHiddenCategories(list: string[]) {
   await db.settings.put({ key: 'hiddenCategories', value: list.filter(Boolean) })
 }
 
+/** 라이브러리 마킹 — ○(o)·✕(x)·!(!) 중 하나. 이 기기에만 두고 동기화하지 않는다(노트 파일·수정 시각도 건드리지 않는다) */
+export type Mark = 'o' | 'x' | '!'
+
+/** 이 기기의 마킹 — 키는 'doc:{id}'·'app:{id}'·'file:{id}' */
+export async function getMarks(): Promise<Record<string, Mark>> {
+  const row = await db.settings.get('marks')
+  return { ...((row?.value as Record<string, Mark> | undefined) ?? {}) }
+}
+
+/** keys에 mark를 붙인다(한 항목에 하나 — 있던 것은 바뀐다). null이면 뗀다. keep을 주면 그 밖의 키(지워진 항목)는 정리한다 */
+export async function setMarks(keys: string[], mark: Mark | null, keep?: Set<string>): Promise<Record<string, Mark>> {
+  return db.transaction('rw', db.settings, async () => {
+    const all = await getMarks()
+    for (const k of keys) {
+      if (mark) all[k] = mark
+      else delete all[k]
+    }
+    if (keep) for (const k of Object.keys(all)) if (!keep.has(k)) delete all[k]
+    await db.settings.put({ key: 'marks', value: all })
+    return all
+  })
+}
+
 export { PAGE_CHUNK_KEY }
