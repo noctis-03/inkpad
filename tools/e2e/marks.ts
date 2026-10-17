@@ -89,6 +89,7 @@ export default async function marks(ctx: Ctx) {
   await A.waitForSelector('.doc-card')
   await sleep(300)
   check('다시 열어도 마킹이 남는다', (await card(A, '가 노트').locator('.card-mark.mark-ex').count()) === 1)
+  check('마킹한 카드는 테두리가 마킹 색', (await card(A, '가 노트').locator('.doc-thumb').evaluate((e) => getComputedStyle(e).boxShadow)).includes('rgb(217, 119, 6)'))
 
   // 영구 삭제한 노트의 마킹은 정리된다
   await A.evaluate(async (id) => (await import('/src/storage/repo.ts')).purgeDocument(id), ids['가 노트'])

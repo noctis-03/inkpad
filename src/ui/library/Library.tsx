@@ -321,7 +321,7 @@ export function Library() {
         <Icon name="check" size={13} />
       </span>
     ) : null
-  const cardClass = (key: string) => (selected?.has(key) ? ' is-selected' : '') + (marks[key] ? ' has-mark' : '')
+  const cardClass = (key: string) => (selected?.has(key) ? ' is-selected' : '') + (marks[key] ? ' has-mark marked-' + markInfo(marks[key]).cls : '')
 
   /** 격자에서 카드 누름 — 항상 오버레이만 연다(바로 열지 않는다). 닫기는 바깥·베일 누름.
       토글로 두면 탭 한 번에 클릭이 두 번 들어올 때 곧바로 열려 버려서, 열기만 하도록 고정했다. */

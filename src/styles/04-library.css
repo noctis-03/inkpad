@@ -766,7 +766,7 @@
 .mark-ex {
   color: #d97706;
 }
-/* 카드 미리보기 한가운데의 마킹 — 채점하듯 크게. 뒤의 미리보기는 블러로 흐려 마킹이 먼저 보이게
+/* 카드 미리보기 한가운데의 마킹 — 채점하듯 크게. 뒤의 미리보기는 살짝 어둡게 블러해 마킹이 먼저 보이게
    (여는 창의 베일과 같은 방식). 동기화 라벨·선택 체크(z-index 3)는 블러 위에 또렷이 남는다 */
 .card-mark {
   position: absolute;
@@ -775,7 +775,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--thumb-paper) 30%, transparent);
+  background: #1a171426;
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   pointer-events: none;
@@ -824,6 +824,16 @@
   left: 2px;
   width: 18px;
   height: 18px;
+}
+/* 마킹한 카드는 테두리를 마킹 색으로(선택 중이면 아래 선택 테두리가 이긴다) */
+.doc-card.marked-o { --mark-line: #059669; }
+.doc-card.marked-x { --mark-line: #dc2626; }
+.doc-card.marked-ex { --mark-line: #d97706; }
+.doc-card.has-mark .doc-thumb {
+  box-shadow: 0 0 0 2.5px var(--mark-line), var(--e1);
+}
+.doc-list .doc-card.has-mark .doc-thumb {
+  box-shadow: 0 0 0 2px var(--mark-line);
 }
 .doc-card.is-selected .doc-thumb {
   box-shadow: 0 0 0 3px var(--accent), var(--e1);
