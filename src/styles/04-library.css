@@ -571,7 +571,7 @@
   position: absolute;
   inset: 0;
   z-index: 3;
-  background: var(--veil-dim);
+  background: color-mix(in srgb, var(--thumb-paper) 16%, transparent);
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
   opacity: 0;
@@ -783,8 +783,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-color: #1a17140f;
-  background-image: linear-gradient(color-mix(in srgb, var(--mark-line) 13%, transparent), color-mix(in srgb, var(--mark-line) 13%, transparent));
+  background: color-mix(in srgb, var(--mark-line) 13%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   transition: opacity .32s var(--ft-ease);
