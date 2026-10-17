@@ -15,7 +15,7 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import { Menu, MenuItem } from '../Menu'
-import { CategoryPicker, FolderTree, SyncPill, ThumbRefreshButton, TitleText } from './parts'
+import { CategoryPicker, FolderTree, SyncPill, ThumbRefreshButton, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { categoryColor, formatDate, splitCategory } from '../../shared/util'
@@ -25,16 +25,19 @@ import {
   deleteFolder,
   duplicateDocument,
   getHiddenCategories,
+  getMarks,
   getThumbnails,
   listDocuments,
   listFolders,
   purgeDocument,
   gcOrphanAssets,
   restoreDocument,
+  setMarks,
   trashDocument,
   updateDocument,
   updateFolder
 } from '../../storage/repo'
+import type { Mark } from '../../storage/repo'
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
@@ -56,6 +59,9 @@ type Section =
   | { kind: 'folder'; id: ID }
   | { kind: 'uncategorized' }
   | { kind: 'trash' }
+
+/** 카드를 이만큼 누르고 있으면 선택 모드 */
+const LONG_PRESS_MS = 500
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 
@@ -125,6 +131,8 @@ export function Library() {
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
   const [revealKey, setRevealKey] = useState<string | null>(null) // 격자: 누르면 미리보기가 블러되며 오버레이가 뜬 카드
+  const [marks, setMarkMap] = useState<Record<string, Mark>>({}) // 이 기기의 마킹 — 키 'doc:'·'app:'·'file:' + id
+  const [selected, setSelected] = useState<Set<string> | null>(null) // 선택 모드(카드를 꾹 눌러 들어간다). null이면 평소
   // 고른 항목 바로 아래에 '최근 열람한 노트'가 펼쳐진다 — 항목마다 그 항목에 속한 최근 노트만 보여 준다
   const [recent, setRecent] = useState(() => loadRecentDocs())
   const [recentOnly, setRecentOnly] = useState(false)
@@ -178,7 +186,7 @@ export function Library() {
 
   const refresh = useCallback(async () => {
     const seq = ++thumbSeq.current // 미리보기 읽기 시작 순번 — 읽는 도중 저장되면 THUMBS_EVENT 쪽이 이긴다
-    const [d, t, f, th, hid, ap, fls, st] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates()])
+    const [d, t, f, th, hid, ap, fls, st, mk] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates(), getMarks()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
@@ -186,6 +194,9 @@ export function Library() {
     setApps(ap)
     setFiles(fls)
     setSyncStates(st)
+    // 마킹 — 영구 삭제된 항목의 마킹은 여기서 정리한다(휴지통 노트는 되살릴 수 있으니 남긴다)
+    const keep = new Set([...d.map((x) => 'doc:' + x.id), ...t.map((x) => 'doc:' + x.id), ...ap.map((x) => 'app:' + x.id), ...fls.map((x) => 'file:' + x.id)])
+    setMarkMap(Object.keys(mk).some((k) => !keep.has(k)) ? await setMarks([], null, keep) : mk)
     applyThumbs(th, seq)
     setReady(true)
   }, [applyThumbs])
@@ -225,6 +236,92 @@ export function Library() {
   }, [revealKey])
   // 섹션·보기·검색이 바뀌면 오버레이는 닫는다
   useEffect(() => setRevealKey(null), [section, prefs.view, dq])
+
+  // ── 선택 모드 ── 카드를 꾹 누르면 들어가고(누른 카드가 선택된다), 탭은 열지 않고 선택/해제만 한다
+  const press = useRef<{ x: number; y: number; timer: number } | null>(null)
+  const pressFired = useRef(false) // 꾹 누름이 방금 선택 모드를 열었다 — 손을 떼며 오는 클릭은 삼킨다
+  const cancelPress = () => {
+    if (press.current) window.clearTimeout(press.current.timer)
+    press.current = null
+  }
+  const pressProps = (key: string) =>
+    section.kind === 'trash'
+      ? {}
+      : {
+          onPointerDown: (e: React.PointerEvent) => {
+            pressFired.current = false
+            if (e.button !== 0) return
+            cancelPress()
+            const timer = window.setTimeout(() => {
+              press.current = null
+              pressFired.current = true
+              setRevealKey(null)
+              setSelected((s) => new Set(s ?? []).add(key))
+            }, LONG_PRESS_MS)
+            press.current = { x: e.clientX, y: e.clientY, timer }
+          },
+          onPointerMove: (e: React.PointerEvent) => {
+            const p = press.current
+            if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancelPress() // 스크롤·끌기
+          },
+          onPointerUp: cancelPress,
+          onPointerCancel: cancelPress,
+          onPointerLeave: cancelPress,
+          onContextMenu: (e: React.MouseEvent) => {
+            if (press.current || pressFired.current || selected) e.preventDefault()
+          }
+        }
+  /** 카드 클릭이 선택 모드 몫이면 처리하고 true — 꾹 누름 직후의 클릭은 삼키고, 선택 모드면 선택/해제 */
+  const selectClick = (key: string) => {
+    if (pressFired.current) {
+      pressFired.current = false
+      return true
+    }
+    if (!selected) return false
+    setSelected((s) => {
+      const n = new Set(s ?? [])
+      if (n.has(key)) n.delete(key)
+      else n.add(key)
+      return n
+    })
+    return true
+  }
+  const cardKeyOf = (i: Item) => (i.kind === 'app' ? 'app:' + i.a.id : i.kind === 'file' ? 'file:' + i.f.id : 'doc:' + i.d.id)
+  // 섹션을 바꾸면 선택 모드를 끝낸다
+  useEffect(() => setSelected(null), [section])
+  useEffect(() => {
+    if (!selected) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelected(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected])
+  /** 고른 카드 모두에 같은 마킹(하나만 붙는다 — 있던 것은 바뀐다). 모두 이미 그 마킹이면 뗀다. null이면 뗀다 */
+  const selectedMark = selected && selected.size && [...selected].every((k) => marks[k] && marks[k] === marks[[...selected][0]]) ? marks[[...selected][0]] : null
+  const applyMark = async (m: Mark | null) => {
+    if (!selected?.size) return
+    setMarkMap(await setMarks([...selected], m && m === selectedMark ? null : m))
+  }
+  /** 카드 미리보기 오른쪽 위의 마킹 표시 */
+  const markBadge = (key: string) => {
+    const m = marks[key]
+    if (!m) return null
+    const info = markInfo(m)
+    return (
+      <span className={'card-mark mark-' + info.cls} role="img" aria-label={'마킹: ' + info.label}>
+        <MarkGlyph mark={m} size={13} />
+      </span>
+    )
+  }
+  /** 선택 모드에서 카드 왼쪽 위의 체크 */
+  const selectCheck = (key: string) =>
+    selected ? (
+      <span className={'card-check' + (selected.has(key) ? ' is-on' : '')} aria-hidden="true">
+        <Icon name="check" size={13} />
+      </span>
+    ) : null
+  const cardClass = (key: string) => (selected?.has(key) ? ' is-selected' : '') + (marks[key] ? ' has-mark' : '')
 
   /** 격자에서 카드 누름 — 항상 오버레이만 연다(바로 열지 않는다). 닫기는 바깥·베일 누름.
       토글로 두면 탭 한 번에 클릭이 두 번 들어올 때 곧바로 열려 버려서, 열기만 하도록 고정했다. */
@@ -392,6 +489,13 @@ export function Library() {
     else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
     return list
   }, [visible, visibleApps, visibleFiles, prefs.sort])
+  // 검색 등으로 보이지 않게 된 카드는 선택에서 뺀다
+  useEffect(() => {
+    if (!selected) return
+    const shown = new Set(items.map(cardKeyOf))
+    if ([...selected].some((k) => !shown.has(k))) setSelected(new Set([...selected].filter((k) => shown.has(k))))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items])
 
   const allCategories = useMemo(() => {
     const s = new Set<string>()
@@ -1021,66 +1125,104 @@ export function Library() {
   )
 
   return (
-    <div className="library" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-      <header className="library-header">
-        <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
-          <Icon name="sidebar" />
-        </button>
-        <h1 className="library-title">
-          {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
-              섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
-          <TitleText text={title} />
-          <span className="title-count">
-            <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
-          </span>
-        </h1>
-        <div className="search-box">
-          <Icon name="search" size={18} />
-          <input id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-        <Segmented
-          className="view-seg"
-          value={prefs.view}
-          options={[
-            ['grid', '격자'],
-            ['list', '목록']
-          ]}
-          onChange={(v) => setPrefs({ view: v })}
-          label="보기 방식"
-        />
-        <select
-          className="sort-select"
-          value={prefs.sort}
-          onChange={(e) => setPrefs({ sort: e.target.value as typeof prefs.sort })}
-          aria-label="정렬"
-        >
-          <option value="updated">수정일</option>
-          <option value="created">만든 날</option>
-          <option value="title">제목</option>
-        </select>
-        <button className="tb-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
-          <Icon name="board" />
-        </button>
-        <ThumbRefreshButton />
-        <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
-          <Icon name="gear" />
-        </button>
-        <button
-          className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
-          aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
-          title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
-          onClick={(e) => {
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-            setMoreMenu({ x: r.right, y: r.bottom })
-          }}
-        >
-          <Icon name="cloud" />
-          {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
-        </button>
-        {section.kind !== 'trash' && (
-          <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
-            <Icon name="plus" size={18} /> 새로 만들기
-          </button>
+    <div className={'library' + (selected ? ' is-selecting' : '')} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+      <header className={'library-header' + (selected ? ' is-selecting' : '')}>
+        {selected ? (
+          <>
+            <button className="sel-btn sel-done" onClick={() => setSelected(null)}>
+              완료
+            </button>
+            <h1 className="library-title sel-title">
+              {selected.size}개 선택됨
+            </h1>
+            <button
+              className="sel-btn"
+              onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map(cardKeyOf)))}
+              disabled={!items.length}
+            >
+              {selected.size && selected.size === items.length ? '모두 해제' : '전체 선택'}
+            </button>
+            <div className="mark-bar" role="group" aria-label="마킹 (이 기기에만 저장)">
+              {MARKS.map((m) => (
+                <button
+                  key={m.cls}
+                  className={'mark-btn mark-' + m.cls + (selectedMark === m.mark ? ' is-on' : '')}
+                  aria-label={m.label}
+                  aria-pressed={selectedMark === m.mark}
+                  title={m.label}
+                  disabled={!selected.size}
+                  onClick={() => void applyMark(m.mark)}
+                >
+                  <MarkGlyph mark={m.mark} size={18} />
+                </button>
+              ))}
+              <button className="sel-btn mark-clear" disabled={![...selected].some((k) => marks[k])} onClick={() => void applyMark(null)}>
+                마킹 지우기
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
+              <Icon name="sidebar" />
+            </button>
+            <h1 className="library-title">
+              {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
+                  섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
+              <TitleText text={title} />
+              <span className="title-count">
+                <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
+              </span>
+            </h1>
+            <div className="search-box">
+              <Icon name="search" size={18} />
+              <input id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            <Segmented
+              className="view-seg"
+              value={prefs.view}
+              options={[
+                ['grid', '격자'],
+                ['list', '목록']
+              ]}
+              onChange={(v) => setPrefs({ view: v })}
+              label="보기 방식"
+            />
+            <select
+              className="sort-select"
+              value={prefs.sort}
+              onChange={(e) => setPrefs({ sort: e.target.value as typeof prefs.sort })}
+              aria-label="정렬"
+            >
+              <option value="updated">수정일</option>
+              <option value="created">만든 날</option>
+              <option value="title">제목</option>
+            </select>
+            <button className="tb-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
+              <Icon name="board" />
+            </button>
+            <ThumbRefreshButton />
+            <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
+              <Icon name="gear" />
+            </button>
+            <button
+              className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
+              aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
+              title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setMoreMenu({ x: r.right, y: r.bottom })
+              }}
+            >
+              <Icon name="cloud" />
+              {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
+            </button>
+            {section.kind !== 'trash' && (
+              <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
+                <Icon name="plus" size={18} /> 새로 만들기
+              </button>
+            )}
+          </>
         )}
       </header>
 
@@ -1247,14 +1389,17 @@ export function Library() {
                 i.kind === 'app' ? (
                   <article
                     key={'app:' + i.a.id}
-                    className={'doc-card app-card' + (revealKey === 'app:' + i.a.id ? ' is-revealed' : '')}
+                    className={'doc-card app-card' + (revealKey === 'app:' + i.a.id ? ' is-revealed' : '') + cardClass('app:' + i.a.id)}
                     data-flip-key={'app:' + i.a.id}
                     data-reveal-key={'app:' + i.a.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={() => cardTap('app:' + i.a.id, () => navigate({ name: 'app', appId: i.a.id }))}
+                    {...pressProps('app:' + i.a.id)}
+                    onClick={() => selectClick('app:' + i.a.id) || cardTap('app:' + i.a.id, () => navigate({ name: 'app', appId: i.a.id }))}
                   >
                     <div className="doc-thumb">
                       <Icon name="app" size={36} />
+                      {selectCheck('app:' + i.a.id)}
+                      {markBadge('app:' + i.a.id)}
                       {rowPill(rowSyncState(i.a), true)}
                       {prefs.view === 'grid' && (
                         <>
@@ -1309,14 +1454,17 @@ export function Library() {
                 ) : i.kind === 'file' ? (
                   <article
                     key={'file:' + i.f.id}
-                    className={'doc-card file-card' + (revealKey === 'file:' + i.f.id ? ' is-revealed' : '')}
+                    className={'doc-card file-card' + (revealKey === 'file:' + i.f.id ? ' is-revealed' : '') + cardClass('file:' + i.f.id)}
                     data-flip-key={'file:' + i.f.id}
                     data-reveal-key={'file:' + i.f.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    onClick={() => cardTap('file:' + i.f.id, () => navigate({ name: 'file', fileId: i.f.id }))}
+                    {...pressProps('file:' + i.f.id)}
+                    onClick={() => selectClick('file:' + i.f.id) || cardTap('file:' + i.f.id, () => navigate({ name: 'file', fileId: i.f.id }))}
                   >
                     <div className="doc-thumb">
                       <Icon name="file" size={36} />
+                      {selectCheck('file:' + i.f.id)}
+                      {markBadge('file:' + i.f.id)}
                       {rowPill(rowSyncState(i.f), true)}
                       {prefs.view === 'grid' && (
                         <>
@@ -1371,12 +1519,14 @@ export function Library() {
                 ) : (
                   <article
                     key={i.d.id}
-                    className={'doc-card' + (revealKey === i.d.id ? ' is-revealed' : '')}
+                    className={'doc-card' + (revealKey === i.d.id ? ' is-revealed' : '') + cardClass('doc:' + i.d.id)}
                     data-doc-id={i.d.id}
                     data-flip-key={i.d.id}
                     data-reveal-key={i.d.id}
                     style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
+                    {...pressProps('doc:' + i.d.id)}
                     onClick={(e) => {
+                      if (selectClick('doc:' + i.d.id)) return
                       if (section.kind === 'trash') return setMenu({ doc: i.d, x: 0, y: 0 })
                       cardTap(i.d.id, () => openIn(i.d, e.currentTarget, false))
                     }}
@@ -1389,6 +1539,8 @@ export function Library() {
                       )}
                       <span className="doc-gloss" aria-hidden="true" />
                       {syncPillFor(i.d.id)}
+                      {selectCheck('doc:' + i.d.id)}
+                      {markBadge('doc:' + i.d.id)}
                       {prefs.view === 'grid' && (
                         <>
                           <span

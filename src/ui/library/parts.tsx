@@ -9,6 +9,7 @@ import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import type { CardSyncState } from '../../sync/sync'
 import type { FileRow } from '../../storage/db'
+import type { Mark } from '../../storage/repo'
 
 /**
  * 카드 캡션의 동기화 상태 라벨.
@@ -227,5 +228,31 @@ export function ThumbRefreshButton() {
     >
       <Icon name="replace" />
     </button>
+  )
+}
+
+/** 마킹 종류 — 버튼 순서대로. cls는 CSS 클래스 꼬리(!는 클래스 이름에 못 쓴다) */
+export const MARKS: { mark: Mark; label: string; cls: string }[] = [
+  { mark: 'o', label: '동그라미', cls: 'o' },
+  { mark: 'x', label: '엑스', cls: 'x' },
+  { mark: '!', label: '느낌표', cls: 'ex' }
+]
+export const markInfo = (m: Mark) => MARKS.find((x) => x.mark === m)!
+
+/** 마킹 기호 ○ ✕ ! (색은 currentColor) */
+export function MarkGlyph({ mark, size = 14 }: { mark: Mark; size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+      {mark === 'o' ? (
+        <circle cx="8" cy="8" r="5.2" />
+      ) : mark === 'x' ? (
+        <path d="M3.8 3.8l8.4 8.4M12.2 3.8l-8.4 8.4" />
+      ) : (
+        <>
+          <path d="M8 2.6v7.2" />
+          <circle cx="8" cy="13.3" r="0.5" fill="currentColor" />
+        </>
+      )}
+    </svg>
   )
 }
