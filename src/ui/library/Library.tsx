@@ -299,9 +299,16 @@ export function Library() {
   }, [selected])
   /** 고른 카드 모두에 같은 마킹(하나만 붙는다 — 있던 것은 바뀐다). 모두 이미 그 마킹이면 뗀다. null이면 뗀다 */
   const selectedMark = selected && selected.size && [...selected].every((k) => marks[k] && marks[k] === marks[[...selected][0]]) ? marks[[...selected][0]] : null
+  const [stamping, setStamping] = useState<Set<string>>(new Set()) // 방금 마킹한 카드 — 도장 찍히는 동작
+  const stampTimer = useRef(0)
   const applyMark = async (m: Mark | null) => {
     if (!selected?.size) return
-    setMarkMap(await setMarks([...selected], m && m === selectedMark ? null : m))
+    const next = m && m === selectedMark ? null : m
+    const keys = [...selected]
+    setMarkMap(await setMarks(keys, next))
+    window.clearTimeout(stampTimer.current)
+    setStamping(next ? new Set(keys) : new Set())
+    if (next) stampTimer.current = window.setTimeout(() => setStamping(new Set()), 600)
   }
   /** 카드 미리보기 한가운데의 마킹 표시(크게) */
   const markBadge = (key: string) => {
@@ -309,8 +316,8 @@ export function Library() {
     if (!m) return null
     const info = markInfo(m)
     return (
-      <span className={'card-mark mark-' + info.cls} role="img" aria-label={'마킹: ' + info.label}>
-        <MarkGlyph mark={m} size={64} weight={1.5} />
+      <span key={m} className={'card-mark mark-' + info.cls + (stamping.has(key) ? ' is-stamping' : '')} role="img" aria-label={'마킹: ' + info.label}>
+        <MarkGlyph mark={m} size={64} />
       </span>
     )
   }
@@ -1153,7 +1160,7 @@ export function Library() {
                   disabled={!selected.size}
                   onClick={() => void applyMark(m.mark)}
                 >
-                  <MarkGlyph mark={m.mark} size={18} />
+                  <MarkGlyph mark={m.mark} size={22} />
                 </button>
               ))}
               <button className="sel-btn mark-clear" disabled={![...selected].some((k) => marks[k])} onClick={() => void applyMark(null)}>
