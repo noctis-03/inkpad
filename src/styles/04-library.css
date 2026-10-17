@@ -767,7 +767,7 @@
   color: #d97706;
 }
 /* 카드 미리보기 한가운데의 마킹 — 빨간 펜으로 채점하듯 손글씨 기호를 크게, 살짝 기울여.
-   뒤의 미리보기는 옅게 블러하고 마킹 색으로 살짝 물들여 내용의 형체는 보이게 한다.
+   뒤의 미리보기는 옅게 블러하고 마킹 색으로 살짝 물들인 뒤 옅은 빗금을 그어 내용의 형체는 보이게 한다.
    동기화 라벨·선택 체크(z-index 3)는 블러 위에 또렷이 남는다 */
 .card-mark {
   position: absolute;
@@ -783,7 +783,10 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--mark-line) 13%, transparent);
+  /* 마킹 색으로 옅게 물들이고 그 위에 옅은 빗금(45°) */
+  background:
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--mark-line) 16%, transparent) 0 1.5px, transparent 1.5px 8px),
+    color-mix(in srgb, var(--mark-line) 9%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   transition: opacity .32s var(--ft-ease);
