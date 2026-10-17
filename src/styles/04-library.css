@@ -825,6 +825,16 @@
   width: 18px;
   height: 18px;
 }
+/* 마킹한 카드는 테두리를 마킹 색으로(선택 중이면 아래 선택 테두리가 이긴다) */
+.doc-card.marked-o { --mark-line: #059669; }
+.doc-card.marked-x { --mark-line: #dc2626; }
+.doc-card.marked-ex { --mark-line: #d97706; }
+.doc-card.has-mark .doc-thumb {
+  box-shadow: 0 0 0 2.5px var(--mark-line), var(--e1);
+}
+.doc-list .doc-card.has-mark .doc-thumb {
+  box-shadow: 0 0 0 2px var(--mark-line);
+}
 .doc-card.is-selected .doc-thumb {
   box-shadow: 0 0 0 3px var(--accent), var(--e1);
 }
