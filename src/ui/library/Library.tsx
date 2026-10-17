@@ -303,14 +303,14 @@ export function Library() {
     if (!selected?.size) return
     setMarkMap(await setMarks([...selected], m && m === selectedMark ? null : m))
   }
-  /** 카드 미리보기 오른쪽 위의 마킹 표시 */
+  /** 카드 미리보기 한가운데의 마킹 표시(크게) */
   const markBadge = (key: string) => {
     const m = marks[key]
     if (!m) return null
     const info = markInfo(m)
     return (
       <span className={'card-mark mark-' + info.cls} role="img" aria-label={'마킹: ' + info.label}>
-        <MarkGlyph mark={m} size={13} />
+        <MarkGlyph mark={m} size={64} weight={1.5} />
       </span>
     )
   }

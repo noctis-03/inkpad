@@ -239,18 +239,18 @@ export const MARKS: { mark: Mark; label: string; cls: string }[] = [
 ]
 export const markInfo = (m: Mark) => MARKS.find((x) => x.mark === m)!
 
-/** 마킹 기호 ○ ✕ ! (색은 currentColor) */
-export function MarkGlyph({ mark, size = 14 }: { mark: Mark; size?: number }) {
+/** 마킹 기호 ○ ✕ ! (색은 currentColor). weight는 선 굵기(16칸 기준) — 크게 그릴 때는 가늘게 */
+export function MarkGlyph({ mark, size = 14, weight = 2.4 }: { mark: Mark; size?: number; weight?: number }) {
   return (
-    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={weight} strokeLinecap="round">
       {mark === 'o' ? (
-        <circle cx="8" cy="8" r="5.2" />
+        <circle cx="8" cy="8" r="5.6" />
       ) : mark === 'x' ? (
-        <path d="M3.8 3.8l8.4 8.4M12.2 3.8l-8.4 8.4" />
+        <path d="M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" />
       ) : (
         <>
-          <path d="M8 2.6v7.2" />
-          <circle cx="8" cy="13.3" r="0.5" fill="currentColor" />
+          <path d="M8 2.2v7.6" />
+          <circle cx="8" cy="13.4" r={weight * 0.62} fill="currentColor" stroke="none" />
         </>
       )}
     </svg>
