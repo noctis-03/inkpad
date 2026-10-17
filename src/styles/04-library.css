@@ -766,31 +766,26 @@
 .mark-ex {
   color: #d97706;
 }
-/* 카드 미리보기 오른쪽 위의 마킹 */
+/* 카드 미리보기 한가운데의 마킹 — 채점하듯 크게. 필기 위에서도 보이게 흰 테두리 그림자 */
 .card-mark {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  inset: 0;
   z-index: 2;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px #0000002e, 0 0 0 1px #0000000f;
   pointer-events: none;
 }
-.doc-list .card-mark {
-  top: 2px;
-  right: 2px;
-  width: 18px;
-  height: 18px;
+.card-mark svg {
+  width: 52%;
+  height: auto;
+  aspect-ratio: 1;
+  opacity: .88;
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px #ffffffcc);
 }
 .doc-list .card-mark svg {
-  width: 11px;
-  height: 11px;
+  width: 70%;
+  stroke-width: 2.2; /* 목록의 작은 미리보기에선 조금 굵게 */
 }
 /* 선택 모드 — 카드 왼쪽 위 체크, 고른 카드는 파란 테두리 */
 .card-check {
