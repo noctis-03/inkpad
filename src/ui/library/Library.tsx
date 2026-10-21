@@ -73,6 +73,12 @@ const inCatGroup = (c: string | null | undefined, name: string) => {
   const sp = splitCategory(c)
   return sp.group != null && sp.label === name
 }
+/** 노트 카드 미리보기의 기울기(−1°~1°) — 책상 위에 놓인 종이처럼. 노트 id로 정해져 다시 그려도 그대로다 */
+const cardTilt = (id: string) => {
+  let h = 0
+  for (let k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) | 0
+  return ((Math.abs(h) % 21) - 10) / 10
+}
 /** 원형 메뉴 — 누른 자리에서 이 거리 안에서 떼면 가운데(선택 모드), 이보다 멀리 나가 떼면 취소 */
 const RADIAL_DEAD = 26
 const RADIAL_OUT = 170
@@ -1730,7 +1736,7 @@ export function Library() {
                     data-doc-id={i.d.id}
                     data-flip-key={i.d.id}
                     data-reveal-key={i.d.id}
-                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
+                    style={{ ...(idx < 20 && { ['--i' as string]: idx }), ['--tilt' as string]: cardTilt(i.d.id) + 'deg' } as React.CSSProperties}
                     {...pressProps('doc:' + i.d.id)}
                     onClick={(e) => {
                       if (selectClick('doc:' + i.d.id)) return
@@ -1744,6 +1750,7 @@ export function Library() {
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
+                      <span className="doc-paper" aria-hidden="true" />
                       <span className="doc-gloss" aria-hidden="true" />
                       {syncPillFor(i.d.id)}
                       {selectCheck('doc:' + i.d.id)}

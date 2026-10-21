@@ -494,7 +494,9 @@
   aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
   border-radius: var(--r-card);
   background: var(--thumb-paper);
-  box-shadow: var(--e1);
+  box-shadow: var(--card-shadow);
+  rotate: var(--tilt, 0deg); /* 책상 위 종이처럼 카드마다 살짝 기운다 — transform(눌림·내려앉기)과 따로 논다 */
+  transition: rotate .35s var(--ft-ease);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -528,6 +530,24 @@
   height: 100%;
   object-fit: cover;
   object-position: top;
+}
+/* 종이 질감 + 책상 위 빛 — 미리보기 위에 곱하기로 얹는다(저장된 미리보기 이미지는 그대로).
+   위에서부터: 왼쪽 위에서 드는 빛과 가장자리 그늘 · 옅은 종이 섬유 무늬 · 아주 옅은 미색 */
+.doc-paper {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 90% at 35% 20%, #ffffff00 0%, #ffffff00 50%, #0000000d 85%, #0000001c 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .4 0 0 0 0 .32 0 0 0 .18 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") 0 0 / 160px,
+    #fdfbf5;
+  mix-blend-mode: multiply;
+}
+/* 여는 창이 뜨면 종이를 반듯하게 — 버튼 글자가 기울지 않게 */
+.doc-card.is-revealed .doc-thumb {
+  rotate: 0deg;
 }
 /* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
 /* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가
@@ -968,13 +988,13 @@
 .doc-card.marked-x { --mark-line: #dc2626; }
 .doc-card.marked-ex { --mark-line: #d97706; }
 .doc-card.has-mark .doc-thumb {
-  box-shadow: 0 0 0 1.5px var(--mark-line), var(--e1);
+  box-shadow: 0 0 0 1.5px var(--mark-line), var(--card-shadow);
 }
 .doc-list .doc-card.has-mark .doc-thumb {
   box-shadow: 0 0 0 1.5px var(--mark-line);
 }
 .doc-card.is-selected .doc-thumb {
-  box-shadow: 0 0 0 3px var(--accent), var(--e1);
+  box-shadow: 0 0 0 3px var(--accent), var(--card-shadow);
 }
 .library.is-selecting .doc-more {
   visibility: hidden;
