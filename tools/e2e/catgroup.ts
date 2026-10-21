@@ -19,7 +19,7 @@ export default async function catgroup(ctx: Ctx) {
     ids[title] = id
     if (category) await A.evaluate(async ([id, category]) => (await import('/src/storage/repo.ts')).updateDocument(id, { category }), [id, category] as const)
   }
-  // 미리보기가 있는 노트 하나 — 처음 보일 때 타일로 맞춰지며 나타난다(tileReveal)
+  // 미리보기가 있는 노트 하나 — 처음 보일 때 디더 점으로 차오르며 나타난다
   await addStroke(A, ids['독서 노트'], 's1')
   await A.evaluate(async (id) => (await import('/src/io/docThumb.ts')).regenerateThumbnail(id), ids['독서 노트'])
   await A.goto(base + '/')
@@ -27,11 +27,11 @@ export default async function catgroup(ctx: Ctx) {
   await sleep(300)
   await A.waitForSelector('.doc-thumb img', { state: 'attached' })
   await sleep(1000)
-  check('미리보기 타일 등장: 끝나면 타일 캔버스는 걷히고 미리보기가 보인다', (await A.locator('.thumb-tiles').count()) === 0 && (await A.locator('.doc-thumb img.is-revealed').count()) === 1)
-  const edgeSig = () => A.locator('.thumb-edge').first().evaluate((c) => (c as HTMLCanvasElement).toDataURL())
-  // 캔버스 가운데(40~60%) 칸에 그려진 비율 — 평소엔 비어 있고, 여는 창에선 꽉 찬다
-  const centerInk = () =>
-    A.locator('.thumb-edge').first().evaluate((el) => {
+  check('미리보기 등장: 끝나면 등장용 타일 캔버스는 없고 미리보기가 보인다', (await A.locator('.thumb-tiles').count()) === 0 && (await A.locator('.doc-thumb img.is-revealed').count()) === 1)
+  const ditherSig = () => A.locator('.thumb-dither').first().evaluate((c) => (c as HTMLCanvasElement).toDataURL())
+  // 캔버스 가운데(40~60%)를 덮은 비율 — 평소엔 디더가 꽉 덮고, 여는 창에선 걷혀 비어 있다(원본이 보인다)
+  const centerCover = () =>
+    A.locator('.thumb-dither').first().evaluate((el) => {
       const c = el as HTMLCanvasElement
       const g = c.getContext('2d')!
       const x = Math.floor(c.width * 0.4)
@@ -41,29 +41,30 @@ export default async function catgroup(ctx: Ctx) {
       for (let i = 3; i < d.length; i += 4) if (d[i] > 10) n++
       return n / (d.length / 4)
     })
-  const s1 = await edgeSig()
+  const s1 = await ditherSig()
   await sleep(400)
-  check('타일 효과: 머무는 동안 가장자리 밝기가 은은하게 일렁인다', s1 !== (await edgeSig()))
-  check('타일 효과: 평소 가운데는 비어 있다(필기 그대로)', (await centerInk()) < 0.01)
+  check('디더: 머무는 동안은 다시 그리지 않는다', s1 === (await ditherSig()))
+  check('디더: 평소엔 미리보기 전체를 디더가 덮는다', (await centerCover()) > 0.99, String(await centerCover()))
   await A.locator('.doc-card', { hasText: '독서 노트' }).locator('.doc-thumb').click()
-  await sleep(800)
-  check('타일 효과: 카드를 눌러 여는 창이 뜨면 블러 위에서 카드 전체가 꽉 찬다', (await centerInk()) > 0.03, String(await centerInk()))
-  check('타일 효과: 여는 창이 떠 있을 땐 캔버스가 블러 베일 위', (await A.locator('.doc-card.is-revealed .thumb-edge.is-lifted').evaluate((e) => getComputedStyle(e).zIndex)) === '4')
+  await sleep(150)
+  const mid = await centerCover()
+  check('디더: 카드를 누르면 점이 걷히는 중', mid > 0.05 && mid < 0.95, String(mid))
+  await sleep(650)
+  check('디더: 여는 창이 뜨면 점이 다 걷혀 원본이 보인다', (await centerCover()) < 0.01, String(await centerCover()))
+  check('디더: 여는 창이 떠 있을 땐 캔버스가 블러 베일 위', (await A.locator('.doc-card.is-revealed .thumb-dither.is-lifted').evaluate((e) => getComputedStyle(e).zIndex)) === '4')
   await A.mouse.click(1150, 850)
   await sleep(60)
-  check('타일 효과: 닫히는 동안에도 베일 위에 남아 이어서 걷힌다', (await A.locator('.doc-card .thumb-edge.is-lifted').count()) === 1 && (await A.locator('.doc-card.is-revealed').count()) === 0)
+  check('디더: 닫히는 동안에도 베일 위에 남아 이어서 채워진다', (await A.locator('.doc-card .thumb-dither.is-lifted').count()) === 1 && (await A.locator('.doc-card.is-revealed').count()) === 0)
   await sleep(640)
-  check('타일 효과: 닫으면 다시 가장자리 상태로(가운데 비움)', (await centerInk()) < 0.01 && (await A.locator('.thumb-edge.is-lifted').count()) === 0)
+  check('디더: 닫으면 다시 디더로 꽉 찬다', (await centerCover()) > 0.99 && (await A.locator('.thumb-dither.is-lifted').count()) === 0)
   await A.evaluate(() => (document.documentElement.dataset.motion = 'off'))
   await sleep(200)
-  const m0 = await edgeSig()
-  await sleep(400)
-  check('타일 효과: 모션 끄기면 일렁이지 않는다', m0 === (await edgeSig()))
   await A.locator('.doc-card', { hasText: '독서 노트' }).locator('.doc-thumb').click()
-  await sleep(300)
-  check('타일 효과: 모션 끄기에서도 여는 창은 바로 꽉 찬다', (await centerInk()) > 0.03)
+  await sleep(60)
+  check('디더: 모션 끄기면 여는 창에서 바로 걷힌다', (await centerCover()) < 0.01)
   await A.mouse.click(1150, 850)
-  await sleep(300)
+  await sleep(60)
+  check('디더: 모션 끄기면 닫을 때 바로 채워진다', (await centerCover()) > 0.99)
   await A.evaluate(() => (document.documentElement.dataset.motion = 'normal'))
   // 사이드바의 카테고리 부분을 위에서부터 읽는다: 묶음은 '▸/▾ 이름 (접히면 개수)', 닫는 구분선은 '──', 카테고리는 '이름 개수'
   const readRows = () =>

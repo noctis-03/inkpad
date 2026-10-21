@@ -543,8 +543,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 미리보기 타일 효과(ThumbEdge) — 등장 때와, 카드를 눌러 여는 창이 떠 있을 때(블러 베일 위로 올라온다) 그린다 */
-.thumb-edge {
+/* 미리보기 디더(ThumbDither) — 평소엔 미리보기 전체를 1비트 디더로 덮고, 카드를 눌러 여는 창이 뜨면 블러 베일 위로 올라와 점이 걷힌다 */
+.thumb-dither {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -552,11 +552,11 @@
   z-index: 1;
   pointer-events: none;
 }
-.thumb-edge.is-lifted {
+.thumb-dither.is-lifted {
   z-index: 4; /* 여는 창 효과가 있는 동안 — 블러 베일(3) 위, 여는 창 버튼(5) 아래 */
 }
-/* 가장자리 효과가 있는 미리보기는 원래 테두리 선(--e1의 1px 링) 대신 캔버스가 그 자리를 가장자리 색으로 칠한다 */
-.doc-grid .doc-thumb:has(> .thumb-edge) {
+/* 디더 캔버스가 있는 미리보기는 원래 테두리 선(--e1의 1px 링) 대신 캔버스가 그 자리를 가장자리 색으로 칠한다 */
+.doc-grid .doc-thumb:has(> .thumb-dither) {
   box-shadow: var(--e1-drop);
 }
 /* 미리보기 등장 타일(tileReveal) — 그리는 동안만 <img> 위에 얹힌다 */
