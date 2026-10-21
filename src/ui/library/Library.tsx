@@ -56,6 +56,7 @@ type Section =
   | { kind: 'apps' }
   | { kind: 'files' }
   | { kind: 'category'; name: string }
+  | { kind: 'catgroup'; name: string } // "[태그] 이름" 카테고리 묶음(뒤쪽 이름) — 태그별로 나눠 전부 보여 준다
   | { kind: 'folder'; id: ID }
   | { kind: 'uncategorized' }
   | { kind: 'trash' }
@@ -64,6 +65,14 @@ type Section =
 const LONG_PRESS_MS = 500
 /** 사이드바에서 펼친 카테고리 묶음(이 기기만) */
 const LS_OPEN_GROUPS = 'inkpad.catgroups.open.v1'
+/** 카드의 [태그] (묶음 화면의 소제목) */
+const itemTag = (i: Item) => splitCategory((i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f).category ?? '').group ?? ''
+/** 카테고리 c가 묶음 name("[태그] name")에 드는가 */
+const inCatGroup = (c: string | null | undefined, name: string) => {
+  if (!c) return false
+  const sp = splitCategory(c)
+  return sp.group != null && sp.label === name
+}
 /** 원형 메뉴 — 누른 자리에서 이 거리 안에서 떼면 가운데(선택 모드), 이보다 멀리 나가 떼면 취소 */
 const RADIAL_DEAD = 26
 const RADIAL_OUT = 170
@@ -82,6 +91,7 @@ type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { k
 function sameSection(a: Section, b: Section): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'category' && b.kind === 'category') return a.name === b.name
+  if (a.kind === 'catgroup' && b.kind === 'catgroup') return a.name === b.name
   if (a.kind === 'folder' && b.kind === 'folder') return a.id === b.id
   return true
 }
@@ -151,7 +161,7 @@ export function Library() {
   const [recentOnly, setRecentOnly] = useState(false)
   // 최근 열람 항목을 펼칠 수 있는 곳 — 노트를 담는 항목에서만 (모든 앱·기타 파일·휴지통에는 없다)
   const recentScope =
-    section.kind === 'all' || section.kind === 'notes' || section.kind === 'category' || section.kind === 'uncategorized' || section.kind === 'folder'
+    section.kind === 'all' || section.kind === 'notes' || section.kind === 'category' || section.kind === 'catgroup' || section.kind === 'uncategorized' || section.kind === 'folder'
   const recentActive = recentOnly && recentScope
   // 사이드바 선택 항목 슬라이딩 인디케이터 (세로)
   const treeRef = useRef<HTMLElement>(null)
@@ -160,7 +170,9 @@ export function Library() {
       ? 'all'
       : section.kind === 'category'
         ? `cat:${section.name}`
-        : section.kind === 'folder'
+        : section.kind === 'catgroup'
+          ? `catgroup:${section.name}`
+          : section.kind === 'folder'
           ? `folder:${section.id}`
           : section.kind
   // 검색어 디바운스 — FLIP 트리거(120ms). 메모(useMemo)들이 렌더 중 이 값을 읽으므로 반드시 위쪽에서 선언한다
@@ -463,6 +475,7 @@ export function Library() {
    */
   const scopedRecentDocs = useMemo(() => {
     if (section.kind === 'category') return recentDocs.filter((d) => d.category === section.name)
+    if (section.kind === 'catgroup') return recentDocs.filter((d) => inCatGroup(d.category, section.name))
     if (section.kind === 'uncategorized') return recentDocs.filter((d) => d.category == null)
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -500,6 +513,8 @@ export function Library() {
       list = list.filter((d) => d.category != null && cats.has(d.category))
     } else if (section.kind === 'category') {
       list = list.filter((d) => d.category === section.name)
+    } else if (section.kind === 'catgroup') {
+      list = list.filter((d) => inCatGroup(d.category, section.name))
     } else if (section.kind === 'uncategorized') {
       list = list.filter((d) => d.category == null) // 카테고리가 아예 없는 노트만 — 매핑 안 된 카테고리는 사이드바의 카테고리 항목으로 보인다
     }
@@ -520,6 +535,7 @@ export function Library() {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
       list = list.filter((a) => a.category != null && cats.has(a.category))
     } else if (section.kind === 'category') list = list.filter((a) => a.category === section.name)
+    else if (section.kind === 'catgroup') list = list.filter((a) => inCatGroup(a.category, section.name))
     else if (section.kind === 'uncategorized') list = list.filter((a) => a.category == null)
     const q = dq.trim().toLowerCase()
     if (q) list = list.filter((a) => a.title.toLowerCase().includes(q))
@@ -534,6 +550,7 @@ export function Library() {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
       list = list.filter((f) => f.category != null && cats.has(f.category))
     } else if (section.kind === 'category') list = list.filter((f) => f.category === section.name)
+    else if (section.kind === 'catgroup') list = list.filter((f) => inCatGroup(f.category, section.name))
     else if (section.kind === 'uncategorized') list = list.filter((f) => f.category == null)
     const q = dq.trim().toLowerCase()
     if (q) list = list.filter((f) => f.title.toLowerCase().includes(q))
@@ -547,13 +564,16 @@ export function Library() {
       ...visibleApps.map((a) => ({ kind: 'app' as const, a })),
       ...visibleFiles.map((f) => ({ kind: 'file' as const, f }))
     ]
-    if (!visibleApps.length && !visibleFiles.length) return list
     const m = (i: Item) => (i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f)
-    if (prefs.sort === 'title') list.sort((x, y) => m(x).title.localeCompare(m(y).title, 'ko'))
-    else if (prefs.sort === 'created') list.sort((x, y) => m(y).createdAt - m(x).createdAt)
-    else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
+    if (visibleApps.length || visibleFiles.length) {
+      if (prefs.sort === 'title') list.sort((x, y) => m(x).title.localeCompare(m(y).title, 'ko'))
+      else if (prefs.sort === 'created') list.sort((x, y) => m(y).createdAt - m(x).createdAt)
+      else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
+    }
+    // 묶음 화면 — 태그 순으로 모은다(태그 안은 위의 정렬 그대로, sort는 안정 정렬)
+    if (section.kind === 'catgroup') list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
     return list
-  }, [visible, visibleApps, visibleFiles, prefs.sort])
+  }, [visible, visibleApps, visibleFiles, prefs.sort, section])
   // 검색 등으로 보이지 않게 된 카드는 선택에서 뺀다
   useEffect(() => {
     if (!selected) return
@@ -613,9 +633,12 @@ export function Library() {
   useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y', [...openGroups].join('\n')) // 묶음을 접고 펴면 선택 칩도 새 자리로
   // 접힌 묶음 안의 카테고리로 가면(다른 화면에서 카테고리를 눌러 들어와도) 그 묶음을 펼친다
   useEffect(() => {
-    if (section.kind !== 'category') return
-    const { group, label } = splitCategory(section.name)
-    const g = group ? label : null
+    let g: string | null = null
+    if (section.kind === 'catgroup') g = section.name
+    else if (section.kind === 'category') {
+      const { group, label } = splitCategory(section.name)
+      g = group ? label : null
+    }
     if (g && !openGroups.has(g)) saveOpenGroups(new Set(openGroups).add(g))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section])
@@ -624,6 +647,7 @@ export function Library() {
   useEffect(() => {
     if (!ready) return
     if (section.kind === 'category' && !shownCategories.includes(section.name)) setSection({ kind: 'all' })
+    if (section.kind === 'catgroup' && !shownCategories.some((c) => inCatGroup(c, section.name))) setSection({ kind: 'all' })
   }, [ready, shownCategories, section])
 
   const subfolders = useMemo(
@@ -1196,7 +1220,9 @@ export function Library() {
         ? '미분류'
         : section.kind === 'category'
           ? section.name
-          : section.kind === 'folder'
+          : section.kind === 'catgroup'
+            ? section.name
+            : section.kind === 'folder'
             ? breadcrumb.at(-1)?.name ?? '폴더'
             : section.kind === 'notes'
               ? '모든 노트'
@@ -1206,6 +1232,23 @@ export function Library() {
                   ? '기타 파일'
                   : '전체'
 
+  /** 묶음 화면 — 태그가 바뀌는 첫 카드 앞에 소제목(태그 색 점 · 이름 · 개수). 누르면 그 카테고리만 */
+  const subhead = (i: Item, idx: number) => {
+    if (section.kind !== 'catgroup') return null
+    const tag = itemTag(i)
+    if (idx > 0 && itemTag(items[idx - 1]) === tag) return null
+    const cat = (i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f).category
+    const n = items.filter((x) => itemTag(x) === tag).length
+    return (
+      <h3 key={'subhead:' + tag} className="grid-subhead">
+        <button onClick={() => cat && pickSection({ kind: 'category', name: cat })}>
+          <i className="cat-dot" style={{ background: categoryColor(cat) }} aria-hidden="true" />
+          {tag}
+          <span className="count">{n}</span>
+        </button>
+      </h3>
+    )
+  }
   /** 카테고리에 든 노트·앱·파일 수 */
   const catCount = (c: string) => docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length
   /** 사이드바 카테고리 한 줄 — label은 보이는 이름([묶음] 아래면 그 부분을 뗀 이름) */
@@ -1359,28 +1402,36 @@ export function Library() {
               const open = openGroups.has(g.name)
               // 접힌 묶음에 보고 있는 카테고리가 있으면 선택 칩이 구분선에 앉는다
               const activeInside = !open && section.kind === 'category' && g.cats.includes(section.name)
+              const activeGroup = section.kind === 'catgroup' && section.name === g.name
               return (
                 <Fragment key={'group:' + g.name}>
-                  <button
-                    className={'tree-group' + (open ? ' is-open' : '') + (activeInside ? ' is-active' : '')}
-                    data-indicator-key={activeInside ? 'cat:' + section.name : undefined}
-                    aria-expanded={open}
-                    aria-label={g.name + (open ? ' 접기' : ' 펼치기')}
-                    onClick={() => toggleGroup(g.name)}
+                  {/* 머리글 — 화살표는 접고 펴기만, 이름 쪽은 묶음 화면(태그별로 나눠 전부)으로 가며 펼친다 */}
+                  <div
+                    className={'tree-group' + (open ? ' is-open' : '') + (activeInside || activeGroup ? ' is-active' : '')}
+                    data-indicator-key={activeGroup ? 'catgroup:' + g.name : activeInside ? 'cat:' + section.name : undefined}
                   >
-                    <Icon name="chevronRight" size={12} />
-                    <span className="tree-group-name">{g.name}</span>
-                    {!open && (
-                      <>
+                    <button className="tree-group-toggle" aria-expanded={open} aria-label={g.name + (open ? ' 접기' : ' 펼치기')} onClick={() => toggleGroup(g.name)}>
+                      <Icon name="chevronRight" size={12} />
+                    </button>
+                    <button
+                      className="tree-group-main"
+                      onClick={() => {
+                        if (!open) saveOpenGroups(new Set(openGroups).add(g.name))
+                        pickSection({ kind: 'catgroup', name: g.name })
+                      }}
+                    >
+                      <span className="tree-group-name">{g.name}</span>
+                      {activeGroup && recentActive && recentTag}
+                      {!open && (
                         <span className="tree-group-dots" aria-hidden="true">
                           {g.cats.slice(0, 4).map((c) => (
                             <i key={c} style={{ background: categoryColor(c) }} />
                           ))}
                         </span>
-                        <span className="count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>
-                      </>
-                    )}
-                  </button>
+                      )}
+                      {!open && <span className="count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>}
+                    </button>
+                  </div>
                   {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).group ?? c))}</div>}
                 </Fragment>
               )
@@ -1507,7 +1558,8 @@ export function Library() {
               onPointerMove={onGridMove}
               onPointerLeave={onGridLeave}
             >
-              {items.map((i, idx) =>
+              {items.flatMap((i, idx) => [
+                subhead(i, idx),
                 i.kind === 'app' ? (
                   <article
                     key={'app:' + i.a.id}
@@ -1738,7 +1790,7 @@ export function Library() {
                     </div>
                   </article>
                 )
-              )}
+              ])}
             </section>
           )}
         </main>
