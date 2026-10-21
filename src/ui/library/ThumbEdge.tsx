@@ -2,21 +2,19 @@ import { useEffect, useRef } from 'react'
 import { cellNoise, drawPlus, readThumb, type ThumbGrid } from '../motion/thumbCells'
 
 /**
- * 카드 미리보기 가장자리 효과 — 늘 유지된다. 가운데는 필기가 그대로 또렷하고, 가장자리로 갈수록
- * 필기 칸이 잉크 색 타일 → 빈 사각형 → ＋로 흩어진다(빈 종이 가장자리엔 옅은 ＋가 드문드문).
- * 칸마다 흩어짐 값이 고정이라 다시 그려도(크기 바뀜 등) 무늬가 같다. 미리보기 <img> 위에 얹는 캔버스.
- * 가장자리가 흩어져 카드 경계가 흐려지므로, 카드의 원래 테두리 선(1px) 자리를 그 자리 가장자리 색으로 칠한다
- * (원래 회색 테두리 선은 CSS에서 뺀다 — .doc-thumb:has(> .thumb-edge)).
+ * 카드 미리보기 위의 타일 효과 캔버스 — 평소엔 비어 있다(카드 둘레 테두리만).
  *
  * 등장 — 미리보기가 처음 보일 때 Library가 이 캔버스의 부모(.doc-thumb)에 'thumb-reveal' 이벤트를 보내면,
- * 전체가 흩어진 상태(＋)에서 시작해 빈 사각형 → 타일 → 또렷한 필기로 가운데부터 풀리고, 가장자리는 흩어진 채 멈춘다
- * (칸마다 지금 단계 t를 '전부 흩어짐(T_START)'에서 '가장자리 상태'로 옮긴다 — 끝 상태가 곧 늘 보이는 상태)
+ * 전체가 흩어진 상태(＋)에서 시작해 빈 사각형 → 타일 → 또렷한 필기로 가운데부터 다 풀린다.
  *
- * 머무는 동안 — 화면에 보이는 카드만 초당 20번쯤 다시 그려 가장자리가 은은하게 일렁이고 ＋·빈 사각형이 반짝인다
- * (칸마다 단계가 조금씩 오르내려 타일↔사각형↔＋가 바뀌고, 기호 진하기가 엇갈려 깜빡인다). 모션 끄기면 멈춘 그림
+ * 카드를 눌러 여는 창(블러 베일)이 뜨면(open) — 블러 위로 가장자리에 필기 칸이 잉크 색 타일·빈 사각형·＋로 번져 나오고,
+ * 열려 있는 동안 은은하게 일렁이고 반짝인다(초당 20번). 닫히면 다시 스며들어 사라진다. 모션 끄기면 움직임 없이.
+ *
+ * 카드의 원래 테두리 선(1px) 자리는 그 자리 가장자리 색으로 칠한다(원래 회색 선은 CSS에서 뺀다 — .doc-thumb:has(> .thumb-edge))
  */
-export function ThumbEdge({ src }: { src: string }) {
+export function ThumbEdge({ src, open }: { src: string; open: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const ctl = useRef<{ setOpen: (v: boolean) => void } | null>(null)
   useEffect(() => {
     const cv = ref.current
     const holder = cv?.parentElement
@@ -25,11 +23,12 @@ export function ThumbEdge({ src }: { src: string }) {
     const img = new Image()
     let grid: ThumbGrid | null = null
     let size = { w: 0, h: 0, radius: 0 }
-    let progress = 1 // 등장 진행 0..1 — 1이면 늘 보이는 가장자리 상태
+    let reveal = 1 // 등장 진행 0..1 — 1이면 다 풀림
+    let openAmt = 0 // 여는 창 효과 0..1
+    let openTarget = false
     let pending = false // 그림을 읽기 전에 등장 요청이 왔다
     let raf = 0
-    let idleRaf = 0
-    let visible = false
+    const motionOn = () => document.documentElement.dataset.motion !== 'off'
     // 등장 동안 미리보기 <img>는 이 캔버스가 첫 장면을 그린 뒤에 보인다(그 전엔 리빌 대기 클립으로 가려져 있다)
     const showImg = () => holder.querySelector('img[data-reveal]')?.classList.add('is-revealed', 'no-anim')
     const paint = () => {
@@ -37,8 +36,43 @@ export function ThumbEdge({ src }: { src: string }) {
       if (!g || !grid) return
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
-      paintEdge(g, grid, size.w, size.h, progress, shimmerOn() ? performance.now() / 1000 : undefined)
+      g.clearRect(0, 0, size.w, size.h)
+      if (reveal < 1) paintTiles(g, grid, size.w, size.h, { reveal })
+      else if (openAmt > 0) paintTiles(g, grid, size.w, size.h, { open: openAmt, time: motionOn() ? performance.now() / 1000 : undefined })
       paintFrame(g, grid, size.w, size.h, size.radius)
+    }
+    // 하나의 루프 — 등장·여닫기 진행을 옮기고, 열려 있으면 초당 20번 일렁임
+    let last = 0
+    let prev = 0
+    const loop = (now: number) => {
+      raf = 0
+      if (!alive) return
+      const dt = prev ? now - prev : 16
+      prev = now
+      let busy = false
+      if (reveal < 1) {
+        reveal = Math.min(1, reveal + dt / REVEAL_MS)
+        busy = true
+      }
+      const goal = openTarget ? 1 : 0
+      if (openAmt !== goal) {
+        const stepAmt = dt / (openTarget ? OPEN_MS : CLOSE_MS)
+        openAmt = openTarget ? Math.min(1, openAmt + stepAmt) : Math.max(0, openAmt - stepAmt)
+        busy = true
+      }
+      const shimmer = openAmt > 0 && motionOn()
+      if (busy || (shimmer && now - last >= 50)) {
+        last = now
+        paint()
+      }
+      if (busy || shimmer) raf = requestAnimationFrame(loop)
+      else prev = 0
+    }
+    const kick = () => {
+      if (!raf && alive) {
+        prev = 0
+        raf = requestAnimationFrame(loop)
+      }
     }
     const layout = () => {
       if (!alive || !img.naturalWidth) return
@@ -55,47 +89,26 @@ export function ThumbEdge({ src }: { src: string }) {
       cv.width = Math.ceil(w * dpr)
       cv.height = Math.ceil(h * dpr)
       if (pending) play()
-      else {
-        paint()
-        idle()
-      }
-    }
-    const shimmerOn = () => document.documentElement.dataset.motion !== 'off'
-    // 머무는 동안 일렁임 — 보이는 동안만, 초당 20번
-    const idle = () => {
-      cancelAnimationFrame(idleRaf)
-      if (!alive || !visible || !grid || progress < 1 || !shimmerOn()) return
-      let last = 0
-      const tick = (now: number) => {
-        if (!alive || !visible || progress < 1 || !shimmerOn()) return
-        if (now - last >= 50) {
-          last = now
-          paint()
-        }
-        idleRaf = requestAnimationFrame(tick)
-      }
-      idleRaf = requestAnimationFrame(tick)
+      else paint()
     }
     const play = () => {
       if (!grid) {
         pending = true
-        progress = 0
         return
       }
       pending = false
-      cancelAnimationFrame(raf)
-      const t0 = performance.now()
-      const step = (now: number) => {
-        if (!alive) return
-        progress = Math.min(1, (now - t0) / REVEAL_MS)
-        paint()
-        if (progress < 1) raf = requestAnimationFrame(step)
-        else idle()
-      }
-      progress = 0
+      reveal = 0
       paint()
       showImg()
-      raf = requestAnimationFrame(step)
+      kick()
+    }
+    ctl.current = {
+      setOpen: (v) => {
+        openTarget = v
+        if (!motionOn()) openAmt = v ? 1 : 0 // 모션 끄기 — 바로
+        paint()
+        kick()
+      }
     }
     holder.addEventListener('thumb-reveal', play)
     img.onload = layout
@@ -105,65 +118,75 @@ export function ThumbEdge({ src }: { src: string }) {
     img.src = src
     const ro = new ResizeObserver(() => layout())
     ro.observe(holder)
-    const io = new IntersectionObserver(([en]) => {
-      visible = en.isIntersecting
-      if (visible) idle()
-      else cancelAnimationFrame(idleRaf)
-    })
-    io.observe(holder)
     return () => {
       alive = false
-      cancelAnimationFrame(raf)
-      cancelAnimationFrame(idleRaf)
-      io.disconnect()
+      ctl.current = null
+      if (raf) cancelAnimationFrame(raf)
       holder.removeEventListener('thumb-reveal', play)
       ro.disconnect()
     }
   }, [src])
+  useEffect(() => ctl.current?.setOpen(open), [open, src])
   return <canvas ref={ref} className="thumb-edge" aria-hidden="true" />
 }
 
-/** 가장자리에서 이만큼(가운데 0 ~ 가장자리 1) 안쪽부터 흩어지기 시작한다 */
+/** 가장자리에서 이만큼(가운데 0 ~ 가장자리 1) 안쪽부터 흩어진다(여는 창 효과) */
 const EDGE_START = 0.72
 /** 등장 길이(ms) */
 const REVEAL_MS = 900
+/** 여는 창 효과가 번져 나오는·스며드는 시간(ms) */
+const OPEN_MS = 520
+const CLOSE_MS = 320
 /** 등장 시작 때 모든 칸의 단계 — ＋ 단계(1.3 미만) 바로 안쪽에서 시작한다 */
 const T_START = 1.25
+/** 다 풀린 상태 — 모든 칸이 0 아래로 내려가도록 가장자리 상태에서 이만큼 뺀다 */
+const CLEAR_OFFSET = 2.2
 const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
 
-/** 머무는 동안 칸 단계가 오르내리는 폭(일렁임) */
+/** 열려 있는 동안 칸 단계가 오르내리는 폭(일렁임) */
 const SHIMMER = 0.16
 
-/** progress: 등장 진행(1이면 머무는 상태). time(초)을 주면 일렁임·반짝임을 넣는다 */
-function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, progress = 1, time?: number) {
+/**
+ * 칸 타일 그리기.
+ * - reveal(0..1): 등장 — '전부 흩어짐'에서 '다 풀림'으로(가운데 칸이 멀리 가서 먼저 풀린다). 원래 필기는 종이색으로 가린다
+ * - open(0..1): 여는 창 효과 — '다 풀림'에서 가장자리 상태로 번져 나온다. 블러 위에 얹으므로 종이색으로 가리지 않는다.
+ *   time(초)을 주면 일렁임·반짝임
+ */
+function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, o: { reveal?: number; open?: number; time?: number }) {
   const { cells, cols } = grid
-  g.clearRect(0, 0, w, h)
   const inked = (i: number) => (cells[i]?.ink ?? 0) > 0.03
+  const cover = o.reveal !== undefined
   for (const c of cells) {
     // 가장자리까지 거리 — 둥근 네모(초타원) 기준이라 네 변을 고르게 따라간다
     const nx = Math.abs(((c.x + c.w / 2) / w - 0.5) * 2)
     const ny = Math.abs(((c.y + c.h / 2) / h - 0.5) * 2)
     const d = Math.pow(Math.pow(nx, 4) + Math.pow(ny, 4), 1 / 4)
-    let t = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.4
-    // 반짝임 — 칸마다 빠르기·위상이 달라 엇갈려 깜빡인다(0.45..1)
+    const edge = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.4
+    let t: number
     let tw = 1
-    if (time !== undefined && t > -0.3) {
-      const w1 = 1.1 + cellNoise(c.i, 5) * 1.3
-      const ph = cellNoise(c.i, 6) * Math.PI * 2
-      t += SHIMMER * Math.sin(time * w1 + ph)
-      tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time * (w1 * 1.7) + ph * 1.3))
+    if (o.reveal !== undefined) {
+      // 등장 — 칸마다 조금씩 엇갈려(최대 25%)
+      const q = Math.min(1, Math.max(0, (o.reveal - cellNoise(c.i, 3) * 0.25) / 0.75))
+      t = T_START + (edge - CLEAR_OFFSET - T_START) * easeOut(q)
+    } else {
+      // 여는 창 — 가장자리 칸부터 번져 나오게 엇갈려
+      const q = Math.min(1, Math.max(0, ((o.open ?? 0) - (1 - Math.min(1, d)) * 0.3) / 0.7))
+      t = edge - CLEAR_OFFSET * (1 - easeOut(q))
+      if (o.time !== undefined && t > -0.3) {
+        const w1 = 1.1 + cellNoise(c.i, 5) * 1.3
+        const ph = cellNoise(c.i, 6) * Math.PI * 2
+        t += SHIMMER * Math.sin(o.time * w1 + ph)
+        tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(o.time * (w1 * 1.7) + ph * 1.3))
+      }
     }
-    if (progress < 1) {
-      // 등장 중 — 칸마다 조금씩 엇갈려(최대 25%) '전부 흩어짐'에서 제 자리 상태로. 가운데일수록 멀리 가서 먼저 풀린다
-      const q = Math.min(1, Math.max(0, (progress - cellNoise(c.i, 3) * 0.25) / 0.75))
-      t = T_START + (t - T_START) * easeOut(q)
-    }
-    if (t <= 0) continue // 가운데 — 그대로
+    if (t <= 0) continue
     if (c.ink > 0.03) {
-      g.fillStyle = c.paper // 원래 필기를 가리고
-      g.fillRect(c.x, c.y, c.w, c.h)
+      if (cover) {
+        g.fillStyle = c.paper // 원래 필기를 가리고
+        g.fillRect(c.x, c.y, c.w, c.h)
+      }
       if (t < 0.45) {
-        g.globalAlpha = Math.min(1, 0.4 + c.ink * 2.2)
+        g.globalAlpha = Math.min(1, 0.4 + c.ink * 2.2) * (cover ? 1 : 0.85)
         g.fillStyle = c.color
         g.fillRect(c.x + 0.6, c.y + 0.6, c.w - 1.2, c.h - 1.2)
       } else if (t < 0.85) {
@@ -179,7 +202,7 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
       }
       g.globalAlpha = 1
     } else if (t > 0.5) {
-      // 빈 종이 가장자리 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋
+      // 빈 종이 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋
       const near = inked(c.i - 1) || inked(c.i + 1) || inked(c.i - cols) || inked(c.i + cols)
       if (cellNoise(c.i, 2) < (near ? 0.35 : 0.1)) {
         g.globalAlpha = (near ? 0.55 : 0.3) * tw

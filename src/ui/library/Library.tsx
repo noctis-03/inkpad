@@ -1727,7 +1727,7 @@ export function Library() {
                       {thumbs.get(i.d.id) ? (
                         <>
                           <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
-                          {prefs.view === 'grid' && <ThumbEdge src={thumbs.get(i.d.id)!} />}
+                          {prefs.view === 'grid' && <ThumbEdge src={thumbs.get(i.d.id)!} open={revealKey === i.d.id} />}
                         </>
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
