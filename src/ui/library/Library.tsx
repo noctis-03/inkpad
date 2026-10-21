@@ -9,6 +9,7 @@ import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
 import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { NewDocumentSheet } from './NewDocumentSheet'
+import { ThumbDither } from './ThumbDither'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
 import { AppsSheet } from '../AppsSheet'
@@ -1740,7 +1741,10 @@ export function Library() {
                   >
                     <div className="doc-thumb">
                       {thumbs.get(i.d.id) ? (
-                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
+                        <>
+                          <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
+                          {prefs.view === 'grid' && <ThumbDither src={thumbs.get(i.d.id)!} />}
+                        </>
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
