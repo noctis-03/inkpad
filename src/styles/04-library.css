@@ -766,7 +766,7 @@
 .mark-ex {
   color: #d97706;
 }
-/* 카드 미리보기 한가운데의 마킹 — 빨간 펜으로 채점하듯 손글씨 기호를 크게, 살짝 기울여.
+/* 카드 미리보기 한가운데의 마킹 — 반듯한 기호를 크게.
    뒤의 미리보기는 옅게 블러하고 마킹 색으로 살짝 물들인 뒤 옅은 빗금을 그어 내용의 형체는 보이게 한다.
    동기화 라벨·선택 체크(z-index 3)는 블러 위에 또렷이 남는다 */
 .card-mark {
@@ -804,12 +804,12 @@
   height: auto;
   aspect-ratio: 1;
   opacity: .92;
-  transform: rotate(-8deg);
 }
 .doc-list .card-mark svg {
   width: 78%;
+  stroke-width: 11; /* 목록의 작은 미리보기에선 조금 굵게 */
 }
-/* 방금 마킹한 카드 — 도장 찍히듯: 크게 기울어 나타났다가 '탁' 자리 잡는다 */
+/* 방금 마킹한 카드 — 도장 찍히듯: 크게 나타났다가 '탁' 자리 잡는다 */
 .card-mark.is-stamping svg {
   animation: mark-stamp .34s cubic-bezier(.2, .9, .3, 1.3) both;
 }
@@ -817,9 +817,9 @@
   animation: mark-veil-in .25s ease-out both;
 }
 @keyframes mark-stamp {
-  0% { opacity: 0; transform: rotate(-18deg) scale(1.5); }
-  65% { opacity: .92; transform: rotate(-6deg) scale(.94); }
-  100% { opacity: .92; transform: rotate(-8deg) scale(1); }
+  0% { opacity: 0; transform: scale(1.5); }
+  65% { opacity: .92; transform: scale(.94); }
+  100% { opacity: .92; transform: scale(1); }
 }
 @keyframes mark-veil-in {
   from { opacity: 0; }

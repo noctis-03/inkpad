@@ -317,7 +317,7 @@ export function Library() {
     const info = markInfo(m)
     return (
       <span key={m} className={'card-mark mark-' + info.cls + (stamping.has(key) ? ' is-stamping' : '')} role="img" aria-label={'마킹: ' + info.label}>
-        <MarkGlyph mark={m} size={64} />
+        <MarkGlyph mark={m} size={64} weight={8} />
       </span>
     )
   }

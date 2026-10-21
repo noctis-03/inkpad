@@ -10,7 +10,6 @@ import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import type { CardSyncState } from '../../sync/sync'
 import type { FileRow } from '../../storage/db'
 import type { Mark } from '../../storage/repo'
-import { strokeOutline } from '../../engine/geometry'
 
 /**
  * 카드 캡션의 동기화 상태 라벨.
@@ -240,68 +239,20 @@ export const MARKS: { mark: Mark; label: string; cls: string }[] = [
 ]
 export const markInfo = (m: Mark) => MARKS.find((x) => x.mark === m)!
 
-/**
- * 마킹 기호 ○ ✕ ! — 빨간 펜으로 채점하듯 손글씨 획으로 그린다(앱의 펜과 같은 strokeOutline).
- * 획은 100×100 칸 기준 점 목록(필압 포함)이고, 외곽선은 처음 한 번만 만들어 둔다. 색은 currentColor
- */
-const GLYPH_WIDTH = 10
-const GLYPH_OPTS = { thinning: 0.55, smoothing: 0.5, streamline: 0.35, simulatePressure: false }
-const ramp = (t: number, a: number, peak: number, b: number) => (t < 0.35 ? a + (peak - a) * (t / 0.35) : peak + (b - peak) * ((t - 0.35) / 0.65))
-function glyphStrokes(mark: Mark): number[][][] {
-  const N = 40
-  const seq = (f: (t: number) => number[]) => Array.from({ length: N + 1 }, (_, i) => f(i / N))
-  if (mark === 'o') {
-    // 왼쪽 위에서 시작해 한 바퀴 조금 넘게 — 끝이 시작을 살짝 지나며 바깥으로 벌어진다
-    return [
-      seq((t) => {
-        const a = -2.3 + t * Math.PI * 2 * 1.13
-        const r = 0.96 + 0.04 * Math.sin(t * 5) + t * t * 0.16
-        return [50 + Math.cos(a) * 34 * r, 52 + Math.sin(a) * 31 * r, ramp(t, 0.3, 0.7, 0.2)]
-      })
-    ]
-  }
-  if (mark === 'x') {
-    return [
-      seq((t) => [24 + t * 54, 22 + t * 58 + Math.sin(Math.PI * t) * 3, ramp(t, 0.6, 0.85, 0.35)]),
-      seq((t) => [77 - t * 52, 25 + t * 54 - Math.sin(Math.PI * t) * 3, ramp(t, 0.5, 0.8, 0.4)])
-    ]
-  }
-  return [
-    seq((t) => [52 - t * 3, 12 + t * 52, 0.9 - t * 0.55]),
-    [
-      [49.5, 83, 0.85],
-      [50.5, 84, 0.85]
-    ]
-  ]
-}
-function outlineD(o: number[][]): string {
-  const n = o.length
-  if (n < 3) return ''
-  const f = (v: number) => v.toFixed(2)
-  const mid = (a: number[], b: number[]) => `${f((a[0] + b[0]) / 2)} ${f((a[1] + b[1]) / 2)}`
-  let d = 'M' + mid(o[0], o[1])
-  for (let i = 1; i <= n; i++) {
-    const a = o[i % n]
-    d += `Q${f(a[0])} ${f(a[1])} ${mid(a, o[(i + 1) % n])}`
-  }
-  return d + 'Z'
-}
-const glyphCache = new Map<Mark, string>()
-function glyphPath(mark: Mark): string {
-  let d = glyphCache.get(mark)
-  if (!d) {
-    d = glyphStrokes(mark)
-      .map((pts) => outlineD(strokeOutline(pts.flatMap(([x, y, p]) => [x, y, p, 16]), GLYPH_WIDTH, GLYPH_OPTS, true)))
-      .join('')
-    glyphCache.set(mark, d)
-  }
-  return d
-}
-
-export function MarkGlyph({ mark, size = 14 }: { mark: Mark; size?: number }) {
+/** 마킹 기호 ○ ✕ ! — 반듯한 선(굵기 균일, 끝은 둥글게). 색은 currentColor. weight는 100칸 기준 선 굵기 */
+export function MarkGlyph({ mark, size = 14, weight = 12 }: { mark: Mark; size?: number; weight?: number }) {
   return (
-    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true">
-      <path d={glyphPath(mark)} fill="currentColor" />
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={weight} strokeLinecap="round">
+      {mark === 'o' ? (
+        <circle cx="50" cy="50" r="34" />
+      ) : mark === 'x' ? (
+        <path d="M23 23 77 77M77 23 23 77" />
+      ) : (
+        <>
+          <path d="M50 14v48" />
+          <circle cx="50" cy="83" r={weight * 0.62} fill="currentColor" stroke="none" />
+        </>
+      )}
     </svg>
   )
 }
