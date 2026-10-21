@@ -9,10 +9,11 @@ const CATEGORY_COLORS = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', 
 /**
  * 카테고리 이름 → 책등 색. 사용자가 임의로 짓는 이름이므로 고정 표가 아니라
  * 이름을 해시해 팔레트에서 고른다 — 같은 이름은 언제나 같은 색이 나온다.
+ * 앞의 [묶음]은 빼고 나머지 이름만 본다("[과제] 디지털 시스템"은 "디지털 시스템"과 같은 색).
  * 이름이 없으면(미분류) 중립 회색.
  */
 export function categoryColor(name: string | null | undefined): string {
-  const label = name?.trim()
+  const label = name?.trim() && splitCategory(name.trim()).label.trim()
   if (!label) return '#64748b'
   let h = 0
   for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) % 100000007

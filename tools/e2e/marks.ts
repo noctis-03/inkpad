@@ -13,6 +13,22 @@ async function longPress(p: Page, title: string, ms = 700) {
   await sleep(250)
 }
 
+/** 꾹 누른 채로 (dx, dy)만큼 밀고 뗀다 — 원형 메뉴. mid는 떼기 직전에 확인할 것 */
+async function swipe(p: Page, title: string, dx: number, dy: number, mid?: () => Promise<void>) {
+  const b = (await card(p, title).locator('.doc-thumb').boundingBox())!
+  const x = b.x + b.width / 2
+  const y = b.y + b.height / 2
+  await p.mouse.move(x, y)
+  await p.mouse.down()
+  await sleep(700)
+  await p.mouse.move(x + dx / 2, y + dy / 2, { steps: 3 })
+  await p.mouse.move(x + dx, y + dy, { steps: 3 })
+  await sleep(80)
+  if (mid) await mid()
+  await p.mouse.up()
+  await sleep(250)
+}
+
 export default async function marks(ctx: Ctx) {
   const { base, check } = ctx
   const A = await device(ctx, { name: 'iPad' })
@@ -91,6 +107,33 @@ export default async function marks(ctx: Ctx) {
   check('다시 열어도 마킹이 남는다', (await card(A, '가 노트').locator('.card-mark.mark-ex').count()) === 1)
   check('마킹한 카드는 테두리가 마킹 색', (await card(A, '가 노트').locator('.doc-thumb').evaluate((e) => getComputedStyle(e).boxShadow)).includes('rgb(217, 119, 6)'))
 
+  // ── 원형 메뉴: 꾹 누른 채로 밀어 떼면 바로 마킹 ──
+  const markOf = async (t: string) => (await marksOf(A))['doc:' + ids[t]]
+  const notSelecting = async () => (await A.locator('.library-header.is-selecting').count()) === 0
+  await swipe(A, '나 노트', 0, -70, async () => {
+    check('원형 메뉴: 꾹 누르면 뜨고, 위로 밀면 ○가 강조된다', (await A.locator('.radial').count()) === 1 && (await A.locator('.radial-item.at-up.is-hot.mark-o').count()) === 1)
+  })
+  check('원형 메뉴 위 → ○ (선택 모드로 가지 않는다)', (await markOf('나 노트')) === 'o' && (await notSelecting()) && (await A.locator('.radial').count()) === 0)
+  await swipe(A, '나 노트', 0, -70, async () => {
+    check('원형 메뉴: 이미 붙은 마킹은 테두리로 표시', (await A.locator('.radial-item.at-up.is-current').count()) === 1)
+  })
+  check('원형 메뉴: 같은 마킹 쪽으로 떼면 뗀다', (await markOf('나 노트')) === undefined)
+  await swipe(A, '다 노트', 70, 0)
+  check('원형 메뉴 오른쪽 → ✕', (await markOf('다 노트')) === 'x')
+  await swipe(A, '다 노트', -70, 0)
+  check('원형 메뉴 왼쪽 → 지우기', (await markOf('다 노트')) === undefined)
+  await swipe(A, '다 노트', 0, 260)
+  check('원형 메뉴: 멀리 나가 떼면 취소', (await markOf('다 노트')) === undefined && (await notSelecting()))
+  check('원형 메뉴: 떼고 나면 카드가 열리지 않는다', (await A.locator('.doc-card.is-revealed').count()) === 0 && (await A.locator('.editor, .canvas-root, #canvas-root').count()) === 0)
+  // 선택 모드에서 선택된 카드를 밀면 선택된 카드 전부에
+  await longPress(A, '나 노트')
+  await card(A, '다 노트').click()
+  await sleep(150)
+  await swipe(A, '나 노트', 0, 70)
+  check('선택 모드: 선택된 카드에서 아래 → 선택된 카드 모두 !', (await markOf('나 노트')) === '!' && (await markOf('다 노트')) === '!' && (await A.locator('.library-header.is-selecting').count()) === 1)
+  await A.getByRole('button', { name: '완료' }).click()
+  await sleep(200)
+
   // 영구 삭제한 노트의 마킹은 정리된다
   await A.evaluate(async (id) => (await import('/src/storage/repo.ts')).purgeDocument(id), ids['가 노트'])
   await A.reload()
@@ -98,4 +141,30 @@ export default async function marks(ctx: Ctx) {
   await sleep(300)
   check('영구 삭제한 노트의 마킹은 정리', !(('doc:' + ids['가 노트']) in (await marksOf(A))))
   await A.context().close()
+
+  // ── 터치(아이패드처럼): 손가락으로 꾹 누른 채 밀어도 스크롤되지 않고 원형 메뉴가 고른다 ──
+  const B = await device(ctx, { name: 'iPad', touch: true })
+  const tid: Record<string, string> = {}
+  for (let i = 0; i < 30; i++) tid['t' + i] = await createDoc(B, '터치 노트 ' + String(i).padStart(2, '0'))
+  await B.goto(base + '/')
+  await B.waitForSelector('.doc-card')
+  await sleep(400)
+  const cdp = await B.context().newCDPSession(B)
+  const tb = (await card(B, '터치 노트 29').locator('.doc-thumb').boundingBox())!
+  const tx = tb.x + tb.width / 2
+  const ty = tb.y + tb.height / 2
+  const scrollTop = () => B.evaluate(() => Math.max(...[...document.querySelectorAll('.library-main, .library-body, html')].map((e) => e.scrollTop)))
+  const s0 = await scrollTop()
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tx, y: ty }] })
+  await sleep(700)
+  for (let k = 1; k <= 6; k++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: tx, y: ty - k * 12 }] })
+    await sleep(30)
+  }
+  const hot = await B.locator('.radial-item.at-up.is-hot').count()
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await sleep(300)
+  check('터치: 꾹 누른 채 위로 밀면 ○가 강조된다', hot === 1)
+  check('터치: 떼면 ○ — 화면은 스크롤되지 않는다', (await marksOf(B))['doc:' + tid['t29']] === 'o' && (await scrollTop()) === s0)
+  await B.context().close()
 }
