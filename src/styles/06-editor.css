@@ -436,10 +436,10 @@
   .doc-grid .doc-more {
     width: 24px;
   }
-  .doc-grid .doc-state.is-overlay {
+  .doc-grid .sync-tag.is-overlay {
     left: 4px;
     bottom: 4px;
-    padding: 1px 6px 1px 5px;
+    padding: 2px 4px 1px;
     font-size: 9.5px;
   }
   .doc-grid .doc-open-panel {
