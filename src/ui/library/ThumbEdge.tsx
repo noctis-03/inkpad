@@ -145,7 +145,7 @@ export function ThumbEdge({ src, open }: { src: string; open: boolean }) {
 }
 
 /** 가장자리에서 이만큼(가운데 0 ~ 가장자리 1) 안쪽부터 흩어진다 */
-const EDGE_START = 0.72
+const EDGE_START = 0.84
 /** 등장 길이(ms) */
 const REVEAL_MS = 900
 /** 여는 창 효과가 퍼지는·돌아가는 시간(ms) */
@@ -174,7 +174,7 @@ function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: 
     const nx = Math.abs((fx - 0.5) * 2)
     const ny = Math.abs((fy - 0.5) * 2)
     const d = Math.pow(Math.pow(nx, 4) + Math.pow(ny, 4), 1 / 4)
-    let t = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.4
+    let t = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.3
     if (o.reveal < 1) {
       const q = Math.min(1, Math.max(0, (o.reveal - cellNoise(c.i, 3) * 0.25) / 0.75))
       t = T_START + (t - T_START) * easeOut(q)
