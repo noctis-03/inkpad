@@ -260,33 +260,52 @@
 .tree-group {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   height: 36px;
-  padding: 0 10px;
-  border: 0;
   border-radius: 10px;
-  background: transparent;
-  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  text-align: left;
   color: var(--muted);
-  cursor: pointer;
-  touch-action: manipulation;
   transition: color .15s;
 }
-.tree-group:active,
 .tree-group.is-active {
   color: var(--ink);
 }
-.tree-group > svg {
+/* 화살표(접고 펴기)와 이름 쪽(묶음 화면) — 두 버튼 */
+.tree-group-toggle,
+.tree-group-main {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.tree-group-toggle {
   flex: 0 0 auto;
-  margin: 0 3px;
+  justify-content: center;
+  width: 34px;
+  padding: 0 0 0 4px;
+}
+.tree-group-toggle svg {
   transition: transform .22s var(--spring-pop);
 }
-.tree-group.is-open > svg {
+.tree-group.is-open .tree-group-toggle svg {
   transform: rotate(90deg);
+}
+.tree-group-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+  padding: 0 10px 0 0;
+  text-align: left;
+}
+.tree-group-toggle:active,
+.tree-group-main:active {
+  color: var(--ink);
 }
 .tree-group-name {
   min-width: 0;
@@ -308,7 +327,7 @@
 .tree-group-dots i + i {
   margin-left: -2px;
 }
-.tree-group .count {
+.tree-group-main .count {
   margin-left: auto;
   font-size: 11px;
   font-weight: 400;
@@ -421,6 +440,49 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 14px 12px;
+}
+/* 묶음 화면의 태그 소제목 — 격자 한 줄 전체(목록에선 그냥 한 줄). 오른쪽으로 옅은 선 */
+.grid-subhead {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 -2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.grid-subhead:first-child {
+  margin-top: 0;
+}
+.grid-subhead::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.grid-subhead button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.grid-subhead .cat-dot {
+  width: 8px;
+  height: 8px;
+}
+.grid-subhead .count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.doc-list .grid-subhead {
+  margin: 12px 0 2px;
 }
 .doc-card {
   position: relative;
