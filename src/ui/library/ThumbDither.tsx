@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { cellNoise, readThumb, THUMB_COLS, type ThumbGrid } from '../motion/thumbCells'
+import { BAYER8, cellNoise, readThumb, THUMB_COLS, type ThumbGrid } from '../motion/thumbCells'
 
 /**
  * 카드 미리보기 디더 캔버스.
@@ -144,12 +144,6 @@ const FRONT = 0.08
 const WARM = [250 / 255, 247 / 255, 240 / 255]
 const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
 
-// 8×8 베이어 행렬 — 디졸브 문턱값의 바탕(점이 고르게 흩어져 차오른다)
-const BAYER = [
-  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9,
-  41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21
-]
-
 interface Dither {
   cols: number
   rows: number
@@ -219,7 +213,7 @@ function makeDither(grid: ThumbGrid, w: number, h: number): Dither | null {
       const c = on ? deepen(ink, 0.8) : paper
       dot.set(c, i * 3)
       spark.set(deepen(ink, 0.7), i * 3)
-      q[i] = (BAYER[(y & 7) * 8 + (x & 7)] + 0.5) / 64 * 0.8 + cellNoise((y >> 2) * 4099 + (x >> 2), 9) * 0.2
+      q[i] = (BAYER8[(y & 7) * 8 + (x & 7)] + 0.5) / 64 * 0.8 + cellNoise((y >> 2) * 4099 + (x >> 2), 9) * 0.2
     }
   }
   const buf = document.createElement('canvas')
