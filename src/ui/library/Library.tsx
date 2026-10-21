@@ -574,17 +574,18 @@ export function Library() {
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
 
-  /** 사이드바 카테고리 배치 — 묶음마다 구분선 아래 모아서(이름 순), 그다음 빈 구분선 뒤에 [묶음] 없는 것 → 미분류 */
+  /** 사이드바 카테고리 배치 — "[태그] 이름"들을 뒤쪽 이름으로 묶어(이름 순) 먼저, 그다음 [태그] 없는 것.
+      묶음 머리글은 뒤쪽 이름, 그 아래 항목은 [태그](태그 순, 점 색도 태그로) */
   const categoryLayout = useMemo(() => {
     const plain: string[] = []
     const groups = new Map<string, string[]>()
     for (const c of shownCategories) {
-      const { group } = splitCategory(c)
+      const { group, label } = splitCategory(c)
       if (!group) plain.push(c)
-      else groups.set(group, [...(groups.get(group) ?? []), c])
+      else groups.set(label, [...(groups.get(label) ?? []), c])
     }
     const sorted = [...groups].sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    return { plain, groups: sorted.map(([name, cats]) => ({ name, cats: cats.sort((a, b) => splitCategory(a).label.localeCompare(splitCategory(b).label, 'ko')) })) }
+    return { plain, groups: sorted.map(([name, cats]) => ({ name, cats: cats.sort((a, b) => (splitCategory(a).group ?? '').localeCompare(splitCategory(b).group ?? '', 'ko')) })) }
   }, [shownCategories])
 
   // 카테고리 묶음 접기·펼치기 — 펼친 묶음 이름만 이 기기에 기억한다(새 묶음은 접힌 채로 시작)
@@ -613,7 +614,8 @@ export function Library() {
   // 접힌 묶음 안의 카테고리로 가면(다른 화면에서 카테고리를 눌러 들어와도) 그 묶음을 펼친다
   useEffect(() => {
     if (section.kind !== 'category') return
-    const g = splitCategory(section.name).group
+    const { group, label } = splitCategory(section.name)
+    const g = group ? label : null
     if (g && !openGroups.has(g)) saveOpenGroups(new Set(openGroups).add(g))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section])
@@ -1379,7 +1381,7 @@ export function Library() {
                       </>
                     )}
                   </button>
-                  {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).label))}</div>}
+                  {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).group ?? c))}</div>}
                 </Fragment>
               )
             })}
