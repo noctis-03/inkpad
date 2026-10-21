@@ -1,7 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
-import { tileReveal } from '../motion/tileReveal'
-import { ThumbEdge } from './ThumbEdge'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
@@ -720,16 +718,9 @@ export function Library() {
           const img = holder.querySelector<HTMLImageElement>('img[data-reveal]')
           if (!img) continue
           const id = img.dataset.reveal!
-          const seen = seenReveal.current.has(id)
+          if (seenReveal.current.has(id)) img.classList.add('no-anim')
           seenReveal.current.add(id)
-          // 처음 보이는 미리보기는 필기가 있는 칸부터 잉크 색 타일로 맞춰지며 나타난다(모션 끄기면 바로)
-          if (!seen && document.documentElement.dataset.motion !== 'off') {
-            // 격자: 가장자리 효과 캔버스가 '전부 흩어짐 → 가장자리만'으로 이어서 풀어 준다 / 목록: 타일로 맞춰지며 등장
-            if (holder.querySelector('.thumb-edge')) holder.dispatchEvent(new Event('thumb-reveal')) // 첫 장면을 그리면서 <img>를 보인다
-            else tileReveal(img, () => img.classList.add('is-revealed', 'no-anim'))
-            continue
-          }
-          img.classList.add('is-revealed', 'no-anim')
+          img.classList.add('is-revealed')
         }
       },
       { threshold: 0.1 }
@@ -1221,14 +1212,6 @@ export function Library() {
     await refresh()
   }
 
-  /** 카드 뒤 배경을 옅게 물들일 색 — 카테고리 화면은 그 카테고리 색, 묶음 화면은 첫 태그 색 */
-  const sectionTint =
-    section.kind === 'category'
-      ? categoryColor(section.name)
-      : section.kind === 'catgroup'
-        ? categoryColor(categoryLayout.groups.find((g) => g.name === section.name)?.cats[0] ?? null)
-        : null
-
   const title = recentActive
     ? '최근 열람한 노트'
     : section.kind === 'trash'
@@ -1490,7 +1473,6 @@ export function Library() {
         )}
 
         <main className="library-main">
-          {sectionTint && <div key={sectionTint} className="section-tint" style={{ ['--tint' as string]: sectionTint } as React.CSSProperties} aria-hidden="true" />}
           {section.kind === 'folder' && (
             <nav className="breadcrumb" aria-label="경로">
               <button onClick={() => setSection({ kind: 'all' })}>전체</button>
@@ -1725,10 +1707,7 @@ export function Library() {
                   >
                     <div className="doc-thumb">
                       {thumbs.get(i.d.id) ? (
-                        <>
-                          <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
-                          {prefs.view === 'grid' && <ThumbEdge src={thumbs.get(i.d.id)!} open={revealKey === i.d.id} />}
-                        </>
+                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
