@@ -417,12 +417,48 @@
     background: #00000033;
   }
 }
-/* 좁은 화면: 최소 폭을 낮춰 한 줄에 2장이 들어가게 한다.
-   180px 기준으로는 390px 폭에서 180*2+18 > 366 이라 한 줄에 1장만 들어간다. */
+/* 좁은 화면(휴대폰): 카드 최소 폭을 100px로 낮춰 한 줄에 3장 — 390px 폭이면 장당 약 115px,
+   360px 폭에서도 3장. 카드가 작아진 만큼 캡션·동기화 라벨·여는 창 버튼도 줄인다 */
 @media (max-width: 560px) {
   .doc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
-    gap: 12px 10px;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 12px 8px;
+  }
+  .doc-grid .doc-info {
+    padding-top: 6px;
+  }
+  .doc-grid .doc-title {
+    font-size: 12.5px;
+  }
+  .doc-grid .doc-cat-line {
+    font-size: 10.5px;
+  }
+  .doc-grid .doc-more {
+    width: 24px;
+  }
+  .doc-grid .doc-state.is-overlay {
+    left: 4px;
+    bottom: 4px;
+    padding: 1px 6px 1px 5px;
+    font-size: 9.5px;
+  }
+  .doc-grid .doc-open-panel {
+    padding: 8px 6px;
+  }
+  .doc-grid .doc-open-meta {
+    font-size: 10px;
+  }
+  .doc-grid .doc-open-tabs .doc-open-btn,
+  .doc-grid .doc-open-tabs .doc-open-btn:hover {
+    gap: 4px;
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+  .doc-grid .card-check {
+    top: 4px;
+    left: 4px;
+    width: 20px;
+    height: 20px;
   }
 }
 
