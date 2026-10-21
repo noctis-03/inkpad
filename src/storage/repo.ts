@@ -465,8 +465,13 @@ export async function putThumbnail(documentId: ID, blob: Blob) {
 }
 
 export async function getThumbnails(): Promise<Map<ID, Blob>> {
+  return new Map([...(await getThumbnailRows())].map(([id, r]) => [id, r.blob]))
+}
+
+/** 미리보기와 만든 시각 — 미리보기에서 만든 것(디더 등)을 다시 쓸지 가릴 때 */
+export async function getThumbnailRows(): Promise<Map<ID, { blob: Blob; updatedAt: number }>> {
   const rows = await db.thumbnails.toArray()
-  return new Map(rows.map((r) => [r.documentId, r.blob]))
+  return new Map(rows.map((r) => [r.documentId, { blob: r.blob, updatedAt: r.updatedAt }]))
 }
 
 /** 저장된 미리보기를 지운다 — 다시 그릴 게 없을 때 흰(오래된) 사진 대신 아이콘이 보이게 */
