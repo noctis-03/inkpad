@@ -5,7 +5,8 @@ import { cellNoise, drawPlus, readThumb, type ThumbGrid } from '../motion/thumbC
  * 카드 미리보기 가장자리 효과 — 늘 유지된다. 가운데는 필기가 그대로 또렷하고, 가장자리로 갈수록
  * 필기 칸이 잉크 색 타일 → 빈 사각형 → ＋로 흩어진다(빈 종이 가장자리엔 옅은 ＋가 드문드문).
  * 칸마다 흩어짐 값이 고정이라 다시 그려도(크기 바뀜 등) 무늬가 같다. 미리보기 <img> 위에 얹는 캔버스.
- * 가장자리가 흩어져 카드 경계가 흐려지므로, 미리보기 둘레에 그 자리 가장자리 색을 따라가는 얇은 테두리를 두른다
+ * 가장자리가 흩어져 카드 경계가 흐려지므로, 카드의 원래 테두리 선(1px) 자리를 그 자리 가장자리 색으로 칠한다
+ * (원래 회색 테두리 선은 CSS에서 뺀다 — .doc-thumb:has(> .thumb-edge))
  */
 export function ThumbEdge({ src }: { src: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -89,8 +90,8 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
   }
 }
 
-/** 테두리 두께(px) */
-const FRAME = 1.5
+/** 테두리 두께(px) — 원래 카드 테두리 선과 같은 1px */
+const FRAME = 1
 
 /**
  * 미리보기 둘레 테두리 — 둘레를 따라 놓인 칸들의 평균색을 둘레 방향으로 고르게(앞뒤 2칸) 섞어
