@@ -41,6 +41,8 @@ export function ThumbEdge({ src, open }: { src: string; open: boolean }) {
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       g.clearRect(0, 0, size.w, size.h)
+      // 여는 창 효과가 남아 있는 동안은 블러 베일 위에 둔다(닫히는 동안에도 — 베일 아래로 먼저 떨어지면 끊겨 보인다)
+      cv.classList.toggle('is-lifted', openTarget || openAmt > 0)
       paintTiles(g, grid, size.w, size.h, { reveal, open: openAmt, time: motionOn() ? performance.now() / 1000 : undefined })
       paintFrame(g, grid, size.w, size.h, size.radius)
     }
@@ -185,13 +187,16 @@ function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: 
       t = t + (full - t) * q
     }
     if (t <= 0) continue
-    // 밝기 일렁임 — 카드를 가로지르는 잔물결 + 칸마다 약간의 엇갈림(0.72..1)
-    const tw = o.time === undefined ? 1 : 0.86 + 0.14 * Math.sin(o.time * 1.7 - (fx * 2.4 + fy * 3.1) + cellNoise(c.i, 6) * 1.2)
-    const cover = o.open === 0 // 블러 위(open)에선 종이색으로 가리지 않는다
+    // 밝기 일렁임 — 카드를 가로지르는 잔물결 + 칸마다 약간의 엇갈림(0.16..1)
+    const tw = o.time === undefined ? 1 : 0.58 + 0.42 * Math.sin(o.time * 1.7 - (fx * 2.4 + fy * 3.1) + cellNoise(c.i, 6) * 1.2)
+    // 원래 필기를 종이색으로 가리는 막 — 여는 창(블러 위)으로 갈수록 걷힌다(끊김 없이)
+    const cover = 1 - openE
     if (c.ink > 0.03) {
-      if (cover) {
-        g.fillStyle = c.paper // 원래 필기를 가리고
+      if (cover > 0) {
+        g.globalAlpha = cover
+        g.fillStyle = c.paper
         g.fillRect(c.x, c.y, c.w, c.h)
+        g.globalAlpha = 1
       }
       if (t < 0.45) {
         g.globalAlpha = Math.min(1, 0.4 + c.ink * 2.2) * tw
@@ -209,24 +214,25 @@ function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: 
         drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.28)
       }
       g.globalAlpha = 1
-    } else if (o.open > 0 && t < 1.3) {
-      // 블러 위 빈 칸 — 옅은 빈 사각형·＋로 채워 카드 전체가 꽉 차 보이게
-      g.globalAlpha = 0.32 * tw * openE
+    } else {
       g.strokeStyle = grid.inkColor
-      g.lineWidth = 1
-      if (t < 0.7) g.strokeRect(c.x + 1.5, c.y + 1.5, c.w - 3, c.h - 3)
-      else drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
-      g.globalAlpha = 1
-    } else if (t > 0.5) {
-      // 빈 종이 가장자리 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋
-      const near = inked(c.i - 1) || inked(c.i + 1) || inked(c.i - cols) || inked(c.i + cols)
-      if (cellNoise(c.i, 2) < (near ? 0.35 : 0.1)) {
-        g.globalAlpha = (near ? 0.55 : 0.3) * tw
-        g.strokeStyle = grid.inkColor
-        g.lineWidth = 1.1
-        drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
-        g.globalAlpha = 1
+      // 빈 종이 가장자리 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋ (여는 창으로 갈수록 아래 것과 엇갈려 바뀐다)
+      if (t > 0.5 && cover > 0) {
+        const near = inked(c.i - 1) || inked(c.i + 1) || inked(c.i - cols) || inked(c.i + cols)
+        if (cellNoise(c.i, 2) < (near ? 0.35 : 0.1)) {
+          g.globalAlpha = (near ? 0.55 : 0.3) * tw * cover
+          g.lineWidth = 1.1
+          drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
+        }
       }
+      // 블러 위 빈 칸 — 옅은 빈 사각형·＋로 채워 카드 전체가 꽉 차 보이게
+      if (openE > 0 && t < 1.3) {
+        g.globalAlpha = 0.32 * tw * openE
+        g.lineWidth = 1
+        if (t < 0.7) g.strokeRect(c.x + 1.5, c.y + 1.5, c.w - 3, c.h - 3)
+        else drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
+      }
+      g.globalAlpha = 1
     }
   }
 }
