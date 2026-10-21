@@ -371,6 +371,7 @@
 .library-main {
   flex: 1;
   overflow-y: auto;
+  background: var(--lib-bg);
   padding: 16px 20px 40px;
   -webkit-overflow-scrolling: touch;
 }
