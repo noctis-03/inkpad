@@ -1,9 +1,66 @@
-/* ── 미리보기 일괄 새로고침 버튼 (라이브러리 상단바) ── */
-.tb-btn.thumb-refresh.spinning svg {
-  animation: thumb-spin 0.9s linear infinite;
+/* ── 라이브러리 상단 바 — 폭에 따라 줄인다 ──
+   넓은 화면: 검색 · 격자/목록 · 정렬 · 작업보드 · 설정 · 동기화 · 새로 만들기를 모두 늘어놓는다.
+   980px 이하(iPad 세로): 격자/목록 · 정렬 · 작업보드를 ⋯(보기·정렬) 메뉴로 옮긴다.
+   700px 이하(휴대폰): 검색은 돋보기 버튼으로 접고(누르면 상단 바 전체가 검색창), 설정도 ⋯ 메뉴로,
+   새로 만들기는 ＋ 아이콘만 남긴다. 가로 스크롤(04-library)은 그래도 넘칠 때를 위한 안전망이다. */
+.library-header .search-toggle,
+.library-header .search-cancel,
+.library-header .view-more-btn {
+  display: none;
 }
-@keyframes thumb-spin {
-  to {
-    transform: rotate(360deg);
+
+@media (max-width: 980px) {
+  .library-header .view-seg,
+  .library-header .sort-select,
+  .library-header .board-btn {
+    display: none;
+  }
+  .library-header .view-more-btn {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 700px) {
+  .library-header {
+    gap: 6px;
+    padding: 10px;
+  }
+  /* 제목은 줄어들 수 있게 — 긴 섹션 이름은 말줄임 */
+  .library-header .library-title {
+    flex-shrink: 1;
+  }
+  .library-header .search-box,
+  .library-header .settings-btn {
+    display: none;
+  }
+  .library-header .search-toggle {
+    display: inline-flex;
+    margin-left: auto;
+  }
+  .library-header #new-doc-btn {
+    width: 40px;
+    padding: 0;
+  }
+  .library-header .new-doc-label {
+    display: none;
+  }
+
+  /* 검색 중: 상단 바 전체를 검색창 + 취소로 */
+  .library-header.is-searching > * {
+    display: none;
+  }
+  .library-header.is-searching > .search-box {
+    display: flex;
+    flex: 1;
+    max-width: none;
+    margin-left: 0;
+  }
+  .library-header.is-searching > .search-cancel {
+    display: inline-flex;
+    border: 0;
+    background: transparent;
+    padding: 0 8px;
+    color: var(--accent);
+    font-weight: 600;
   }
 }

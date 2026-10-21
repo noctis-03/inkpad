@@ -15,7 +15,7 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import { Menu, MenuItem } from '../Menu'
-import { CategoryPicker, FolderTree, SyncPill, ThumbRefreshButton, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
+import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { categoryColor, formatDate, splitCategory } from '../../shared/util'
@@ -143,7 +143,11 @@ export function Library() {
   const [showFiles, setShowFiles] = useState(false)
   const [showAssets, setShowAssets] = useState(false)
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null)
-  const [menu, setMenu] = useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
+  // 좁은 화면의 상단 바: 보기·정렬·작업보드(휴대폰은 설정도)를 ⋯ 메뉴로, 검색은 돋보기를 눌러 펼친다
+  const [viewMenu, setViewMenu] = useState<{ x: number; y: number } | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [menu, setMenu]= useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
   const [appMenu, setAppMenu] = useState<{ app: HtmlApp; x: number; y: number } | null>(null)
@@ -1269,7 +1273,7 @@ export function Library() {
 
   return (
     <div className={'library' + (selected ? ' is-selecting' : '')} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-      <header className={'library-header' + (selected ? ' is-selecting' : '')}>
+      <header className={'library-header' + (selected ? ' is-selecting' : '') + (!selected && (searchOpen || query) ? ' is-searching' : '')}>
         {selected ? (
           <>
             <button className="sel-btn sel-done" onClick={() => setSelected(null)}>
@@ -1317,10 +1321,29 @@ export function Library() {
                 <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
               </span>
             </h1>
+            <button
+              className="tb-btn search-toggle"
+              aria-label="제목 검색"
+              onClick={() => {
+                setSearchOpen(true)
+                requestAnimationFrame(() => searchRef.current?.focus())
+              }}
+            >
+              <Icon name="search" />
+            </button>
             <div className="search-box">
               <Icon name="search" size={18} />
-              <input id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <input ref={searchRef} id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
+            <button
+              className="text-btn search-cancel"
+              onClick={() => {
+                setQuery('')
+                setSearchOpen(false)
+              }}
+            >
+              취소
+            </button>
             <Segmented
               className="view-seg"
               value={prefs.view}
@@ -1341,11 +1364,21 @@ export function Library() {
               <option value="created">만든 날</option>
               <option value="title">제목</option>
             </select>
-            <button className="tb-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
+            <button className="tb-btn board-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
               <Icon name="board" />
             </button>
-            <ThumbRefreshButton />
-            <button className="tb-btn" onClick={() => setShowSettings(true)} aria-label="설정">
+            <button
+              className="tb-btn view-more-btn"
+              aria-label="보기·정렬"
+              title="보기 · 정렬"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setViewMenu({ x: r.right, y: r.bottom })
+              }}
+            >
+              <Icon name="more" />
+            </button>
+            <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
               <Icon name="gear" />
             </button>
             <button
@@ -1361,8 +1394,8 @@ export function Library() {
               {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
             </button>
             {section.kind !== 'trash' && (
-              <button id="new-doc-btn" className="primary-btn" onClick={() => setShowNew(true)}>
-                <Icon name="plus" size={18} /> 새로 만들기
+              <button id="new-doc-btn" className="primary-btn" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
+                <Icon name="plus" size={18} /> <span className="new-doc-label">새로 만들기</span>
               </button>
             )}
           </>
@@ -1830,6 +1863,23 @@ export function Library() {
           <MenuItem icon="filePdf" label="에셋 원본 (PDF·이미지)" onClick={() => { setMoreMenu(null); setShowAssets(true) }} />
           <MenuItem icon="apps" label="앱 관리" onClick={() => { setMoreMenu(null); setShowApps(true) }} />
           <MenuItem icon="files" label="기타 파일 관리" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />
+          <div className="menu-sep" />
+          <MenuItem icon="replace" label="카드 미리보기 새로고침" onClick={() => { setMoreMenu(null); refreshThumbnails() }} />
+        </Menu>
+      )}
+
+      {viewMenu && (
+        <Menu x={viewMenu.x} y={viewMenu.y} onClose={() => setViewMenu(null)}>
+          <div className="menu-label">보기</div>
+          <MenuItem icon="grid" label="격자" current={prefs.view === 'grid'} onClick={() => { setViewMenu(null); setPrefs({ view: 'grid' }) }} />
+          <MenuItem icon="list" label="목록" current={prefs.view === 'list'} onClick={() => { setViewMenu(null); setPrefs({ view: 'list' }) }} />
+          <div className="menu-label">정렬</div>
+          <MenuItem icon="sort" label="수정일" current={prefs.sort === 'updated'} onClick={() => { setViewMenu(null); setPrefs({ sort: 'updated' }) }} />
+          <MenuItem icon="sort" label="만든 날" current={prefs.sort === 'created'} onClick={() => { setViewMenu(null); setPrefs({ sort: 'created' }) }} />
+          <MenuItem icon="sort" label="제목" current={prefs.sort === 'title'} onClick={() => { setViewMenu(null); setPrefs({ sort: 'title' }) }} />
+          <div className="menu-sep" />
+          <MenuItem icon="board" label="작업보드" onClick={() => { setViewMenu(null); navigate({ name: 'board' }) }} />
+          <MenuItem icon="gear" label="설정" className="phone-only" onClick={() => { setViewMenu(null); setShowSettings(true) }} />
         </Menu>
       )}
 

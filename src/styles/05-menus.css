@@ -49,6 +49,27 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+/* 메뉴 안 묶음 제목·구분선 */
+.menu-label {
+  padding: 8px 12px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+.menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+/* 휴대폰 폭에서만 보이는 항목 (상단 바에서 빠진 버튼을 메뉴로 옮긴 것) */
+.menu-item.phone-only {
+  display: none;
+}
+@media (max-width: 700px) {
+  .menu-item.phone-only {
+    display: flex;
+  }
+}
 .modal {
   width: min(420px, 100%);
   padding: 20px;
