@@ -493,7 +493,7 @@
   position: relative;
   aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
   border-radius: var(--r-card);
-  background: var(--thumb-paper);
+  background: var(--thumb-cream); /* 노트 디더 미리보기와 같은 미색 — 앱·파일 카드, 미리보기 없는 노트도 */
   box-shadow: var(--e1);
   overflow: hidden;
   display: flex;

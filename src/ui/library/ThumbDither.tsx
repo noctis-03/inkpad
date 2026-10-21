@@ -56,7 +56,7 @@ export function ThumbDither({ src }: { src: string }) {
 const DOT = 2
 /** 펜 색을 칸 단위로 읽는다 — 가로 칸 수(150px 카드면 칸 하나 약 8px) */
 const COLS = 18
-/** 종이색에 곱하는 따뜻한 미색 — 흰 종이가 옛 화면처럼 살짝 누렇게 */
+/** 종이색에 곱하는 따뜻한 미색 — 흰 종이가 옛 화면처럼 살짝 누렇게(흰 종이면 #faf7f0 = CSS --thumb-cream) */
 const WARM = [250 / 255, 247 / 255, 240 / 255]
 
 interface ThumbGrid {
