@@ -1,5 +1,5 @@
 // 카드 미리보기를 칸으로 나눠 읽는다 — 칸마다 잉크 양·잉크 평균색·종이색.
-// 등장 동작(tileReveal)과 디더 미리보기(ThumbDither)가 함께 쓴다.
+// 등장 동작(tileReveal)과 가장자리 효과(ThumbEdge)가 함께 쓴다.
 
 export const THUMB_COLS = 18 // 가로 칸 수 — 칸 크기는 카드 폭에 맞춘다(격자 150px 카드면 약 8px)
 
@@ -13,7 +13,6 @@ export interface ThumbCell {
   color: string // 잉크 평균색 rgb() — 잉크가 없으면 종이색
   paper: string // 종이(잉크가 아닌 픽셀) 평균색 rgb()
   avg: [number, number, number] // 칸 전체 평균색(잉크+종이)
-  inkRgb: [number, number, number] | null // 잉크 평균색 — 잉크가 없으면 null
 }
 
 export interface ThumbGrid {
@@ -22,9 +21,6 @@ export interface ThumbGrid {
   cols: number
   rows: number
   inkColor: string // 노트 전체 잉크 평균색
-  inkRgb: [number, number, number] // 노트 전체 잉크 평균색(숫자)
-  paperL: number // 종이 밝기(0..255)
-  paperRgb: [number, number, number] // 종이(잉크가 아닌 픽셀) 평균색
 }
 
 /**
@@ -59,7 +55,6 @@ export function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGri
   let ag = 0
   let ab = 0
   let an = 0
-  const pa = [0, 0, 0, 0]
   let rows = 0
   for (let y = 0; y < h - 0.5; y += size) {
     rows++
@@ -85,10 +80,6 @@ export function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGri
       }
       const rgb = (v: number[], k: number) => `rgb(${(v[0] / k) | 0},${(v[1] / k) | 0},${(v[2] / k) | 0})`
       const paper = n - ink ? rgb(psum, n - ink) : 'rgb(255,255,255)'
-      pa[0] += psum[0]
-      pa[1] += psum[1]
-      pa[2] += psum[2]
-      pa[3] += n - ink
       if (ink) {
         ar += sum[0]
         ag += sum[1]
@@ -96,21 +87,12 @@ export function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGri
         an += ink
       }
       const avg: [number, number, number] = n ? [(sum[0] + psum[0]) / n, (sum[1] + psum[1]) / n, (sum[2] + psum[2]) / n] : [255, 255, 255]
-      const inkRgb: [number, number, number] | null = ink ? [sum[0] / ink, sum[1] / ink, sum[2] / ink] : null
-      cells.push({ i: cells.length, x, y, w: cw, h: ch, ink: n ? ink / n : 0, color: ink ? rgb(sum, ink) : paper, paper, avg, inkRgb })
+      cells.push({ i: cells.length, x, y, w: cw, h: ch, ink: n ? ink / n : 0, color: ink ? rgb(sum, ink) : paper, paper, avg })
     }
   }
   const inkColor = an ? `rgb(${(ar / an) | 0},${(ag / an) | 0},${(ab / an) | 0})` : 'rgb(60,60,60)'
-  const inkRgb: [number, number, number] = an ? [ar / an, ag / an, ab / an] : [60, 60, 60]
-  const paperRgb: [number, number, number] = pa[3] ? [pa[0] / pa[3], pa[1] / pa[3], pa[2] / pa[3]] : [255, 255, 255]
-  return { src, cells, cols: Math.ceil(w / size - 0.01), rows, inkColor, inkRgb, paperL, paperRgb }
+  return { src, cells, cols: Math.ceil(w / size - 0.01), rows, inkColor }
 }
-
-/** 8×8 베이어 행렬(0..63) — 디더 점이 고르게 흩어지는 문턱값 순서. 카드 디더·카테고리 색 번짐이 함께 쓴다 */
-export const BAYER8 = [
-  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9,
-  41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21
-]
 
 /** 칸마다 고정된 0..1 값(다시 그려도 같은 무늬) */
 export const cellNoise = (i: number, salt = 0) => {
