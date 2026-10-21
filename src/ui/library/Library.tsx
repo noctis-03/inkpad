@@ -1221,6 +1221,14 @@ export function Library() {
     await refresh()
   }
 
+  /** 카드 뒤 배경을 옅게 물들일 색 — 카테고리 화면은 그 카테고리 색, 묶음 화면은 첫 태그 색 */
+  const sectionTint =
+    section.kind === 'category'
+      ? categoryColor(section.name)
+      : section.kind === 'catgroup'
+        ? categoryColor(categoryLayout.groups.find((g) => g.name === section.name)?.cats[0] ?? null)
+        : null
+
   const title = recentActive
     ? '최근 열람한 노트'
     : section.kind === 'trash'
@@ -1482,6 +1490,7 @@ export function Library() {
         )}
 
         <main className="library-main">
+          {sectionTint && <div key={sectionTint} className="section-tint" style={{ ['--tint' as string]: sectionTint } as React.CSSProperties} aria-hidden="true" />}
           {section.kind === 'folder' && (
             <nav className="breadcrumb" aria-label="경로">
               <button onClick={() => setSection({ kind: 'all' })}>전체</button>
