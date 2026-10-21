@@ -28,6 +28,16 @@ export default async function catgroup(ctx: Ctx) {
   await A.waitForSelector('.doc-thumb img', { state: 'attached' })
   await sleep(1000)
   check('미리보기 타일 등장: 끝나면 타일 캔버스는 걷히고 미리보기가 보인다', (await A.locator('.thumb-tiles').count()) === 0 && (await A.locator('.doc-thumb img.is-revealed').count()) === 1)
+  const edgeSig = () => A.locator('.thumb-edge').first().evaluate((c) => (c as HTMLCanvasElement).toDataURL())
+  const e1 = await edgeSig()
+  await sleep(400)
+  check('가장자리 효과: 머무는 동안 일렁인다(그림이 바뀐다)', e1 !== (await edgeSig()))
+  await A.evaluate(() => (document.documentElement.dataset.motion = 'off'))
+  await sleep(200)
+  const e2 = await edgeSig()
+  await sleep(400)
+  check('가장자리 효과: 모션 끄기면 멈춘다', e2 === (await edgeSig()))
+  await A.evaluate(() => (document.documentElement.dataset.motion = 'normal'))
   // 사이드바의 카테고리 부분을 위에서부터 읽는다: 묶음은 '▸/▾ 이름 (접히면 개수)', 닫는 구분선은 '──', 카테고리는 '이름 개수'
   const readRows = () =>
     A.evaluate(() => {

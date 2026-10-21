@@ -11,6 +11,9 @@ import { cellNoise, drawPlus, readThumb, type ThumbGrid } from '../motion/thumbC
  * 등장 — 미리보기가 처음 보일 때 Library가 이 캔버스의 부모(.doc-thumb)에 'thumb-reveal' 이벤트를 보내면,
  * 전체가 흩어진 상태(＋)에서 시작해 빈 사각형 → 타일 → 또렷한 필기로 가운데부터 풀리고, 가장자리는 흩어진 채 멈춘다
  * (칸마다 지금 단계 t를 '전부 흩어짐(T_START)'에서 '가장자리 상태'로 옮긴다 — 끝 상태가 곧 늘 보이는 상태)
+ *
+ * 머무는 동안 — 화면에 보이는 카드만 초당 20번쯤 다시 그려 가장자리가 은은하게 일렁이고 ＋·빈 사각형이 반짝인다
+ * (칸마다 단계가 조금씩 오르내려 타일↔사각형↔＋가 바뀌고, 기호 진하기가 엇갈려 깜빡인다). 모션 끄기면 멈춘 그림
  */
 export function ThumbEdge({ src }: { src: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -25,6 +28,8 @@ export function ThumbEdge({ src }: { src: string }) {
     let progress = 1 // 등장 진행 0..1 — 1이면 늘 보이는 가장자리 상태
     let pending = false // 그림을 읽기 전에 등장 요청이 왔다
     let raf = 0
+    let idleRaf = 0
+    let visible = false
     // 등장 동안 미리보기 <img>는 이 캔버스가 첫 장면을 그린 뒤에 보인다(그 전엔 리빌 대기 클립으로 가려져 있다)
     const showImg = () => holder.querySelector('img[data-reveal]')?.classList.add('is-revealed', 'no-anim')
     const paint = () => {
@@ -32,7 +37,7 @@ export function ThumbEdge({ src }: { src: string }) {
       if (!g || !grid) return
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
-      paintEdge(g, grid, size.w, size.h, progress)
+      paintEdge(g, grid, size.w, size.h, progress, shimmerOn() ? performance.now() / 1000 : undefined)
       paintFrame(g, grid, size.w, size.h, size.radius)
     }
     const layout = () => {
@@ -50,7 +55,26 @@ export function ThumbEdge({ src }: { src: string }) {
       cv.width = Math.ceil(w * dpr)
       cv.height = Math.ceil(h * dpr)
       if (pending) play()
-      else paint()
+      else {
+        paint()
+        idle()
+      }
+    }
+    const shimmerOn = () => document.documentElement.dataset.motion !== 'off'
+    // 머무는 동안 일렁임 — 보이는 동안만, 초당 20번
+    const idle = () => {
+      cancelAnimationFrame(idleRaf)
+      if (!alive || !visible || !grid || progress < 1 || !shimmerOn()) return
+      let last = 0
+      const tick = (now: number) => {
+        if (!alive || !visible || progress < 1 || !shimmerOn()) return
+        if (now - last >= 50) {
+          last = now
+          paint()
+        }
+        idleRaf = requestAnimationFrame(tick)
+      }
+      idleRaf = requestAnimationFrame(tick)
     }
     const play = () => {
       if (!grid) {
@@ -66,6 +90,7 @@ export function ThumbEdge({ src }: { src: string }) {
         progress = Math.min(1, (now - t0) / REVEAL_MS)
         paint()
         if (progress < 1) raf = requestAnimationFrame(step)
+        else idle()
       }
       progress = 0
       paint()
@@ -80,9 +105,17 @@ export function ThumbEdge({ src }: { src: string }) {
     img.src = src
     const ro = new ResizeObserver(() => layout())
     ro.observe(holder)
+    const io = new IntersectionObserver(([en]) => {
+      visible = en.isIntersecting
+      if (visible) idle()
+      else cancelAnimationFrame(idleRaf)
+    })
+    io.observe(holder)
     return () => {
       alive = false
       cancelAnimationFrame(raf)
+      cancelAnimationFrame(idleRaf)
+      io.disconnect()
       holder.removeEventListener('thumb-reveal', play)
       ro.disconnect()
     }
@@ -98,7 +131,11 @@ const REVEAL_MS = 900
 const T_START = 1.25
 const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
 
-function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, progress = 1) {
+/** 머무는 동안 칸 단계가 오르내리는 폭(일렁임) */
+const SHIMMER = 0.16
+
+/** progress: 등장 진행(1이면 머무는 상태). time(초)을 주면 일렁임·반짝임을 넣는다 */
+function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, progress = 1, time?: number) {
   const { cells, cols } = grid
   g.clearRect(0, 0, w, h)
   const inked = (i: number) => (cells[i]?.ink ?? 0) > 0.03
@@ -108,6 +145,14 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
     const ny = Math.abs(((c.y + c.h / 2) / h - 0.5) * 2)
     const d = Math.pow(Math.pow(nx, 4) + Math.pow(ny, 4), 1 / 4)
     let t = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.4
+    // 반짝임 — 칸마다 빠르기·위상이 달라 엇갈려 깜빡인다(0.45..1)
+    let tw = 1
+    if (time !== undefined && t > -0.3) {
+      const w1 = 1.1 + cellNoise(c.i, 5) * 1.3
+      const ph = cellNoise(c.i, 6) * Math.PI * 2
+      t += SHIMMER * Math.sin(time * w1 + ph)
+      tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time * (w1 * 1.7) + ph * 1.3))
+    }
     if (progress < 1) {
       // 등장 중 — 칸마다 조금씩 엇갈려(최대 25%) '전부 흩어짐'에서 제 자리 상태로. 가운데일수록 멀리 가서 먼저 풀린다
       const q = Math.min(1, Math.max(0, (progress - cellNoise(c.i, 3) * 0.25) / 0.75))
@@ -122,12 +167,12 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
         g.fillStyle = c.color
         g.fillRect(c.x + 0.6, c.y + 0.6, c.w - 1.2, c.h - 1.2)
       } else if (t < 0.85) {
-        g.globalAlpha = 0.8
+        g.globalAlpha = 0.8 * (0.6 + 0.4 * tw)
         g.strokeStyle = c.color
         g.lineWidth = 1.1
         g.strokeRect(c.x + 1.2, c.y + 1.2, c.w - 2.4, c.h - 2.4)
       } else if (t < 1.3 && cellNoise(c.i, 1) < 0.6) {
-        g.globalAlpha = 0.75
+        g.globalAlpha = 0.75 * tw
         g.strokeStyle = c.color
         g.lineWidth = 1.2
         drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.28)
@@ -137,7 +182,7 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
       // 빈 종이 가장자리 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋
       const near = inked(c.i - 1) || inked(c.i + 1) || inked(c.i - cols) || inked(c.i + cols)
       if (cellNoise(c.i, 2) < (near ? 0.35 : 0.1)) {
-        g.globalAlpha = near ? 0.55 : 0.3
+        g.globalAlpha = (near ? 0.55 : 0.3) * tw
         g.strokeStyle = grid.inkColor
         g.lineWidth = 1.1
         drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
