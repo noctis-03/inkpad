@@ -532,6 +532,10 @@
   z-index: 1;
   pointer-events: none;
 }
+/* 가장자리 효과가 있는 미리보기는 원래 테두리 선(--e1의 1px 링) 대신 캔버스가 그 자리를 가장자리 색으로 칠한다 */
+.doc-grid .doc-thumb:has(> .thumb-edge) {
+  box-shadow: var(--e1-drop);
+}
 /* 미리보기 등장 타일(tileReveal) — 그리는 동안만 <img> 위에 얹힌다 */
 .thumb-tiles {
   position: absolute;
