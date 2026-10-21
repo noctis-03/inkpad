@@ -369,10 +369,30 @@
   letter-spacing: .02em;
 }
 .library-main {
+  position: relative;
   flex: 1;
   overflow-y: auto;
   padding: 16px 20px 40px;
   -webkit-overflow-scrolling: touch;
+  /* 카드 뒤 배경 — 옅은 칸 + ＋, 카드와 함께 스크롤된다 */
+  background-image: var(--lib-pattern);
+  background-size: 160px 160px;
+  background-position: -1px -1px;
+  background-attachment: local;
+}
+/* 지금 보는 카테고리 색이 맨 위에서 옅게 번진다(카테고리·묶음 화면에서만). 카테고리를 바꾸면 새 색으로 스며든다 */
+.section-tint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 340px;
+  pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tint) var(--lib-tint-mix), transparent) 0, transparent 100%);
+  animation: section-tint-in .45s var(--ft-ease) both;
+}
+@keyframes section-tint-in {
+  from { opacity: 0; }
 }
 .breadcrumb {
   display: flex;
