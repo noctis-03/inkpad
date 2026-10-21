@@ -294,7 +294,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   z-index: 2;
   pointer-events: none;
   opacity: 0;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-card);
   background: radial-gradient(220px circle at var(--gx, 50%) var(--gy, 50%), #ffffff80, transparent 60%);
   mix-blend-mode: overlay;
   transition: opacity .2s;
@@ -332,7 +332,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 .doc-return-ghost {
   position: fixed;
   z-index: 45;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-card);
   background-color: var(--paper);
   background-size: cover;
   background-position: top center;
@@ -343,7 +343,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 .doc-open-ghost {
   position: fixed;
   z-index: 45;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-card);
   background-color: var(--thumb-paper);
   background-size: cover;
   background-position: top center;

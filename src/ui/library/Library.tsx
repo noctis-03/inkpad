@@ -855,7 +855,7 @@ export function Library() {
       const dy = vh / 2 - (rect.top + rect.height / 2)
       const anim = ghost.animate(
         [
-          { transform: 'none', borderRadius: 'var(--r-lg)' },
+          { transform: 'none', borderRadius: 'var(--r-card)' },
           { transform: `translate(${dx}px, ${dy}px) scale(${cover})`, borderRadius: '0px' }
         ],
         { duration: dur(480), easing: SPRING, fill: 'forwards' }
