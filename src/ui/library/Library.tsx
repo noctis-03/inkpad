@@ -1366,17 +1366,24 @@ export function Library() {
                     aria-label={g.name + (open ? ' 접기' : ' 펼치기')}
                     onClick={() => toggleGroup(g.name)}
                   >
-                    <span className="tree-group-name">
-                      <Icon name="chevronRight" size={12} />
-                      {g.name}
-                      {!open && <span className="tree-group-count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>}
-                    </span>
+                    <Icon name="chevronRight" size={12} />
+                    <span className="tree-group-name">{g.name}</span>
+                    {!open && (
+                      <>
+                        <span className="tree-group-dots" aria-hidden="true">
+                          {g.cats.slice(0, 4).map((c) => (
+                            <i key={c} style={{ background: categoryColor(c) }} />
+                          ))}
+                        </span>
+                        <span className="count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>
+                      </>
+                    )}
                   </button>
                   {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).label))}</div>}
                 </Fragment>
               )
             })}
-            {categoryLayout.groups.length > 0 && <div className="tree-group" role="separator" />}
+            {categoryLayout.groups.length > 0 && <div className="tree-group-end" aria-hidden="true" />}
             {categoryLayout.plain.map((c) => categoryItem(c, c))}
             <button
               data-indicator-key="uncategorized"

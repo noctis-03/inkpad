@@ -34,20 +34,21 @@ export default async function catgroup(ctx: Ctx) {
         if (!on) continue
         if (el.tagName === 'BUTTON' && el.classList.contains('tree-group')) {
           const open = el.getAttribute('aria-expanded') === 'true'
-          const cnt = el.querySelector('.tree-group-count')?.textContent
-          out.push(`${open ? '▾' : '▸'} ${el.querySelector('.tree-group-name')?.childNodes[1]?.textContent ?? ''}${cnt ? ' ' + cnt : ''}`)
-        } else if (el.classList.contains('tree-group')) out.push('──')
+          const cnt = el.querySelector('.count')?.textContent
+          const dots = el.querySelectorAll('.tree-group-dots i').length
+          out.push(`${open ? '▾' : '▸'} ${el.querySelector('.tree-group-name')?.textContent ?? ''}${dots ? ' ' + '●'.repeat(dots) : ''}${cnt ? ' ' + cnt : ''}`)
+        } else if (el.classList.contains('tree-group-end')) continue
         else out.push(`${el.querySelector('.tree-name')?.textContent} ${el.querySelector('.count')?.textContent}`)
       }
       return out
     })
   const eq = (a: string[], b: string[]) => JSON.stringify(a) === JSON.stringify(b)
   let rows = await readRows()
-  check('사이드바: 묶음은 접힌 채로 시작(구분선에 묶음 전체 개수) → 닫는 구분선 → [묶음] 없는 카테고리 → 미분류', eq(rows, ['▸ 과제 3', '▸ 시험 1', '──', '교양 1', '미분류 1']), JSON.stringify(rows))
+  check('사이드바: 묶음은 접힌 채로 시작(머리글에 안쪽 색 점·묶음 전체 개수) → [묶음] 없는 카테고리 → 미분류', eq(rows, ['▸ 과제 ●● 3', '▸ 시험 ● 1', '교양 1', '미분류 1']), JSON.stringify(rows))
   await A.getByRole('button', { name: '과제 펼치기' }).click()
   await sleep(300)
   rows = await readRows()
-  check('묶음 구분선을 누르면 펼친다(앞의 [묶음]은 뗀 이름)', eq(rows, ['▾ 과제', '디지털 시스템 2', '회로 실습 1', '▸ 시험 1', '──', '교양 1', '미분류 1']), JSON.stringify(rows))
+  check('묶음 머리글을 누르면 펼친다(앞의 [묶음]은 뗀 이름, 들여 써서 안내선 안에)', eq(rows, ['▾ 과제', '디지털 시스템 2', '회로 실습 1', '▸ 시험 ● 1', '교양 1', '미분류 1']), JSON.stringify(rows))
   await A.reload()
   await A.waitForSelector('.folder-tree .tree-group')
   await sleep(300)
@@ -66,7 +67,7 @@ export default async function catgroup(ctx: Ctx) {
   // 보고 있는 카테고리의 묶음을 접으면 선택 칩이 구분선에 앉고, 다시 그 카테고리로 오면 자동으로 펼친다
   await A.getByRole('button', { name: '과제 접기' }).click()
   await sleep(300)
-  check('보고 있는 카테고리의 묶음을 접으면 구분선이 선택 표시', (await A.locator('.tree-group.is-active', { hasText: '과제' }).count()) === 1)
+  check('보고 있는 카테고리의 묶음을 접으면 머리글이 선택 표시', (await A.locator('.tree-group.is-active', { hasText: '과제' }).count()) === 1)
   await A.evaluate(() => sessionStorage.setItem('inkpad.section', JSON.stringify({ kind: 'category', name: '[ 시험 ] 중간고사' })))
   await A.reload()
   await A.waitForSelector('.folder-tree .tree-group')

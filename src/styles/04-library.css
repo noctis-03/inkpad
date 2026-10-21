@@ -254,71 +254,80 @@
   letter-spacing: .04em;
   color: var(--muted);
 }
-/* 사이드바 카테고리 묶음 — 이름이 [묶음]으로 시작하는 카테고리들을 모은 구분선(가운데에 묶음 이름).
-   이름 없는 구분선은 마지막 묶음을 닫는다(아래 묶음 없는 카테고리·미분류가 묶음에 든 것처럼 보이지 않게) */
+/* 사이드바 카테고리 묶음 — 이름이 [묶음]으로 시작하는 카테고리들의 머리글.
+   카테고리 줄과 같은 왼쪽 시작점에 ▸/▾ · 이름, 접히면 안쪽 카테고리 색 점과 묶음 전체 개수.
+   누르면 접고 편다. 펼치면 안쪽 카테고리는 살짝 들여 쓰고 왼쪽 세로 안내선으로 묶는다 */
 .tree-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 10px 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .04em;
-  color: var(--muted);
-}
-.tree-group::before,
-.tree-group::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-.tree-group:empty {
-  padding: 8px 10px 4px;
-}
-.tree-group:empty::after {
-  display: none;
-}
-/* 묶음 구분선은 버튼 — 누르면 접고 편다(▸ 접힘 · ▾ 펼침, 접히면 묶음 전체 개수) */
-button.tree-group {
   width: 100%;
+  height: 36px;
+  padding: 0 10px;
   border: 0;
+  border-radius: 10px;
   background: transparent;
   font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--muted);
   cursor: pointer;
   touch-action: manipulation;
+  transition: color .15s;
 }
-button.tree-group:active .tree-group-name {
+.tree-group:active,
+.tree-group.is-active {
   color: var(--ink);
 }
-.tree-group.is-active .tree-group-name {
-  color: var(--ink);
+.tree-group > svg {
+  flex: 0 0 auto;
+  margin: 0 3px;
+  transition: transform .22s var(--spring-pop);
+}
+.tree-group.is-open > svg {
+  transform: rotate(90deg);
 }
 .tree-group-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
-  max-width: 75%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color .15s;
 }
-.tree-group-name svg {
+/* 접힌 묶음 — 안쪽 카테고리 색 점을 겹쳐 미리 보여 준다 */
+.tree-group-dots {
+  display: inline-flex;
   flex: 0 0 auto;
-  transition: transform .22s var(--spring-pop);
 }
-.tree-group.is-open .tree-group-name svg {
-  transform: rotate(90deg);
+.tree-group-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--paper-2);
 }
-.tree-group-count {
-  margin-left: 2px;
+.tree-group-dots i + i {
+  margin-left: -2px;
+}
+.tree-group .count {
+  margin-left: auto;
+  font-size: 11px;
   font-weight: 400;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+/* 세로 안내선은 왼쪽 테두리로 — 이 상자에 position을 주면 안쪽 항목의 offsetParent가 바뀌어
+   선택 칩(.motion-ind, 사이드바 기준 좌표)이 엉뚱한 자리에 간다 */
 .tree-group-items {
+  margin: 2px 0 4px 18px;
+  padding-left: 4px;
+  border-left: 1.5px solid var(--line);
   animation: tree-group-open .24s var(--ft-ease) backwards;
+}
+.tree-group-items .tree-item {
+  height: 36px;
+}
+.tree-group-end {
+  height: 6px;
 }
 @keyframes tree-group-open {
   from { opacity: 0; transform: translateY(-6px); }
