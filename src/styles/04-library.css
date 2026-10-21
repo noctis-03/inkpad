@@ -492,7 +492,7 @@
 .doc-grid .doc-thumb {
   position: relative;
   aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
-  border-radius: var(--r-lg);
+  border-radius: var(--r-card);
   background: var(--thumb-paper);
   box-shadow: var(--e1);
   overflow: hidden;
