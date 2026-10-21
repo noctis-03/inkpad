@@ -1209,7 +1209,7 @@ export function Library() {
   /** 카테고리에 든 노트·앱·파일 수 */
   const catCount = (c: string) => docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length
   /** 사이드바 카테고리 한 줄 — label은 보이는 이름([묶음] 아래면 그 부분을 뗀 이름) */
-  const categoryItem = (c: string, label: string) => (
+  const categoryItem = (c: string, label: string, dot = true) => (
     <button
       key={c}
       data-indicator-key={'cat:' + c}
@@ -1217,7 +1217,8 @@ export function Library() {
       onClick={() => pickSection({ kind: 'category', name: c })}
       title={label === c ? undefined : c}
     >
-      <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+      {/* [태그] 없는 카테고리는 색 점 없이 — 자리만 비워 이름 줄을 맞춘다 */}
+      <span className={'tree-cat-dot' + (dot ? '' : ' is-blank')} style={dot ? { background: categoryColor(c) } : undefined} aria-hidden="true" />
       <span className="tree-name">{label}</span>
       {section.kind === 'category' && section.name === c && recentActive && recentTag}
       <span className="count">{catCount(c)}</span>
@@ -1386,13 +1387,13 @@ export function Library() {
               )
             })}
             {categoryLayout.groups.length > 0 && <div className="tree-group-end" aria-hidden="true" />}
-            {categoryLayout.plain.map((c) => categoryItem(c, c))}
+            {categoryLayout.plain.map((c) => categoryItem(c, c, false))}
             <button
               data-indicator-key="uncategorized"
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
               onClick={() => pickSection({ kind: 'uncategorized' })}
             >
-              <span className="tree-cat-dot" style={{ background: categoryColor(null) }} aria-hidden="true" />
+              <span className="tree-cat-dot is-blank" aria-hidden="true" />
               <span className="tree-name">미분류</span>
               {section.kind === 'uncategorized' && recentActive && recentTag}
               <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
