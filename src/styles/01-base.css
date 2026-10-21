@@ -4,6 +4,7 @@
   /* ── 표면 (종이 · 카드 · 채움) ── */
   --paper: #f7f6f2;        /* 앱 바탕 */
   --paper-2: #f2f0eb;      /* 사이드바·패널 바탕 */
+  --lib-bg: #efede6;       /* 라이브러리 카드 뒤 바탕 — 앱 바탕보다 조금 어둡게(미색 카드가 떠 보이게) */
   --surface: #ffffff;      /* 카드·시트·입력 */
   --surface-2: #f1efe9;    /* 옅은 채움(검색창·칩) */
   --surface-3: #e9e6de;    /* 한 단계 더 */
@@ -99,6 +100,7 @@
 
   /* ── 고정 종이·태그 ── */
   --thumb-paper: #ffffff;   /* 썸네일·종이는 테마와 상관없이 흰색 */
+  --thumb-cream: #faf7f0;   /* 격자 카드 바탕 — 1비트 디더 미리보기가 흰 종이를 그리는 미색(ThumbDither의 WARM)과 같다 */
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
 
   --toolbar-h: 52px;
@@ -115,6 +117,7 @@
 
     --paper: #161513;
     --paper-2: #1b1a17;
+    --lib-bg: #1f1d1a;       /* 다크에서는 앱 바탕보다 조금 밝게 */
     --surface: #211f1c;
     --surface-2: #2a2824;
     --surface-3: #33302b;
