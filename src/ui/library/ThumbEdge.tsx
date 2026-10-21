@@ -10,8 +10,8 @@ import { cellNoise, drawPlus, readThumb, type ThumbGrid } from '../motion/thumbC
  * 등장 — 미리보기가 처음 보일 때 Library가 이 캔버스의 부모(.doc-thumb)에 'thumb-reveal' 이벤트를 보내면,
  * 전체가 흩어진 상태(＋)에서 시작해 가운데부터 풀리고 가장자리는 흩어진 채 멈춘다(끝 상태 = 머무는 상태).
  *
- * 카드를 눌러 여는 창(블러 베일)이 뜨면(open) — 캔버스가 블러 위로 올라와 카드 전체가 타일·빈 사각형·＋로 꽉 찬다
- * (필기 칸은 잉크 색, 빈 칸은 옅은 사각형·＋). 닫히면 다시 가장자리 상태로 돌아간다. 모션 끄기면 움직임 없이.
+ * 카드를 눌러 여는 창(블러 베일)이 뜨면(open) — 캔버스가 블러 위로 올라와 머무는 효과를 그대로 보인다
+ * (블러 위에 똑같은 가장자리). 닫히는 동안(베일이 걷히는 동안)에도 위에 남았다가 내려간다.
  *
  * 카드의 원래 테두리 선(1px) 자리는 그 자리 가장자리 색으로 칠한다(원래 회색 선은 CSS에서 뺀다 — .doc-thumb:has(> .thumb-edge))
  */
@@ -43,7 +43,7 @@ export function ThumbEdge({ src, open }: { src: string; open: boolean }) {
       g.clearRect(0, 0, size.w, size.h)
       // 여는 창 효과가 남아 있는 동안은 블러 베일 위에 둔다(닫히는 동안에도 — 베일 아래로 먼저 떨어지면 끊겨 보인다)
       cv.classList.toggle('is-lifted', openTarget || openAmt > 0)
-      paintTiles(g, grid, size.w, size.h, { reveal, open: openAmt, time: motionOn() ? performance.now() / 1000 : undefined })
+      paintTiles(g, grid, size.w, size.h, { reveal, time: motionOn() ? performance.now() / 1000 : undefined })
       paintFrame(g, grid, size.w, size.h, size.radius)
     }
     // 하나의 루프 — 등장·여닫기 진행을 옮기고, 보이는 동안 초당 20번 밝기 일렁임
@@ -148,9 +148,9 @@ export function ThumbEdge({ src, open }: { src: string; open: boolean }) {
 const EDGE_START = 0.84
 /** 등장 길이(ms) */
 const REVEAL_MS = 900
-/** 여는 창 효과가 퍼지는·돌아가는 시간(ms) */
-const OPEN_MS = 520
-const CLOSE_MS = 320
+/** 여는 창이 뜨고·걷히는 동안(ms) — 이 동안 캔버스를 블러 베일 위에 둔다(베일의 페이드와 맞춘다) */
+const OPEN_MS = 320
+const CLOSE_MS = 340
 /** 등장 시작 때 모든 칸의 단계 — ＋ 단계(1.3 미만) 바로 안쪽에서 시작한다 */
 const T_START = 1.25
 const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
@@ -159,14 +159,11 @@ const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
  * 칸 타일 그리기 — 칸마다 단계 t(0 이하 = 그대로, 0..0.45 채운 타일, ..0.85 빈 사각형, ..1.3 ＋)를 정해 그린다.
  * - 기본: 가장자리 상태(가운데는 그대로, 가장자리일수록 흩어짐)
  * - reveal(0..1): 등장 — '전부 흩어짐'에서 가장자리 상태로(가운데 칸이 멀리 가서 먼저 풀린다)
- * - open(0..1): 여는 창 — 카드 전체가 타일·빈 사각형·＋로 꽉 찬다(칸마다 단계가 섞이게). 블러 위라 종이색으로 가리지 않고,
- *   빈 칸에도 옅은 사각형·＋를 채운다
- * - time(초): 밝기만 은은하게 물결치듯 일렁인다(기호는 고정)
+ * - time(초): 밝기만 물결치듯 일렁인다(기호는 고정)
  */
-function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, o: { reveal: number; open: number; time?: number }) {
+function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, o: { reveal: number; time?: number }) {
   const { cells, cols } = grid
   const inked = (i: number) => (cells[i]?.ink ?? 0) > 0.03
-  const openE = easeOut(o.open)
   for (const c of cells) {
     // 가장자리까지 거리 — 둥근 네모(초타원) 기준이라 네 변을 고르게 따라간다
     const fx = (c.x + c.w / 2) / w
@@ -179,25 +176,12 @@ function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: 
       const q = Math.min(1, Math.max(0, (o.reveal - cellNoise(c.i, 3) * 0.25) / 0.75))
       t = T_START + (t - T_START) * easeOut(q)
     }
-    if (o.open > 0) {
-      // 꽉 찬 상태의 단계 — 타일·빈 사각형·＋가 고루 섞이게
-      const full = 0.08 + cellNoise(c.i, 7) * 1.15
-      // 가장자리부터 퍼져 들어오게 칸마다 조금 엇갈려
-      const q = Math.min(1, Math.max(0, (openE - (1 - Math.min(1, d)) * 0.35) / 0.65))
-      t = t + (full - t) * q
-    }
     if (t <= 0) continue
     // 밝기 일렁임 — 카드를 가로지르는 잔물결 + 칸마다 약간의 엇갈림(0.16..1)
     const tw = o.time === undefined ? 1 : 0.58 + 0.42 * Math.sin(o.time * 1.7 - (fx * 2.4 + fy * 3.1) + cellNoise(c.i, 6) * 1.2)
-    // 원래 필기를 종이색으로 가리는 막 — 여는 창(블러 위)으로 갈수록 걷힌다(끊김 없이)
-    const cover = 1 - openE
     if (c.ink > 0.03) {
-      if (cover > 0) {
-        g.globalAlpha = cover
-        g.fillStyle = c.paper
-        g.fillRect(c.x, c.y, c.w, c.h)
-        g.globalAlpha = 1
-      }
+      g.fillStyle = c.paper // 원래 필기를 가리고
+      g.fillRect(c.x, c.y, c.w, c.h)
       if (t < 0.45) {
         g.globalAlpha = Math.min(1, 0.4 + c.ink * 2.2) * tw
         g.fillStyle = c.color
@@ -214,25 +198,16 @@ function paintTiles(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: 
         drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.28)
       }
       g.globalAlpha = 1
-    } else {
-      g.strokeStyle = grid.inkColor
-      // 빈 종이 가장자리 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋ (여는 창으로 갈수록 아래 것과 엇갈려 바뀐다)
-      if (t > 0.5 && cover > 0) {
-        const near = inked(c.i - 1) || inked(c.i + 1) || inked(c.i - cols) || inked(c.i + cols)
-        if (cellNoise(c.i, 2) < (near ? 0.35 : 0.1)) {
-          g.globalAlpha = (near ? 0.55 : 0.3) * tw * cover
-          g.lineWidth = 1.1
-          drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
-        }
+    } else if (t > 0.5) {
+      // 빈 종이 가장자리 — 필기 근처엔 조금 더, 아니면 드문드문 옅은 ＋
+      const near = inked(c.i - 1) || inked(c.i + 1) || inked(c.i - cols) || inked(c.i + cols)
+      if (cellNoise(c.i, 2) < (near ? 0.35 : 0.1)) {
+        g.globalAlpha = (near ? 0.55 : 0.3) * tw
+        g.strokeStyle = grid.inkColor
+        g.lineWidth = 1.1
+        drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
+        g.globalAlpha = 1
       }
-      // 블러 위 빈 칸 — 옅은 빈 사각형·＋로 채워 카드 전체가 꽉 차 보이게
-      if (openE > 0 && t < 1.3) {
-        g.globalAlpha = 0.32 * tw * openE
-        g.lineWidth = 1
-        if (t < 0.7) g.strokeRect(c.x + 1.5, c.y + 1.5, c.w - 3, c.h - 3)
-        else drawPlus(g, c.x + c.w / 2, c.y + c.h / 2, c.w * 0.24)
-      }
-      g.globalAlpha = 1
     }
   }
 }

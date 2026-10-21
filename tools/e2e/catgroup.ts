@@ -29,7 +29,7 @@ export default async function catgroup(ctx: Ctx) {
   await sleep(1000)
   check('미리보기 타일 등장: 끝나면 타일 캔버스는 걷히고 미리보기가 보인다', (await A.locator('.thumb-tiles').count()) === 0 && (await A.locator('.doc-thumb img.is-revealed').count()) === 1)
   const edgeSig = () => A.locator('.thumb-edge').first().evaluate((c) => (c as HTMLCanvasElement).toDataURL())
-  // 캔버스 가운데(40~60%) 칸에 그려진 비율 — 평소엔 비어 있고, 여는 창에선 꽉 찬다
+  // 캔버스 가운데(40~60%) 칸에 그려진 비율 — 평소에도 여는 창에서도 비어 있다
   const centerInk = () =>
     A.locator('.thumb-edge').first().evaluate((el) => {
       const c = el as HTMLCanvasElement
@@ -47,7 +47,7 @@ export default async function catgroup(ctx: Ctx) {
   check('타일 효과: 평소 가운데는 비어 있다(필기 그대로)', (await centerInk()) < 0.01)
   await A.locator('.doc-card', { hasText: '독서 노트' }).locator('.doc-thumb').click()
   await sleep(800)
-  check('타일 효과: 카드를 눌러 여는 창이 뜨면 블러 위에서 카드 전체가 꽉 찬다', (await centerInk()) > 0.03, String(await centerInk()))
+  check('타일 효과: 카드를 눌러 여는 창이 뜨면 블러 위에 머무는 효과 그대로(가운데는 비움)', (await centerInk()) < 0.01, String(await centerInk()))
   check('타일 효과: 여는 창이 떠 있을 땐 캔버스가 블러 베일 위', (await A.locator('.doc-card.is-revealed .thumb-edge.is-lifted').evaluate((e) => getComputedStyle(e).zIndex)) === '4')
   await A.mouse.click(1150, 850)
   await sleep(60)
@@ -61,7 +61,7 @@ export default async function catgroup(ctx: Ctx) {
   check('타일 효과: 모션 끄기면 일렁이지 않는다', m0 === (await edgeSig()))
   await A.locator('.doc-card', { hasText: '독서 노트' }).locator('.doc-thumb').click()
   await sleep(300)
-  check('타일 효과: 모션 끄기에서도 여는 창은 바로 꽉 찬다', (await centerInk()) > 0.03)
+  check('타일 효과: 모션 끄기에서도 여는 창이 뜨면 바로 블러 위로', (await A.locator('.thumb-edge.is-lifted').count()) === 1)
   await A.mouse.click(1150, 850)
   await sleep(300)
   await A.evaluate(() => (document.documentElement.dataset.motion = 'normal'))
