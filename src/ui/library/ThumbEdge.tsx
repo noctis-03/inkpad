@@ -4,7 +4,8 @@ import { cellNoise, drawPlus, readThumb, type ThumbGrid } from '../motion/thumbC
 /**
  * 카드 미리보기 가장자리 효과 — 늘 유지된다. 가운데는 필기가 그대로 또렷하고, 가장자리로 갈수록
  * 필기 칸이 잉크 색 타일 → 빈 사각형 → ＋로 흩어진다(빈 종이 가장자리엔 옅은 ＋가 드문드문).
- * 칸마다 흩어짐 값이 고정이라 다시 그려도(크기 바뀜 등) 무늬가 같다. 미리보기 <img> 위에 얹는 캔버스
+ * 칸마다 흩어짐 값이 고정이라 다시 그려도(크기 바뀜 등) 무늬가 같다. 미리보기 <img> 위에 얹는 캔버스.
+ * 가장자리가 흩어져 카드 경계가 흐려지므로, 미리보기 둘레에 그 자리 가장자리 색을 따라가는 얇은 테두리를 두른다
  */
 export function ThumbEdge({ src }: { src: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -27,6 +28,7 @@ export function ThumbEdge({ src }: { src: string }) {
       if (!g) return
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       paintEdge(g, grid, w, h)
+      paintFrame(g, grid, w, h, parseFloat(getComputedStyle(holder).borderTopLeftRadius) || 0)
     }
     img.onload = draw
     img.src = src
@@ -85,4 +87,56 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
       }
     }
   }
+}
+
+/** 테두리 두께(px) */
+const FRAME = 1.5
+
+/**
+ * 미리보기 둘레 테두리 — 둘레를 따라 놓인 칸들의 평균색을 둘레 방향으로 고르게(앞뒤 2칸) 섞어
+ * 그 자리 가장자리 색으로 칠한다(위가 남색이면 위 테두리도 남색 계열, 흰 종이면 옅은 회색).
+ * 종이와 같은 색이면 안 보이므로 살짝 어둡게. 모서리는 카드처럼 둥글게
+ */
+function paintFrame(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, radius: number) {
+  const { cells, cols, rows } = grid
+  const at = (cx: number, cy: number) => cells[cy * cols + cx]
+  // 둘레 칸 — 시계 방향
+  const ring: { c: (typeof cells)[number]; side: 'top' | 'right' | 'bottom' | 'left' }[] = []
+  for (let x = 0; x < cols; x++) ring.push({ c: at(x, 0), side: 'top' })
+  for (let y = 1; y < rows; y++) ring.push({ c: at(cols - 1, y), side: 'right' })
+  for (let x = cols - 2; x >= 0; x--) ring.push({ c: at(x, rows - 1), side: 'bottom' })
+  for (let y = rows - 2; y > 0; y--) ring.push({ c: at(0, y), side: 'left' })
+  const n = ring.length
+  if (n < 4 || ring.some((r) => !r.c)) return
+  g.save()
+  // 둥근 테두리 띠만 칠해지게 자른다
+  const rr = (inset: number) => {
+    const r = Math.max(0, radius - inset)
+    g.roundRect(inset, inset, w - inset * 2, h - inset * 2, r)
+  }
+  g.beginPath()
+  rr(0)
+  rr(FRAME)
+  g.clip('evenodd')
+  for (let k = 0; k < n; k++) {
+    let r = 0
+    let gg = 0
+    let b = 0
+    for (let j = -2; j <= 2; j++) {
+      const a = ring[(k + j + n) % n].c.avg
+      r += a[0]
+      gg += a[1]
+      b += a[2]
+    }
+    const dim = 0.84 // 종이색과 같으면 안 보이니 살짝 어둡게
+    g.fillStyle = `rgb(${((r / 5) * dim) | 0},${((gg / 5) * dim) | 0},${((b / 5) * dim) | 0})`
+    const { c, side } = ring[k]
+    // 그 칸이 맡은 둘레 구간(모서리 칸은 두 변을 함께 칠하도록 넉넉히)
+    const pad = 2
+    if (side === 'top') g.fillRect(c.x - pad, 0, c.w + pad * 2, FRAME + radius)
+    else if (side === 'bottom') g.fillRect(c.x - pad, h - FRAME - radius, c.w + pad * 2, FRAME + radius)
+    else if (side === 'right') g.fillRect(w - FRAME - radius, c.y - pad, FRAME + radius, c.h + pad * 2)
+    else g.fillRect(0, c.y - pad, FRAME + radius, c.h + pad * 2)
+  }
+  g.restore()
 }

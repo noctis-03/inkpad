@@ -12,6 +12,7 @@ export interface ThumbCell {
   ink: number // 0..1 잉크 비율
   color: string // 잉크 평균색 rgb() — 잉크가 없으면 종이색
   paper: string // 종이(잉크가 아닌 픽셀) 평균색 rgb()
+  avg: [number, number, number] // 칸 전체 평균색(잉크+종이)
 }
 
 export interface ThumbGrid {
@@ -85,7 +86,8 @@ export function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGri
         ab += sum[2]
         an += ink
       }
-      cells.push({ i: cells.length, x, y, w: cw, h: ch, ink: n ? ink / n : 0, color: ink ? rgb(sum, ink) : paper, paper })
+      const avg: [number, number, number] = n ? [(sum[0] + psum[0]) / n, (sum[1] + psum[1]) / n, (sum[2] + psum[2]) / n] : [255, 255, 255]
+      cells.push({ i: cells.length, x, y, w: cw, h: ch, ink: n ? ink / n : 0, color: ink ? rgb(sum, ink) : paper, paper, avg })
     }
   }
   const inkColor = an ? `rgb(${(ar / an) | 0},${(ag / an) | 0},${(ab / an) | 0})` : 'rgb(60,60,60)'
