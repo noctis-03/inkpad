@@ -12,11 +12,15 @@ import { useEffect, useRef, type RefObject } from 'react'
  * 단, 칩을 새로 만든 직후(서랍을 다시 열 때 등)와 컨테이너 첫 배치 때는 0,0에서
  * 출발하는 가짜 슬라이드를 막으려고 즉시 배치한다. 슬라이딩이 진행되는 동안에는
  * ResizeObserver·재시도의 즉시 재배치가 트랜지션을 끊지 않게 잠금(hold) 창을 둔다.
+ *
+ * layoutKey — 컨테이너 크기는 그대로인데 안의 배치가 바뀔 때(사이드바 묶음 접기 등) 값을 바꿔 주면
+ * 활성 항목의 새 자리로 미끄러져 간다.
  */
 export function useIndicator(
   containerRef: RefObject<HTMLElement | null>,
   activeKey: string | number | null | undefined,
-  axis: 'x' | 'y' = 'x'
+  axis: 'x' | 'y' = 'x',
+  layoutKey?: string
 ) {
   const first = useRef(true)
   const hold = useRef(0)
@@ -95,5 +99,5 @@ export function useIndicator(
       cancelAnimationFrame(raf)
       retries.forEach((t) => window.clearTimeout(t))
     }
-  }, [containerRef, key, axis])
+  }, [containerRef, key, axis, layoutKey])
 }
