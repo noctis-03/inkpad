@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { tileReveal } from '../motion/tileReveal'
+import { ThumbEdge } from './ThumbEdge'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
@@ -1713,7 +1714,10 @@ export function Library() {
                   >
                     <div className="doc-thumb">
                       {thumbs.get(i.d.id) ? (
-                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
+                        <>
+                          <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
+                          {prefs.view === 'grid' && <ThumbEdge src={thumbs.get(i.d.id)!} />}
+                        </>
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
                       )}
