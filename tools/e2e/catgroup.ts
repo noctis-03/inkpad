@@ -13,8 +13,10 @@ export default async function catgroup(ctx: Ctx) {
     ['독서 노트', '교양'],
     ['메모', null]
   ]
+  const ids: Record<string, string> = {}
   for (const [title, category] of cats) {
     const id = await createDoc(A, title)
+    ids[title] = id
     if (category) await A.evaluate(async ([id, category]) => (await import('/src/storage/repo.ts')).updateDocument(id, { category }), [id, category] as const)
   }
   await A.goto(base + '/')
@@ -86,6 +88,14 @@ export default async function catgroup(ctx: Ctx) {
   await A.getByRole('button', { name: '디지털 시스템 접기' }).click()
   await sleep(200)
   check('화살표는 접고 펴기만 — 화면은 그대로', (await A.locator('.library-title').innerText()).includes('디지털 시스템') && (await A.locator('.grid-subhead').count()) === 2)
+  // 한 번 더 누르면 최근 열람 — 태그로 나누지 않고 최근 연 순서
+  await A.evaluate((list) => localStorage.setItem('inkpad.recentDocs.v1', JSON.stringify(list.map((id, i) => ({ id, at: Date.now() - i })))), [ids['중간 범위'], ids['논리회로 1주차']])
+  await A.locator('.tree-group-main', { hasText: '디지털 시스템' }).click()
+  await sleep(500)
+  const recentTitles = await A.locator('.doc-card .doc-title').allInnerTexts()
+  check('묶음 화면에서 한 번 더 누르면 최근 열람 — 소제목 없이 최근 순', (await A.locator('.grid-subhead').count()) === 0 && eq(recentTitles, ['중간 범위', '논리회로 1주차']), JSON.stringify(recentTitles))
+  await A.locator('.tree-group-main', { hasText: '디지털 시스템' }).click() // 다시 묶음 화면
+  await sleep(400)
   await A.locator('.grid-subhead', { hasText: '시험' }).getByRole('button').click()
   await sleep(500)
   check('소제목을 누르면 그 태그 카테고리만', (await A.locator('.library-title').innerText()).includes('[시험] 디지털 시스템') && (await A.locator('.doc-card').count()) === 1 && (await A.locator('.grid-subhead').count()) === 0)

@@ -570,10 +570,10 @@ export function Library() {
       else if (prefs.sort === 'created') list.sort((x, y) => m(y).createdAt - m(x).createdAt)
       else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
     }
-    // 묶음 화면 — 태그 순으로 모은다(태그 안은 위의 정렬 그대로, sort는 안정 정렬)
-    if (section.kind === 'catgroup') list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
+    // 묶음 화면 — 태그 순으로 모은다(태그 안은 위의 정렬 그대로, sort는 안정 정렬). 최근 열람(한 번 더 누름)은 나누지 않고 최근 순
+    if (section.kind === 'catgroup' && !recentActive) list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
     return list
-  }, [visible, visibleApps, visibleFiles, prefs.sort, section])
+  }, [visible, visibleApps, visibleFiles, prefs.sort, section, recentActive])
   // 검색 등으로 보이지 않게 된 카드는 선택에서 뺀다
   useEffect(() => {
     if (!selected) return
@@ -1234,7 +1234,7 @@ export function Library() {
 
   /** 묶음 화면 — 태그가 바뀌는 첫 카드 앞에 소제목(태그 색 점 · 이름 · 개수). 누르면 그 카테고리만 */
   const subhead = (i: Item, idx: number) => {
-    if (section.kind !== 'catgroup') return null
+    if (section.kind !== 'catgroup' || recentActive) return null // 최근 열람은 소제목 없이 최근 순
     const tag = itemTag(i)
     if (idx > 0 && itemTag(items[idx - 1]) === tag) return null
     const cat = (i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f).category
