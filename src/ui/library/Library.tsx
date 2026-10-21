@@ -62,6 +62,17 @@ type Section =
 
 /** 카드를 이만큼 누르고 있으면 선택 모드 */
 const LONG_PRESS_MS = 500
+/** 원형 메뉴 — 누른 자리에서 이 거리 안에서 떼면 가운데(선택 모드), 이보다 멀리 나가 떼면 취소 */
+const RADIAL_DEAD = 26
+const RADIAL_OUT = 170
+type RadialPick = Mark | 'clear' | 'out'
+/** 원형 메뉴 항목 — 위 ○ · 오른쪽 ✕ · 아래 ! · 왼쪽 지우기 */
+const RADIAL_ITEMS: { pick: Mark | 'clear'; at: 'up' | 'right' | 'down' | 'left' }[] = [
+  { pick: 'o', at: 'up' },
+  { pick: 'x', at: 'right' },
+  { pick: '!', at: 'down' },
+  { pick: 'clear', at: 'left' }
+]
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
 
@@ -239,7 +250,9 @@ export function Library() {
 
   // ── 선택 모드 ── 카드를 꾹 누르면 들어가고(누른 카드가 선택된다), 탭은 열지 않고 선택/해제만 한다
   const press = useRef<{ x: number; y: number; timer: number } | null>(null)
-  const pressFired = useRef(false) // 꾹 누름이 방금 선택 모드를 열었다 — 손을 떼며 오는 클릭은 삼킨다
+  const pressFired = useRef(false) // 꾹 누름이 방금 원형 메뉴를 열었다 — 손을 떼며 오는 클릭은 삼킨다
+  // 원형 메뉴 — 꾹 누른 채로 위·오른쪽·아래·왼쪽으로 밀어 떼면 ○·✕·!·지우기, 가운데서 떼면 선택 모드
+  const [radial, setRadial] = useState<{ key: string; x: number; y: number; hot: RadialPick | null } | null>(null)
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer)
     press.current = null
@@ -252,11 +265,13 @@ export function Library() {
             pressFired.current = false
             if (e.button !== 0) return
             cancelPress()
+            const x = e.clientX
+            const y = e.clientY
             const timer = window.setTimeout(() => {
               press.current = null
               pressFired.current = true
               setRevealKey(null)
-              setSelected((s) => new Set(s ?? []).add(key))
+              setRadial({ key, x, y, hot: null })
             }, LONG_PRESS_MS)
             press.current = { x: e.clientX, y: e.clientY, timer }
           },
@@ -301,15 +316,57 @@ export function Library() {
   const selectedMark = selected && selected.size && [...selected].every((k) => marks[k] && marks[k] === marks[[...selected][0]]) ? marks[[...selected][0]] : null
   const [stamping, setStamping] = useState<Set<string>>(new Set()) // 방금 마킹한 카드 — 도장 찍히는 동작
   const stampTimer = useRef(0)
-  const applyMark = async (m: Mark | null) => {
-    if (!selected?.size) return
-    const next = m && m === selectedMark ? null : m
-    const keys = [...selected]
+  /** keys가 모두 같은 마킹이면 그것, 아니면 null */
+  const commonMark = (keys: string[]) => (keys.length && keys.every((k) => marks[k] && marks[k] === marks[keys[0]]) ? marks[keys[0]] : null)
+  /** keys에 마킹 m(모두 이미 m이면 뗀다). null이면 뗀다 */
+  const markKeys = async (keys: string[], m: Mark | null) => {
+    if (!keys.length) return
+    const next = m && m === commonMark(keys) ? null : m
     setMarkMap(await setMarks(keys, next))
     window.clearTimeout(stampTimer.current)
     setStamping(next ? new Set(keys) : new Set())
     if (next) stampTimer.current = window.setTimeout(() => setStamping(new Set()), 600)
   }
+  const applyMark = (m: Mark | null) => markKeys([...(selected ?? [])], m)
+  /** 원형 메뉴가 다룰 카드 — 선택 모드에서 선택된 카드를 눌렀으면 선택된 카드 전부, 아니면 누른 카드 하나 */
+  const radialKeys = (key: string) => (selected?.has(key) ? [...selected] : [key])
+  // 원형 메뉴가 떠 있는 동안: 손가락(포인터)을 따라 방향을 고르고, 떼면 실행. 화면 스크롤은 막는다
+  useEffect(() => {
+    if (!radial) return
+    const { key, x, y } = radial
+    const pick = (e: PointerEvent): RadialPick | null => {
+      const dx = e.clientX - x
+      const dy = e.clientY - y
+      const d = Math.hypot(dx, dy)
+      if (d < RADIAL_DEAD) return null
+      if (d > RADIAL_OUT) return 'out'
+      return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'x' : 'clear') : dy < 0 ? 'o' : '!'
+    }
+    const onMove = (e: PointerEvent) => {
+      const hot = pick(e)
+      setRadial((r) => (r && r.hot !== hot ? { ...r, hot } : r))
+    }
+    const onUp = (e: PointerEvent) => {
+      const hot = pick(e)
+      setRadial(null)
+      if (hot === null) setSelected((s) => new Set(s ?? []).add(key)) // 가운데서 뗌 → 선택 모드
+      else if (hot === 'clear') void markKeys(radialKeys(key), null)
+      else if (hot !== 'out') void markKeys(radialKeys(key), hot)
+    }
+    const onCancel = () => setRadial(null)
+    const noScroll = (e: TouchEvent) => e.preventDefault()
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    window.addEventListener('touchmove', noScroll, { passive: false })
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      window.removeEventListener('touchmove', noScroll)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radial?.key, radial?.x, radial?.y])
   /** 카드 미리보기 한가운데의 마킹 표시(크게) */
   const markBadge = (key: string) => {
     const m = marks[key]
@@ -1628,6 +1685,33 @@ export function Library() {
           )}
         </main>
       </div>
+
+      {radial && (() => {
+        const cur = commonMark(radialKeys(radial.key))
+        // 화면 가장자리에서도 메뉴가 잘리지 않게 그리는 자리만 안쪽으로(방향 판정은 손가락 자리 기준)
+        const cx = Math.min(Math.max(radial.x, 100), window.innerWidth - 100)
+        const cy = Math.min(Math.max(radial.y, 100), window.innerHeight - 100)
+        return (
+          <div className={'radial' + (radial.hot === 'out' ? ' is-out' : '')} style={{ left: cx, top: cy }} role="menu" aria-label="마킹 고르기">
+            {RADIAL_ITEMS.map((it) => {
+              const info = it.pick === 'clear' ? null : markInfo(it.pick)
+              return (
+                <span
+                  key={it.at}
+                  role="menuitem"
+                  aria-label={info ? info.label + (cur === it.pick ? ' (떼기)' : '') : '마킹 지우기'}
+                  className={
+                    'radial-item at-' + it.at + ' ' + (info ? 'mark-' + info.cls : 'radial-clear') + (radial.hot === it.pick ? ' is-hot' : '') + (cur && cur === it.pick ? ' is-current' : '')
+                  }
+                >
+                  {it.pick === 'clear' ? <Icon name="eraser" size={20} /> : <MarkGlyph mark={it.pick} size={24} />}
+                </span>
+              )
+            })}
+            <span className={'radial-center' + (radial.hot === null ? ' is-hot' : '')}>선택</span>
+          </div>
+        )
+      })()}
 
       {moreMenu && (
         <Menu x={moreMenu.x} y={moreMenu.y} onClose={() => setMoreMenu(null)}>
