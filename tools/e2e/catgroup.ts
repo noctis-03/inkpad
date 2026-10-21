@@ -29,26 +29,37 @@ export default async function catgroup(ctx: Ctx) {
   await sleep(1000)
   check('미리보기 타일 등장: 끝나면 타일 캔버스는 걷히고 미리보기가 보인다', (await A.locator('.thumb-tiles').count()) === 0 && (await A.locator('.doc-thumb img.is-revealed').count()) === 1)
   const edgeSig = () => A.locator('.thumb-edge').first().evaluate((c) => (c as HTMLCanvasElement).toDataURL())
+  // 캔버스 가운데(40~60%) 칸에 그려진 비율 — 평소엔 비어 있고, 여는 창에선 꽉 찬다
+  const centerInk = () =>
+    A.locator('.thumb-edge').first().evaluate((el) => {
+      const c = el as HTMLCanvasElement
+      const g = c.getContext('2d')!
+      const x = Math.floor(c.width * 0.4)
+      const y = Math.floor(c.height * 0.4)
+      const d = g.getImageData(x, y, Math.floor(c.width * 0.2), Math.floor(c.height * 0.2)).data
+      let n = 0
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 10) n++
+      return n / (d.length / 4)
+    })
   const s1 = await edgeSig()
   await sleep(400)
-  check('타일 효과: 평소엔 머물러 있다(일렁이지 않는다)', s1 === (await edgeSig()))
+  check('타일 효과: 머무는 동안 가장자리 밝기가 은은하게 일렁인다', s1 !== (await edgeSig()))
+  check('타일 효과: 평소 가운데는 비어 있다(필기 그대로)', (await centerInk()) < 0.01)
   await A.locator('.doc-card', { hasText: '독서 노트' }).locator('.doc-thumb').click()
-  await sleep(700)
-  const o1 = await edgeSig()
-  await sleep(400)
-  check('타일 효과: 카드를 눌러 여는 창이 뜨면 블러 위에서 번져 나와 일렁인다', o1 !== (await edgeSig()) && o1 !== s1)
+  await sleep(800)
+  check('타일 효과: 카드를 눌러 여는 창이 뜨면 블러 위에서 카드 전체가 꽉 찬다', (await centerInk()) > 0.03, String(await centerInk()))
   check('타일 효과: 여는 창이 떠 있을 땐 캔버스가 블러 베일 위', (await A.locator('.doc-card.is-revealed .thumb-edge').evaluate((e) => getComputedStyle(e).zIndex)) === '4')
   await A.mouse.click(1150, 850)
   await sleep(700)
-  const c1 = await edgeSig()
-  await sleep(300)
-  check('타일 효과: 닫히면 스며들어 사라지고 다시 머문다', c1 === (await edgeSig()) && c1 === s1)
+  check('타일 효과: 닫으면 다시 가장자리 상태로(가운데 비움)', (await centerInk()) < 0.01)
   await A.evaluate(() => (document.documentElement.dataset.motion = 'off'))
+  await sleep(200)
+  const m0 = await edgeSig()
+  await sleep(400)
+  check('타일 효과: 모션 끄기면 일렁이지 않는다', m0 === (await edgeSig()))
   await A.locator('.doc-card', { hasText: '독서 노트' }).locator('.doc-thumb').click()
   await sleep(300)
-  const m1 = await edgeSig()
-  await sleep(400)
-  check('타일 효과: 모션 끄기면 여는 창에서도 멈춘 그림', m1 === (await edgeSig()) && m1 !== s1)
+  check('타일 효과: 모션 끄기에서도 여는 창은 바로 꽉 찬다', (await centerInk()) > 0.03)
   await A.mouse.click(1150, 850)
   await sleep(300)
   await A.evaluate(() => (document.documentElement.dataset.motion = 'normal'))
