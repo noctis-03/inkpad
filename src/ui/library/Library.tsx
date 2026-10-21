@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
+import { tileReveal } from '../motion/tileReveal'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
@@ -718,9 +719,14 @@ export function Library() {
           const img = holder.querySelector<HTMLImageElement>('img[data-reveal]')
           if (!img) continue
           const id = img.dataset.reveal!
-          if (seenReveal.current.has(id)) img.classList.add('no-anim')
+          const seen = seenReveal.current.has(id)
           seenReveal.current.add(id)
-          img.classList.add('is-revealed')
+          // 처음 보이는 미리보기는 필기가 있는 칸부터 잉크 색 타일로 맞춰지며 나타난다(모션 끄기면 바로)
+          if (!seen && document.documentElement.dataset.motion !== 'off') {
+            tileReveal(img, () => img.classList.add('is-revealed', 'no-anim'))
+            continue
+          }
+          img.classList.add('is-revealed', 'no-anim')
         }
       },
       { threshold: 0.1 }

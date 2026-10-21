@@ -1,5 +1,5 @@
 // 카테고리 묶음: "[태그] 이름" 카테고리는 사이드바에서 뒤쪽 이름 머리글 아래 태그 항목으로 모이고, 머리글을 누르면 태그별로 나눠 전부 보여 준다
-import { createDoc, device, sleep, type Ctx } from './lib.ts'
+import { addStroke, createDoc, device, sleep, type Ctx } from './lib.ts'
 
 export default async function catgroup(ctx: Ctx) {
   const { base, check } = ctx
@@ -19,9 +19,15 @@ export default async function catgroup(ctx: Ctx) {
     ids[title] = id
     if (category) await A.evaluate(async ([id, category]) => (await import('/src/storage/repo.ts')).updateDocument(id, { category }), [id, category] as const)
   }
+  // 미리보기가 있는 노트 하나 — 처음 보일 때 타일로 맞춰지며 나타난다(tileReveal)
+  await addStroke(A, ids['독서 노트'], 's1')
+  await A.evaluate(async (id) => (await import('/src/io/docThumb.ts')).regenerateThumbnail(id), ids['독서 노트'])
   await A.goto(base + '/')
   await A.waitForSelector('.folder-tree .tree-group')
   await sleep(300)
+  await A.waitForSelector('.doc-thumb img', { state: 'attached' })
+  await sleep(1000)
+  check('미리보기 타일 등장: 끝나면 타일 캔버스는 걷히고 미리보기가 보인다', (await A.locator('.thumb-tiles').count()) === 0 && (await A.locator('.doc-thumb img.is-revealed').count()) === 1)
   // 사이드바의 카테고리 부분을 위에서부터 읽는다: 묶음은 '▸/▾ 이름 (접히면 개수)', 닫는 구분선은 '──', 카테고리는 '이름 개수'
   const readRows = () =>
     A.evaluate(() => {
