@@ -106,6 +106,12 @@ export function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGri
   return { src, cells, cols: Math.ceil(w / size - 0.01), rows, inkColor, inkRgb, paperL, paperRgb }
 }
 
+/** 8×8 베이어 행렬(0..63) — 디더 점이 고르게 흩어지는 문턱값 순서. 카드 디더·카테고리 색 번짐이 함께 쓴다 */
+export const BAYER8 = [
+  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9,
+  41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21
+]
+
 /** 칸마다 고정된 0..1 값(다시 그려도 같은 무늬) */
 export const cellNoise = (i: number, salt = 0) => {
   let x = (i + 1) * 374761393 + salt * 668265263

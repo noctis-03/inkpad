@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useUI } from '../../app/store'
 import { tileReveal } from '../motion/tileReveal'
 import { ThumbDither } from './ThumbDither'
+import { ditherWashMask } from './ditherWash'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
@@ -1490,7 +1491,14 @@ export function Library() {
         )}
 
         <main className="library-main">
-          {sectionTint && <div key={sectionTint} className="section-tint" style={{ ['--tint' as string]: sectionTint } as React.CSSProperties} aria-hidden="true" />}
+          {sectionTint && (
+            <div
+              key={sectionTint}
+              className="section-tint"
+              style={{ ['--tint' as string]: sectionTint, ['--wash' as string]: ditherWashMask() } as React.CSSProperties}
+              aria-hidden="true"
+            />
+          )}
           {section.kind === 'folder' && (
             <nav className="breadcrumb" aria-label="경로">
               <button onClick={() => setSection({ kind: 'all' })}>전체</button>
