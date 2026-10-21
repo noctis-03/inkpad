@@ -87,7 +87,16 @@ export function TitleText({ text }: { text: string }) {
   )
 }
 
-/** 동기화 상태 점 + 라벨 pill. 상태가 바뀌면 pop 한다. */
+/** 카드 꼬리표 — [앞 글자, 짧은 말]. 동기화됨은 붙이지 않는다(손댈 것이 없는 카드는 조용하게) */
+const SYNC_TAG: Record<CardSyncState, [string, string] | null> = {
+  new: ['·', '이 기기만'],
+  pending: ['↑', '올리기'],
+  same: null,
+  'remote-new': ['↓', '새 버전'],
+  diverged: ['!', '갈라짐']
+}
+
+/** 라이브러리 카드 동기화 꼬리표(1비트 꼬리표) — 격자는 미리보기 위(overlay), 목록은 캡션 안. 상태가 바뀌면 pop 한다 */
 export function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null)
   const prev = useRef(state)
@@ -97,10 +106,12 @@ export function SyncPill({ state, overlay }: { state: CardSyncState; overlay?: b
     }
     prev.current = state
   }, [state])
+  const tag = SYNC_TAG[state]
+  if (!tag) return null
   return (
-    <span ref={ref} className={'doc-state s-' + state + (overlay ? ' is-overlay' : '')}>
-      <i className="doc-state-dot" aria-hidden="true" />
-      {SYNC_LABEL[state]}
+    <span ref={ref} className={'sync-tag t-' + state + (overlay ? ' is-overlay' : '')} title={SYNC_LABEL[state]} aria-label={SYNC_LABEL[state]}>
+      <b aria-hidden="true">{tag[0]}</b>
+      {tag[1]}
     </span>
   )
 }
