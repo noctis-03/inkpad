@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { tileReveal } from '../motion/tileReveal'
-import { ThumbEdge } from './ThumbEdge'
+import { ThumbDither } from './ThumbDither'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
@@ -724,8 +724,8 @@ export function Library() {
           seenReveal.current.add(id)
           // 처음 보이는 미리보기는 필기가 있는 칸부터 잉크 색 타일로 맞춰지며 나타난다(모션 끄기면 바로)
           if (!seen && document.documentElement.dataset.motion !== 'off') {
-            // 격자: 가장자리 효과 캔버스가 '전부 흩어짐 → 가장자리만'으로 이어서 풀어 준다 / 목록: 타일로 맞춰지며 등장
-            if (holder.querySelector('.thumb-edge')) holder.dispatchEvent(new Event('thumb-reveal')) // 첫 장면을 그리면서 <img>를 보인다
+            // 격자: 디더 캔버스가 빈 종이에서 디더 점으로 차오르게 / 목록: 타일로 맞춰지며 등장
+            if (holder.querySelector('.thumb-dither')) holder.dispatchEvent(new Event('thumb-reveal')) // 첫 장면을 그리면서 <img>를 보인다
             else tileReveal(img, () => img.classList.add('is-revealed', 'no-anim'))
             continue
           }
@@ -1727,7 +1727,7 @@ export function Library() {
                       {thumbs.get(i.d.id) ? (
                         <>
                           <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
-                          {prefs.view === 'grid' && <ThumbEdge src={thumbs.get(i.d.id)!} open={revealKey === i.d.id} />}
+                          {prefs.view === 'grid' && <ThumbDither src={thumbs.get(i.d.id)!} open={revealKey === i.d.id} />}
                         </>
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
