@@ -62,6 +62,8 @@ type Section =
 
 /** 카드를 이만큼 누르고 있으면 선택 모드 */
 const LONG_PRESS_MS = 500
+/** 사이드바에서 펼친 카테고리 묶음(이 기기만) */
+const LS_OPEN_GROUPS = 'inkpad.catgroups.open.v1'
 /** 원형 메뉴 — 누른 자리에서 이 거리 안에서 떼면 가운데(선택 모드), 이보다 멀리 나가 떼면 취소 */
 const RADIAL_DEAD = 26
 const RADIAL_OUT = 170
@@ -161,7 +163,6 @@ export function Library() {
         : section.kind === 'folder'
           ? `folder:${section.id}`
           : section.kind
-  useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y')
   // 검색어 디바운스 — FLIP 트리거(120ms). 메모(useMemo)들이 렌더 중 이 값을 읽으므로 반드시 위쪽에서 선언한다
   const [dq, setDq] = useState('')
 
@@ -585,6 +586,37 @@ export function Library() {
     const sorted = [...groups].sort(([a], [b]) => a.localeCompare(b, 'ko'))
     return { plain, groups: sorted.map(([name, cats]) => ({ name, cats: cats.sort((a, b) => splitCategory(a).label.localeCompare(splitCategory(b).label, 'ko')) })) }
   }, [shownCategories])
+
+  // 카테고리 묶음 접기·펼치기 — 펼친 묶음 이름만 이 기기에 기억한다(새 묶음은 접힌 채로 시작)
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(LS_OPEN_GROUPS) ?? '[]') as string[])
+    } catch {
+      return new Set()
+    }
+  })
+  const saveOpenGroups = (next: Set<string>) => {
+    setOpenGroups(next)
+    try {
+      localStorage.setItem(LS_OPEN_GROUPS, JSON.stringify([...next]))
+    } catch {
+      /* 저장 못 해도 이번 화면에서는 그대로 */
+    }
+  }
+  const toggleGroup = (g: string) => {
+    const next = new Set(openGroups)
+    if (next.has(g)) next.delete(g)
+    else next.add(g)
+    saveOpenGroups(next)
+  }
+  useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y', [...openGroups].join('\n')) // 묶음을 접고 펴면 선택 칩도 새 자리로
+  // 접힌 묶음 안의 카테고리로 가면(다른 화면에서 카테고리를 눌러 들어와도) 그 묶음을 펼친다
+  useEffect(() => {
+    if (section.kind !== 'category') return
+    const g = splitCategory(section.name).group
+    if (g && !openGroups.has(g)) saveOpenGroups(new Set(openGroups).add(g))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section])
 
   // 보고 있던 카테고리가 숨김 처리되면 전체로 — 데이터를 다 읽기 전(복원 직후)에는 빈 목록으로 판정하지 않는다
   useEffect(() => {
@@ -1172,6 +1204,8 @@ export function Library() {
                   ? '기타 파일'
                   : '전체'
 
+  /** 카테고리에 든 노트·앱·파일 수 */
+  const catCount = (c: string) => docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length
   /** 사이드바 카테고리 한 줄 — label은 보이는 이름([묶음] 아래면 그 부분을 뗀 이름) */
   const categoryItem = (c: string, label: string) => (
     <button
@@ -1184,7 +1218,7 @@ export function Library() {
       <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
       <span className="tree-name">{label}</span>
       {section.kind === 'category' && section.name === c && recentActive && recentTag}
-      <span className="count">{docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length}</span>
+      <span className="count">{catCount(c)}</span>
     </button>
   )
 
@@ -1319,14 +1353,29 @@ export function Library() {
               <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
             </button>
             <div className="tree-label">카테고리</div>
-            {categoryLayout.groups.map((g) => (
-              <Fragment key={'group:' + g.name}>
-                <div className="tree-group" role="separator" aria-label={g.name}>
-                  <span>{g.name}</span>
-                </div>
-                {g.cats.map((c) => categoryItem(c, splitCategory(c).label))}
-              </Fragment>
-            ))}
+            {categoryLayout.groups.map((g) => {
+              const open = openGroups.has(g.name)
+              // 접힌 묶음에 보고 있는 카테고리가 있으면 선택 칩이 구분선에 앉는다
+              const activeInside = !open && section.kind === 'category' && g.cats.includes(section.name)
+              return (
+                <Fragment key={'group:' + g.name}>
+                  <button
+                    className={'tree-group' + (open ? ' is-open' : '') + (activeInside ? ' is-active' : '')}
+                    data-indicator-key={activeInside ? 'cat:' + section.name : undefined}
+                    aria-expanded={open}
+                    aria-label={g.name + (open ? ' 접기' : ' 펼치기')}
+                    onClick={() => toggleGroup(g.name)}
+                  >
+                    <span className="tree-group-name">
+                      <Icon name="chevronRight" size={12} />
+                      {g.name}
+                      {!open && <span className="tree-group-count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>}
+                    </span>
+                  </button>
+                  {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).label))}</div>}
+                </Fragment>
+              )
+            })}
             {categoryLayout.groups.length > 0 && <div className="tree-group" role="separator" />}
             {categoryLayout.plain.map((c) => categoryItem(c, c))}
             <button

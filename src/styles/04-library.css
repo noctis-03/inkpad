@@ -279,11 +279,49 @@
 .tree-group:empty::after {
   display: none;
 }
-.tree-group span {
+/* 묶음 구분선은 버튼 — 누르면 접고 편다(▸ 접힘 · ▾ 펼침, 접히면 묶음 전체 개수) */
+button.tree-group {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+button.tree-group:active .tree-group-name {
+  color: var(--ink);
+}
+.tree-group.is-active .tree-group-name {
+  color: var(--ink);
+}
+.tree-group-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 75%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 70%;
+  transition: color .15s;
+}
+.tree-group-name svg {
+  flex: 0 0 auto;
+  transition: transform .22s var(--spring-pop);
+}
+.tree-group.is-open .tree-group-name svg {
+  transform: rotate(90deg);
+}
+.tree-group-count {
+  margin-left: 2px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.tree-group-items {
+  animation: tree-group-open .24s var(--ft-ease) backwards;
+}
+@keyframes tree-group-open {
+  from { opacity: 0; transform: translateY(-6px); }
 }
 .tree-item.trash {
   margin-top: 14px;
