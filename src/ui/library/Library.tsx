@@ -724,7 +724,9 @@ export function Library() {
           seenReveal.current.add(id)
           // 처음 보이는 미리보기는 필기가 있는 칸부터 잉크 색 타일로 맞춰지며 나타난다(모션 끄기면 바로)
           if (!seen && document.documentElement.dataset.motion !== 'off') {
-            tileReveal(img, () => img.classList.add('is-revealed', 'no-anim'))
+            // 격자: 가장자리 효과 캔버스가 '전부 흩어짐 → 가장자리만'으로 이어서 풀어 준다 / 목록: 타일로 맞춰지며 등장
+            if (holder.querySelector('.thumb-edge')) holder.dispatchEvent(new Event('thumb-reveal')) // 첫 장면을 그리면서 <img>를 보인다
+            else tileReveal(img, () => img.classList.add('is-revealed', 'no-anim'))
             continue
           }
           img.classList.add('is-revealed', 'no-anim')

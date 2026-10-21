@@ -6,7 +6,11 @@ import { cellNoise, drawPlus, readThumb, type ThumbGrid } from '../motion/thumbC
  * 필기 칸이 잉크 색 타일 → 빈 사각형 → ＋로 흩어진다(빈 종이 가장자리엔 옅은 ＋가 드문드문).
  * 칸마다 흩어짐 값이 고정이라 다시 그려도(크기 바뀜 등) 무늬가 같다. 미리보기 <img> 위에 얹는 캔버스.
  * 가장자리가 흩어져 카드 경계가 흐려지므로, 카드의 원래 테두리 선(1px) 자리를 그 자리 가장자리 색으로 칠한다
- * (원래 회색 테두리 선은 CSS에서 뺀다 — .doc-thumb:has(> .thumb-edge))
+ * (원래 회색 테두리 선은 CSS에서 뺀다 — .doc-thumb:has(> .thumb-edge)).
+ *
+ * 등장 — 미리보기가 처음 보일 때 Library가 이 캔버스의 부모(.doc-thumb)에 'thumb-reveal' 이벤트를 보내면,
+ * 전체가 흩어진 상태(＋)에서 시작해 빈 사각형 → 타일 → 또렷한 필기로 가운데부터 풀리고, 가장자리는 흩어진 채 멈춘다
+ * (칸마다 지금 단계 t를 '전부 흩어짐(T_START)'에서 '가장자리 상태'로 옮긴다 — 끝 상태가 곧 늘 보이는 상태)
  */
 export function ThumbEdge({ src }: { src: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -16,27 +20,70 @@ export function ThumbEdge({ src }: { src: string }) {
     if (!cv || !holder) return
     let alive = true
     const img = new Image()
-    const draw = () => {
+    let grid: ThumbGrid | null = null
+    let size = { w: 0, h: 0, radius: 0 }
+    let progress = 1 // 등장 진행 0..1 — 1이면 늘 보이는 가장자리 상태
+    let pending = false // 그림을 읽기 전에 등장 요청이 왔다
+    let raf = 0
+    // 등장 동안 미리보기 <img>는 이 캔버스가 첫 장면을 그린 뒤에 보인다(그 전엔 리빌 대기 클립으로 가려져 있다)
+    const showImg = () => holder.querySelector('img[data-reveal]')?.classList.add('is-revealed', 'no-anim')
+    const paint = () => {
+      const g = cv.getContext('2d')
+      if (!g || !grid) return
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      g.setTransform(dpr, 0, 0, dpr, 0, 0)
+      paintEdge(g, grid, size.w, size.h, progress)
+      paintFrame(g, grid, size.w, size.h, size.radius)
+    }
+    const layout = () => {
       if (!alive || !img.naturalWidth) return
       const w = holder.clientWidth
       const h = holder.clientHeight
-      const grid = readThumb(img, w, h)
-      if (!grid) return
+      grid = readThumb(img, w, h)
+      if (!grid) {
+        if (pending) showImg() // 읽을 수 없으면 효과 없이 그냥 보인다
+        pending = false
+        return
+      }
+      size = { w, h, radius: parseFloat(getComputedStyle(holder).borderTopLeftRadius) || 0 }
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       cv.width = Math.ceil(w * dpr)
       cv.height = Math.ceil(h * dpr)
-      const g = cv.getContext('2d')
-      if (!g) return
-      g.setTransform(dpr, 0, 0, dpr, 0, 0)
-      paintEdge(g, grid, w, h)
-      paintFrame(g, grid, w, h, parseFloat(getComputedStyle(holder).borderTopLeftRadius) || 0)
+      if (pending) play()
+      else paint()
     }
-    img.onload = draw
+    const play = () => {
+      if (!grid) {
+        pending = true
+        progress = 0
+        return
+      }
+      pending = false
+      cancelAnimationFrame(raf)
+      const t0 = performance.now()
+      const step = (now: number) => {
+        if (!alive) return
+        progress = Math.min(1, (now - t0) / REVEAL_MS)
+        paint()
+        if (progress < 1) raf = requestAnimationFrame(step)
+      }
+      progress = 0
+      paint()
+      showImg()
+      raf = requestAnimationFrame(step)
+    }
+    holder.addEventListener('thumb-reveal', play)
+    img.onload = layout
+    img.onerror = () => {
+      if (pending) showImg()
+    }
     img.src = src
-    const ro = new ResizeObserver(() => draw())
+    const ro = new ResizeObserver(() => layout())
     ro.observe(holder)
     return () => {
       alive = false
+      cancelAnimationFrame(raf)
+      holder.removeEventListener('thumb-reveal', play)
       ro.disconnect()
     }
   }, [src])
@@ -45,8 +92,13 @@ export function ThumbEdge({ src }: { src: string }) {
 
 /** 가장자리에서 이만큼(가운데 0 ~ 가장자리 1) 안쪽부터 흩어지기 시작한다 */
 const EDGE_START = 0.72
+/** 등장 길이(ms) */
+const REVEAL_MS = 900
+/** 등장 시작 때 모든 칸의 단계 — ＋ 단계(1.3 미만) 바로 안쪽에서 시작한다 */
+const T_START = 1.25
+const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
 
-function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number) {
+function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: number, progress = 1) {
   const { cells, cols } = grid
   g.clearRect(0, 0, w, h)
   const inked = (i: number) => (cells[i]?.ink ?? 0) > 0.03
@@ -55,7 +107,12 @@ function paintEdge(g: CanvasRenderingContext2D, grid: ThumbGrid, w: number, h: n
     const nx = Math.abs(((c.x + c.w / 2) / w - 0.5) * 2)
     const ny = Math.abs(((c.y + c.h / 2) / h - 0.5) * 2)
     const d = Math.pow(Math.pow(nx, 4) + Math.pow(ny, 4), 1 / 4)
-    const t = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.4
+    let t = (d - EDGE_START) / (1 - EDGE_START) + (cellNoise(c.i) - 0.5) * 0.4
+    if (progress < 1) {
+      // 등장 중 — 칸마다 조금씩 엇갈려(최대 25%) '전부 흩어짐'에서 제 자리 상태로. 가운데일수록 멀리 가서 먼저 풀린다
+      const q = Math.min(1, Math.max(0, (progress - cellNoise(c.i, 3) * 0.25) / 0.75))
+      t = T_START + (t - T_START) * easeOut(q)
+    }
     if (t <= 0) continue // 가운데 — 그대로
     if (c.ink > 0.03) {
       g.fillStyle = c.paper // 원래 필기를 가리고
