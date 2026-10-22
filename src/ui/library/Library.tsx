@@ -15,7 +15,7 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import { Menu, MenuItem } from '../Menu'
-import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
+import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { categoryColor, formatDate, splitCategory } from '../../shared/util'
@@ -1856,6 +1856,7 @@ export function Library() {
           <MenuItem icon="files" label="기타 파일 관리" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />
           <div className="menu-sep" />
           <MenuItem icon="replace" label="카드 미리보기 새로고침" onClick={() => { setMoreMenu(null); refreshThumbnails() }} />
+          <MenuItem icon="cloudDown" label="빠진 노트 원본 받기" onClick={() => { setMoreMenu(null); void downloadNoteAssets() }} />
         </Menu>
       )}
 
