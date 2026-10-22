@@ -1117,7 +1117,7 @@
 }
 
 /* ───────── 앱·파일 카드 (미리보기 대신 라벨) ─────────
-   격자: 미리보기 자리에 라벨 스티커(동기화 꼬리표 바로 위) — 위 탭은 종류(HTML 앱 · PDF 파일), 높이가 고정된 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
+   격자: 미리보기 자리에 라벨 스티커(위에서부터 동기화 꼬리표 바로 위까지) — 위 탭은 종류(HTML 앱 · PDF 파일), 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
    꼬리표 빗금은 스티커 둘레로만 비친다. 카드 아래는 ▶ 실행·열기와 ⋯ — 같은 버튼, 폭 4:1.
    목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지 · ▶는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
 .item-face {
@@ -1125,9 +1125,8 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
   align-items: stretch;
-  padding: 12px 6px 28px; /* 좌우 6px는 꼬리표 왼쪽 선(left: 6px)과 맞춘다. 아래 28px는 동기화 꼬리표 자리 — 스티커가 꼬리표 바로 위에 앉는다(꼬리표가 없어도 같은 자리라 줄이 맞는다) */
+  padding: 12px 6px 28px; /* 좌우 6px는 꼬리표 왼쪽 선(left: 6px)과 맞춘다. 아래 28px는 동기화 꼬리표 자리 — 스티커가 위에서부터 꼬리표 바로 위까지 늘어난다(꼬리표가 없어도 같은 길이) */
   text-align: left;
 }
 .item-tab {
@@ -1148,7 +1147,8 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  height: 104px; /* 제목이 한 줄이든 두 줄이든 같은 높이 — 날짜는 아래에 붙는다 */
+  flex: 1; /* 카드 얼굴을 채운다 — 제목이 한 줄이든 두 줄이든 같은 길이, 날짜는 아래에 붙는다 */
+  min-height: 0;
   overflow: hidden;
   padding: 12px 11px 11px;
   border: 1px solid var(--tag-ink);
@@ -1290,7 +1290,6 @@
   }
   .item-label {
     gap: 4px;
-    height: 76px;
     padding: 7px 7px 7px;
   }
   .item-title {
