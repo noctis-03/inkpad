@@ -48,6 +48,7 @@ import { openChanges } from '../ChangesView'
 import { THUMBS_EVENT } from '../../io/docThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
+import { UPLOADING_EVENT, isUploading } from '../../sync/uploading'
 import { confirmTransfer, uploadChoice } from '../../sync/transfer'
 import type { FileRow } from '../../storage/db'
 
@@ -97,10 +98,6 @@ function sameSection(a: Section, b: Section): boolean {
   return true
 }
 
-/** 앱·파일 행의 점 상태 — 행의 pending·fileId 표식만으로 판정한다 (노트와 같은 색 체계) */
-const rowSyncState = (r: { fileId?: string; pending?: 'upsert' | 'delete'; cloudDetachedAt?: number }): CardSyncState =>
-  r.pending ? 'pending' : r.fileId && !r.cloudDetachedAt ? 'same' : 'new'
-
 export function Library() {
   const navigate = useUI((s) => s.navigate)
   const prefs = useUI((s) => s.library)
@@ -118,6 +115,13 @@ export function Library() {
   const [folders, setFolders] = useState<Folder[]>([])
   const [thumbs, setThumbs] = useState<Map<ID, string>>(new Map())
   const [syncStates, setSyncStates] = useState<Map<ID, CardSyncState>>(new Map())
+  // 앱·파일 업로드 시작·끝 — 카드 제목 옆 로딩 고리를 다시 그린다
+  const [, setUploadTick] = useState(0)
+  useEffect(() => {
+    const on = () => setUploadTick((n) => n + 1)
+    window.addEventListener(UPLOADING_EVENT, on)
+    return () => window.removeEventListener(UPLOADING_EVENT, on)
+  }, [])
   const [cloudOff, setCloudOff] = useState(false) // 동기화를 설정하지 않은 기기 — 동기화 표시를 숨긴다
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -435,8 +439,6 @@ export function Library() {
     const st = syncStates.get(id)
     return st && pillVisible(st) ? <SyncPill state={st} /> : null
   }
-  /** 앱·파일 행의 동기화 라벨 */
-  const rowPill = (st: CardSyncState, overlay?: boolean) => (pillVisible(st) ? <SyncPill state={st} overlay={overlay} /> : null)
 
   /** 카드 한 줄 메타 — 노트는 쪽수·날짜, 앱은 'HTML 앱'·날짜, 파일은 확장자·날짜.
       격자에서는 누르면 뜨는 오버레이 맨 위에, 목록에서는 캡션 줄에 앉는다. */
@@ -469,17 +471,18 @@ export function Library() {
   /**
    * 앱·파일 카드. 미리보기가 없으므로
    * - 격자: 미리보기 자리에 라벨 스티커(위 탭은 종류, 판에 제목 · 카테고리 · 날짜), 아래에 왼쪽 ▶ 실행·열기 · 오른쪽 ⋯
-   * - 목록: 왼쪽 종이 배지(확장자), 제목과 '카테고리 · 종류 · 날짜' 한 줄, 오른쪽에 꼬리표 · ▶ · ⋯
+   * - 목록: 왼쪽 종이 배지(확장자), 제목과 '카테고리 · 종류 · 날짜' 한 줄, 오른쪽에 ▶ · ⋯
    * 카드를 눌러도 아무것도 하지 않는다(선택 모드에서만 고른다) — 여는 것은 ▶ 버튼
+   * 동기화 꼬리표는 붙이지 않는다: 추가·수정하자마자 올리므로 올라가는 동안만 제목 옆에 로딩 고리
    */
   const itemCard = (o: {
     key: string
+    id: ID
     kind: 'app' | 'file'
     title: string
     category: string | null | undefined
     updatedAt: number
     ext: string
-    sync: CardSyncState
     idx: number
     onPlay: () => void
     onMenu: (x: number, y: number) => void
@@ -487,6 +490,7 @@ export function Library() {
     const kindLabel = o.kind === 'app' ? 'HTML 앱' : o.ext ? `${o.ext} 파일` : '파일'
     const verb = o.kind === 'app' ? '실행' : '열기'
     const date = formatDate(o.updatedAt)
+    const busy = isUploading(o.id) ? <i className="item-busy" role="status" aria-label="올리는 중" title="올리는 중" /> : null
     const play = (
       <button
         className="item-play"
@@ -496,7 +500,7 @@ export function Library() {
           o.onPlay()
         }}
       >
-        <Icon name="play" size={12} /> {verb}
+        <Icon name="play" size={11} /> {verb}
       </button>
     )
     return (
@@ -513,7 +517,10 @@ export function Library() {
             <div className="item-face">
               <span className="item-tab">{kindLabel}</span>
               <div className="item-label">
-                <h3 className="item-title">{o.title}</h3>
+                <div className="item-head">
+                  <h3 className="item-title">{o.title}</h3>
+                  {busy}
+                </div>
                 <p className="item-cat">{catLine(o.category)}</p>
                 <span className="item-date">{date}</span>
               </div>
@@ -523,7 +530,6 @@ export function Library() {
           )}
           {selectCheck(o.key)}
           {markBadge(o.key)}
-          {rowPill(o.sync, true)}
         </div>
         {prefs.view === 'grid' ? (
           <div className="item-bar">
@@ -533,7 +539,10 @@ export function Library() {
         ) : (
           <>
             <div className="doc-info">
-              <h3 className="doc-title">{o.title}</h3>
+              <h3 className="doc-title">
+                {o.title}
+                {busy}
+              </h3>
               <p className="doc-sub">
                 <span>{catLine(o.category)}</span>
                 <span>{kindLabel}</span>
@@ -541,7 +550,6 @@ export function Library() {
               </p>
             </div>
             <div className="doc-tail">
-              {rowPill(o.sync)}
               {play}
               {moreButton(o.onMenu)}
             </div>
@@ -1695,12 +1703,12 @@ export function Library() {
                 i.kind === 'app' ? (
                   itemCard({
                     key: 'app:' + i.a.id,
+                    id: i.a.id,
                     kind: 'app',
                     title: i.a.title,
                     category: i.a.category,
                     updatedAt: i.a.updatedAt,
                     ext: '',
-                    sync: rowSyncState(i.a),
                     idx,
                     onPlay: () => navigate({ name: 'app', appId: i.a.id }),
                     onMenu: (x, y) => setAppMenu({ app: i.a, x, y })
@@ -1708,12 +1716,12 @@ export function Library() {
                 ) : i.kind === 'file' ? (
                   itemCard({
                     key: 'file:' + i.f.id,
+                    id: i.f.id,
                     kind: 'file',
                     title: i.f.title,
                     category: i.f.category,
                     updatedAt: i.f.updatedAt,
                     ext: extOf(i.f.name).toUpperCase(),
-                    sync: rowSyncState(i.f),
                     idx,
                     onPlay: () => navigate({ name: 'file', fileId: i.f.id }),
                     onMenu: (x, y) => setFileMenu({ file: i.f, x, y })

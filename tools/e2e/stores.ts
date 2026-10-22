@@ -99,6 +99,26 @@ export default async function stores(ctx: Ctx) {
   const presetRemote = [...drive.files.values()].find((f) => f.appProperties.presetId === preset.id && !f.trashed)
   check('보드 프리셋: 저장하면 바로 올라가고 표식에 이름', preset.up && presetRemote?.appProperties.title === '작업용')
 
+  // ── 앱·파일 카드: 동기화 꼬리표 없이, 올라가는 동안만 제목 옆 로딩 고리 ──
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
+  await p.route('**/*googleapis.com/**', async (r) => {
+    await gate // 업로드를 잠시 붙잡아 '올리는 중'을 본다
+    await r.fallback()
+  })
+  await p.goto(`${base}/#/`)
+  await p.waitForSelector(`[data-flip-key="file:${files.upId}"]`)
+  const card = `[data-flip-key="file:${files.upId}"]`
+  const idle = await p.locator(`${card} .item-busy`).count()
+  const renaming = p.evaluate(async (id) => (await import('/src/sync/files.ts')).updateFileMeta(id, { title: '메모 2' }), files.upId)
+  const spinning = await p.waitForSelector(`${card} .item-busy`, { timeout: 5000 }).then(() => true, () => false)
+  release()
+  const renamed = await renaming
+  const stopped = await p.waitForSelector(`${card} .item-busy`, { state: 'detached', timeout: 5000 }).then(() => true, () => false)
+  await p.unroute('**/*googleapis.com/**')
+  check('앱·파일 카드: 동기화 꼬리표를 붙이지 않는다', (await p.locator('.item-card .sync-tag').count()) === 0)
+  check('앱·파일 카드: 올라가는 동안만 제목 옆에 로딩 고리', idle === 0 && spinning && renamed && stopped, JSON.stringify({ idle, spinning, renamed, stopped }))
+
   // ── 클라우드 앱 폴더가 통째로 사라졌을 때 ──
   for (const f of drive.files.values()) if (f.name === 'apps') f.trashed = true
   const recovered = await p.evaluate(async (id) => {
