@@ -3,7 +3,7 @@
 //  - 앱·기타 파일·보드 프리셋은 추가·변경하는 그 동작이 곧 '올리기' — 그 항목만 바로 올라가고,
 //    오프라인이면 대기로 남아 시트의 '모두 업로드'로 올라간다
 //  - appProperties 크기 제한(키+값 124바이트), 클라우드 폴더가 통째로 사라졌을 때 다시 올리기
-//  - 앱·파일 카드 미리보기: 파일은 이 기기 원본에서만(받지 않는다), 앱은 실행 화면을 앱 안에서 찍어 보낸다
+//  - 카드 미리보기: 파일은 이 기기 원본에서만(받지 않는다), HTML 앱은 늘 아이콘
 import { createFakeDrive } from './fake-drive.ts'
 import { addStroke, createDoc, device, sleep, type Ctx } from './lib.ts'
 
@@ -163,25 +163,24 @@ export default async function stores(ctx: Ctx) {
   check('미리보기: 원본이 있는 이미지 파일은 카드에 그림', imgThumb)
   check('미리보기: 원본이 없는 파일은 받지 않고 아이콘', !metaOnly.blob && !metaOnly.thumb && metaIcon && driveRequests === before, JSON.stringify({ ...metaOnly, metaIcon, req: driveRequests - before }))
 
-  // 앱: 실행 화면이 iframe 안에서 스스로 찍어 보낸다 — 열고 잠시 뒤, 손을 대고 조용해지면
+  // HTML 앱: 미리보기를 만들지 않는다 — 실행해도 카드는 아이콘, 예전에 저장한 앱 미리보기는 지운다
   const appId = await p.evaluate(async () => {
     const apps = await import('/src/sync/apps.ts')
-    const html = '<!doctype html><html><head><title>색판</title></head><body style="margin:0;background:#fde"><div id="b" style="height:120px;background:#235"></div><script>document.getElementById("b").textContent="ready"<\/script></body></html>'
-    return (await apps.addApp(new File([html], '색판.html', { type: 'text/html' }), null)).app.id
+    const { db } = await import('/src/storage/db.ts')
+    const html = '<!doctype html><html><head><title>색판</title></head><body style="margin:0;background:#fde"><div style="height:120px;background:#235"></div></body></html>'
+    const id = (await apps.addApp(new File([html], '색판.html', { type: 'text/html' }), null)).app.id
+    await db.itemThumbs.put({ key: 'app:' + id, blob: new Blob(['x'], { type: 'image/jpeg' }), updatedAt: Date.now() }) // 예전 판이 남긴 것
+    return id
   })
-  await p.waitForSelector(`[data-flip-key="app:${appId}"]`)
-  const appIcon = (await p.locator(`[data-flip-key="app:${appId}"] .doc-thumb img`).count()) === 0
   await p.goto(`${base}/#/app/${appId}`)
   await p.waitForSelector('iframe.app-runner-frame')
-  let shot = false
-  for (let i = 0; i < 40 && !shot; i++) {
-    await sleep(250)
-    shot = await p.evaluate(async (id) => !!(await (await import('/src/storage/db.ts')).db.itemThumbs.get('app:' + id)), appId)
-  }
+  await sleep(3000)
   await p.goto(`${base}/#/`)
-  const appThumb = await p.waitForSelector(`[data-flip-key="app:${appId}"] .doc-thumb img`, { timeout: 5000 }).then(() => true, () => false)
-  check('미리보기: 한 번도 실행하지 않은 앱은 아이콘', appIcon)
-  check('미리보기: 실행한 앱은 마지막 화면이 카드에', shot && appThumb, JSON.stringify({ shot, appThumb }))
+  await p.waitForSelector(`[data-flip-key="app:${appId}"]`)
+  await sleep(800)
+  const appIcon = (await p.locator(`[data-flip-key="app:${appId}"] .doc-thumb img`).count()) === 0
+  const appThumbLeft = await p.evaluate(async () => (await (await import('/src/storage/db.ts')).db.itemThumbs.toCollection().primaryKeys()).some((k) => String(k).startsWith('app:')))
+  check('미리보기: HTML 앱 카드는 실행해도 아이콘, 예전 앱 미리보기는 지운다', appIcon && !appThumbLeft, JSON.stringify({ appIcon, appThumbLeft }))
 
   await p.context().close()
 }

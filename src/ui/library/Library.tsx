@@ -45,7 +45,7 @@ import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOne
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
 import { openChanges } from '../ChangesView'
 import { THUMBS_EVENT } from '../../io/docThumb'
-import { appThumbKey, fileThumbKey, getItemThumbRows, syncItemThumbs } from '../../io/itemThumb'
+import { fileThumbKey, getItemThumbRows, syncItemThumbs } from '../../io/itemThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { UPLOADING_EVENT, isUploading } from '../../sync/uploading'
@@ -211,7 +211,7 @@ export function Library() {
     })
   }, [])
 
-  /** 노트 미리보기 + 앱·파일 미리보기('app:<id>' · 'file:<id>' 열쇠) 한 지도로 */
+  /** 노트 미리보기 + 파일 미리보기('file:<id>' 열쇠) 한 지도로 */
   const loadThumbRows = async () => {
     const [docRows, itemRows] = await Promise.all([getThumbnailRows(), getItemThumbRows()])
     itemRows.forEach((r, key) => docRows.set(key, r))
@@ -233,7 +233,7 @@ export function Library() {
     setHiddenCats(new Set(hid))
     setApps(ap)
     setFiles(fls)
-    void syncItemThumbs(ap, fls) // 원본이 있는데 미리보기가 없는 파일만 그리고, 사라진 항목의 미리보기는 지운다
+    void syncItemThumbs(fls) // 원본이 있는데 미리보기가 없는 파일만 그리고, 사라진 항목의 미리보기는 지운다
     setSyncStates(st)
     // 마킹 — 영구 삭제된 항목의 마킹은 여기서 정리한다(휴지통 노트는 되살릴 수 있으니 남긴다)
     const keep = new Set([...d.map((x) => 'doc:' + x.id), ...t.map((x) => 'doc:' + x.id), ...ap.map((x) => 'app:' + x.id), ...fls.map((x) => 'file:' + x.id)])
@@ -475,7 +475,7 @@ export function Library() {
 
   /**
    * 앱·파일 카드 — 노트 카드와 같은 구조.
-   * - 미리보기: 파일은 원본에서 그린 그림(이미지 · PDF 첫 쪽 · 텍스트), 앱은 마지막으로 본 실행 화면. 없으면 아이콘
+   * - 미리보기: 파일은 원본에서 그린 그림(이미지 · PDF 첫 쪽 · 텍스트). 없으면 아이콘, HTML 앱은 늘 아이콘
    * - 격자: 카드를 누르면 오버레이(종류 · 날짜 + ▶ 실행·열기), 아래에 제목 · 카테고리 · ⋯
    * - 목록: 누르면 바로 연다, 제목 아래 '카테고리 · 종류 · 날짜'
    * 동기화 꼬리표는 붙이지 않는다: 추가·수정하자마자 올리므로 올라가는 동안만 제목 옆에 로딩 고리
@@ -494,7 +494,7 @@ export function Library() {
   }) => {
     const kindLabel = o.kind === 'app' ? 'HTML 앱' : o.ext || '파일'
     const date = formatDate(o.updatedAt)
-    const thumb = thumbs.get(o.kind === 'app' ? appThumbKey(o.id) : fileThumbKey(o.id))
+    const thumb = o.kind === 'file' ? thumbs.get(fileThumbKey(o.id)) : undefined // HTML 앱은 늘 아이콘
     const busy = isUploading(o.id) ? <i className="item-busy" role="status" aria-label="올리는 중" title="올리는 중" /> : null
     return (
       <article

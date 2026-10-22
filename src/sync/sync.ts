@@ -299,6 +299,11 @@ export async function noteCardState(docId: ID): Promise<CardSyncState | null> {
   return cardStateOf(docId, (await pendingSeqsFor(docId)).length > 0, await getCloudStatesCache())
 }
 
+/** 일괄 받기·올리기가 잠금에 막혔을 때 — 아무 일 없이 끝나지 않게 알린다 */
+function notifyBusyElsewhere() {
+  notifyToast('다른 곳에서 동기화가 진행 중입니다. 끝난 뒤 다시 눌러 주세요.', 'info')
+}
+
 async function cardStateOf(docId: ID, pending: boolean, cache: CloudStatesCache | undefined): Promise<CardSyncState> {
   const rec = await getSync<FileRecord>(`doc:${docId}`)
   const cached = cache?.states[docId]
@@ -320,7 +325,10 @@ export async function pushNow(): Promise<void> {
     return
   }
   await navigator.locks.request(SYNC_LOCK, { ifAvailable: true }, async (lock) => {
-    if (!lock) return // 다른 탭에서 동기화 중
+    if (!lock) {
+      notifyBusyElsewhere() // 다른 곳(노트 칩·다른 탭)에서 동기화 중
+      return
+    }
     setStatus('syncing')
     try {
       // 최초 동기화: 기존 로컬 데이터를 모두 업로드 큐에 올린다
@@ -674,7 +682,10 @@ export async function pullNow(choices: PullChoices = {}): Promise<PullResult | n
     return null
   }
   return navigator.locks.request(SYNC_LOCK, { ifAvailable: true }, async (lock) => {
-    if (!lock) return null // 다른 탭에서 동기화 중
+    if (!lock) {
+      notifyBusyElsewhere() // 다른 곳(노트 칩·다른 탭)에서 동기화 중
+      return null
+    }
     setStatus('syncing')
     try {
       const f = await ensureFolders()

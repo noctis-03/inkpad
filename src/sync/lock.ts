@@ -7,3 +7,16 @@ export const SYNC_LOCK = 'inkpad-sync'
 export function withSyncLock<T>(fn: () => Promise<T>): Promise<T> {
   return navigator.locks.request(SYNC_LOCK, fn) as Promise<T>
 }
+
+/**
+ * 지금 누가 동기화 잠금을 쥐고 있는가 — 이 탭이든 다른 탭이든(편집 화면의 노트 칩, 머지, 다른 탭의 올리기 등).
+ * 브라우저 잠금 목록만 본다(네트워크 없음). 잠금 목록을 볼 수 없는 브라우저면 false
+ */
+export async function isSyncLockHeld(): Promise<boolean> {
+  try {
+    const snap = await navigator.locks.query()
+    return !!snap.held?.some((l) => l.name === SYNC_LOCK)
+  } catch {
+    return false
+  }
+}

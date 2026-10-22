@@ -28,8 +28,9 @@ import board from './board.ts'
 import catgroup from './catgroup.ts'
 import marks from './marks.ts'
 import noteassets from './noteassets.ts'
+import syncwait from './syncwait.ts'
 
-const SCENARIOS: Record<string, (ctx: Ctx) => Promise<void>> = { editor, sync, merge, archive, comfort, study, delta, scratch, splash, toolbar, stores, bigfile, idle, board, catgroup, marks, noteassets }
+const SCENARIOS: Record<string, (ctx: Ctx) => Promise<void>> = { editor, sync, merge, archive, comfort, study, delta, scratch, splash, toolbar, stores, bigfile, idle, board, catgroup, marks, noteassets, syncwait }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const picked = process.argv.slice(2).filter((a) => !a.startsWith('-'))
