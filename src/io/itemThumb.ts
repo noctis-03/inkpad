@@ -1,11 +1,10 @@
-// 앱·기타 파일 카드 미리보기(썸네일). 노트 미리보기와 같이 로컬 전용 — Drive로 동기화하지 않는다.
+// 기타 파일 카드 미리보기(썸네일). 노트 미리보기와 같이 로컬 전용 — Drive로 동기화하지 않는다.
 //
-// - 파일: 이 기기에 원본이 있을 때 이미지 · PDF 첫 쪽 · 텍스트 앞부분을 그린다.
-//   미리보기를 만들려고 원본을 내려받지는 않는다(지연 로딩 원칙) — 한 번 열어 원본이 생기면 그때 만든다.
-// - 앱: 앱이 sandbox iframe 안에서 스스로 화면을 찍어 보낸다(AppRunner · bridge). 밖에서는 화면을 읽을 수 없다.
-// 만들 수 없으면(원본 없음, 시트 등 그릴 수 없는 형식, 한 번도 실행하지 않은 앱) 카드는 아이콘을 보인다.
+// 이 기기에 원본이 있을 때 이미지 · PDF 첫 쪽 · 텍스트 앞부분을 그린다.
+// 미리보기를 만들려고 원본을 내려받지는 않는다(지연 로딩 원칙) — 한 번 열어 원본이 생기면 그때 만든다.
+// 만들 수 없으면(원본 없음, 시트 등 그릴 수 없는 형식) 카드는 아이콘을 보인다. HTML 앱 카드는 늘 아이콘.
 import { db, type FileRow } from '../storage/db'
-import { extOf, type HtmlApp, type ID } from '../shared/model'
+import { extOf, type ID } from '../shared/model'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
 import { emitThumbsChanged } from './docThumb'
 
@@ -13,7 +12,6 @@ import { emitThumbsChanged } from './docThumb'
 const THUMB_W = 320
 const THUMB_H = Math.round(THUMB_W * 1.3)
 
-export const appThumbKey = (id: ID) => 'app:' + id
 export const fileThumbKey = (id: ID) => 'file:' + id
 
 export async function getItemThumbRows(): Promise<Map<string, { blob: Blob; updatedAt: number }>> {
@@ -21,18 +19,14 @@ export async function getItemThumbRows(): Promise<Map<string, { blob: Blob; upda
   return new Map(rows.map((r) => [r.key, { blob: r.blob, updatedAt: r.updatedAt }]))
 }
 
-export async function putItemThumb(key: string, blob: Blob) {
+async function putItemThumb(key: string, blob: Blob) {
   await db.itemThumbs.put({ key, blob, updatedAt: Date.now() })
 }
 
 type Src = ImageBitmap | HTMLImageElement | HTMLCanvasElement
 
-/**
- * 카드에 맞춰 남기는 곳
- * - 'top' · 'center': 카드 비율로 자른다 — 넓으면 가로 가운데, 길면 위(top) · 가운데(center)
- * - 'screen'(앱 화면): 폭은 다 살린다 — 가로로 긴 화면은 위에 붙이고 아래는 화면 바닥색으로 잇는다
- */
-type Fit = 'top' | 'center' | 'screen'
+/** 카드 비율로 자를 때 남기는 곳 — 넓으면 가로 가운데, 길면 위(top) · 가운데(center) */
+type Fit = 'top' | 'center'
 
 /** 그림을 카드 비율(THUMB_W × THUMB_H) JPEG로 만든다. 투명한 곳은 흰 종이 */
 function cropToCard(src: Src, sw: number, sh: number, fit: Fit): Promise<Blob | null> {
@@ -46,22 +40,14 @@ function cropToCard(src: Src, sw: number, sh: number, fit: Fit): Promise<Blob | 
   ctx.fillRect(0, 0, THUMB_W, THUMB_H)
   ctx.imageSmoothingQuality = 'high'
   const ratio = THUMB_H / THUMB_W
-  if (fit === 'screen' && sh < sw * ratio) {
-    const dh = Math.max(1, Math.round((sh * THUMB_W) / sw))
-    ctx.drawImage(src, 0, 0, sw, sh, 0, 0, THUMB_W, dh)
-    const [r, g, b] = ctx.getImageData(1, dh - 1, 1, 1).data // 화면 바닥 왼쪽 점의 색으로 아래를 채운다
-    ctx.fillStyle = `rgb(${r},${g},${b})`
-    ctx.fillRect(0, dh, THUMB_W, THUMB_H - dh)
-  } else {
-    let cw = sw
-    let ch = sw * ratio
-    if (ch > sh) {
-      ch = sh
-      cw = sh / ratio
-    }
-    const cy = fit === 'center' ? (sh - ch) / 2 : 0
-    ctx.drawImage(src, (sw - cw) / 2, cy, cw, ch, 0, 0, THUMB_W, THUMB_H)
+  let cw = sw
+  let ch = sw * ratio
+  if (ch > sh) {
+    ch = sh
+    cw = sh / ratio
   }
+  const cy = fit === 'center' ? (sh - ch) / 2 : 0
+  ctx.drawImage(src, (sw - cw) / 2, cy, cw, ch, 0, 0, THUMB_W, THUMB_H)
   return new Promise((res) => c.toBlob((b) => res(b), 'image/jpeg', 0.8))
 }
 
@@ -84,7 +70,7 @@ async function decode(blob: Blob): Promise<{ src: Src; w: number; h: number; clo
 }
 
 /** 이미지 Blob → 카드 미리보기. 읽을 수 없으면 null */
-export async function imageToThumb(blob: Blob, fit: Fit): Promise<Blob | null> {
+async function imageToThumb(blob: Blob, fit: Fit): Promise<Blob | null> {
   const d = await decode(blob).catch(() => null)
   if (!d) return null
   try {
@@ -164,13 +150,13 @@ let running: Promise<void> = Promise.resolve()
 /**
  * 라이브러리가 목록을 읽을 때 부른다.
  * - 원본이 이 기기에 있는데 미리보기가 없는 파일만 그린다 (하나씩, 실패는 삼킨다 — 미리보기는 선택 사항)
- * - 사라진 앱·파일의 미리보기는 지운다
+ * - 사라진 파일의 미리보기와, 예전에 저장한 HTML 앱 미리보기('app:<id>')는 지운다
  * 겹쳐 불리면 앞의 일이 끝난 뒤 이어서 한다.
  */
-export function syncItemThumbs(apps: HtmlApp[], files: FileRow[]): Promise<void> {
+export function syncItemThumbs(files: FileRow[]): Promise<void> {
   running = running.then(async () => {
     const keys = new Set<string>(await db.itemThumbs.toCollection().primaryKeys())
-    const live = new Set([...apps.map((a) => appThumbKey(a.id)), ...files.map((f) => fileThumbKey(f.id))])
+    const live = new Set(files.map((f) => fileThumbKey(f.id)))
     const gone = [...keys].filter((k) => !live.has(k))
     if (gone.length) await db.itemThumbs.bulkDelete(gone)
     let made = 0

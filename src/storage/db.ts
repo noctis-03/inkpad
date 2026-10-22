@@ -31,7 +31,7 @@ export interface ThumbRow {
   updatedAt: number
 }
 
-/** 앱·기타 파일 카드 미리보기 (로컬 전용). key = 'app:<id>' | 'file:<id>' */
+/** 기타 파일 카드 미리보기 (로컬 전용). key = 'file:<id>' — 예전에 저장한 HTML 앱 미리보기('app:<id>')는 라이브러리가 지운다 */
 export interface ItemThumbRow {
   key: string
   blob: Blob
@@ -126,7 +126,7 @@ export interface CacheClearResult {
 
 /**
  * 캐시 삭제 — 노트·앱·파일·설정은 그대로 두고, 다시 만들 수 있는 것만 지운다.
- *  1) 미리보기(썸네일): 노트를 열거나 받을 때, 파일은 원본에서, 앱은 다음 실행 때 다시 만들어진다
+ *  1) 미리보기(썸네일): 노트를 열거나 받을 때, 파일은 원본에서 다시 만들어진다
  *  2) 서비스 워커 Cache Storage: 다음 실행 때 다시 채워진다 (오프라인 캐시)
  * PDF 렌더 비트맵 캐시는 메모리 전용이라 이 기기 저장소에는 남지 않는다.
  */
@@ -139,7 +139,7 @@ export async function clearAppCaches(): Promise<CacheClearResult> {
     thumbBytes += r.blob?.size ?? 0
   }
   if (thumbnails) await db.thumbnails.clear()
-  // 앱·파일 카드 미리보기도 다시 만들 수 있다 (파일은 원본에서, 앱은 다음 실행 때)
+  // 파일 카드 미리보기도 원본에서 다시 만들 수 있다
   for (const r of await db.itemThumbs.toArray()) {
     thumbnails++
     thumbBytes += r.blob?.size ?? 0
