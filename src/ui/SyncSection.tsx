@@ -26,6 +26,7 @@ import {
   type SyncStatus
 } from '../sync/sync'
 import { onAssetProgress } from '../sync/assets'
+import { isSyncLockHeld } from '../sync/lock'
 import { db } from '../storage/db'
 import { formatDate, formatBytes } from '../shared/util'
 import { confirmDialog } from '../app/dialogs'
@@ -456,6 +457,32 @@ export function SyncSection() {
   const [pullPlan, setPullPlan] = useState<PullPlan | null>(null)
   const [pullPreview, setPullPreview] = useState<PullPlan | null>(null)
   const [pullCat, setPullCat] = useState<string | null>(null)
+  const [selfBusy, setSelfBusy] = useState(false) // 이 창의 일괄 받기·올리기 — 잠금을 쥐기 전부터 표시
+  const [outside, setOutside] = useState<boolean | null>(null) // 창 밖의 동기화가 잠금을 쥐고 있는가 (null = 확인 전)
+
+  // 창 밖(편집 화면의 노트 칩, 다른 탭 등)에서 시작한 올리기·받기가 잠금을 쥐고 있으면 창 내용을 가리고 끝나기를 기다린다.
+  // 그 사이 목록은 반쯤 바뀐 상태라 믿을 수 없고, 받기·올리기를 눌러도 잠금에 막힌다. 끝나면 목록을 새로 읽는다.
+  // 이 창이 한 일이 쥔 잠금은 기다리지 않는다. 잠금 목록만 보므로 네트워크는 쓰지 않는다
+  const ownBusy = selfBusy || status === 'syncing' || busyId !== null || pullCat !== null
+  useEffect(() => {
+    if (ownBusy) {
+      setOutside(false)
+      return
+    }
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = async () => {
+      const held = await isSyncLockHeld()
+      if (!alive) return
+      setOutside(held)
+      timer = setTimeout(() => void tick(), held ? 400 : 1500)
+    }
+    void tick()
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [ownBusy])
 
   useEffect(() => {
     const un = onSyncStatus((s) => {
@@ -510,8 +537,9 @@ export function SyncSection() {
     // 동기화 중에는 목록을 다시 읽지 않는다 — 끝나고 idle로 돌아올 때 한 번만 읽는다.
     // (예전에는 syncing 진입·이탈마다 읽어 올리기 1회에 목록 새로고침이 3~4번 나갔다)
     if (status === 'auth-required' || status === 'disabled' || status === 'syncing') return
+    if (outside !== false) return // 창 밖의 동기화가 끝난 뒤에 읽는다
     void loadCloud()
-  }, [status, loadCloud])
+  }, [status, outside, loadCloud])
 
   const counts = useMemo(() => countCloud(cloud ?? []), [cloud])
 
@@ -531,7 +559,8 @@ export function SyncSection() {
 
   const confirmPull = async (choices: PullChoices) => {
     setPullPreview(null)
-    const r = await pullNow(choices)
+    setSelfBusy(true)
+    const r = await pullNow(choices).finally(() => setSelfBusy(false))
     if (r) {
       const parts = [
         r.docs ? `노트 ${r.docs}개를 받았습니다` : '',
@@ -565,7 +594,8 @@ export function SyncSection() {
 
   const confirmPush = async () => {
     setPreview(null)
-    await pushNow() // 끝나면 status가 idle로 돌아가 위 effect가 목록을 한 번 새로 읽는다
+    setSelfBusy(true)
+    await pushNow().finally(() => setSelfBusy(false)) // 끝나면 status가 idle로 돌아가 위 effect가 목록을 한 번 새로 읽는다
   }
 
   /** 새 노트를 일괄 올리기에서 뺀다 — 새 파일 행 메뉴의 "일괄 올리기에서 제외" */
@@ -699,6 +729,19 @@ export function SyncSection() {
         ) : (
           <p className="hint warn">서버에 OAuth 설정이 없습니다. 로컬 저장은 계속 동작합니다.</p>
         )}
+      </section>
+    )
+  }
+
+  if (outside) {
+    return (
+      <section className="panel-section" id="sync-settings">
+        <h3>동기화 · Google Drive</h3>
+        <div className="sync-wait" role="status" aria-live="polite">
+          <span className="spinner" aria-hidden="true" />
+          <b>다른 곳에서 동기화가 진행 중입니다</b>
+          <small>편집 화면의 노트 칩이나 다른 탭에서 시작한 올리기·받기가 끝날 때까지 기다려 주세요. 끝나면 목록을 새로 읽어 보여 드립니다.</small>
+        </div>
       </section>
     )
   }
