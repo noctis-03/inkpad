@@ -3,6 +3,7 @@
 //  - 앱·기타 파일·보드 프리셋은 추가·변경하는 그 동작이 곧 '올리기' — 그 항목만 바로 올라가고,
 //    오프라인이면 대기로 남아 시트의 '모두 업로드'로 올라간다
 //  - appProperties 크기 제한(키+값 124바이트), 클라우드 폴더가 통째로 사라졌을 때 다시 올리기
+//  - 앱·파일 카드 미리보기: 파일은 이 기기 원본에서만(받지 않는다), 앱은 실행 화면을 앱 안에서 찍어 보낸다
 import { createFakeDrive } from './fake-drive.ts'
 import { addStroke, createDoc, device, sleep, type Ctx } from './lib.ts'
 
@@ -116,7 +117,7 @@ export default async function stores(ctx: Ctx) {
   const renamed = await renaming
   const stopped = await p.waitForSelector(`${card} .item-busy`, { state: 'detached', timeout: 5000 }).then(() => true, () => false)
   await p.unroute('**/*googleapis.com/**')
-  check('앱·파일 카드: 동기화 꼬리표를 붙이지 않는다', (await p.locator('.item-card .sync-tag').count()) === 0)
+  check('앱·파일 카드: 동기화 꼬리표를 붙이지 않는다', (await p.locator('.app-card .sync-tag, .file-card .sync-tag').count()) === 0)
   check('앱·파일 카드: 올라가는 동안만 제목 옆에 로딩 고리', idle === 0 && spinning && renamed && stopped, JSON.stringify({ idle, spinning, renamed, stopped }))
 
   // ── 클라우드 앱 폴더가 통째로 사라졌을 때 ──
@@ -135,6 +136,52 @@ export default async function stores(ctx: Ctx) {
   check('폴더 재생성: 바꾼 앱은 새 폴더로 바로 올라간다', recovered.up && !!newAppsFolder)
   check('폴더 재생성: 나머지 앱은 지우지 않고 다시 올릴 대기로', recovered.pendingAfter === recovered.total - 1, JSON.stringify(recovered))
   check("폴더 재생성: '모두 업로드'로 앱 전부가 새 폴더에", recovered.left === 0 && inNew.length === recovered.total, `${inNew.length}/${recovered.total}`)
+
+  // ── 앱·파일 카드 미리보기 (로컬 전용) ──
+  // 파일: 원본이 이 기기에 있으면 그린다. 원본이 없는(메타만 받은) 파일은 미리보기를 만들려고 받지 않는다
+  const before = driveRequests
+  const pv = await p.evaluate(async () => {
+    const files = await import('/src/sync/files.ts')
+    const { db } = await import('/src/storage/db.ts')
+    const c = new OffscreenCanvas(300, 200)
+    const g = c.getContext('2d')!
+    g.fillStyle = '#2a6'
+    g.fillRect(0, 0, 300, 200)
+    const img = await files.addFile(new File([await c.convertToBlob({ type: 'image/png' })], '사진.png', { type: 'image/png' }), null, { upload: false })
+    const now = Date.now()
+    await db.files.add({ id: 'metaonly', title: '받지 않은 사진', category: null, name: '받지 않은.png', mime: 'image/png', size: 10, kind: 'image', createdAt: now, updatedAt: now, fileId: 'remote-x' })
+    window.dispatchEvent(new Event(files.FILES_EVENT))
+    return { img: img.file.id }
+  })
+  const imgThumb = await p.waitForSelector(`[data-flip-key="file:${pv.img}"] .doc-thumb img`, { timeout: 8000 }).then(() => true, () => false)
+  await sleep(800)
+  const metaOnly = await p.evaluate(async () => {
+    const { db } = await import('/src/storage/db.ts')
+    return { blob: !!(await db.files.get('metaonly'))?.blob, thumb: !!(await db.itemThumbs.get('file:metaonly')) }
+  })
+  const metaIcon = (await p.locator('[data-flip-key="file:metaonly"] .doc-thumb img').count()) === 0
+  check('미리보기: 원본이 있는 이미지 파일은 카드에 그림', imgThumb)
+  check('미리보기: 원본이 없는 파일은 받지 않고 아이콘', !metaOnly.blob && !metaOnly.thumb && metaIcon && driveRequests === before, JSON.stringify({ ...metaOnly, metaIcon, req: driveRequests - before }))
+
+  // 앱: 실행 화면이 iframe 안에서 스스로 찍어 보낸다 — 열고 잠시 뒤, 손을 대고 조용해지면
+  const appId = await p.evaluate(async () => {
+    const apps = await import('/src/sync/apps.ts')
+    const html = '<!doctype html><html><head><title>색판</title></head><body style="margin:0;background:#fde"><div id="b" style="height:120px;background:#235"></div><script>document.getElementById("b").textContent="ready"<\/script></body></html>'
+    return (await apps.addApp(new File([html], '색판.html', { type: 'text/html' }), null)).app.id
+  })
+  await p.waitForSelector(`[data-flip-key="app:${appId}"]`)
+  const appIcon = (await p.locator(`[data-flip-key="app:${appId}"] .doc-thumb img`).count()) === 0
+  await p.goto(`${base}/#/app/${appId}`)
+  await p.waitForSelector('iframe.app-runner-frame')
+  let shot = false
+  for (let i = 0; i < 40 && !shot; i++) {
+    await sleep(250)
+    shot = await p.evaluate(async (id) => !!(await (await import('/src/storage/db.ts')).db.itemThumbs.get('app:' + id)), appId)
+  }
+  await p.goto(`${base}/#/`)
+  const appThumb = await p.waitForSelector(`[data-flip-key="app:${appId}"] .doc-thumb img`, { timeout: 5000 }).then(() => true, () => false)
+  check('미리보기: 한 번도 실행하지 않은 앱은 아이콘', appIcon)
+  check('미리보기: 실행한 앱은 마지막 화면이 카드에', shot && appThumb, JSON.stringify({ shot, appThumb }))
 
   await p.context().close()
 }
