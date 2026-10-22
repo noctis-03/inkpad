@@ -468,7 +468,7 @@ export async function getThumbnails(): Promise<Map<ID, Blob>> {
   return new Map([...(await getThumbnailRows())].map(([id, r]) => [id, r.blob]))
 }
 
-/** 미리보기와 만든 시각 — 미리보기에서 만든 것(디더 등)을 다시 쓸지 가릴 때 */
+/** 미리보기와 만든 시각 */
 export async function getThumbnailRows(): Promise<Map<ID, { blob: Blob; updatedAt: number }>> {
   const rows = await db.thumbnails.toArray()
   return new Map(rows.map((r) => [r.documentId, { blob: r.blob, updatedAt: r.updatedAt }]))
