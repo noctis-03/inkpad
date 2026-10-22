@@ -106,7 +106,7 @@
   --tag-alert: #b3261e;     /* 꼬리표 '갈라짐' 빨강 */
   --sync-hatch: color-mix(in srgb, var(--tag-ink) 9%, transparent); /* 꼬리표 붙은 카드 빗금 색 */
   --sync-hatch-w: 12px;     /* 빗금 굵기 */
-  --sync-hatch-gap: 26px;   /* 빗금 간격(굵기 포함) — 빗금 사이 빈 폭 14px */
+  --sync-hatch-gap: 18px;   /* 빗금 간격(굵기 포함) — 빗금 사이 빈 폭 6px */
 
   --toolbar-h: 52px;
   --safe-top: env(safe-area-inset-top, 0px);
