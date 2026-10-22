@@ -1119,8 +1119,8 @@
 /* ───────── 앱·파일 카드 (미리보기 대신 라벨) ─────────
    격자: 미리보기 자리에 라벨 스티커(탭 아래부터 카드 바닥까지) — 위 탭은 종류(HTML 앱 · PDF 파일), 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
    동기화 꼬리표·빗금은 없다(추가·수정하자마자 올린다) — 올라가는 동안만 제목 옆에 1비트 로딩 고리(.item-busy).
-   카드 아래는 ▶ 실행·열기와 ⋯ — 같은 버튼, 폭 4:1.
-   목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지 · ▶는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
+   카드 아래는 ▶ 실행·열기와 ⋯ — 상자 없는 글자 버튼, 위에 가는 선, 폭 4:1.
+   목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
 .item-face {
   position: absolute;
   inset: 0;
@@ -1223,15 +1223,39 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 카드 아래 — ▶ 실행·열기와 ⋯를 같은 1비트 버튼으로, 폭은 4:1 */
+/* 카드 아래 — ▶ 실행·열기와 ⋯: 상자 없이 글자만, 위에 가는 선 하나(시안 D). 폭 4:1.
+   위 6px + 선 1px + 3px + 버튼 33px = 노트 카드 제목·카테고리 줄과 같은 높이 — 섞인 격자에서 줄 높이가 맞는다 */
 .item-bar {
   display: grid;
   grid-template-columns: 4fr 1fr;
   gap: 6px;
-  padding: 10px 2px 0; /* 위 10px + 버튼 33px = 노트 카드 제목·카테고리 줄과 같은 높이 — 섞인 격자에서 줄 높이가 맞는다 */
+  margin-top: 6px;
+  padding: 3px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 30%, transparent);
 }
 .item-bar .item-play {
-  justify-content: center;
+  justify-content: flex-start;
+}
+.item-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 33px;
+  padding: 0 8px 0 2px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color .12s;
+}
+.item-play svg {
+  fill: currentColor;
 }
 .item-card .doc-more {
   position: static;
@@ -1243,47 +1267,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--play-line);
   border-radius: 2px;
-  background: var(--play-bg);
-  color: var(--play-fg);
-  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
+  background: transparent;
+  color: var(--ink);
 }
 .item-card .doc-more svg {
   flex-shrink: 0; /* 휴대폰의 좁은 칸(1fr)에서도 ⋯ 점 크기 그대로 */
 }
+/* 상자가 없으니 누를 곳은 옅은 먹 바탕으로 알린다 */
+.item-play:hover,
 .item-card .doc-more:hover {
-  background: var(--play-bg);
-  color: var(--play-fg);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
 }
+.item-play:active,
 .item-card .doc-more:active {
-  translate: 1px 1px;
-  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
-}
-.item-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 33px;
-  padding: 0 12px 0 10px;
-  border: 1px solid var(--play-line);
-  border-radius: 2px;
-  background: var(--play-bg);
-  color: var(--play-fg);
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  white-space: nowrap;
-  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.item-play svg {
-  fill: currentColor;
-}
-.item-play:active {
-  translate: 1px 1px;
-  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
+  background: color-mix(in srgb, var(--ink) 13%, transparent);
 }
 /* 목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자 */
 .doc-list .item-card .doc-thumb {
@@ -1346,10 +1345,11 @@
   .doc-grid .item-play,
   .doc-grid .item-card .doc-more {
     height: 29px;
-    font-size: 11.5px;
+    font-size: 12px;
   }
   .doc-grid .item-play {
-    padding: 0 6px;
+    gap: 4px;
+    padding: 0 4px 0 1px;
   }
   .doc-grid .item-card .doc-more {
     width: auto; /* 06-editor의 좁은 격자 ⋯ 24px를 이긴다 — 칸(1fr)을 채운다 */
@@ -1361,6 +1361,8 @@
   }
   .item-bar {
     gap: 4px;
+    margin-top: 4px;
+    padding-top: 5px; /* 4 + 선 1 + 5 + 버튼 29 = 휴대폰 노트 카드 캡션 높이 */
   }
   /* 목록: 좁으면 종류 · 날짜는 빼고 카테고리만 */
   .doc-list .doc-sub > span + span {

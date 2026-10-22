@@ -500,7 +500,7 @@ export function Library() {
           o.onPlay()
         }}
       >
-        <Icon name="play" size={12} /> {verb}
+        <Icon name="play" size={11} /> {verb}
       </button>
     )
     return (
