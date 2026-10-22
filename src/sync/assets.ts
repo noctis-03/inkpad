@@ -156,7 +156,14 @@ export async function tryEnsureAssetLocal(assetId: ID): Promise<Blob | null> {
 
 /** 이 기기에 없는 원본을 순서대로 모두 받는다 (사용자가 명시적으로 요청할 때만) */
 export async function downloadAllMissing(onProgress?: (done: number, total: number) => void): Promise<{ ok: number; failed: number; authFailed: boolean }> {
-  const missing = await listMissingAssets()
+  return downloadMissing(await listMissingAssets(), onProgress)
+}
+
+/** 고른 원본들을 순서대로 받는다 (사용자가 명시적으로 요청할 때만 — 전송 확인은 호출한 쪽에서) */
+export async function downloadMissing(
+  missing: AssetRow[],
+  onProgress?: (done: number, total: number) => void
+): Promise<{ ok: number; failed: number; authFailed: boolean }> {
   let ok = 0
   let failed = 0
   let authFailed = false

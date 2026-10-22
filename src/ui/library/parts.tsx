@@ -10,6 +10,9 @@ import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import type { CardSyncState } from '../../sync/sync'
 import type { FileRow } from '../../storage/db'
 import type { Mark } from '../../storage/repo'
+import { collectAssetUsage, listDocuments } from '../../storage/repo'
+import { downloadMissing, listMissingAssets } from '../../sync/assets'
+import { confirmTransfer } from '../../sync/transfer'
 
 /**
  * 카드 캡션의 동기화 상태 라벨.
@@ -229,6 +232,44 @@ export function refreshThumbnails() {
       if (!n) useUI.getState().toast('새로 만들 미리보기가 없습니다. 원본이 없는 PDF 노트는 원본을 받은 뒤 만들 수 있어요.', 'info')
     })
     .finally(() => (thumbRefreshBusy = false))
+}
+
+let assetFetchBusy = false
+/**
+ * 노트 원본 받기 — 노트(휴지통 제외)가 쓰는데 이 기기에 원본이 없는 PDF·이미지를 한 번에 받는다.
+ * "받기"는 메타데이터만 받으므로 다른 기기에서 온 노트는 열 때까지 원본이 없다 — 미리 받아 두고 싶을 때.
+ * 큰 전송 확인은 다른 받기와 같은 기준. 받은 뒤 그 노트들의 카드 미리보기를 원본으로 다시 만든다.
+ */
+export async function downloadNoteAssets() {
+  if (assetFetchBusy) return
+  assetFetchBusy = true
+  const { toast, setBusy } = useUI.getState()
+  try {
+    const [usage, missing, docs] = await Promise.all([collectAssetUsage(), listMissingAssets(), listDocuments()])
+    const live = new Set(docs.map((d) => d.id))
+    const usedBy = (assetId: ID) => [...(usage.get(assetId) ?? [])].filter((id) => live.has(id))
+    const targets = missing.filter((a) => usedBy(a.id).length)
+    if (!targets.length) return toast('노트가 쓰는 원본이 모두 이 기기에 있습니다.', 'info')
+    if (!navigator.onLine) return toast('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.', 'error')
+    const bytes = targets.reduce((sum, a) => sum + (a.size || 0), 0)
+    if (!(await confirmTransfer('down', bytes, targets.length, '노트 원본'))) return
+    setBusy({ text: `노트 원본 받는 중 (0/${targets.length})`, progress: 0 })
+    let r: Awaited<ReturnType<typeof downloadMissing>>
+    try {
+      r = await downloadMissing(targets, (done, total) => setBusy({ text: `노트 원본 받는 중 (${done}/${total})`, progress: done / total }))
+    } finally {
+      setBusy(null)
+    }
+    if (r.authFailed) toast('Google 로그인이 만료되었습니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
+    else if (r.failed) toast(`노트 원본 ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
+    else toast(`노트 원본 ${r.ok}개를 모두 받았습니다.`, 'success')
+    // 원본이 없어 필기만 그렸거나 비어 있던 미리보기를 실제 모습으로
+    if (r.ok) void refreshAllThumbnailsWithToast([...new Set(targets.flatMap((a) => usedBy(a.id)))])
+  } catch (e) {
+    toast(`노트 원본을 받지 못했습니다: ${(e as Error).message}`, 'error')
+  } finally {
+    assetFetchBusy = false
+  }
 }
 
 /** 마킹 종류 — 버튼 순서대로. cls는 CSS 클래스 꼬리(!는 클래스 이름에 못 쓴다) */
