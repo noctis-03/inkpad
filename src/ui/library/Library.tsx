@@ -204,7 +204,7 @@ export function Library() {
   /** 읽어 온 미리보기를 카드에 적용한다. 더 새로 시작한 읽기가 있으면 이 읽기는 버린다. */
   const applyThumbs = useCallback((th: Map<ID, { blob: Blob; updatedAt: number }>, seq: number) => {
     if (seq !== thumbSeq.current) return // 먼저 시작한 오래된 읽기 — 나중에 시작한 읽기가 이긴다
-    // 디더 캐시 열쇠 — 주소(blob URL)는 읽을 때마다 새로 생기므로 노트 id + 미리보기 만든 시각으로
+    // 망점 캐시 열쇠 — 주소(blob URL)는 읽을 때마다 새로 생기므로 노트 id + 미리보기 만든 시각으로
     thumbKeys.current = new Map([...th].map(([id, r]) => [id, id + ':' + r.updatedAt]))
     setThumbs((old) => {
       old.forEach((url) => URL.revokeObjectURL(url))

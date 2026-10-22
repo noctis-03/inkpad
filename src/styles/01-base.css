@@ -100,7 +100,7 @@
 
   /* ── 고정 종이·태그 ── */
   --thumb-paper: #ffffff;   /* 썸네일·종이는 테마와 상관없이 흰색 */
-  --thumb-cream: #fbf9f4;   /* 격자 카드 바탕 — 1비트 디더 미리보기는 흰 종이 자리를 비워 두어 이 미색이 비친다 */
+  --thumb-cream: #fbf9f4;   /* 격자 카드 바탕 — 선 망점 미리보기는 흰 종이 자리를 비워 두어 이 미색이 비친다 */
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
   --tag-ink: #2b2a26;       /* 카드 동기화 꼬리표(.sync-tag) 먹색 — 미색 카드 위라 테마와 상관없이 */
   --tag-alert: #b3261e;     /* 꼬리표 '갈라짐' 빨강 */
