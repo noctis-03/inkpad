@@ -27,7 +27,7 @@ import {
   duplicateDocument,
   getHiddenCategories,
   getMarks,
-  getThumbnails,
+  getThumbnailRows,
   listDocuments,
   listFolders,
   purgeDocument,
@@ -195,14 +195,17 @@ export function Library() {
   // 먼저 읽고(값 없음), 그 사이 THUMBS_EVENT가 새 값을 읽어 반영해도 늦게 끝나는
   // refresh가 오래된 값으로 덮어썼다 — 미리보기가 새로고침해야 나타나던 원인.
   const thumbSeq = useRef(0)
+  const thumbKeys = useRef<Map<ID, string>>(new Map())
 
   /** 읽어 온 미리보기를 카드에 적용한다. 더 새로 시작한 읽기가 있으면 이 읽기는 버린다. */
-  const applyThumbs = useCallback((th: Map<ID, Blob>, seq: number) => {
+  const applyThumbs = useCallback((th: Map<ID, { blob: Blob; updatedAt: number }>, seq: number) => {
     if (seq !== thumbSeq.current) return // 먼저 시작한 오래된 읽기 — 나중에 시작한 읽기가 이긴다
+    // 디더 캐시 열쇠 — 주소(blob URL)는 읽을 때마다 새로 생기므로 노트 id + 미리보기 만든 시각으로
+    thumbKeys.current = new Map([...th].map(([id, r]) => [id, id + ':' + r.updatedAt]))
     setThumbs((old) => {
       old.forEach((url) => URL.revokeObjectURL(url))
       const m = new Map<ID, string>()
-      th.forEach((blob, id) => m.set(id, URL.createObjectURL(blob)))
+      th.forEach((r, id) => m.set(id, URL.createObjectURL(r.blob)))
       return m
     })
   }, [])
@@ -210,12 +213,12 @@ export function Library() {
   /** 미리보기(썸네일)만 다시 읽는다 — 미리보기 생성 직후 카드에 새로고침 없이 반영 */
   const refreshThumbs = useCallback(async () => {
     const seq = ++thumbSeq.current
-    applyThumbs(await getThumbnails(), seq)
+    applyThumbs(await getThumbnailRows(), seq)
   }, [applyThumbs])
 
   const refresh = useCallback(async () => {
     const seq = ++thumbSeq.current // 미리보기 읽기 시작 순번 — 읽는 도중 저장되면 THUMBS_EVENT 쪽이 이긴다
-    const [d, t, f, th, hid, ap, fls, st, mk] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnails(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates(), getMarks()])
+    const [d, t, f, th, hid, ap, fls, st, mk] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnailRows(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates(), getMarks()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
@@ -1743,7 +1746,7 @@ export function Library() {
                       {thumbs.get(i.d.id) ? (
                         <>
                           <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
-                          {prefs.view === 'grid' && <ThumbDither src={thumbs.get(i.d.id)!} />}
+                          {prefs.view === 'grid' && <ThumbDither src={thumbs.get(i.d.id)!} cacheKey={thumbKeys.current.get(i.d.id) ?? i.d.id} />}
                         </>
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />

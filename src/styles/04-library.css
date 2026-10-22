@@ -530,14 +530,19 @@
   object-fit: cover;
   object-position: top;
 }
-/* 1비트 디더 미리보기(ThumbDither) — <img> 위에 얹는다. 움직이지 않는다 */
+/* 1비트 디더 미리보기(ThumbDither) — <img> 위에 얹는다. 움직이지 않는다.
+   캔버스는 점 하나 = 1px로 만들고 크기(DOT배)는 스크립트가 정한다 — 키울 때 번지지 않게 */
 .thumb-dither {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 0;
+  top: 0;
   z-index: 1;
   pointer-events: none;
+  image-rendering: pixelated;
+}
+/* 디더가 준비되기 전엔 원본이 잠깐 비쳤다 바뀌지 않게 가린다(만들 수 없으면 is-ready로 원본이 보인다) */
+.doc-thumb:has(> .thumb-dither:not(.is-ready)) img {
+  opacity: 0;
 }
 /* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
 /* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가

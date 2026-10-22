@@ -2,54 +2,120 @@ import { useEffect, useRef } from 'react'
 
 /**
  * 카드 미리보기 디더 캔버스 — 미리보기 <img> 위에 얹어 1비트 디더(앳킨슨)로 그린다:
- * 2px 점마다 미색 종이 아니면 그 자리 펜 색, 두 가지뿐.
- * 움직이지 않는다 — 그림을 읽을 때와 카드 크기가 바뀔 때 한 번씩만 그린다.
+ * 2px 점마다 미색 종이 아니면 그 자리 펜 색, 두 가지뿐. 움직이지 않는다.
+ *
+ * 가볍게 하려고:
+ * - 캔버스는 점 하나 = 1px 크기로 만들고 CSS로 DOT배 키운다(image-rendering: pixelated) — 화면 해상도로 만들면 카드 80장에 약 48MB
+ * - 화면 근처에 온 카드만 만든다(IntersectionObserver)
+ * - 만드는 일은 줄을 세워 한 번에 8ms까지만 하고 쉰다 — 한꺼번에 몰려 화면이 멈추지 않게
+ * - 만든 것은 cacheKey(노트 id + 미리보기 만든 시각) + 카드 크기로 기억한다 — 편집 화면에서 돌아와도 다시 만들지 않는다
  * 그림을 읽을 수 없으면(다른 출처 등) 아무것도 그리지 않아 원래 미리보기가 그대로 보인다.
  */
-export function ThumbDither({ src }: { src: string }) {
+export function ThumbDither({ src, cacheKey }: { src: string; cacheKey: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const cv = ref.current
     const holder = cv?.parentElement
     if (!cv || !holder) return
     let alive = true
-    const img = new Image()
-    const draw = () => {
-      if (!alive || !img.naturalWidth) return
-      const w = holder.clientWidth
-      const h = holder.clientHeight
-      const grid = readThumb(img, w, h)
-      const dith = grid && makeDither(grid, w, h)
-      const g = cv.getContext('2d')
-      if (!dith || !g) {
+    let img: HTMLImageElement | null = null
+    let seen = false // 화면 근처에 온 적이 있다 — 그 뒤로는 크기가 바뀌면 다시 그린다
+    let drawn = '' // 지금 캔버스에 그린 것의 열쇠
+    const paint = (d: HTMLCanvasElement | null, key: string) => {
+      drawn = key
+      cv.classList.add('is-ready')
+      if (!d) {
         cv.width = 0 // 그리지 못하면 비워서 원래 미리보기가 보이게
         return
       }
-      const dpr = Math.min(2, window.devicePixelRatio || 1)
-      cv.width = Math.ceil(w * dpr)
-      cv.height = Math.ceil(h * dpr)
-      g.setTransform(dpr, 0, 0, dpr, 0, 0)
-      g.imageSmoothingEnabled = false
-      g.drawImage(dith, 0, 0, dith.width * DOT, dith.height * DOT)
+      cv.width = d.width
+      cv.height = d.height
+      cv.style.width = d.width * DOT + 'px'
+      cv.style.height = d.height * DOT + 'px'
+      cv.getContext('2d')?.drawImage(d, 0, 0)
     }
-    img.onload = draw
-    img.src = src
-    let lastW = 0
-    let lastH = 0
-    const ro = new ResizeObserver(() => {
-      // 크기가 그대로면 다시 그리지 않는다
-      if (holder.clientWidth === lastW && holder.clientHeight === lastH) return
-      lastW = holder.clientWidth
-      lastH = holder.clientHeight
-      draw()
+    const request = () => {
+      const w = holder.clientWidth
+      const h = holder.clientHeight
+      if (!w || !h) return
+      const key = `${cacheKey}|${w}x${h}`
+      if (key === drawn) return
+      const hit = cache.get(key)
+      if (hit !== undefined) return paint(hit, key)
+      const compute = () => {
+        if (!alive || holder.clientWidth !== w || holder.clientHeight !== h) return // 그 사이 크기가 바뀌면 새 요청이 다시 온다
+        const d = makeDither(img!, w, h)
+        remember(key, d)
+        paint(d, key)
+      }
+      if (img?.complete && img.naturalWidth) return enqueue(compute)
+      img = new Image()
+      img.onload = () => enqueue(compute)
+      img.onerror = () => alive && paint(null, key) // 읽지 못하면 원본(<img>)이 보이게
+      img.src = src
+    }
+    const unwatch = watchNear(holder, () => {
+      seen = true
+      request()
     })
+    const ro = new ResizeObserver(() => seen && request())
     ro.observe(holder)
     return () => {
       alive = false
+      unwatch()
       ro.disconnect()
     }
-  }, [src])
-  return <canvas ref={ref} className="thumb-dither" aria-hidden="true" />
+  }, [src, cacheKey])
+  return <canvas ref={ref} className="thumb-dither" width={0} height={0} aria-hidden="true" />
+}
+
+// ── 만든 디더 기억 — 열쇠마다 점 하나 = 1px 캔버스(150px 카드면 약 30KB). 오래 안 쓴 것부터 버린다 ──
+const CACHE_MAX = 300
+const cache = new Map<string, HTMLCanvasElement | null>()
+function remember(key: string, d: HTMLCanvasElement | null) {
+  cache.delete(key)
+  cache.set(key, d)
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!)
+}
+
+// ── 만드는 일 줄 — 한 번에 8ms까지만 하고 다음 틈으로 넘긴다 ──
+const jobs: (() => void)[] = []
+let pumping = false
+function enqueue(job: () => void) {
+  jobs.push(job)
+  if (pumping) return
+  pumping = true
+  setTimeout(pump, 0)
+}
+function pump() {
+  const t0 = performance.now()
+  while (jobs.length && performance.now() - t0 < 8) jobs.shift()!()
+  if (jobs.length) setTimeout(pump, 0)
+  else pumping = false
+}
+
+// ── 화면 근처(위아래 한 화면 남짓)에 처음 들어오면 한 번 알린다 — 카드마다 따로 만들지 않고 하나를 같이 쓴다 ──
+const nearCbs = new Map<Element, () => void>()
+let nearIo: IntersectionObserver | null = null
+function watchNear(el: Element, cb: () => void) {
+  nearIo ??= new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue
+        const f = nearCbs.get(e.target)
+        nearCbs.delete(e.target)
+        nearIo!.unobserve(e.target)
+        f?.()
+      }
+    },
+    { rootMargin: '100% 0px' }
+  )
+  nearCbs.set(el, cb)
+  nearIo.observe(el)
+  return () => {
+    nearCbs.delete(el)
+    nearIo?.unobserve(el)
+  }
 }
 
 /** 디더 점 한 변(css px) */
@@ -60,7 +126,9 @@ const COLS = 18
 const WARM = [250 / 255, 247 / 255, 240 / 255]
 
 interface ThumbGrid {
-  src: HTMLCanvasElement // 카드 크기(css px)로 다시 그린 미리보기
+  data: Uint8ClampedArray // 카드 크기(css px)로 다시 그린 미리보기 픽셀
+  sw: number
+  sh: number
   cols: number
   rows: number
   cell: number // 칸 한 변(css px)
@@ -126,16 +194,14 @@ function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGrid | nul
   }
   const allInk: [number, number, number] = all[3] ? [all[0] / all[3], all[1] / all[3], all[2] / all[3]] : [60, 60, 60]
   const paperRgb: [number, number, number] = pa[3] ? [pa[0] / pa[3], pa[1] / pa[3], pa[2] / pa[3]] : [255, 255, 255]
-  return { src, cols, rows, cell, inkRgb, allInk, paperL, paperRgb }
+  return { data, sw: src.width, sh: src.height, cols, rows, cell, inkRgb, allInk, paperL, paperRgb }
 }
 
-/** 미리보기를 DOT 크기 점으로 읽어 앳킨슨 디더로 1비트(종이 / 펜 색)로 만든다 — 점 하나 = 1px 인 캔버스 */
-function makeDither(grid: ThumbGrid, w: number, h: number): HTMLCanvasElement | null {
-  const sg = grid.src.getContext('2d', { willReadFrequently: true })
-  if (!sg) return null
-  const sw = grid.src.width
-  const sh = grid.src.height
-  const data = sg.getImageData(0, 0, sw, sh).data
+/** 미리보기를 DOT 크기 점으로 읽어 앳킨슨 디더로 1비트(종이 / 펜 색)로 만든다 — 점 하나 = 1px 인 캔버스. 읽을 수 없으면 null */
+function makeDither(img: HTMLImageElement, w: number, h: number): HTMLCanvasElement | null {
+  const grid = readThumb(img, w, h)
+  if (!grid) return null
+  const { data, sw, sh } = grid
   const cols = Math.ceil(w / DOT)
   const rows = Math.ceil(h / DOT)
   // 점마다 진하기 0..1 — 종이 밝기에서 얼마나 어두운지 + 채도(형광펜·색 펜도 잉크로)
