@@ -442,17 +442,34 @@
     padding: 2px 4px 1px;
     font-size: 9.5px;
   }
+  /* 휴대폰 카드(폭 110px 안팎) — 주 버튼 40px, 보기·낙서는 아이콘 위·이름 아래로 쌓아 반 칸에 넣는다 */
   .doc-grid .doc-open-panel {
-    padding: 8px 6px;
+    gap: 5px;
+    padding: 6px;
   }
   .doc-grid .doc-open-meta {
-    font-size: 10px;
+    top: 6px;
+    left: 6px;
+    max-width: calc(100% - 12px);
+    padding: 2px 5px 1px;
+    font-size: 9px;
   }
-  .doc-grid .doc-open-tabs .doc-open-btn,
-  .doc-grid .doc-open-tabs .doc-open-btn:hover {
-    gap: 4px;
-    padding: 6px 9px;
-    font-size: 11px;
+  .doc-grid .doc-open-main {
+    gap: 5px;
+    height: 40px;
+    font-size: 13.5px;
+  }
+  .doc-grid .doc-open-subs {
+    gap: 5px;
+  }
+  .doc-grid .doc-open-sub {
+    flex-direction: column;
+    gap: 1px;
+    font-size: 10.5px;
+  }
+  .doc-grid .doc-open-sub svg {
+    width: 14px;
+    height: 14px;
   }
   .doc-grid .card-check {
     top: 4px;

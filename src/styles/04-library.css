@@ -727,15 +727,19 @@
 }
 
 /* ───────── 카드 누름 오버레이 (격자) ─────────
-   카드를 누르면 미리보기가 블러되고 그 위에 정보가 뜬다.
-   쪽수·날짜는 카드 안쪽 맨 위 가운데, 그 아래(세로 가운데)에 편집모드/뷰어보드 버튼. */
+   카드를 누르면 미리보기 아래쪽만 흐려지고(위쪽은 남아 어느 노트인지 보인다), 왼쪽 위에 쪽수·날짜 꼬리표,
+   카드 아래쪽(손가락이 닿는 자리)에 큰 주 버튼(편집 · 실행 · 열기)과 작은 보조 버튼(노트: 보기 · 낙서).
+   카드 종이는 테마와 상관없이 밝으므로 판도 테마와 상관없이 먹(--tag-ink)·종이(--thumb-paper) —
+   예전에는 테마를 따라 다크에서 밝은 글자·밝은 버튼이 밝은 종이 위에 놓여 거의 보이지 않았다(대비 1.13:1) */
 .doc-open-veil {
   position: absolute;
-  inset: 0;
+  inset: 34% 0 0; /* 아래쪽만 — 위쪽 미리보기는 또렷하게 남긴다(가림이 흐림에 안 먹는 브라우저에서도) */
   z-index: 3;
-  background: color-mix(in srgb, var(--thumb-paper) 16%, transparent);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
+  background: color-mix(in srgb, var(--thumb-paper) 40%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 40%); /* 경계를 부드럽게 */
+  mask-image: linear-gradient(180deg, transparent, #000 40%);
   opacity: 0;
   pointer-events: none;
   transition: opacity .32s var(--ft-ease);
@@ -750,8 +754,9 @@
   z-index: 4;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 11px 10px;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
   opacity: 0;
   pointer-events: none;
   transform: translateY(6px);
@@ -760,83 +765,90 @@
 .doc-card.is-revealed .doc-open-panel {
   opacity: 1;
   transform: none;
+  pointer-events: auto; /* 버튼 밖을 누르면 닫는다 — 흐림 막이 아래쪽만 덮으므로 위쪽 누름도 여기서 받는다 */
 }
-/* 쪽수·날짜 — 카드 안쪽 맨 위 가운데 */
+/* 판이 뜨면 같은 자리의 동기화 꼬리표는 숨긴다 */
+.doc-card.is-revealed .sync-tag.is-overlay {
+  opacity: 0;
+}
+/* 쪽수·날짜 — 왼쪽 위 작은 꼬리표 */
 .doc-open-meta {
-  max-width: 100%;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--ink);
-  text-shadow: 0 1px 2px #ffffffcc, 0 1px 3px #ffffff99;
+  padding: 3px 7px 2px;
+  border-radius: 4px;
+  background: var(--thumb-paper);
+  color: var(--tag-ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tag-ink) 15%, transparent);
+  font: 700 10.5px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-/* 편집모드 / 뷰어보드 — 위아래로 나눈 버튼 (카드 가운데) */
-.doc-open-tabs {
-  margin: auto 0;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: stretch;
-  padding: 3px;
-  border-radius: 18px;
-  background: var(--btn-bg);
-  box-shadow: var(--e2);
-  pointer-events: none;
-}
-.doc-open-actions {
-  margin: auto 0;
+/* 주 버튼(편집 · 실행 · 열기) — 큰 먹색 */
+.doc-open-main,
+.doc-open-sub {
   display: flex;
-  pointer-events: none;
-}
-.doc-open-btn {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 15px;
+  justify-content: center;
   border: 0;
-  border-radius: 999px;
-  background: var(--btn-bg);
-  color: var(--btn-fg);
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
   cursor: pointer;
-  box-shadow: var(--e2);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   pointer-events: none;
 }
-/* 오버레이가 실제로 열린 카드에서만 탭/버튼이 클릭을 받는다.
-   숨김 상태(패널 opacity:0)에서도 자식이 pointer-events:auto 였던 탓에,
-   카드 가운데(버튼이 놓이는 자리)를 누르면 오버레이가 뜨지 않고
-   곧바로 '편집모드/뷰어보드'로 열려 버리던 버그의 원인. */
-.doc-card.is-revealed .doc-open-tabs,
-.doc-card.is-revealed .doc-open-actions,
-.doc-card.is-revealed .doc-open-btn {
-  pointer-events: auto;
+.doc-open-main {
+  gap: 7px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--tag-ink);
+  color: var(--thumb-paper);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px #0000002e;
 }
-.doc-open-tabs .doc-open-btn,
-.doc-open-tabs .doc-open-btn:hover {
-  justify-content: center;
-  background: transparent;
+/* 보조 버튼(보기 · 낙서) — 작은 종이색 두 칸. 낙서는 점선 테두리 — 아무것도 남지 않는다 */
+.doc-open-subs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.doc-open-sub {
+  gap: 5px;
+  min-width: 0;
+  height: 40px;
+  border-radius: 9px;
+  background: var(--thumb-paper);
+  color: var(--tag-ink);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tag-ink) 20%, transparent), 0 2px 6px #0000001a;
+}
+.doc-open-sub.is-scratch {
   box-shadow: none;
-  padding: 7px 14px;
-  border-radius: 15px;
-  font-size: 12px;
+  outline: 1.5px dashed color-mix(in srgb, var(--tag-ink) 60%, transparent);
+  outline-offset: -1.5px;
 }
-.doc-open-tabs .doc-open-btn + .doc-open-btn {
-  position: relative;
+.doc-open-main:active {
+  background: color-mix(in srgb, var(--tag-ink) 85%, var(--thumb-paper));
 }
-.doc-open-tabs .doc-open-btn + .doc-open-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 16%;
-  right: 16%;
-  height: 1px;
-  background: color-mix(in srgb, var(--btn-fg) 26%, transparent);
+.doc-open-sub:active {
+  background: color-mix(in srgb, var(--tag-ink) 8%, var(--thumb-paper));
 }
-.doc-open-tabs .doc-open-btn:active {
-  background: color-mix(in srgb, var(--btn-fg) 16%, transparent);
+.doc-open-main:focus-visible,
+.doc-open-sub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* 오버레이가 실제로 열린 카드에서만 버튼이 클릭을 받는다.
+   숨김 상태(패널 opacity:0)에서도 버튼이 pointer-events:auto 였던 탓에,
+   카드의 버튼 자리를 누르면 오버레이가 뜨지 않고 곧바로 열려 버리던 버그의 원인. */
+.doc-card.is-revealed .doc-open-main,
+.doc-card.is-revealed .doc-open-sub {
+  pointer-events: auto;
 }
 
 /* 캡션 — 카테고리(없으면 '미분류')와 더보기(⋯)를 같은 높이(28px)로 맞춘 한 줄 */

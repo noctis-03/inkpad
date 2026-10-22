@@ -474,6 +474,42 @@ export function Library() {
   )
 
   /**
+   * 카드 여는 판(격자에서 카드를 누르면) — 미리보기 아래쪽만 흐리고, 왼쪽 위에 쪽수·날짜,
+   * 카드 아래쪽(손가락이 닿는 자리)에 큰 주 버튼 하나와 작은 버튼들(노트: 보기 · 낙서).
+   * 카드 종이는 테마와 상관없이 밝으므로 판도 테마와 상관없이 먹·종이 색이다(CSS)
+   */
+  type OpenAction = { icon: string; label: string; aria?: string; scratch?: boolean; run: (card: HTMLElement | null) => void }
+  const openPanel = (meta: string, main: OpenAction, subs: OpenAction[] = []) => {
+    const press = (a: OpenAction) => (e: React.MouseEvent<HTMLElement>) => {
+      e.stopPropagation()
+      setRevealKey(null)
+      a.run(e.currentTarget.closest<HTMLElement>('.doc-card'))
+    }
+    return (
+      <>
+        <span className="doc-open-veil" aria-hidden="true" onClick={(e) => { e.stopPropagation(); setRevealKey(null) }} />
+        {/* 판이 뜬 동안 버튼 밖(흐리지 않은 위쪽 포함)을 누르면 닫는다 */}
+        <div className="doc-open-panel" onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}>
+          <span className="doc-open-meta">{meta}</span>
+          <button className="doc-open-main" aria-label={main.aria} onClick={press(main)}>
+            <Icon name={main.icon} size={16} /> {main.label}
+          </button>
+          {subs.length > 0 && (
+            <div className="doc-open-subs">
+              {subs.map((a) => (
+                <button key={a.label} className={'doc-open-sub' + (a.scratch ? ' is-scratch' : '')} aria-label={a.aria} onClick={press(a)}>
+                  <Icon name={a.icon} size={15} />
+                  <span>{a.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  /**
    * 앱·파일 카드 — 노트 카드와 같은 구조.
    * - 미리보기: 파일은 원본에서 그린 그림(이미지 · PDF 첫 쪽 · 텍스트). 없으면 아이콘, HTML 앱은 늘 아이콘
    * - 격자: 카드를 누르면 오버레이(종류 · 날짜 + ▶ 실행·열기), 아래에 제목 · 카테고리 · ⋯
@@ -511,26 +547,12 @@ export function Library() {
           <span className="doc-gloss" aria-hidden="true" />
           {selectCheck(o.key)}
           {markBadge(o.key)}
-          {prefs.view === 'grid' && (
-            <>
-              <span
-                className="doc-open-veil"
-                aria-hidden="true"
-                onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
-              />
-              <div className="doc-open-panel">
-                <span className="doc-open-meta">{`${kindLabel} · ${date}`}</span>
-                <div className="doc-open-actions">
-                  <button
-                    className="doc-open-btn"
-                    onClick={(e) => { e.stopPropagation(); setRevealKey(null); o.onPlay() }}
-                  >
-                    <Icon name={o.kind === 'app' ? 'play' : 'external'} size={15} /> {o.kind === 'app' ? '실행' : '열기'}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+          {prefs.view === 'grid' &&
+            openPanel(`${kindLabel} · ${date}`, {
+              icon: o.kind === 'app' ? 'play' : 'eye',
+              label: o.kind === 'app' ? '실행' : '열기',
+              run: () => o.onPlay()
+            })}
         </div>
         <div className="doc-info">
           <h3 className="doc-title">
@@ -1751,50 +1773,15 @@ export function Library() {
                       {syncPillFor(i.d.id)}
                       {selectCheck('doc:' + i.d.id)}
                       {markBadge('doc:' + i.d.id)}
-                      {prefs.view === 'grid' && (
-                        <>
-                          <span
-                            className="doc-open-veil"
-                            aria-hidden="true"
-                            onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
-                          />
-                          <div className="doc-open-panel">
-                            <span className="doc-open-meta">{docMetaText(i.d)}</span>
-                            <div className="doc-open-tabs">
-                              <button
-                                className="doc-open-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setRevealKey(null)
-                                  openIn(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'), false)
-                                }}
-                              >
-                                <Icon name="edit" size={14} /> 편집모드
-                              </button>
-                              <button
-                                className="doc-open-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setRevealKey(null)
-                                  openIn(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'), true)
-                                }}
-                              >
-                                <Icon name="external" size={14} /> 뷰어보드
-                              </button>
-                              <button
-                                className="doc-open-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setRevealKey(null)
-                                  openIn(i.d, (e.currentTarget as HTMLElement).closest<HTMLElement>('.doc-card'), 'scratch')
-                                }}
-                              >
-                                <Icon name="pen" size={14} /> 낙서모드
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      )}
+                      {prefs.view === 'grid' &&
+                        openPanel(
+                          docMetaText(i.d),
+                          { icon: 'edit', label: '편집', aria: '편집 — 편집모드로 열기', run: (card) => openIn(i.d, card, false) },
+                          [
+                            { icon: 'eye', label: '보기', aria: '보기 — 뷰어보드(읽기 전용)로 열기', run: (card) => openIn(i.d, card, true) },
+                            { icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: (card) => openIn(i.d, card, 'scratch') }
+                          ]
+                        )}
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
