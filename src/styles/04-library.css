@@ -436,7 +436,7 @@
 }
 /* ───────── 책등 있는 노트 ─────────
    미리보기 위 오버레이(배지·카테고리 칩)를 걷어내고
-   정보는 캡션(.doc-foot)으로 옮긴다. 카테고리는 캡션의 색 점 + 이름. */
+   정보는 캡션으로 옮긴다. 카테고리는 캡션의 색 점 + 이름. */
 .doc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -546,16 +546,6 @@
   opacity: 0;
 }
 /* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
-/* 캡션 한 줄 — 높이를 더보기(⋯) 버튼(28px)에 맞춰 그 줄의 모든 요소가
-   세로 중앙에 오게 한다. 왼쪽 날짜, 오른쪽 더보기. */
-.doc-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  min-height: 28px;
-  gap: 3px 6px;
-  margin-top: 2px;
-}
 .doc-info {
   padding: 8px 0 0 2px; /* 더보기 자리 32px 비움 없음 — 제목이 온전히 보인다 */
 }
@@ -563,22 +553,6 @@
   margin: 0;
   font-size: var(--fs-md);
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.doc-meta {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: 0;
-  min-width: 0;
-  font-size: 11.5px;
-  line-height: 28px; /* 더보기 버튼 높이에 맞춘 한 줄 세로 중앙 */
-  color: var(--muted);
-}
-.doc-meta-date {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -712,12 +686,45 @@
   min-width: 0;
   padding: 0;
 }
-.doc-list .doc-foot {
-  margin-top: 2px;
+/* 목록 한 줄 — 제목 아래 '카테고리 · 쪽수(종류) · 날짜', 오른쪽 끝에 꼬리표 · (▶) · ⋯ */
+.doc-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0 0;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
 }
-/* 리스트는 폭이 넉넉하므로 한 줄로 눕힌다 */
-.doc-list .doc-meta {
-  flex: 1 1 auto;
+.doc-sub > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.doc-sub > span:first-child {
+  overflow: hidden;
+}
+.doc-sub > span + span::before {
+  content: '·';
+  margin-right: 1px;
+  color: var(--muted-2);
+}
+.doc-tail {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.doc-tail .doc-more {
+  position: static;
+  transform: none;
+}
+.doc-tail .sync-tag:not(.is-overlay) {
+  margin-left: 0;
 }
 
 /* ───────── 카드 누름 오버레이 (격자) ─────────
@@ -1107,4 +1114,158 @@
 }
 @keyframes radial-in {
   from { opacity: 0; transform: scale(.6); }
+}
+
+/* ───────── 앱·파일 카드 (미리보기 대신 라벨) ─────────
+   격자: 미리보기 자리에 라벨 스티커 — 위 탭은 종류(HTML 앱 · PDF 파일), 미색 판에 제목 · 카테고리 · 날짜.
+   꼬리표 빗금은 스티커 둘레로만 비친다. 카드 아래는 왼쪽 ▶ 실행·열기, 오른쪽 ⋯.
+   목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지 · ▶는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
+.item-face {
+  position: absolute;
+  inset: 0;
+  padding: 12px 10px;
+  text-align: left;
+}
+.item-tab {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 4px 7px 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--tag-ink);
+  color: var(--thumb-cream);
+  font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.item-label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 11px 11px;
+  border: 1px solid var(--tag-ink);
+  border-radius: 2px;
+  background: var(--item-label);
+  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--tag-ink) 35%, transparent);
+}
+/* 스티커는 테마와 상관없이 밝은 종이라 글자색도 고정 */
+.item-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--tag-ink);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.item-cat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--label-muted);
+}
+.item-date {
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--label-faint);
+}
+.item-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 8px 0 0 2px;
+}
+.item-bar .doc-more {
+  position: static;
+  transform: none;
+}
+.item-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--play-bg);
+  color: var(--play-fg);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.item-play svg {
+  fill: currentColor;
+}
+.item-play:active {
+  translate: 1px 1px;
+  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+}
+/* 목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자 */
+.doc-list .item-card .doc-thumb {
+  overflow: visible;
+  border: 1px solid var(--tag-ink);
+  border-radius: 2px;
+  background: var(--thumb-cream);
+  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--tag-ink) 35%, transparent);
+  align-items: flex-end;
+  padding-bottom: 7px;
+}
+.doc-list .item-card .doc-thumb::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  top: 8px;
+  height: 22px;
+  background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--tag-ink) 30%, transparent) 0 1px, transparent 1px 5px);
+}
+.item-badge {
+  font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tag-ink);
+}
+.doc-list .item-play {
+  height: 28px;
+}
+@media (max-width: 700px) {
+  /* 휴대폰 격자(한 줄 3장) — 스티커와 버튼을 줄인다 */
+  .item-face {
+    padding: 8px 6px;
+  }
+  .item-tab {
+    margin-left: 2px;
+    padding: 3px 5px 2px;
+    font-size: 8.5px;
+  }
+  .item-label {
+    gap: 4px;
+    padding: 7px 7px 7px;
+  }
+  .item-title {
+    font-size: 12px;
+  }
+  .item-cat {
+    font-size: 10px;
+  }
+  .item-date {
+    font-size: 8.5px;
+  }
+  .doc-grid .item-play {
+    height: 26px;
+    padding: 0 9px 0 7px;
+    font-size: 11.5px;
+  }
+  /* 목록: 좁으면 종류 · 날짜는 빼고 카테고리만 */
+  .doc-list .doc-sub > span + span {
+    display: none;
+  }
 }
