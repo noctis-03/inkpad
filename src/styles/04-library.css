@@ -494,7 +494,7 @@
   position: relative;
   aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
   border-radius: var(--r-card);
-  background: var(--thumb-cream); /* 노트 망점 미리보기와 같은 미색 — 앱·파일 카드, 미리보기 없는 노트도 */
+  background: var(--thumb-cream); /* 노트 디더 미리보기와 같은 미색 — 앱·파일 카드, 미리보기 없는 노트도 */
   box-shadow: var(--e1);
   overflow: hidden;
   display: flex;
@@ -530,8 +530,8 @@
   object-fit: cover;
   object-position: top;
 }
-/* 선 망점 미리보기(ThumbDither) — <img> 위에 얹는다. 움직이지 않는다.
-   캔버스는 작게(가로 2px · 세로 0.5px = 1px) 만들고 크기는 스크립트가 정한다 — 키울 때 번지지 않게 */
+/* 1비트 디더 미리보기(ThumbDither) — <img> 위에 얹는다. 움직이지 않는다.
+   캔버스는 점 하나 = 1px로 만들고 크기(DOT배)는 스크립트가 정한다 — 키울 때 번지지 않게 */
 .thumb-dither {
   position: absolute;
   left: 0;
@@ -540,8 +540,8 @@
   pointer-events: none;
   image-rendering: pixelated;
 }
-/* 망점이 있는 카드는 원본을 가린다 — 준비 전에 원본이 잠깐 비쳤다 바뀌지 않게, 그리고 흰 종이 자리를 비워 둔 망점
-   뒤로 카드 바탕(--thumb-cream)이 비치게. 망점을 만들 수 없으면(is-failed) 원본이 보인다 */
+/* 디더가 있는 카드는 원본을 가린다 — 준비 전에 원본이 잠깐 비쳤다 바뀌지 않게, 그리고 흰 종이 자리를 비워 둔 디더
+   뒤로 카드 바탕(--thumb-cream)이 비치게. 디더를 만들 수 없으면(is-failed) 원본이 보인다 */
 .doc-thumb:has(> .thumb-dither:not(.is-failed)) img {
   opacity: 0;
 }
@@ -584,7 +584,7 @@
 .doc-state.s-diverged {
   color: var(--danger-ink);
 }
-/* 라이브러리 카드 동기화 꼬리표 — 망점 미리보기와 어울리는 각진 흑백 꼬리표(앞 글자로 방향: ↑ · ↓ !).
+/* 라이브러리 카드 동기화 꼬리표 — 1비트 디더 미리보기와 어울리는 각진 흑백 꼬리표(앞 글자로 방향: ↑ · ↓ !).
    손이 필요한 '새 버전'은 반전(먹색 바탕), '갈라짐'은 빨강. 동기화됨은 붙이지 않는다(SyncPill).
    격자: 미리보기 왼쪽 아래에 얹는다 / 목록: 캡션 안에 인라인으로. 미색 카드 위에 앉으므로 테마와 상관없이 같은 색 */
 .sync-tag {
@@ -631,7 +631,7 @@
   display: none;
 }
 /* 꼬리표가 붙은 카드(올리기·이 기기만·새 버전·갈라짐 — 손댈 것이 남은 카드)는 종이 바탕에 먹색 빗금(45°).
-   망점이 비워 둔 흰 종이 자리로만 비쳐 필기는 가리지 않는다. 마킹 빗금(-45°, 마킹 색)과 방향·색을 달리한다 */
+   디더가 비워 둔 흰 종이 자리로만 비쳐 필기는 가리지 않는다. 마킹 빗금(-45°, 마킹 색)과 방향·색을 달리한다 */
 .doc-grid .doc-card:has(.sync-tag.is-overlay) .doc-thumb {
   background-image: repeating-linear-gradient(45deg, var(--sync-hatch) 0 var(--sync-hatch-w), transparent var(--sync-hatch-w) var(--sync-hatch-gap));
 }
