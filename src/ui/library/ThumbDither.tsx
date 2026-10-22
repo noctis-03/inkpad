@@ -24,6 +24,7 @@ export function ThumbDither({ src, cacheKey }: { src: string; cacheKey: string }
     const paint = (d: HTMLCanvasElement | null, key: string) => {
       drawn = key
       cv.classList.add('is-ready')
+      cv.classList.toggle('is-failed', !d)
       if (!d) {
         cv.width = 0 // 그리지 못하면 비워서 원래 미리보기가 보이게
         return
@@ -122,7 +123,7 @@ function watchNear(el: Element, cb: () => void) {
 const DOT = 2
 /** 펜 색을 칸 단위로 읽는다 — 가로 칸 수(150px 카드면 칸 하나 약 8px) */
 const COLS = 18
-/** 종이색에 곱하는 따뜻한 미색 — 흰 종이가 옛 화면처럼 살짝 누렇게(흰 종이면 #faf7f0 = CSS --thumb-cream) */
+/** 종이색에 곱하는 따뜻한 미색 — 흰 종이가 아닌 종이(색 종이·PDF)를 칠할 때. 흰 종이는 비워 두고 CSS --thumb-cream이 비친다 */
 const WARM = [250 / 255, 247 / 255, 240 / 255]
 
 interface ThumbGrid {
@@ -232,6 +233,10 @@ function makeDither(img: HTMLImageElement, w: number, h: number): HTMLCanvasElem
   const im = og.createImageData(cols, rows)
   const px = im.data
   const paper = [grid.paperRgb[0] * WARM[0], grid.paperRgb[1] * WARM[1], grid.paperRgb[2] * WARM[2]]
+  // 흰 종이면 종이 점은 비워 둔다 — 카드 바탕(CSS --thumb-cream)이 비쳐 라이트·다크마다 다른 미색이 된다.
+  // 색 종이·어두운 PDF처럼 흰 종이가 아니면 그 종이색 그대로 칠한다
+  const [pr, pg, pb] = grid.paperRgb
+  const clearPaper = grid.paperL > 230 && Math.max(pr, pg, pb) - Math.min(pr, pg, pb) < 18
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x
@@ -254,7 +259,7 @@ function makeDither(img: HTMLImageElement, w: number, h: number): HTMLCanvasElem
       px[i * 4] = c[0]
       px[i * 4 + 1] = c[1]
       px[i * 4 + 2] = c[2]
-      px[i * 4 + 3] = 255
+      px[i * 4 + 3] = !on && clearPaper ? 0 : 255
     }
   }
   og.putImageData(im, 0, 0)

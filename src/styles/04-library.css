@@ -540,8 +540,9 @@
   pointer-events: none;
   image-rendering: pixelated;
 }
-/* 디더가 준비되기 전엔 원본이 잠깐 비쳤다 바뀌지 않게 가린다(만들 수 없으면 is-ready로 원본이 보인다) */
-.doc-thumb:has(> .thumb-dither:not(.is-ready)) img {
+/* 디더가 있는 카드는 원본을 가린다 — 준비 전에 원본이 잠깐 비쳤다 바뀌지 않게, 그리고 흰 종이 자리를 비워 둔 디더
+   뒤로 카드 바탕(--thumb-cream)이 비치게. 디더를 만들 수 없으면(is-failed) 원본이 보인다 */
+.doc-thumb:has(> .thumb-dither:not(.is-failed)) img {
   opacity: 0;
 }
 /* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */

@@ -100,7 +100,7 @@
 
   /* ── 고정 종이·태그 ── */
   --thumb-paper: #ffffff;   /* 썸네일·종이는 테마와 상관없이 흰색 */
-  --thumb-cream: #faf7f0;   /* 격자 카드 바탕 — 1비트 디더 미리보기가 흰 종이를 그리는 미색(ThumbDither의 WARM)과 같다 */
+  --thumb-cream: #fbf9f4;   /* 격자 카드 바탕 — 1비트 디더 미리보기는 흰 종이 자리를 비워 두어 이 미색이 비친다 */
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
   --tag-ink: #2b2a26;       /* 카드 동기화 꼬리표(.sync-tag) 먹색 — 미색 카드 위라 테마와 상관없이 */
   --tag-alert: #b3261e;     /* 꼬리표 '갈라짐' 빨강 */
@@ -119,7 +119,8 @@
 
     --paper: #161513;
     --paper-2: #1b1a17;
-    --lib-bg: #1f1d1a;       /* 다크에서는 앱 바탕보다 조금 밝게 */
+    --lib-bg: #2a2825;       /* 다크에서는 앱 바탕보다 밝게 */
+    --thumb-cream: #dfdbd1;  /* 다크에서는 카드 미색을 조금 어둡게 — 눈부시지 않게 */
     --surface: #211f1c;
     --surface-2: #2a2824;
     --surface-3: #33302b;
