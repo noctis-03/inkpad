@@ -444,8 +444,112 @@ export function Library() {
     `${d.mode === 'infinite' ? '무한' : `${d.pageOrder.length}쪽`} · ${
       section.kind === 'trash' && d.deletedAt ? `삭제 ${formatDate(d.deletedAt)}` : formatDate(d.updatedAt)
     }`
-  const appMetaText = (a: HtmlApp) => `HTML 앱 · ${formatDate(a.updatedAt)}`
-  const fileMetaText = (f: FileRow) => `${extOf(f.name).toUpperCase() || '파일'} · ${formatDate(f.updatedAt)}`
+  /** 카테고리 — 색 점 + 이름 */
+  const catLine = (c: string | null | undefined) => (
+    <>
+      <i className="cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+      <span className="doc-cat-name">{c ?? '미분류'}</span>
+    </>
+  )
+  /** 더보기(⋯) — 누른 자리 아래에 메뉴를 띄운다 */
+  const moreButton = (onOpen: (x: number, y: number) => void) => (
+    <button
+      className="doc-more"
+      aria-label="더보기"
+      onClick={(e) => {
+        e.stopPropagation()
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        onOpen(r.right, r.bottom)
+      }}
+    >
+      <Icon name="more" size={20} />
+    </button>
+  )
+
+  /**
+   * 앱·파일 카드. 미리보기가 없으므로
+   * - 격자: 미리보기 자리에 라벨 스티커(위 탭은 종류, 판에 제목 · 카테고리 · 날짜), 아래에 왼쪽 ▶ 실행·열기 · 오른쪽 ⋯
+   * - 목록: 왼쪽 종이 배지(확장자), 제목과 '카테고리 · 종류 · 날짜' 한 줄, 오른쪽에 꼬리표 · ▶ · ⋯
+   * 카드를 눌러도 아무것도 하지 않는다(선택 모드에서만 고른다) — 여는 것은 ▶ 버튼
+   */
+  const itemCard = (o: {
+    key: string
+    kind: 'app' | 'file'
+    title: string
+    category: string | null | undefined
+    updatedAt: number
+    ext: string
+    sync: CardSyncState
+    idx: number
+    onPlay: () => void
+    onMenu: (x: number, y: number) => void
+  }) => {
+    const kindLabel = o.kind === 'app' ? 'HTML 앱' : o.ext ? `${o.ext} 파일` : '파일'
+    const verb = o.kind === 'app' ? '실행' : '열기'
+    const date = formatDate(o.updatedAt)
+    const play = (
+      <button
+        className="item-play"
+        onClick={(e) => {
+          if (selected) return // 선택 모드에서는 카드를 고르는 것으로
+          e.stopPropagation()
+          o.onPlay()
+        }}
+      >
+        <Icon name="play" size={12} /> {verb}
+      </button>
+    )
+    return (
+      <article
+        key={o.key}
+        className={'doc-card item-card ' + o.kind + '-card' + cardClass(o.key)}
+        data-flip-key={o.key}
+        style={o.idx < 20 ? ({ ['--i' as string]: o.idx } as React.CSSProperties) : undefined}
+        {...pressProps(o.key)}
+        onClick={() => selectClick(o.key)}
+      >
+        <div className="doc-thumb">
+          {prefs.view === 'grid' ? (
+            <div className="item-face">
+              <span className="item-tab">{kindLabel}</span>
+              <div className="item-label">
+                <h3 className="item-title">{o.title}</h3>
+                <p className="item-cat">{catLine(o.category)}</p>
+                <span className="item-date">{date}</span>
+              </div>
+            </div>
+          ) : (
+            <span className="item-badge">{o.kind === 'app' ? 'APP' : o.ext || 'FILE'}</span>
+          )}
+          {selectCheck(o.key)}
+          {markBadge(o.key)}
+          {rowPill(o.sync, true)}
+        </div>
+        {prefs.view === 'grid' ? (
+          <div className="item-bar">
+            {play}
+            {moreButton(o.onMenu)}
+          </div>
+        ) : (
+          <>
+            <div className="doc-info">
+              <h3 className="doc-title">{o.title}</h3>
+              <p className="doc-sub">
+                <span>{catLine(o.category)}</span>
+                <span>{kindLabel}</span>
+                <span>{date}</span>
+              </p>
+            </div>
+            <div className="doc-tail">
+              {rowPill(o.sync)}
+              {play}
+              {moreButton(o.onMenu)}
+            </div>
+          </>
+        )}
+      </article>
+    )
+  }
 
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
   useEffect(() => {
@@ -1589,135 +1693,31 @@ export function Library() {
               {items.flatMap((i, idx) => [
                 subhead(i, idx),
                 i.kind === 'app' ? (
-                  <article
-                    key={'app:' + i.a.id}
-                    className={'doc-card app-card' + (revealKey === 'app:' + i.a.id ? ' is-revealed' : '') + cardClass('app:' + i.a.id)}
-                    data-flip-key={'app:' + i.a.id}
-                    data-reveal-key={'app:' + i.a.id}
-                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    {...pressProps('app:' + i.a.id)}
-                    onClick={() => selectClick('app:' + i.a.id) || cardTap('app:' + i.a.id, () => navigate({ name: 'app', appId: i.a.id }))}
-                  >
-                    <div className="doc-thumb">
-                      <Icon name="app" size={36} />
-                      {selectCheck('app:' + i.a.id)}
-                      {markBadge('app:' + i.a.id)}
-                      {rowPill(rowSyncState(i.a), true)}
-                      {prefs.view === 'grid' && (
-                        <>
-                          <span
-                            className="doc-open-veil"
-                            aria-hidden="true"
-                            onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
-                          />
-                          <div className="doc-open-panel">
-                            <span className="doc-open-meta">{appMetaText(i.a)}</span>
-                            <div className="doc-open-actions">
-                              <button
-                                className="doc-open-btn"
-                                onClick={(e) => { e.stopPropagation(); setRevealKey(null); navigate({ name: 'app', appId: i.a.id }) }}
-                              >
-                                <Icon name="play" size={15} /> 실행
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div className="doc-info">
-                      <h3 className="doc-title">{i.a.title}</h3>
-                      <div className="doc-cap">
-                        <p className="doc-cat-line">
-                          <i className="cat-dot" style={{ background: categoryColor(i.a.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.a.category ?? '미분류'}</span>
-                        </p>
-                        <button
-                          className="doc-more"
-                          aria-label="더보기"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                            setAppMenu({ app: i.a, x: r.right, y: r.bottom })
-                          }}
-                        >
-                          <Icon name="more" size={20} />
-                        </button>
-                      </div>
-                      {prefs.view === 'list' && (
-                        <div className="doc-foot">
-                          <p className="doc-meta">
-                            <span className="doc-meta-date">{appMetaText(i.a)}</span>
-                          </p>
-                          {rowPill(rowSyncState(i.a))}
-                        </div>
-                      )}
-                    </div>
-                  </article>
+                  itemCard({
+                    key: 'app:' + i.a.id,
+                    kind: 'app',
+                    title: i.a.title,
+                    category: i.a.category,
+                    updatedAt: i.a.updatedAt,
+                    ext: '',
+                    sync: rowSyncState(i.a),
+                    idx,
+                    onPlay: () => navigate({ name: 'app', appId: i.a.id }),
+                    onMenu: (x, y) => setAppMenu({ app: i.a, x, y })
+                  })
                 ) : i.kind === 'file' ? (
-                  <article
-                    key={'file:' + i.f.id}
-                    className={'doc-card file-card' + (revealKey === 'file:' + i.f.id ? ' is-revealed' : '') + cardClass('file:' + i.f.id)}
-                    data-flip-key={'file:' + i.f.id}
-                    data-reveal-key={'file:' + i.f.id}
-                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    {...pressProps('file:' + i.f.id)}
-                    onClick={() => selectClick('file:' + i.f.id) || cardTap('file:' + i.f.id, () => navigate({ name: 'file', fileId: i.f.id }))}
-                  >
-                    <div className="doc-thumb">
-                      <Icon name="file" size={36} />
-                      {selectCheck('file:' + i.f.id)}
-                      {markBadge('file:' + i.f.id)}
-                      {rowPill(rowSyncState(i.f), true)}
-                      {prefs.view === 'grid' && (
-                        <>
-                          <span
-                            className="doc-open-veil"
-                            aria-hidden="true"
-                            onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
-                          />
-                          <div className="doc-open-panel">
-                            <span className="doc-open-meta">{fileMetaText(i.f)}</span>
-                            <div className="doc-open-actions">
-                              <button
-                                className="doc-open-btn"
-                                onClick={(e) => { e.stopPropagation(); setRevealKey(null); navigate({ name: 'file', fileId: i.f.id }) }}
-                              >
-                                <Icon name="external" size={15} /> 열기
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div className="doc-info">
-                      <h3 className="doc-title">{i.f.title}</h3>
-                      <div className="doc-cap">
-                        <p className="doc-cat-line">
-                          <i className="cat-dot" style={{ background: categoryColor(i.f.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.f.category ?? '미분류'}</span>
-                        </p>
-                        <button
-                          className="doc-more"
-                          aria-label="더보기"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                            setFileMenu({ file: i.f, x: r.right, y: r.bottom })
-                          }}
-                        >
-                          <Icon name="more" size={20} />
-                        </button>
-                      </div>
-                      {prefs.view === 'list' && (
-                        <div className="doc-foot">
-                          <p className="doc-meta">
-                            <span className="doc-meta-date">{fileMetaText(i.f)}</span>
-                          </p>
-                          {rowPill(rowSyncState(i.f))}
-                        </div>
-                      )}
-                    </div>
-                  </article>
+                  itemCard({
+                    key: 'file:' + i.f.id,
+                    kind: 'file',
+                    title: i.f.title,
+                    category: i.f.category,
+                    updatedAt: i.f.updatedAt,
+                    ext: extOf(i.f.name).toUpperCase(),
+                    sync: rowSyncState(i.f),
+                    idx,
+                    onPlay: () => navigate({ name: 'file', fileId: i.f.id }),
+                    onMenu: (x, y) => setFileMenu({ file: i.f, x, y })
+                  })
                 ) : (
                   <article
                     key={i.d.id}
@@ -1793,32 +1793,24 @@ export function Library() {
                     </div>
                     <div className="doc-info">
                       <h3 className="doc-title">{i.d.title}</h3>
-                      <div className="doc-cap">
-                        <p className="doc-cat-line">
-                          <i className="cat-dot" style={{ background: categoryColor(i.d.category) }} aria-hidden="true" />
-                          <span className="doc-cat-name">{i.d.category ?? '미분류'}</span>
-                        </p>
-                        <button
-                          className="doc-more"
-                          aria-label="더보기"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                            setMenu({ doc: i.d, x: r.right, y: r.bottom })
-                          }}
-                        >
-                          <Icon name="more" size={20} />
-                        </button>
-                      </div>
-                      {prefs.view === 'list' && (
-                        <div className="doc-foot">
-                          <p className="doc-meta">
-                            <span className="doc-meta-date">{docMetaText(i.d)}</span>
-                          </p>
-                          {syncLabelFor(i.d.id)}
+                      {prefs.view === 'grid' ? (
+                        <div className="doc-cap">
+                          <p className="doc-cat-line">{catLine(i.d.category)}</p>
+                          {moreButton((x, y) => setMenu({ doc: i.d, x, y }))}
                         </div>
+                      ) : (
+                        <p className="doc-sub">
+                          <span>{catLine(i.d.category)}</span>
+                          <span>{docMetaText(i.d)}</span>
+                        </p>
                       )}
                     </div>
+                    {prefs.view === 'list' && (
+                      <div className="doc-tail">
+                        {syncLabelFor(i.d.id)}
+                        {moreButton((x, y) => setMenu({ doc: i.d, x, y }))}
+                      </div>
+                    )}
                   </article>
                 )
               ])}

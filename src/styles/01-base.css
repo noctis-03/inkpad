@@ -104,6 +104,11 @@
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
   --tag-ink: #2b2a26;       /* 카드 동기화 꼬리표(.sync-tag) 먹색 — 미색 카드 위라 테마와 상관없이 */
   --tag-alert: #b3261e;     /* 꼬리표 '갈라짐' 빨강 */
+  --item-label: #fffdf8;    /* 앱·파일 카드 라벨 스티커 판 */
+  --label-muted: #6a655b;   /* 스티커 위 카테고리 글자(스티커는 테마와 상관없이 밝다) */
+  --label-faint: #8a857a;   /* 스티커 위 날짜 */
+  --play-bg: var(--tag-ink); /* ▶ 실행·열기 버튼 — 라이트는 먹색 바탕 */
+  --play-fg: var(--thumb-cream);
   --sync-hatch: color-mix(in srgb, var(--tag-ink) 9%, transparent); /* 꼬리표 붙은 카드 빗금 색 */
   --sync-hatch-w: 12px;     /* 빗금 굵기 */
   --sync-hatch-gap: 18px;   /* 빗금 간격(굵기 포함) — 빗금 사이 빈 폭 6px */
@@ -124,6 +129,9 @@
     --paper-2: #1b1a17;
     --lib-bg: #2a2825;       /* 다크에서는 앱 바탕보다 밝게 */
     --thumb-cream: #dfdbd1;  /* 다크에서는 카드 미색을 조금 어둡게 — 눈부시지 않게 */
+    --item-label: #ebe7dd;   /* 스티커 판도 카드처럼 조금 어둡게 */
+    --play-bg: #dfdbd1;      /* 어두운 바탕에서는 먹색 버튼이 묻히므로 뒤집는다 */
+    --play-fg: #2b2a26;
     --surface: #211f1c;
     --surface-2: #2a2824;
     --surface-3: #33302b;
