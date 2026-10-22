@@ -1117,8 +1117,8 @@
 }
 
 /* ───────── 앱·파일 카드 (미리보기 대신 라벨) ─────────
-   격자: 미리보기 자리에 라벨 스티커 — 위 탭은 종류(HTML 앱 · PDF 파일), 미색 판에 제목 · 카테고리 · 날짜.
-   꼬리표 빗금은 스티커 둘레로만 비친다. 카드 아래는 왼쪽 ▶ 실행·열기, 오른쪽 ⋯.
+   격자: 미리보기 자리에 라벨 스티커 — 위 탭은 종류(HTML 앱 · PDF 파일), 높이가 고정된 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
+   꼬리표 빗금은 스티커 둘레로만 비친다. 카드 아래는 ▶ 실행·열기와 ⋯ — 같은 버튼, 폭 4:1.
    목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지 · ▶는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
 .item-face {
   position: absolute;
@@ -1141,6 +1141,8 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
+  height: 104px; /* 제목이 한 줄이든 두 줄이든 같은 높이 — 날짜는 아래에 붙는다 */
+  overflow: hidden;
   padding: 12px 11px 11px;
   border: 1px solid var(--tag-ink);
   border-radius: 2px;
@@ -1157,7 +1159,7 @@
   word-break: keep-all;
   overflow-wrap: anywhere;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1171,19 +1173,43 @@
   color: var(--label-muted);
 }
 .item-date {
+  margin-top: auto;
   font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--label-faint);
 }
-.item-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 38px;
-  padding: 8px 0 0 2px;
+.item-cat .doc-cat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.item-bar .doc-more {
+/* 카드 아래 — ▶ 실행·열기와 ⋯를 같은 1비트 버튼으로, 폭은 4:1 */
+.item-bar {
+  display: grid;
+  grid-template-columns: 4fr 1fr;
+  gap: 6px;
+  padding: 8px 2px 0;
+}
+.item-bar .item-play {
+  justify-content: center;
+}
+.item-card .doc-more {
   position: static;
   transform: none;
+  width: auto;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 2px;
+  background: var(--play-bg);
+  color: var(--play-fg);
+  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+}
+.item-card .doc-more:hover {
+  background: var(--play-bg);
+  color: var(--play-fg);
+}
+.item-card .doc-more:active {
+  translate: 1px 1px;
+  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
 }
 .item-play {
   display: inline-flex;
@@ -1233,7 +1259,8 @@
   font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--tag-ink);
 }
-.doc-list .item-play {
+.doc-list .item-play,
+.doc-list .item-card .doc-more {
   height: 28px;
 }
 @media (max-width: 700px) {
@@ -1248,6 +1275,7 @@
   }
   .item-label {
     gap: 4px;
+    height: 76px;
     padding: 7px 7px 7px;
   }
   .item-title {
@@ -1259,10 +1287,20 @@
   .item-date {
     font-size: 8.5px;
   }
-  .doc-grid .item-play {
+  .doc-grid .item-play,
+  .doc-grid .item-card .doc-more {
     height: 26px;
-    padding: 0 9px 0 7px;
     font-size: 11.5px;
+  }
+  .doc-grid .item-play {
+    padding: 0 6px;
+  }
+  .doc-grid .item-card .doc-more {
+    width: auto; /* 06-editor의 좁은 격자 ⋯ 24px를 이긴다 — 칸(1fr)을 채운다 */
+    min-width: 0;
+  }
+  .item-bar {
+    gap: 4px;
   }
   /* 목록: 좁으면 종류 · 날짜는 빼고 카테고리만 */
   .doc-list .doc-sub > span + span {
