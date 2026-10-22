@@ -1127,7 +1127,7 @@
   flex-direction: column;
   justify-content: flex-end;
   align-items: stretch;
-  padding: 12px 10px 28px; /* 아래 28px는 동기화 꼬리표 자리 — 스티커가 꼬리표 바로 위에 앉는다(꼬리표가 없어도 같은 자리라 줄이 맞는다) */
+  padding: 12px 6px 28px; /* 좌우 6px는 꼬리표 왼쪽 선(left: 6px)과 맞춘다. 아래 28px는 동기화 꼬리표 자리 — 스티커가 꼬리표 바로 위에 앉는다(꼬리표가 없어도 같은 자리라 줄이 맞는다) */
   text-align: left;
 }
 .item-tab {
@@ -1194,7 +1194,7 @@
   display: grid;
   grid-template-columns: 4fr 1fr;
   gap: 6px;
-  padding: 8px 2px 0;
+  padding: 10px 2px 0; /* 위 10px + 버튼 33px = 노트 카드 제목·카테고리 줄과 같은 높이 — 섞인 격자에서 줄 높이가 맞는다 */
 }
 .item-bar .item-play {
   justify-content: center;
@@ -1203,13 +1203,20 @@
   position: static;
   transform: none;
   width: auto;
-  height: 30px;
+  height: 33px;
   min-width: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--play-line);
   border-radius: 2px;
   background: var(--play-bg);
   color: var(--play-fg);
   box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
+}
+.item-card .doc-more svg {
+  flex-shrink: 0; /* 휴대폰의 좁은 칸(1fr)에서도 ⋯ 점 크기 그대로 */
 }
 .item-card .doc-more:hover {
   background: var(--play-bg);
@@ -1223,7 +1230,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 33px;
   padding: 0 12px 0 10px;
   border: 1px solid var(--play-line);
   border-radius: 2px;
@@ -1274,7 +1281,7 @@
 @media (max-width: 700px) {
   /* 휴대폰 격자(한 줄 3장) — 스티커와 버튼을 줄인다 */
   .item-face {
-    padding: 8px 6px 21px;
+    padding: 8px 4px 21px;
   }
   .item-tab {
     margin-left: 2px;
@@ -1297,7 +1304,7 @@
   }
   .doc-grid .item-play,
   .doc-grid .item-card .doc-more {
-    height: 26px;
+    height: 29px;
     font-size: 11.5px;
   }
   .doc-grid .item-play {
@@ -1306,6 +1313,10 @@
   .doc-grid .item-card .doc-more {
     width: auto; /* 06-editor의 좁은 격자 ⋯ 24px를 이긴다 — 칸(1fr)을 채운다 */
     min-width: 0;
+  }
+  .doc-grid .item-card .doc-more svg {
+    width: 14px; /* 좁은 칸(약 24px)에 숨 쉴 틈을 남긴다 */
+    height: 14px;
   }
   .item-bar {
     gap: 4px;
