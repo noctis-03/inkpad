@@ -495,8 +495,7 @@
   aspect-ratio: 1 / 1.30; /* 카드 세로길이 — A4(1:1.414)보다 살짝 납작하게 */
   border-radius: var(--r-card);
   background: var(--thumb-cream); /* 노트 디더 미리보기와 같은 미색 — 앱·파일 카드, 미리보기 없는 노트도 */
-  /* 테두리 선은 미리보기 대표색(ThumbDither가 --thumb-ring을 정한다) — 없으면 원래 옅은 선 */
-  box-shadow: var(--e1-drop), 0 0 0 .75px var(--thumb-ring, var(--e1-ring)); /* 1px보다 살짝 얇게 — 2배 화면에서 1.5 화소 */
+  box-shadow: var(--e1);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -541,8 +540,9 @@
   pointer-events: none;
   image-rendering: pixelated;
 }
-/* 디더가 준비되기 전엔 원본이 잠깐 비쳤다 바뀌지 않게 가린다(만들 수 없으면 is-ready로 원본이 보인다) */
-.doc-thumb:has(> .thumb-dither:not(.is-ready)) img {
+/* 디더가 있는 카드는 원본을 가린다 — 준비 전에 원본이 잠깐 비쳤다 바뀌지 않게, 그리고 흰 종이 자리를 비워 둔 디더
+   뒤로 카드 바탕(--thumb-cream)이 비치게. 디더를 만들 수 없으면(is-failed) 원본이 보인다 */
+.doc-thumb:has(> .thumb-dither:not(.is-failed)) img {
   opacity: 0;
 }
 /* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
