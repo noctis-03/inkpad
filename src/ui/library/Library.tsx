@@ -18,7 +18,7 @@ import { Menu, MenuItem } from '../Menu'
 import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
-import { categoryColor, formatDate, splitCategory } from '../../shared/util'
+import { assignCategoryColors, categoryColor, formatDate, splitCategory } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import {
   createFolder,
@@ -454,7 +454,7 @@ export function Library() {
   /** 카테고리 — 색 점 + 이름 */
   const catLine = (c: string | null | undefined) => (
     <>
-      <i className="cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+      <i className="cat-dot" style={{ background: catColor(c) }} aria-hidden="true" />
       <span className="doc-cat-name">{c ?? '미분류'}</span>
     </>
   )
@@ -706,6 +706,10 @@ export function Library() {
     for (const f of folders) for (const c of f.categories ?? []) s.add(c)
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
   }, [docs, apps, files, folders])
+
+  /** 카테고리 색 — 이 기기의 카테고리 전체(휴지통 노트 포함)를 보고 겹치지 않게 배정한다 */
+  const catColors = useMemo(() => assignCategoryColors([...allCategories, ...trash.map((d) => d.category)]), [allCategories, trash])
+  const catColor = (c: string | null | undefined) => categoryColor(c, catColors)
 
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
@@ -1349,7 +1353,7 @@ export function Library() {
     return (
       <h3 key={'subhead:' + tag} className="grid-subhead">
         <button onClick={() => cat && pickSection({ kind: 'category', name: cat })}>
-          <i className="cat-dot" style={{ background: categoryColor(cat) }} aria-hidden="true" />
+          <i className="cat-dot" style={{ background: catColor(cat) }} aria-hidden="true" />
           {tag}
           <span className="count">{n}</span>
         </button>
@@ -1367,7 +1371,7 @@ export function Library() {
       onClick={() => pickSection({ kind: 'category', name: c })}
       title={label === c ? undefined : c}
     >
-      <span className="tree-cat-dot" style={{ background: categoryColor(c) }} aria-hidden="true" />
+      <span className="tree-cat-dot" style={{ background: catColor(c) }} aria-hidden="true" />
       <span className="tree-name">{label}</span>
       {section.kind === 'category' && section.name === c && recentActive && recentTag}
       <span className="count">{catCount(c)}</span>
@@ -1561,7 +1565,7 @@ export function Library() {
                       {!open && (
                         <span className="tree-group-dots" aria-hidden="true">
                           {g.cats.slice(0, 4).map((c) => (
-                            <i key={c} style={{ background: categoryColor(c) }} />
+                            <i key={c} style={{ background: catColor(c) }} />
                           ))}
                         </span>
                       )}
@@ -1579,7 +1583,7 @@ export function Library() {
               className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
               onClick={() => pickSection({ kind: 'uncategorized' })}
             >
-              <span className="tree-cat-dot" style={{ background: categoryColor(null) }} aria-hidden="true" />
+              <span className="tree-cat-dot" style={{ background: catColor(null) }} aria-hidden="true" />
               <span className="tree-name">미분류</span>
               {section.kind === 'uncategorized' && recentActive && recentTag}
               <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
