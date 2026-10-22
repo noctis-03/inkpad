@@ -1117,8 +1117,9 @@
 }
 
 /* ───────── 앱·파일 카드 (미리보기 대신 라벨) ─────────
-   격자: 미리보기 자리에 라벨 스티커(위에서부터 동기화 꼬리표 바로 위까지) — 위 탭은 종류(HTML 앱 · PDF 파일), 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
-   꼬리표 빗금은 스티커 둘레로만 비친다. 카드 아래는 ▶ 실행·열기와 ⋯ — 같은 버튼, 폭 4:1.
+   격자: 미리보기 자리에 라벨 스티커(탭 아래부터 카드 바닥까지) — 위 탭은 종류(HTML 앱 · PDF 파일), 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
+   동기화 꼬리표·빗금은 없다(추가·수정하자마자 올린다) — 올라가는 동안만 제목 옆에 1비트 로딩 고리(.item-busy).
+   카드 아래는 ▶ 실행·열기와 ⋯ — 같은 버튼, 폭 4:1.
    목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지 · ▶는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
 .item-face {
   position: absolute;
@@ -1126,7 +1127,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 12px 6px 28px; /* 좌우 6px는 꼬리표 왼쪽 선(left: 6px)과 맞춘다. 아래 28px는 동기화 꼬리표 자리 — 스티커가 위에서부터 꼬리표 바로 위까지 늘어난다(꼬리표가 없어도 같은 길이) */
+  padding: 12px 6px 8px; /* 스티커가 탭 아래부터 카드 바닥 바로 위까지 늘어난다 — 앱·파일에는 동기화 꼬리표가 없다 */
   text-align: left;
 }
 .item-tab {
@@ -1155,6 +1156,39 @@
   border-radius: 2px;
   background: var(--item-label);
   box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--tag-ink) 35%, transparent);
+}
+/* 제목 줄 — 올리는 중이면 제목 오른쪽에 로딩 고리 */
+.item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.item-head .item-title {
+  flex: 1;
+  min-width: 0;
+}
+/* 1비트 로딩 고리 — 각진 먹색 고리, 한 변만 비워 돈다. 스티커(밝은 종이) 위라 색은 고정 */
+.item-busy {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border: 2px solid var(--tag-ink);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin .9s linear infinite;
+}
+:root[data-motion='off'] .item-busy {
+  animation: none;
+  border-style: dotted;
+}
+/* 목록: 제목 글자 바로 뒤에 — 목록 바탕은 테마를 따르므로 글자색 */
+.doc-title .item-busy {
+  display: inline-block;
+  margin: 0 0 0 7px;
+  vertical-align: -1px;
+  border-color: currentColor;
+  border-top-color: transparent;
 }
 /* 스티커는 테마와 상관없이 밝은 종이라 글자색도 고정 */
 .item-title {
@@ -1281,7 +1315,7 @@
 @media (max-width: 700px) {
   /* 휴대폰 격자(한 줄 3장) — 스티커와 버튼을 줄인다 */
   .item-face {
-    padding: 8px 4px 21px;
+    padding: 8px 4px 5px;
   }
   .item-tab {
     margin-left: 2px;
@@ -1294,6 +1328,14 @@
   }
   .item-title {
     font-size: 12px;
+  }
+  .item-head {
+    gap: 4px;
+  }
+  .item-busy {
+    width: 10px;
+    height: 10px;
+    margin-top: 2px;
   }
   .item-cat {
     font-size: 10px;

@@ -6,6 +6,7 @@ import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
 import * as drive from './drive'
 import { ensureStoreFolder, tryUpload } from './folders'
+import { trackUpload } from './uploading'
 
 export const APPS_EVENT = 'inkpad-apps-changed'
 const emit = () => window.dispatchEvent(new Event(APPS_EVENT))
@@ -149,10 +150,13 @@ async function flushOne(id: ID, folderId: string) {
 
 /** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
 const tryFlush = (id: ID): Promise<boolean> =>
-  tryUpload('apps', async () => {
-    await flushOne(id, await appsFolder())
-    emit()
-  })
+  trackUpload(
+    id,
+    tryUpload('apps', async () => {
+      await flushOne(id, await appsFolder())
+      emit()
+    })
+  )
 
 // ───────── 앱 전용 클라우드 관리 (앱 메뉴) ─────────
 // 노트 동기화와 분리한다: Drive의 Inkpad/apps/ = 스토어(카탈로그), 각 기기는 원하는 앱만 설치/업데이트/제거.

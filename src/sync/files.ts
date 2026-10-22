@@ -16,6 +16,7 @@ import { ulid } from '../shared/ulid'
 import { db, type FileRow } from '../storage/db'
 import * as drive from './drive'
 import { ensureStoreFolder, tryUpload } from './folders'
+import { trackUpload } from './uploading'
 
 export const FILES_EVENT = 'inkpad-files-changed'
 const emit = () => window.dispatchEvent(new Event(FILES_EVENT))
@@ -187,10 +188,13 @@ async function flushOne(id: ID, folderId: string) {
 
 /** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
 const tryFlush = (id: ID): Promise<boolean> =>
-  tryUpload('files', async () => {
-    await flushOne(id, await filesFolder())
-    emit()
-  })
+  trackUpload(
+    id,
+    tryUpload('files', async () => {
+      await flushOne(id, await filesFolder())
+      emit()
+    })
+  )
 
 // ───────── 파일 전용 클라우드 관리 (기타 파일 메뉴) ─────────
 // 파일은 원본을 지연 로딩하므로 상태가 다르다: 메타만 있는 행과 원본까지 있는 행을 구분한다.
