@@ -64,8 +64,8 @@ type Section =
 
 /** 카드를 이만큼 누르고 있으면 선택 모드 */
 const LONG_PRESS_MS = 500
-/** 사이드바에서 펼친 카테고리 묶음(이 기기만) */
-const LS_OPEN_GROUPS = 'inkpad.catgroups.open.v1'
+/** 사이드바에서 펼친 카테고리 묶음 — 하나만. 앱이 떠 있는 동안만 기억한다(편집 화면에 다녀와도 그대로, 새로고침·다시 켜면 모두 접힘) */
+let openGroupMem: string | null = null
 /** 카드의 [태그] (묶음 화면의 소제목) */
 const itemTag = (i: Item) => splitCategory((i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f).category ?? '').group ?? ''
 /** 카테고리 c가 묶음 name("[태그] name")에 드는가 */
@@ -616,38 +616,29 @@ export function Library() {
     return { plain, groups: sorted.map(([name, cats]) => ({ name, cats: cats.sort((a, b) => (splitCategory(a).group ?? '').localeCompare(splitCategory(b).group ?? '', 'ko')) })) }
   }, [shownCategories])
 
-  // 카테고리 묶음 접기·펼치기 — 펼친 묶음 이름만 이 기기에 기억한다(새 묶음은 접힌 채로 시작)
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(LS_OPEN_GROUPS) ?? '[]') as string[])
-    } catch {
-      return new Set()
-    }
-  })
-  const saveOpenGroups = (next: Set<string>) => {
-    setOpenGroups(next)
-    try {
-      localStorage.setItem(LS_OPEN_GROUPS, JSON.stringify([...next]))
-    } catch {
-      /* 저장 못 해도 이번 화면에서는 그대로 */
-    }
+  // 카테고리 묶음 접기·펼치기 — 한 번에 하나만 펼친다(다른 묶음을 펼치면 앞의 것은 접힌다)
+  const [openGroup, setOpenGroupState] = useState<string | null>(() => openGroupMem)
+  const setOpenGroup = (g: string | null) => {
+    openGroupMem = g
+    setOpenGroupState(g)
   }
-  const toggleGroup = (g: string) => {
-    const next = new Set(openGroups)
-    if (next.has(g)) next.delete(g)
-    else next.add(g)
-    saveOpenGroups(next)
-  }
-  useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y', [...openGroups].join('\n')) // 묶음을 접고 펴면 선택 칩도 새 자리로
-  // 접힌 묶음 안의 카테고리로 가면(다른 화면에서 카테고리를 눌러 들어와도) 그 묶음을 펼친다
+  const toggleGroup = (g: string) => setOpenGroup(openGroup === g ? null : g)
+  useIndicator(treeRef, treeOpen ? treeActiveKey : null, 'y', openGroup ?? '') // 묶음을 접고 펴면 선택 칩도 새 자리로
+  // 고른 것만 펼친다 — 묶음(또는 그 안의 카테고리)으로 가면 그 묶음 하나만, 다른 곳으로 가면 모두 접는다.
+  // 처음 뜰 때(새로고침·다시 켜기로 보던 곳이 되살아날 때)는 건드리지 않아 모두 접힌 채로 시작한다
+  const sectionSeen = useRef(false)
   useEffect(() => {
+    if (!sectionSeen.current) {
+      sectionSeen.current = true
+      return
+    }
     let g: string | null = null
     if (section.kind === 'catgroup') g = section.name
     else if (section.kind === 'category') {
       const { group, label } = splitCategory(section.name)
       g = group ? label : null
     }
-    if (g && !openGroups.has(g)) saveOpenGroups(new Set(openGroups).add(g))
+    setOpenGroup(g)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section])
 
@@ -1436,7 +1427,7 @@ export function Library() {
             </button>
             <div className="tree-label">카테고리</div>
             {categoryLayout.groups.map((g) => {
-              const open = openGroups.has(g.name)
+              const open = openGroup === g.name
               // 접힌 묶음에 보고 있는 카테고리가 있으면 선택 칩이 구분선에 앉는다
               const activeInside = !open && section.kind === 'category' && g.cats.includes(section.name)
               const activeGroup = section.kind === 'catgroup' && section.name === g.name
@@ -1453,7 +1444,7 @@ export function Library() {
                     <button
                       className="tree-group-main"
                       onClick={() => {
-                        if (!open) saveOpenGroups(new Set(openGroups).add(g.name))
+                        setOpenGroup(g.name) // 같은 묶음을 다시 눌러(최근 열람 바꾸기) 보던 곳이 그대로여도 펼친다
                         pickSection({ kind: 'catgroup', name: g.name })
                       }}
                     >
