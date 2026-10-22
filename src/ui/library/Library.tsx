@@ -45,6 +45,7 @@ import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOne
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
 import { openChanges } from '../ChangesView'
 import { THUMBS_EVENT } from '../../io/docThumb'
+import { appThumbKey, fileThumbKey, getItemThumbRows, syncItemThumbs } from '../../io/itemThumb'
 import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { UPLOADING_EVENT, isUploading } from '../../sync/uploading'
@@ -210,21 +211,29 @@ export function Library() {
     })
   }, [])
 
+  /** 노트 미리보기 + 앱·파일 미리보기('app:<id>' · 'file:<id>' 열쇠) 한 지도로 */
+  const loadThumbRows = async () => {
+    const [docRows, itemRows] = await Promise.all([getThumbnailRows(), getItemThumbRows()])
+    itemRows.forEach((r, key) => docRows.set(key, r))
+    return docRows
+  }
+
   /** 미리보기(썸네일)만 다시 읽는다 — 미리보기 생성 직후 카드에 새로고침 없이 반영 */
   const refreshThumbs = useCallback(async () => {
     const seq = ++thumbSeq.current
-    applyThumbs(await getThumbnailRows(), seq)
+    applyThumbs(await loadThumbRows(), seq)
   }, [applyThumbs])
 
   const refresh = useCallback(async () => {
     const seq = ++thumbSeq.current // 미리보기 읽기 시작 순번 — 읽는 도중 저장되면 THUMBS_EVENT 쪽이 이긴다
-    const [d, t, f, th, hid, ap, fls, st, mk] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), getThumbnailRows(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates(), getMarks()])
+    const [d, t, f, th, hid, ap, fls, st, mk] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), loadThumbRows(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates(), getMarks()])
     setDocs(d)
     setTrash(t)
     setFolders(f)
     setHiddenCats(new Set(hid))
     setApps(ap)
     setFiles(fls)
+    void syncItemThumbs(ap, fls) // 원본이 있는데 미리보기가 없는 파일만 그리고, 사라진 항목의 미리보기는 지운다
     setSyncStates(st)
     // 마킹 — 영구 삭제된 항목의 마킹은 여기서 정리한다(휴지통 노트는 되살릴 수 있으니 남긴다)
     const keep = new Set([...d.map((x) => 'doc:' + x.id), ...t.map((x) => 'doc:' + x.id), ...ap.map((x) => 'app:' + x.id), ...fls.map((x) => 'file:' + x.id)])
@@ -465,10 +474,10 @@ export function Library() {
   )
 
   /**
-   * 앱·파일 카드. 미리보기가 없으므로
-   * - 격자: 미리보기 자리에 라벨 스티커(위 탭은 종류, 판에 제목 · 카테고리 · 날짜), 아래에 왼쪽 ▶ 실행·열기 · 오른쪽 ⋯
-   * - 목록: 왼쪽 종이 배지(확장자), 제목과 '카테고리 · 종류 · 날짜' 한 줄, 오른쪽에 ▶ · ⋯
-   * 카드를 눌러도 아무것도 하지 않는다(선택 모드에서만 고른다) — 여는 것은 ▶ 버튼
+   * 앱·파일 카드 — 노트 카드와 같은 구조.
+   * - 미리보기: 파일은 원본에서 그린 그림(이미지 · PDF 첫 쪽 · 텍스트), 앱은 마지막으로 본 실행 화면. 없으면 아이콘
+   * - 격자: 카드를 누르면 오버레이(종류 · 날짜 + ▶ 실행·열기), 아래에 제목 · 카테고리 · ⋯
+   * - 목록: 누르면 바로 연다, 제목 아래 '카테고리 · 종류 · 날짜'
    * 동기화 꼬리표는 붙이지 않는다: 추가·수정하자마자 올리므로 올라가는 동안만 제목 옆에 로딩 고리
    */
   const itemCard = (o: {
@@ -483,74 +492,65 @@ export function Library() {
     onPlay: () => void
     onMenu: (x: number, y: number) => void
   }) => {
-    const kindLabel = o.kind === 'app' ? 'HTML 앱' : o.ext ? `${o.ext} 파일` : '파일'
-    const verb = o.kind === 'app' ? '실행' : '열기'
+    const kindLabel = o.kind === 'app' ? 'HTML 앱' : o.ext || '파일'
     const date = formatDate(o.updatedAt)
+    const thumb = thumbs.get(o.kind === 'app' ? appThumbKey(o.id) : fileThumbKey(o.id))
     const busy = isUploading(o.id) ? <i className="item-busy" role="status" aria-label="올리는 중" title="올리는 중" /> : null
-    const play = (
-      <button
-        className="item-play"
-        onClick={(e) => {
-          if (selected) return // 선택 모드에서는 카드를 고르는 것으로
-          e.stopPropagation()
-          o.onPlay()
-        }}
-      >
-        <Icon name="play" size={11} /> {verb}
-      </button>
-    )
     return (
       <article
         key={o.key}
-        className={'doc-card item-card ' + o.kind + '-card' + cardClass(o.key)}
+        className={'doc-card ' + o.kind + '-card' + (revealKey === o.key ? ' is-revealed' : '') + cardClass(o.key)}
         data-flip-key={o.key}
+        data-reveal-key={o.key}
         style={o.idx < 20 ? ({ ['--i' as string]: o.idx } as React.CSSProperties) : undefined}
         {...pressProps(o.key)}
-        onClick={() => selectClick(o.key)}
+        onClick={() => selectClick(o.key) || cardTap(o.key, o.onPlay)}
       >
         <div className="doc-thumb">
-          {prefs.view === 'grid' ? (
-            <div className="item-face">
-              <span className="item-tab">{kindLabel}</span>
-              <div className="item-label">
-                <div className="item-head">
-                  <h3 className="item-title">{o.title}</h3>
-                  {busy}
-                </div>
-                <p className="item-cat">{catLine(o.category)}</p>
-                <span className="item-date">{date}</span>
-              </div>
-            </div>
-          ) : (
-            <span className="item-badge">{o.kind === 'app' ? 'APP' : o.ext || 'FILE'}</span>
-          )}
+          {thumb ? <img src={thumb} alt="" draggable={false} data-reveal={o.key} /> : <Icon name={o.kind} size={36} />}
+          <span className="doc-gloss" aria-hidden="true" />
           {selectCheck(o.key)}
           {markBadge(o.key)}
+          {prefs.view === 'grid' && (
+            <>
+              <span
+                className="doc-open-veil"
+                aria-hidden="true"
+                onClick={(e) => { e.stopPropagation(); setRevealKey(null) }}
+              />
+              <div className="doc-open-panel">
+                <span className="doc-open-meta">{`${kindLabel} · ${date}`}</span>
+                <div className="doc-open-actions">
+                  <button
+                    className="doc-open-btn"
+                    onClick={(e) => { e.stopPropagation(); setRevealKey(null); o.onPlay() }}
+                  >
+                    <Icon name={o.kind === 'app' ? 'play' : 'external'} size={15} /> {o.kind === 'app' ? '실행' : '열기'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-        {prefs.view === 'grid' ? (
-          <div className="item-bar">
-            {play}
-            {moreButton(o.onMenu)}
-          </div>
-        ) : (
-          <>
-            <div className="doc-info">
-              <h3 className="doc-title">
-                {o.title}
-                {busy}
-              </h3>
-              <p className="doc-sub">
-                <span>{catLine(o.category)}</span>
-                <span>{kindLabel}</span>
-                <span>{date}</span>
-              </p>
-            </div>
-            <div className="doc-tail">
-              {play}
+        <div className="doc-info">
+          <h3 className="doc-title">
+            {o.title}
+            {busy}
+          </h3>
+          {prefs.view === 'grid' ? (
+            <div className="doc-cap">
+              <p className="doc-cat-line">{catLine(o.category)}</p>
               {moreButton(o.onMenu)}
             </div>
-          </>
-        )}
+          ) : (
+            <p className="doc-sub">
+              <span>{catLine(o.category)}</span>
+              <span>{kindLabel}</span>
+              <span>{date}</span>
+            </p>
+          )}
+        </div>
+        {prefs.view === 'list' && <div className="doc-tail">{moreButton(o.onMenu)}</div>}
       </article>
     )
   }

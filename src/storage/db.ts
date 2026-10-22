@@ -31,6 +31,13 @@ export interface ThumbRow {
   updatedAt: number
 }
 
+/** 앱·기타 파일 카드 미리보기 (로컬 전용). key = 'app:<id>' | 'file:<id>' */
+export interface ItemThumbRow {
+  key: string
+  blob: Blob
+  updatedAt: number
+}
+
 export type OutboxEntity = 'document' | 'page' | 'chunk' | 'asset'
 
 export interface OutboxRow {
@@ -75,6 +82,7 @@ export class InkpadDB extends Dexie {
   appStorage!: Table<{ appId: ID; data: Record<string, string> }, ID>
   files!: Table<FileRow, ID>
   boardPresets!: Table<BoardPreset, ID>
+  itemThumbs!: Table<ItemThumbRow, string>
 
   constructor(name = 'inkpad') {
     super(name)
@@ -100,6 +108,8 @@ export class InkpadDB extends Dexie {
     this.version(5).stores({ files: 'id, updatedAt' })
     // v6: 작업보드 프리셋 (보드 배치 = 바로가기 위치. Drive Inkpad/boards/ 와 공유)
     this.version(6).stores({ boardPresets: 'id, updatedAt' })
+    // v7: 앱·기타 파일 카드 미리보기 (로컬 전용, 동기화하지 않음 — 노트 미리보기와 같은 원칙)
+    this.version(7).stores({ itemThumbs: 'key' })
   }
 }
 
@@ -116,7 +126,7 @@ export interface CacheClearResult {
 
 /**
  * 캐시 삭제 — 노트·앱·파일·설정은 그대로 두고, 다시 만들 수 있는 것만 지운다.
- *  1) 미리보기(썸네일): 노트를 열거나 받을 때 다시 만들어진다
+ *  1) 미리보기(썸네일): 노트를 열거나 받을 때, 파일은 원본에서, 앱은 다음 실행 때 다시 만들어진다
  *  2) 서비스 워커 Cache Storage: 다음 실행 때 다시 채워진다 (오프라인 캐시)
  * PDF 렌더 비트맵 캐시는 메모리 전용이라 이 기기 저장소에는 남지 않는다.
  */
@@ -129,6 +139,12 @@ export async function clearAppCaches(): Promise<CacheClearResult> {
     thumbBytes += r.blob?.size ?? 0
   }
   if (thumbnails) await db.thumbnails.clear()
+  // 앱·파일 카드 미리보기도 다시 만들 수 있다 (파일은 원본에서, 앱은 다음 실행 때)
+  for (const r of await db.itemThumbs.toArray()) {
+    thumbnails++
+    thumbBytes += r.blob?.size ?? 0
+  }
+  await db.itemThumbs.clear()
 
   let swCaches = 0
   try {
