@@ -1117,14 +1117,21 @@
 }
 
 /* ───────── 앱·파일 카드 (미리보기 대신 라벨) ─────────
-   격자: 미리보기 자리에 라벨 스티커 — 위 탭은 종류(HTML 앱 · PDF 파일), 높이가 고정된 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
+   격자: 미리보기 자리에 라벨 스티커(동기화 꼬리표 바로 위) — 위 탭은 종류(HTML 앱 · PDF 파일), 높이가 고정된 미색 판에 제목(2줄까지) · 카테고리 · 날짜.
    꼬리표 빗금은 스티커 둘레로만 비친다. 카드 아래는 ▶ 실행·열기와 ⋯ — 같은 버튼, 폭 4:1.
    목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자. 스티커 · 배지 · ▶는 동기화 꼬리표와 같은 1비트 결(각진 선 + 2px 그림자) */
 .item-face {
   position: absolute;
   inset: 0;
-  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 12px 10px 28px; /* 아래 28px는 동기화 꼬리표 자리 — 스티커가 꼬리표 바로 위에 앉는다(꼬리표가 없어도 같은 자리라 줄이 맞는다) */
   text-align: left;
+}
+.item-tab {
+  align-self: flex-start;
 }
 .item-tab {
   display: inline-block;
@@ -1198,10 +1205,11 @@
   width: auto;
   height: 30px;
   min-width: 30px;
+  border: 1px solid var(--play-line);
   border-radius: 2px;
   background: var(--play-bg);
   color: var(--play-fg);
-  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
 }
 .item-card .doc-more:hover {
   background: var(--play-bg);
@@ -1209,7 +1217,7 @@
 }
 .item-card .doc-more:active {
   translate: 1px 1px;
-  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
 }
 .item-play {
   display: inline-flex;
@@ -1217,7 +1225,7 @@
   gap: 6px;
   height: 30px;
   padding: 0 12px 0 10px;
-  border: 0;
+  border: 1px solid var(--play-line);
   border-radius: 2px;
   background: var(--play-bg);
   color: var(--play-fg);
@@ -1225,7 +1233,7 @@
   font-weight: 700;
   letter-spacing: .02em;
   white-space: nowrap;
-  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+  box-shadow: 2px 2px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -1234,7 +1242,7 @@
 }
 .item-play:active {
   translate: 1px 1px;
-  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-bg) 35%, transparent);
+  box-shadow: 1px 1px 0 0 color-mix(in srgb, var(--play-line) 35%, transparent);
 }
 /* 목록: 썸네일 자리에 줄 그은 종이 배지 + 확장자 */
 .doc-list .item-card .doc-thumb {
@@ -1266,7 +1274,7 @@
 @media (max-width: 700px) {
   /* 휴대폰 격자(한 줄 3장) — 스티커와 버튼을 줄인다 */
   .item-face {
-    padding: 8px 6px;
+    padding: 8px 6px 21px;
   }
   .item-tab {
     margin-left: 2px;
