@@ -530,6 +530,14 @@
   object-fit: cover;
   object-position: top;
 }
+/* 격자 미리보기는 카드 미색(--thumb-cream) 위에 곱하기로 얹는다 — 흰 종이 자리만 미색이 되고 필기·그림 색은 그대로.
+   다크에서는 미색이 조금 어두워 미리보기도 함께 눈부시지 않게. 블렌드가 카드 밖 바탕과 섞이지 않게 카드 안에서 가둔다 */
+.doc-grid .doc-thumb {
+  isolation: isolate;
+}
+.doc-grid .doc-thumb img {
+  mix-blend-mode: multiply;
+}
 /* 캡션의 카테고리 칩은 색 점(.cat-dot) + 이름으로 대체됐다 */
 .doc-info {
   padding: 8px 0 0 2px; /* 더보기 자리 32px 비움 없음 — 제목이 온전히 보인다 */
