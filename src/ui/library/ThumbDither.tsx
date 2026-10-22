@@ -21,17 +21,13 @@ export function ThumbDither({ src, cacheKey }: { src: string; cacheKey: string }
     let img: HTMLImageElement | null = null
     let seen = false // 화면 근처에 온 적이 있다 — 그 뒤로는 크기가 바뀌면 다시 그린다
     let drawn = '' // 지금 캔버스에 그린 것의 열쇠
-    const paint = (r: Dithered | null, key: string) => {
+    const paint = (d: HTMLCanvasElement | null, key: string) => {
       drawn = key
       cv.classList.add('is-ready')
-      // 카드 테두리 선을 미리보기 대표색으로(CSS --thumb-ring) — 대표색이 없으면 원래 회색 선
-      if (r?.main) holder.style.setProperty('--thumb-ring', r.main)
-      else holder.style.removeProperty('--thumb-ring')
-      if (!r) {
+      if (!d) {
         cv.width = 0 // 그리지 못하면 비워서 원래 미리보기가 보이게
         return
       }
-      const d = r.dots
       cv.width = d.width
       cv.height = d.height
       cv.style.width = d.width * DOT + 'px'
@@ -73,16 +69,10 @@ export function ThumbDither({ src, cacheKey }: { src: string; cacheKey: string }
   return <canvas ref={ref} className="thumb-dither" width={0} height={0} aria-hidden="true" />
 }
 
-/** 만든 디더 — 점 하나 = 1px 캔버스와 미리보기 대표색(카드 테두리 선 색, 없으면 null) */
-interface Dithered {
-  dots: HTMLCanvasElement
-  main: string | null
-}
-
 // ── 만든 디더 기억 — 열쇠마다 점 하나 = 1px 캔버스(150px 카드면 약 30KB). 오래 안 쓴 것부터 버린다 ──
 const CACHE_MAX = 300
-const cache = new Map<string, Dithered | null>()
-function remember(key: string, d: Dithered | null) {
+const cache = new Map<string, HTMLCanvasElement | null>()
+function remember(key: string, d: HTMLCanvasElement | null) {
   cache.delete(key)
   cache.set(key, d)
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!)
@@ -128,10 +118,6 @@ function watchNear(el: Element, cb: () => void) {
   }
 }
 
-/** 대표색을 종이색에서 얼마나 떨어뜨릴지(가장 먼 채널 기준, 0..255) */
-const INK_REACH = 190
-/** 카드 테두리 선에 쓰는 대표색의 진하기 */
-const RING_ALPHA = 0.75
 /** 디더 점 한 변(css px) */
 const DOT = 2
 /** 펜 색을 칸 단위로 읽는다 — 가로 칸 수(150px 카드면 칸 하나 약 8px) */
@@ -150,7 +136,6 @@ interface ThumbGrid {
   allInk: [number, number, number] // 노트 전체 잉크 평균색
   paperL: number // 종이 밝기(0..255)
   paperRgb: [number, number, number] // 종이(잉크가 아닌 픽셀) 평균색
-  main: [number, number, number] | null // 대표색 — 잉크가 없으면 null (pickMain)
 }
 
 /**
@@ -183,7 +168,6 @@ function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGrid | nul
   const inkRgb: ([number, number, number] | null)[] = []
   const all = [0, 0, 0, 0]
   const pa = [0, 0, 0, 0]
-  const hist = new Hist()
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
       const sum = [0, 0, 0]
@@ -194,10 +178,8 @@ function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGrid | nul
           const L = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11
           const sat = Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2])
           const t = paperL - L > 38 || sat > 70 ? sum : pa
-          if (t === sum) {
-            ink++
-            hist.add(data[i], data[i + 1], data[i + 2], sat > 60)
-          } else pa[3]++
+          if (t === sum) ink++
+          else pa[3]++
           t[0] += data[i]
           t[1] += data[i + 1]
           t[2] += data[i + 2]
@@ -212,62 +194,11 @@ function readThumb(img: HTMLImageElement, w: number, h: number): ThumbGrid | nul
   }
   const allInk: [number, number, number] = all[3] ? [all[0] / all[3], all[1] / all[3], all[2] / all[3]] : [60, 60, 60]
   const paperRgb: [number, number, number] = pa[3] ? [pa[0] / pa[3], pa[1] / pa[3], pa[2] / pa[3]] : [255, 255, 255]
-  return { data, sw: src.width, sh: src.height, cols, rows, cell, inkRgb, allInk, paperL, paperRgb, main: hist.pick(paperRgb) }
+  return { data, sw: src.width, sh: src.height, cols, rows, cell, inkRgb, allInk, paperL, paperRgb }
 }
 
-/**
- * 잉크 색 모으기 — 색을 칸(채널마다 8단계, 512칸)으로 나눠 세고, 대표색을 고른다:
- * 색 펜(파랑·빨강·형광펜 등, 채도 높은 잉크)이 잉크의 10% 이상이면 그중에서, 아니면(거의 검은 펜) 잉크 전체에서 고른다.
- * 그냥 가장 많은 칸을 고르면 가는 획 가장자리의 옅은 픽셀이 이겨 색이 바랜다 — 개수에 진하기(색 펜은 채도, 아니면 어둡기)의 제곱을 곱해 견준다.
- * 카드 크기에선 펜 획이 1px도 안 돼 픽셀이 종이와 섞여 있으므로, 고른 색을 종이색에서 멀어지는 쪽으로 늘려 원래 펜 진하기에 가깝게 한다
- */
-class Hist {
-  all = new Float64Array(512 * 4) // 칸마다 [개수, r합, g합, b합]
-  col = new Float64Array(512 * 4)
-  n = 0
-  nCol = 0
-  add(r: number, g: number, b: number, colored: boolean) {
-    const k = ((r >> 5) * 64 + (g >> 5) * 8 + (b >> 5)) * 4
-    for (const h of colored ? [this.all, this.col] : [this.all]) {
-      h[k]++
-      h[k + 1] += r
-      h[k + 2] += g
-      h[k + 3] += b
-    }
-    this.n++
-    if (colored) this.nCol++
-  }
-  pick(paper: [number, number, number]): [number, number, number] | null {
-    if (!this.n) return null
-    const colored = this.nCol >= this.n * 0.1
-    const h = colored ? this.col : this.all
-    let best = -1
-    let bestScore = 0
-    for (let k = 0; k < h.length; k += 4) {
-      const c = h[k]
-      if (!c) continue
-      const r = h[k + 1] / c
-      const g = h[k + 2] / c
-      const b = h[k + 3] / c
-      const strength = colored ? (Math.max(r, g, b) - Math.min(r, g, b)) / 255 : 1 - (r * 0.3 + g * 0.59 + b * 0.11) / 255
-      const score = c * strength * strength
-      if (score > bestScore) {
-        bestScore = score
-        best = k
-      }
-    }
-    if (best < 0) return null
-    const c = h[best]
-    const v = [h[best + 1] / c - paper[0], h[best + 2] / c - paper[1], h[best + 3] / c - paper[2]]
-    const far = Math.max(...v.map(Math.abs)) || 1
-    const k = Math.min(3, INK_REACH / far) // 종이에서 가장 먼 채널이 INK_REACH만큼 떨어지게(최대 3배)
-    const ch = (i: number) => Math.max(0, Math.min(255, paper[i] + v[i] * k))
-    return [ch(0), ch(1), ch(2)]
-  }
-}
-
-/** 미리보기를 DOT 크기 점으로 읽어 앳킨슨 디더로 1비트(종이 / 펜 색)로 만든다 — 점 하나 = 1px 인 캔버스와 대표색. 읽을 수 없으면 null */
-function makeDither(img: HTMLImageElement, w: number, h: number): Dithered | null {
+/** 미리보기를 DOT 크기 점으로 읽어 앳킨슨 디더로 1비트(종이 / 펜 색)로 만든다 — 점 하나 = 1px 인 캔버스. 읽을 수 없으면 null */
+function makeDither(img: HTMLImageElement, w: number, h: number): HTMLCanvasElement | null {
   const grid = readThumb(img, w, h)
   if (!grid) return null
   const { data, sw, sh } = grid
@@ -327,8 +258,7 @@ function makeDither(img: HTMLImageElement, w: number, h: number): Dithered | nul
     }
   }
   og.putImageData(im, 0, 0)
-  const m = grid.main
-  return { dots: out, main: m && `rgb(${m[0] | 0} ${m[1] | 0} ${m[2] | 0} / ${RING_ALPHA})` }
+  return out
 }
 
 const ATKINSON = [
