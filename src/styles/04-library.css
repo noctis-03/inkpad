@@ -656,6 +656,11 @@
 .doc-list .sync-tag.is-overlay {
   display: none;
 }
+/* 꼬리표가 붙은 카드(올리기·이 기기만·새 버전·갈라짐 — 손댈 것이 남은 카드)는 종이 바탕에 먹색 빗금(45°).
+   디더가 비워 둔 흰 종이 자리로만 비쳐 필기는 가리지 않는다. 마킹 빗금(-45°, 마킹 색)과 방향·색을 달리한다 */
+.doc-grid .doc-card:has(.sync-tag.is-overlay) .doc-thumb {
+  background-image: repeating-linear-gradient(45deg, var(--sync-hatch) 0 var(--sync-hatch-w), transparent var(--sync-hatch-w) var(--sync-hatch-gap));
+}
 .doc-more {
   position: absolute;
   right: 0;
