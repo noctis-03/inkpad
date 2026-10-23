@@ -4,6 +4,7 @@
 //    오프라인이면 대기로 남아 시트의 '모두 업로드'로 올라간다
 //  - appProperties 크기 제한(키+값 124바이트), 클라우드 폴더가 통째로 사라졌을 때 다시 올리기
 //  - 카드 미리보기: 파일은 이 기기 원본에서만(받지 않는다), HTML 앱은 늘 아이콘
+//  - HTML 앱의 내보내기: 브라우저가 바로 받지 않고 Inkpad가 묻는다 — 기기에 저장 / Inkpad(기타 파일)에 저장
 import { createFakeDrive } from './fake-drive.ts'
 import { addStroke, createDoc, device, sleep, type Ctx } from './lib.ts'
 
@@ -181,6 +182,72 @@ export default async function stores(ctx: Ctx) {
   const appIcon = (await p.locator(`[data-flip-key="app:${appId}"] .doc-thumb img`).count()) === 0
   const appThumbLeft = await p.evaluate(async () => (await (await import('/src/storage/db.ts')).db.itemThumbs.toCollection().primaryKeys()).some((k) => String(k).startsWith('app:')))
   check('미리보기: HTML 앱 카드는 실행해도 아이콘, 예전 앱 미리보기는 지운다', appIcon && !appThumbLeft, JSON.stringify({ appIcon, appThumbLeft }))
+
+  // ── HTML 앱의 내보내기 ──
+  // a: 붙이지 않은 <a download>를 click()하고 곧바로 revoke · b: showSaveFilePicker · c: inkpad.saveFile · d: 화면에 있는 data: 링크
+  const exporter = await p.evaluate(async () => {
+    const apps = await import('/src/sync/apps.ts')
+    const html = `<!doctype html><html><head><title>내보내기</title></head><body>
+<button id="a">a</button><button id="b">b</button><button id="c">c</button><a id="d" href="data:text/plain,DDD" download="d.txt">d</a><pre id="out"></pre>
+<script>
+var out=document.getElementById('out');function log(t){out.textContent+=t+' '}
+document.getElementById('a').onclick=function(){var u=URL.createObjectURL(new Blob(['AAA'],{type:'text/plain'}));var a=document.createElement('a');a.href=u;a.download='a.txt';a.click();URL.revokeObjectURL(u)};
+document.getElementById('b').onclick=async function(){try{var h=await showSaveFilePicker({suggestedName:'b.json',types:[{accept:{'application/json':['.json']}}]});var w=await h.createWritable();await w.write('{"b":1}');await w.close();log('b:ok')}catch(e){log('b:'+e.name)}};
+document.getElementById('c').onclick=function(){inkpad.saveFile('CCC','c.txt','text/plain').then(function(ok){log('c:'+ok)})};
+</script></body></html>`
+    return (await apps.addApp(new File([html], '내보내기.html', { type: 'text/html' }), '도구')).app.id
+  }, undefined)
+  let downloads: string[] = []
+  p.on('download', (d) => downloads.push(d.suggestedFilename()))
+  await p.goto(`${base}/#/app/${exporter}`)
+  const fr = p.frameLocator('iframe.app-runner-frame')
+  await fr.locator('#out').waitFor({ state: 'attached' })
+  const saveModal = p.locator('.modal', { hasText: '파일 저장' })
+  const fileRow = (name: string) =>
+    p.evaluate(async (n) => {
+      const { db } = await import('/src/storage/db.ts')
+      const r = (await db.files.toArray()).find((f) => f.name === n)
+      return r ? { text: r.text ?? null, category: r.category, fileId: r.fileId ?? null, pending: r.pending ?? null } : null
+    }, name)
+  const waitRow = async (name: string) => {
+    for (let i = 0; i < 40; i++) {
+      const r = await fileRow(name)
+      if (r && !r.pending) return r
+      await sleep(150)
+    }
+    return fileRow(name)
+  }
+
+  await fr.locator('#a').click()
+  await saveModal.waitFor({ timeout: 5000 })
+  const asked = (await saveModal.textContent())?.includes('a.txt') ?? false
+  await saveModal.getByRole('button', { name: 'Inkpad에 저장' }).click()
+  const ra = await waitRow('a.txt')
+  check('앱 내보내기: <a download>를 가로채 묻는다(브라우저가 바로 받지 않음)', asked && downloads.length === 0, JSON.stringify(downloads))
+  check('앱 내보내기: Inkpad에 저장 → 기타 파일에 추가되고 바로 올라간다 (곧바로 revoke한 blob도)', ra?.text === 'AAA' && !!ra.fileId && ra.category === '도구', JSON.stringify(ra))
+
+  await fr.locator('#b').click()
+  await saveModal.waitFor({ timeout: 5000 })
+  const dl = p.waitForEvent('download', { timeout: 5000 })
+  await saveModal.getByRole('button', { name: '기기에 저장' }).click()
+  const got = await dl.then((d) => d.suggestedFilename(), () => '')
+  await fr.locator('#out', { hasText: 'b:ok' }).waitFor({ timeout: 5000 }).catch(() => {})
+  check('앱 내보내기: showSaveFilePicker → 기기에 저장은 Inkpad가 내려받는다', got === 'b.json' && ((await fr.locator('#out').textContent()) ?? '').includes('b:ok'), got)
+
+  await fr.locator('#c').click()
+  await saveModal.waitFor({ timeout: 5000 })
+  await saveModal.getByRole('button', { name: '취소' }).click()
+  await fr.locator('#out', { hasText: 'c:false' }).waitFor({ timeout: 5000 }).catch(() => {})
+  check('앱 내보내기: inkpad.saveFile — 취소하면 앱이 false를 받는다', ((await fr.locator('#out').textContent()) ?? '').includes('c:false') && !(await fileRow('c.txt')))
+
+  downloads = []
+  await fr.locator('#d').click()
+  await saveModal.waitFor({ timeout: 5000 })
+  if (process.env.SHOT) await p.screenshot({ path: process.env.SHOT })
+  await saveModal.getByRole('button', { name: 'Inkpad 이 기기에만' }).click() // 큰 파일 확인(기본 '무조건')을 저장 창에 합쳤다
+  await sleep(500)
+  const rd = await fileRow('d.txt')
+  check('앱 내보내기: 화면의 data: 링크도 가로챈다 · "이 기기에만"은 올리지 않고 대기로', rd?.text === 'DDD' && !rd.fileId && rd.pending === 'upsert' && downloads.length === 0, JSON.stringify({ rd, downloads }))
 
   await p.context().close()
 }

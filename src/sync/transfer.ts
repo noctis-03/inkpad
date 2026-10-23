@@ -47,18 +47,31 @@ export async function confirmAssetDownload(bytes: number, kind: 'pdf' | 'image')
 }
 
 /**
+ * 업로드 전에 물어야 하면 확인 문구, 기준 미만이거나 끄기면 null.
+ * 자기 창에 업로드 확인을 합쳐 두 번 묻지 않을 때 쓴다 (HTML 앱의 파일 저장 창).
+ */
+export function uploadAsk(bytes: number, count = 1): { title: string; message: string; note: string } | null {
+  const mode = useUI.getState().settings.largeFileConfirm
+  if (mode === 'off') return null
+  const threshold = THRESHOLDS[mode]
+  if (bytes < threshold) return null
+  return {
+    title: `${formatBytes(bytes)}를 업로드합니다`,
+    message: (count > 1 ? `파일 ${count}개, ` : '') + '셀룰러 데이터를 사용 중이라면 그만큼 데이터가 사용됩니다.',
+    note: mode === 'always' ? '무조건 확인이 켜져 있습니다 · 설정에서 바꿀 수 있습니다' : `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`
+  }
+}
+
+/**
  * 파일 추가 전 3버튼 확인. 기준 미만이거나 끄기면 묻지 않고 'upload'.
  * 취소면 추가하지 않고, 'local'이면 db에만 추가한다(업로드 안 함).
  */
 export async function uploadChoice(bytes: number, count = 1): Promise<'cancel' | 'local' | 'upload'> {
-  const mode = useUI.getState().settings.largeFileConfirm
-  if (mode === 'off') return 'upload'
-  const threshold = THRESHOLDS[mode]
-  if (bytes < threshold) return 'upload'
-  const size = formatBytes(bytes)
-  const res = await choiceDialog(`${size}를 업로드합니다`, {
-    message: (count > 1 ? `파일 ${count}개, ` : '') + '셀룰러 데이터를 사용 중이라면 그만큼 데이터가 사용됩니다.',
-    note: mode === 'always' ? '무조건 확인이 켜져 있습니다 · 설정에서 바꿀 수 있습니다' : `${formatBytes(threshold)} 이상일 때만 묻습니다 · 설정에서 바꿀 수 있습니다`,
+  const ask = uploadAsk(bytes, count)
+  if (!ask) return 'upload'
+  const res = await choiceDialog(ask.title, {
+    message: ask.message,
+    note: ask.note,
     options: [
       { key: 'cancel', label: '취소' },
       { key: 'local', label: '이 기기에만 추가' },
