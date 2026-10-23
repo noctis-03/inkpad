@@ -255,11 +255,13 @@
   cursor: pointer;
 }
 
-/* 올가미 선택 */
-.selection-box {
+/* 올가미 선택 — 고른 영역의 모양 (SVG, 화면 좌표) */
+.selection-shape {
   position: absolute;
-  border: 1.5px dashed var(--accent);
-  border-radius: 6px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
   z-index: 3;
 }
@@ -585,4 +587,39 @@
   object-fit: contain;
   background: #fff;
   box-shadow: 0 0 0 1px var(--line);
+}
+.send-image-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.send-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.send-opt input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.send-opt small {
+  color: var(--muted);
+}
+.send-caption {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  resize: vertical;
+  user-select: text;
+  -webkit-user-select: text;
 }

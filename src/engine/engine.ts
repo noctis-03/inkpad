@@ -150,8 +150,11 @@ export class Engine {
   // 선택
   private selection: StrokeRec[] = []
   private selectionBox: Box | null = null
-  /** 마지막 올가미가 감싼 영역(월드) — 이미지로 보낼 때 획만이 아니라 감싼 곳(PDF 문제 등)까지 담는다. 옮기면 지운다 */
-  private lassoBox: Box | null = null
+  /**
+   * 지금 고른 올가미 영역(월드 다각형) — 이미지로 보낼 때 이 모양대로 자른다(고른 획의 크기가 아니라).
+   * 획 없이 감싸도 남는다(영역만 고른 상태 — 보내기만 할 수 있다). 고른 획을 옮기면 함께 옮긴다
+   */
+  private lassoPoly: number[] | null = null
 
   // 렌더 — 프레임은 할 일이 있을 때만 돈다.
   // 예전에는 노트를 열어 두기만 해도 매 프레임(120Hz iPad에서 초당 120번) 깨어났다. 이제 아래 표시를
@@ -317,7 +320,7 @@ export class Engine {
   }
 
   setTool(t: Tool) {
-    if (t !== 'lasso' && this.selection.length) this.clearSelection()
+    if (t !== 'lasso') this.clearSelection()
     this.tool = t
     this.cursor = null
     this.liveDirty = true
@@ -490,15 +493,16 @@ export class Engine {
     if (!this.selection.length || this.readOnly) return
     const off = 24 / this.cam.zoom
     const added = this.selection.map((r) => this.movedEntry(r, off, off, ulid()))
+    if (this.lassoPoly) this.lassoPoly = shiftPoly(this.lassoPoly, off, off)
     this.exec({ removed: [], added })
     this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
   }
 
   clearSelection(redraw = true) {
-    if (!this.selection.length) return
+    if (!this.selection.length && !this.lassoPoly) return
     this.selection = []
     this.selectionBox = null
-    this.lassoBox = null
+    this.lassoPoly = null
     this.renderer.hidden = null
     if (redraw) this.committedDirty = true
     this.liveDirty = true
@@ -1194,11 +1198,10 @@ export class Engine {
     if (tool === 'lasso') {
       const sb = this.selectionBox
       const pad = 12 / this.cam.zoom
-      if (sb && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
+      // 획을 고른 영역 안을 누르면 옮기기, 밖(또는 획 없이 영역만 고른 상태)이면 새 올가미
+      if (sb && this.selection.length && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
         a.moveFrom = w
-      } else if (this.selection.length) {
-        this.clearSelection()
-      }
+      } else this.clearSelection()
     }
     this.active = a
     this.cursor = null
@@ -1241,6 +1244,13 @@ export class Engine {
       if (a.moveFrom) {
         a.moveD = { x: w.x - a.moveFrom.x, y: w.y - a.moveFrom.y }
         this.liveDirty = true
+      } else if (this.settings.lassoShape === 'rect') {
+        // 사각 올가미: 누른 곳과 지금 점을 잇는 네모 (다각형 네 꼭짓점)
+        const l = a.lasso
+        const x0 = l.length ? l[0] : w.x
+        const y0 = l.length ? l[1] : w.y
+        l.length = 0
+        l.push(x0, y0, w.x, y0, w.x, w.y, x0, w.y)
       } else {
         const l = a.lasso
         const n = l.length
@@ -1365,7 +1375,7 @@ export class Engine {
       }
       const removed = this.selection.map(toEntry)
       const added = this.selection.map((r) => this.movedEntry(r, dx, dy, r.stroke.id))
-      this.lassoBox = null // 옮긴 뒤에는 옮긴 획의 영역만
+      if (this.lassoPoly) this.lassoPoly = shiftPoly(this.lassoPoly, dx, dy) // 영역도 함께 옮긴다
       this.exec({ removed, added })
       this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
       return
@@ -1378,7 +1388,9 @@ export class Engine {
       minY = Math.min(minY, poly[i + 1]); maxY = Math.max(maxY, poly[i + 1])
     }
     const sel = this.scene.query(minX, minY, maxX, maxY).filter((r) => strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
-    this.lassoBox = { minX, minY, maxX, maxY }
+    // 너무 작은 영역(살짝 누른 것)은 획이 없으면 고르지 않는다
+    const big = (maxX - minX) * this.cam.zoom > 8 && (maxY - minY) * this.cam.zoom > 8
+    this.lassoPoly = sel.length || big ? poly.slice() : null
     this.setSelection(sel)
   }
 
@@ -1400,15 +1412,15 @@ export class Engine {
 
   private setSelection(recs: StrokeRec[]) {
     this.selection = recs
-    if (!recs.length) {
-      this.lassoBox = null
+    if (!recs.length && !this.lassoPoly) {
       this.clearSelection()
       return
     }
-    let box: Box | null = null
+    // 고른 영역 = 올가미 영역 + 고른 획 (획이 올가미 밖으로 삐져나와도 잡을 수 있게)
+    let box: Box | null = this.lassoPoly ? polyBox(this.lassoPoly) : null
     for (const r of recs) box = unionBox(box, r.item)
     this.selectionBox = box
-    this.renderer.hidden = new Set(recs.map((r) => r.stroke.id))
+    this.renderer.hidden = recs.length ? new Set(recs.map((r) => r.stroke.id)) : null
     this.committedDirty = true
     this.liveDirty = true
     this.emitSelection()
@@ -1420,9 +1432,16 @@ export class Engine {
     const d = this.active?.moveFrom ? this.active.moveD : { x: 0, y: 0 }
     const p0 = this.cam.worldToScreen(b.minX + d.x, b.minY + d.y)
     const p1 = this.cam.worldToScreen(b.maxX + d.x, b.maxY + d.y)
+    const poly: number[] = []
+    const src = this.lassoPoly ?? boxPoly(b)
+    for (let i = 0; i < src.length; i += 2) {
+      const s = this.cam.worldToScreen(src[i] + d.x, src[i + 1] + d.y)
+      poly.push(s.x, s.y)
+    }
     this.cb.onSelection({
       count: this.selection.length,
       rect: { x: p0.x, y: p0.y, w: p1.x - p0.x, h: p1.y - p0.y },
+      poly,
       moving: !!this.active?.moveFrom
     })
   }
@@ -1625,7 +1644,7 @@ export class Engine {
         this.stats.committedMs = r.lastFullMs
         this.stats.renderPath = moving ? 'redraw' : 'idle'
       }
-      if (this.selection.length) this.emitSelection()
+      if (this.selection.length || this.lassoPoly) this.emitSelection()
       this.emitView()
     }
 
@@ -1777,17 +1796,21 @@ export class Engine {
   }
 
   /**
-   * 이미지로 보내기(복사·공유) — 화면 줌과 관계없이 읽기 좋은 해상도로 다시 그린 PNG.
+   * 이미지로 보내기(복사·공유) — 화면 줌과 관계없이 읽기 좋은 해상도로 다시 그린 PNG (흰 바탕).
    *  - { page }: 그 페이지 전체 (무한 캔버스면 지금 보이는 화면)
-   *  - 'selection': 올가미로 감싼 영역 + 고른 획 (여백 조금)
-   * 종이·속지·PDF·필기(형광펜 포함)를 그린다. 블록(메모·할 일 등)은 PDF 내보내기처럼 담지 않는다.
+   *  - 'selection': 올가미 영역을 그 모양대로 자른다 — 고른 획 기준이 아니다. 걸친 획은 경계에서 잘린다
+   * background면 종이·속지·PDF까지, 아니면 필기(형광펜 포함)만. 블록(메모·할 일 등)은 PDF 내보내기처럼 담지 않는다.
    * PDF 원본이 이 기기에 없으면 화면에 그릴 때처럼 받아 온다.
    */
-  async exportImage(target: { page: number } | 'selection', longSide = 2000): Promise<Blob | null> {
+  async exportImage(target: { page: number } | 'selection', opts: { background?: boolean; longSide?: number } = {}): Promise<Blob | null> {
+    const longSide = opts.longSide ?? 2000
+    const background = opts.background ?? true
     let box: Box | null
+    let clip: number[] | null = null
     if (target === 'selection') {
-      const b = this.lassoBox && this.selectionBox ? unionBox(this.lassoBox, this.selectionBox) : this.selectionBox
-      const pad = 12
+      clip = this.lassoPoly ?? (this.selectionBox ? boxPoly(this.selectionBox) : null)
+      const b = clip && polyBox(clip)
+      const pad = 8
       box = b ? { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad } : null
     } else if (this.layout.paged) {
       const p = this.layout.pages[target.page]
@@ -1807,7 +1830,15 @@ export class Engine {
     const ctx = c.getContext('2d')!
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, c.width, c.height)
-    if (this.layout.paged) {
+    if (clip) {
+      // 올가미 모양으로 자른다 — 밖은 흰 바탕. 클립은 그린 때의 변환으로 기기 픽셀에 고정되므로 아래 setTransform과 무관하다
+      ctx.setTransform(k, 0, 0, k, -box.minX * k, -box.minY * k)
+      ctx.beginPath()
+      for (let i = 0; i < clip.length; i += 2) (i ? ctx.lineTo : ctx.moveTo).call(ctx, clip[i], clip[i + 1])
+      ctx.closePath()
+      ctx.clip()
+    }
+    if (this.layout.paged && background) {
       for (const p of this.layout.visiblePages(box.minY, box.maxY, box.minX, box.maxX)) {
         const r = this.layout.rects.get(p.id)
         if (!r) continue
@@ -1940,3 +1971,18 @@ function eventTimeToPerf(ts: number) {
 }
 
 export { PAGE_GAP }
+
+/** 다각형(평탄 [x, y, …])을 (dx, dy)만큼 옮긴 새 배열 */
+function shiftPoly(p: number[], dx: number, dy: number): number[] {
+  return p.map((v, i) => (i % 2 ? v + dy : v + dx))
+}
+/** 다각형의 경계 상자 */
+function polyBox(p: number[]): Box {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (let i = 0; i < p.length; i += 2) {
+    minX = Math.min(minX, p[i]); maxX = Math.max(maxX, p[i])
+    minY = Math.min(minY, p[i + 1]); maxY = Math.max(maxY, p[i + 1])
+  }
+  return { minX, minY, maxX, maxY }
+}
+const boxPoly = (b: Box) => [b.minX, b.minY, b.maxX, b.minY, b.maxX, b.maxY, b.minX, b.maxY]

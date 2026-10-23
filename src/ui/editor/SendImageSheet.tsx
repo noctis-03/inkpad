@@ -1,6 +1,8 @@
 // 이미지로 보내기 — 페이지(또는 올가미로 고른 영역)를 읽기 좋은 해상도로 다시 그려 복사·공유한다.
 // 화면 분할로 옆에 띄운 Claude 같은 AI 앱에 붙여넣어 묻는 용도. 이 기기 안에서만 만들고 어디에도 올리지 않는다(네트워크 0).
-import { useEffect, useState } from 'react'
+//  - 올가미는 기본 '글씨만'(PDF·속지 없이), 페이지는 기본 PDF 포함 — 고른 값은 이 기기에 기억한다
+//  - 요청 문구는 이미지 위쪽 띠에 글자로 넣는다 (공유·붙여넣기로 문구가 따로 가는지는 받는 앱마다 달라서)
+import { useEffect, useMemo, useState } from 'react'
 import { useUI, type SendImageTarget } from '../../app/store'
 import type { Engine } from '../../engine/engine'
 import { saveFile } from '../../io/download'
@@ -11,32 +13,131 @@ type ShareNav = Navigator & { canShare?: (d: ShareData) => boolean }
 /** 클립보드에 이미지를 쓸 수 있는가 (iPadOS Safari 13.4+, 크롬) */
 const canCopyImage = () => typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write
 
-export function SendImageSheet({ engine, title, target }: { engine: Engine; title: string; target: SendImageTarget }) {
+const LS = 'inkpad.sendImage.v1'
+interface Prefs {
+  /** 올가미·페이지 각각 PDF·속지 포함 */
+  selBg: boolean
+  pageBg: boolean
+  /** 이미지에 요청 문구 넣기 */
+  caption: boolean
+}
+function loadPrefs(): Prefs {
+  const def: Prefs = { selBg: false, pageBg: true, caption: true }
+  try {
+    return { ...def, ...JSON.parse(localStorage.getItem(LS) ?? '{}') }
+  } catch {
+    return def
+  }
+}
+function savePrefs(p: Prefs) {
+  try {
+    localStorage.setItem(LS, JSON.stringify(p))
+  } catch {
+    /* 저장 공간 부족 등 */
+  }
+}
+
+/** 기본 요청 문구 — 글씨만이면 손글씨 받아쓰기, PDF까지면 문제·풀이 확인 */
+export const defaultCaption = (bg: boolean) => (bg ? '이 문제와 풀이를 보고 맞는지 확인해줘.' : '이 손글씨를 그대로 텍스트로 다시 적어줘.')
+
+/**
+ * 이미지 위에 요청 문구 띠를 붙인다. 좁은 이미지(작은 올가미)도 문구가 너무 잘게 줄바꿈되지 않게
+ * 폭은 최소 900px로 하고 이미지는 가운데에 둔다.
+ */
+export async function withCaption(img: Blob, text: string): Promise<Blob> {
+  const bmp = await createImageBitmap(img)
+  const W = Math.max(bmp.width, 900)
+  const fs = Math.round(Math.min(44, Math.max(26, W * 0.03)))
+  const pad = Math.round(fs * 0.8)
+  const lh = Math.round(fs * 1.4)
+  const font = `600 ${fs}px -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif`
+  const measure = document.createElement('canvas').getContext('2d')!
+  measure.font = font
+  // 글자 단위로 줄바꿈 (한글은 띄어쓰기가 적어도 넘치지 않게)
+  const lines: string[] = []
+  for (const para of text.split('\n')) {
+    let line = ''
+    for (const ch of para) {
+      if (line && measure.measureText(line + ch).width > W - pad * 2) {
+        lines.push(line)
+        line = ch.trimStart()
+      } else line += ch
+    }
+    lines.push(line)
+  }
+  const band = pad * 2 + lines.length * lh
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = band + bmp.height
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, c.width, c.height)
+  ctx.fillStyle = '#f2f1ee'
+  ctx.fillRect(0, 0, W, band)
+  ctx.fillStyle = '#d8d4cb'
+  ctx.fillRect(0, band - 2, W, 2)
+  ctx.fillStyle = '#1c1b19'
+  ctx.font = font
+  ctx.textBaseline = 'middle'
+  lines.forEach((l, i) => ctx.fillText(l, pad, pad + i * lh + lh / 2))
+  ctx.drawImage(bmp, Math.round((W - bmp.width) / 2), band)
+  bmp.close()
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('이미지를 만들지 못했습니다.'))), 'image/png'))
+}
+
+export function SendImageSheet({ engine, title, target, paged }: { engine: Engine; title: string; target: SendImageTarget; paged: boolean }) {
   const toast = useUI((s) => s.toast)
   const close = () => useUI.setState({ sendImage: null })
+  const isSel = target === 'selection'
+  const [prefs, setPrefs] = useState(loadPrefs)
+  const bg = paged && (isSel ? prefs.selBg : prefs.pageBg)
+  // 고치지 않았으면 PDF 포함을 바꿀 때 기본 문구도 따라 바뀐다
+  const [custom, setCustom] = useState<string | null>(null)
+  const text = custom ?? defaultCaption(bg)
+  const [typed, setTyped] = useState(text) // 입력 중에는 미리보기를 매번 다시 그리지 않는다
   const [blob, setBlob] = useState<Blob | null>(null)
   const [url, setUrl] = useState('')
   const [failed, setFailed] = useState(false)
-  const name = `${title || '노트'} ${target === 'selection' ? '부분' : `${target.page + 1}쪽`}.png`
+  const name = `${title || '노트'} ${isSel ? '부분' : `${target.page + 1}쪽`}.png`
+  const caption = prefs.caption ? text.trim() : ''
+
+  const update = (p: Partial<Prefs>) =>
+    setPrefs((cur) => {
+      const next = { ...cur, ...p }
+      savePrefs(next)
+      return next
+    })
+
+  useEffect(() => setTyped(text), [text])
+  useEffect(() => {
+    if (typed === text) return
+    const t = window.setTimeout(() => setCustom(typed), 350)
+    return () => window.clearTimeout(t)
+  }, [typed, text])
 
   useEffect(() => {
     let alive = true
     let u = ''
-    void engine.exportImage(target).then(
-      (b) => {
+    setBlob(null)
+    setFailed(false)
+    void (async () => {
+      try {
+        let b = await engine.exportImage(target, { background: bg })
+        if (b && caption) b = await withCaption(b, caption)
         if (!alive) return
         if (!b) return setFailed(true)
         u = URL.createObjectURL(b)
         setBlob(b)
         setUrl(u)
-      },
-      () => alive && setFailed(true)
-    )
+      } catch {
+        if (alive) setFailed(true)
+      }
+    })()
     return () => {
       alive = false
       if (u) URL.revokeObjectURL(u)
     }
-  }, [engine, target])
+  }, [engine, target, bg, caption])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
@@ -44,8 +145,9 @@ export function SendImageSheet({ engine, title, target }: { engine: Engine; titl
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const file = blob ? new File([blob], name, { type: 'image/png' }) : null
+  const file = useMemo(() => (blob ? new File([blob], name, { type: 'image/png' }) : null), [blob, name])
   const canShare = !!file && !!(navigator as ShareNav).canShare?.({ files: [file] })
+  const ready = !!blob && typed === text // 입력한 문구가 미리보기에 들어간 뒤에만
 
   // 복사·공유는 누른 처리기 안에서 바로 부른다 — Safari는 사용자 탭 밖의 클립보드 쓰기·공유를 막는다
   const copy = () => {
@@ -74,26 +176,48 @@ export function SendImageSheet({ engine, title, target }: { engine: Engine; titl
       <div className="modal send-image" role="dialog" aria-label="이미지로 보내기">
         <h2 className="modal-title">이미지로 보내기</h2>
         <div className="send-image-preview">
-          {url ? <img src={url} alt={target === 'selection' ? '고른 영역' : `${target.page + 1}쪽`} /> : failed ? <p>이미지를 만들지 못했습니다.</p> : <div className="spinner" />}
+          {url && blob ? <img src={url} alt={isSel ? '고른 영역' : `${target.page + 1}쪽`} /> : failed ? <p>이미지를 만들지 못했습니다.</p> : <div className="spinner" />}
+        </div>
+        <div className="send-image-opts">
+          {paged && (
+            <label className="send-opt">
+              <input type="checkbox" checked={bg} onChange={(e) => update(isSel ? { selBg: e.target.checked } : { pageBg: e.target.checked })} />
+              PDF·속지 포함 {!bg && <small>(지금은 글씨만)</small>}
+            </label>
+          )}
+          <label className="send-opt">
+            <input type="checkbox" checked={prefs.caption} onChange={(e) => update({ caption: e.target.checked })} />
+            이미지에 요청 문구 넣기
+          </label>
+          {prefs.caption && (
+            <textarea
+              className="send-caption"
+              rows={2}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              aria-label="요청 문구"
+              placeholder={defaultCaption(bg)}
+            />
+          )}
         </div>
         <p className="modal-note">
-          Claude 같은 AI 앱을 옆에 띄우고(화면 분할) 붙여넣어 물어보세요. 이 기기에서만 만들고 어디에도 올리지 않습니다. 메모·할 일 블록은 담기지 않습니다.
+          Claude 같은 AI 앱을 옆에 띄우고(화면 분할) 붙여넣으세요 — 요청 문구는 이미지 위쪽에 글자로 들어갑니다. 이 기기에서만 만들고 어디에도 올리지 않습니다. 메모·할 일 블록은 담기지 않습니다.
         </p>
         <div className="modal-actions wrap">
           <button className="text-btn" onClick={close}>
             닫기
           </button>
           {canShare ? (
-            <button className="text-btn" onClick={share} disabled={!blob}>
+            <button className="text-btn" onClick={share} disabled={!ready}>
               <Icon name="share" size={18} /> 공유
             </button>
           ) : (
-            <button className="text-btn" onClick={save} disabled={!blob}>
+            <button className="text-btn" onClick={save} disabled={!ready}>
               <Icon name="download" size={18} /> 저장
             </button>
           )}
           {canCopyImage() && (
-            <button className="primary-btn" onClick={copy} disabled={!blob}>
+            <button className="primary-btn" onClick={copy} disabled={!ready}>
               <Icon name="copy" size={18} /> 복사
             </button>
           )}

@@ -338,3 +338,5 @@
 .ft-bar[data-hide~='block'] .ft-k-block, .ft-bar[data-hide~='block'] .ft-blocks-sep { display:none !important; }
 .ft-k-block { position:relative; }
 .ft-k-block[data-hidden]::after { content:''; position:absolute; right:8px; bottom:8px; width:5px; height:5px; border-radius:50%; background:var(--muted); }
+/* 올가미 모양 고르기 — 이름 옆에 짧은 설명 */
+.ft-menu-desc { margin-left: auto; padding-left: 12px; font-size: var(--fs-xs); color: var(--muted); }
