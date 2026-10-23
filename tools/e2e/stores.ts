@@ -4,7 +4,8 @@
 //    오프라인이면 대기로 남아 시트의 '모두 업로드'로 올라간다
 //  - appProperties 크기 제한(키+값 124바이트), 클라우드 폴더가 통째로 사라졌을 때 다시 올리기
 //  - 카드 미리보기: 파일은 이 기기 원본에서만(받지 않는다), HTML 앱은 늘 아이콘
-//  - HTML 앱의 내보내기: 브라우저가 바로 받지 않고 Inkpad가 묻는다 — 기기에 저장 / Inkpad(기타 파일)에 저장
+//  - HTML 앱의 내보내기: 브라우저가 바로 받지 않고 Inkpad가 묻는다 — 기기에 저장 / Inkpad에 저장
+//    (형식별로: PDF는 노트 또는 기타 파일, HTML은 앱, .inkpad는 가져오기, 나머지는 기타 파일)
 import { createFakeDrive } from './fake-drive.ts'
 import { addStroke, createDoc, device, sleep, type Ctx } from './lib.ts'
 
@@ -248,6 +249,81 @@ document.getElementById('c').onclick=function(){inkpad.saveFile('CCC','c.txt','t
   await sleep(500)
   const rd = await fileRow('d.txt')
   check('앱 내보내기: 화면의 data: 링크도 가로챈다 · "이 기기에만"은 올리지 않고 대기로', rd?.text === 'DDD' && !rd.fileId && rd.pending === 'upsert' && downloads.length === 0, JSON.stringify({ rd, downloads }))
+
+  // 형식별로 나눠 넣는다 (io/fileRoute — 라이브러리 "파일 추가"·끌어 놓기와 같다): PDF는 노트/기타 파일, HTML은 앱, .inkpad는 가져오기
+  const payload = await p.evaluate(async () => {
+    const { PDFDocument } = await import('/node_modules/pdf-lib/dist/pdf-lib.esm.js')
+    const pdf = await PDFDocument.create()
+    pdf.addPage([300, 400])
+    const b64 = (u: Uint8Array) => btoa(Array.from(u, (c) => String.fromCharCode(c)).join(''))
+    const repo = await import('/src/storage/repo.ts')
+    const m = await import('/src/shared/model.ts')
+    const d = await repo.createDocument({ title: '앱이 보낸 노트', mode: 'paged', folderId: null, pages: [{ size: { w: 595.28, h: 841.89 }, background: m.makeBackground('blank') }] })
+    const { exportInkpad } = await import('/src/io/inkpadFormat.ts')
+    const ink = new Uint8Array(await (await exportInkpad([d.id], 'document')).arrayBuffer())
+    return { pdf: b64(await pdf.save()), ink: b64(ink), html: btoa(unescape(encodeURIComponent('<!doctype html><title>앱이 만든 앱</title><p>x</p>'))) }
+  })
+  const appFrame = p.frames().find((f) => f !== p.mainFrame())!
+  const emit = (name: string, b64: string, type: string) =>
+    appFrame.evaluate(
+      ([name, b64, type]) => {
+        const bin = atob(b64)
+        const u = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i)
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(new Blob([u], { type }))
+        a.download = name
+        a.click()
+      },
+      [name, b64, type] as const
+    )
+  const dbState = () =>
+    p.evaluate(async () => {
+      const { db } = await import('/src/storage/db.ts')
+      return {
+        docs: (await db.documents.toArray()).filter((d) => !d.deletedAt).map((d) => ({ title: d.title, category: d.category ?? null })),
+        files: (await db.files.toArray()).map((f) => f.name),
+        apps: (await db.apps.toArray()).map((a) => ({ title: a.title, category: a.category }))
+      }
+    })
+  const until = async (ok: (s: Awaited<ReturnType<typeof dbState>>) => boolean) => {
+    let st = await dbState()
+    for (let i = 0; i < 40 && !ok(st); i++) {
+      await sleep(150)
+      st = await dbState()
+    }
+    return st
+  }
+
+  await emit('보고서.pdf', payload.pdf, 'application/pdf')
+  await saveModal.waitFor({ timeout: 5000 })
+  if (process.env.SHOT) await p.screenshot({ path: process.env.SHOT.replace(/\.png$/, '-pdf.png') })
+  const pdfButtons = await saveModal.getByRole('button').allTextContents()
+  await saveModal.getByRole('button', { name: '노트로 저장' }).click()
+  let st = await until((s) => s.docs.some((d) => d.title === '보고서'))
+  check('앱 내보내기: PDF는 "노트로 저장"(기본)·"기타 파일로"를 고른다', pdfButtons.some((t) => t.includes('노트로 저장')) && pdfButtons.some((t) => t.includes('기타 파일로')), JSON.stringify(pdfButtons))
+  check('앱 내보내기: PDF → 노트로 저장하면 앱과 같은 카테고리의 노트', st.docs.some((d) => d.title === '보고서' && d.category === '도구') && !st.files.includes('보고서.pdf'), JSON.stringify(st.docs))
+
+  await emit('영수증.pdf', payload.pdf, 'application/pdf')
+  await saveModal.waitFor({ timeout: 5000 })
+  await saveModal.getByRole('button', { name: '기타 파일로' }).click()
+  const upChoice = p.locator('.dialog-host').getByRole('button', { name: '업로드' })
+  await upChoice.waitFor({ timeout: 5000 }).then(() => upChoice.click(), () => {}) // 큰 파일 확인(기본 '무조건')
+  st = await until((s) => s.files.includes('영수증.pdf'))
+  check('앱 내보내기: PDF → 기타 파일로 고르면 기타 파일', st.files.includes('영수증.pdf') && !st.docs.some((d) => d.title === '영수증'), JSON.stringify(st.files))
+
+  await emit('새앱.html', payload.html, 'text/html')
+  await saveModal.waitFor({ timeout: 5000 })
+  await saveModal.getByRole('button', { name: '앱으로 저장' }).click()
+  st = await until((s) => s.apps.some((a) => a.title === '앱이 만든 앱'))
+  check('앱 내보내기: HTML → 앱으로 저장 (기타 파일이 아니다)', st.apps.some((a) => a.title === '앱이 만든 앱' && a.category === '도구') && !st.files.includes('새앱.html'), JSON.stringify(st.apps))
+
+  const before2 = (await dbState()).docs.filter((d) => d.title === '앱이 보낸 노트').length
+  await emit('보낸노트.inkpad', payload.ink, 'application/octet-stream')
+  await saveModal.waitFor({ timeout: 5000 })
+  await saveModal.getByRole('button', { name: '노트로 가져오기' }).click()
+  st = await until((s) => s.docs.filter((d) => d.title === '앱이 보낸 노트').length > before2)
+  check('앱 내보내기: .inkpad → 노트로 가져오기', st.docs.filter((d) => d.title === '앱이 보낸 노트').length === before2 + 1 && !st.files.includes('보낸노트.inkpad'), JSON.stringify(st.docs))
 
   await p.context().close()
 }

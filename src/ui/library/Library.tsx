@@ -40,7 +40,8 @@ import {
 import type { Mark } from '../../storage/repo'
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
-import { exportInkpad, importInkpad, isInkpadZip } from '../../io/inkpadFormat'
+import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
+import { routeFiles } from '../../io/fileRoute'
 import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
 import { openChanges } from '../ChangesView'
@@ -1220,22 +1221,13 @@ export function Library() {
     if (list.length === 1) navigate({ name: 'file', fileId: lastFile.id })
   }
 
-  /**
-   * 형식에 따라 PDF 노트 가져오기 / HTML 앱 / .inkpad 가져오기 / 일반 파일로 나눠 처리한다 ("파일 추가"·끌어 놓기).
-   * .zip은 안을 들여다봐 Inkpad 파일(manifest.json)일 때만 가져오고, 아니면 기타 파일로 추가한다
-   */
+  /** 형식에 따라 PDF 노트 가져오기 / HTML 앱 / .inkpad 가져오기 / 일반 파일로 나눠 처리한다 ("파일 추가"·끌어 놓기 — io/fileRoute) */
   const addAnyFiles = async (list: File[]) => {
-    const zips = list.filter((f) => /\.zip$/i.test(f.name))
-    const zipInks = new Set<File>()
-    for (const f of zips) if (await isInkpadZip(f)) zipInks.add(f)
-    const pdfs = list.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf')
-    const inks = list.filter((f) => /\.inkpad$/i.test(f.name) || zipInks.has(f))
-    const htmls = list.filter((f) => /\.html?$/i.test(f.name) || f.type === 'text/html')
-    const rest = list.filter((f) => !pdfs.includes(f) && !inks.includes(f) && !htmls.includes(f))
-    if (pdfs.length) await importPdfFiles(pdfs, currentFolderId)
-    if (htmls.length) await addAppFiles(htmls)
-    if (inks.length) await importInkpadFiles(inks)
-    if (rest.length) await addFileItems(rest)
+    const r = await routeFiles(list)
+    if (r.pdf.length) await importPdfFiles(r.pdf, currentFolderId)
+    if (r.html.length) await addAppFiles(r.html)
+    if (r.inkpad.length) await importInkpadFiles(r.inkpad)
+    if (r.file.length) await addFileItems(r.file)
   }
 
   const onAddFile = async () => {
