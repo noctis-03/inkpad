@@ -92,11 +92,7 @@ export class PdfCache {
    * w, h: 페이지 크기(pt)
    */
   get(ref: PdfRef, w: number, h: number, pxPerPt: number, priority: boolean): HTMLCanvasElement | null {
-    const want = PdfCache.levelFor(pxPerPt)
-    // 캔버스 한 장이 너무 커지지 않게 (Safari 캔버스 한도)
-    let level = want
-    while (level > 0.25 && w * h * level * level > 16_000_000) level /= 2
-    const key = `${ref.assetId}:${ref.pageIndex}:${ref.rotation}:${level}`
+    const { key, level } = this.keyFor(ref, w, h, pxPerPt)
     const hit = this.bitmaps.get(key)
     if (hit) {
       hit.lastUsed = performance.now()
@@ -111,6 +107,30 @@ export class PdfCache {
     }
     if (best) best.lastUsed = performance.now()
     return best?.canvas ?? null
+  }
+
+  private keyFor(ref: PdfRef, w: number, h: number, pxPerPt: number) {
+    // 캔버스 한 장이 너무 커지지 않게 (Safari 캔버스 한도)
+    let level = PdfCache.levelFor(pxPerPt)
+    while (level > 0.25 && w * h * level * level > 16_000_000) level /= 2
+    return { key: `${ref.assetId}:${ref.pageIndex}:${ref.rotation}:${level}`, level }
+  }
+
+  /**
+   * 원하는 해상도의 비트맵이 준비될 때까지 기다린다 — 이미지로 내보낼 때 (화면처럼 낮은 해상도로 대신 그리지 않는다).
+   * 실패하면 null, 오래 걸리면 있는 것 중 가장 큰 것.
+   */
+  async getExact(ref: PdfRef, w: number, h: number, pxPerPt: number, timeoutMs = 20_000): Promise<HTMLCanvasElement | null> {
+    const { key } = this.keyFor(ref, w, h, pxPerPt)
+    const t0 = performance.now()
+    for (;;) {
+      const fallback = this.get(ref, w, h, pxPerPt, true) // 없으면 맨 앞에 예약한다
+      const hit = this.bitmaps.get(key)
+      if (hit) return hit.canvas
+      if (this.failed.has(key)) return null
+      if (performance.now() - t0 > timeoutMs) return fallback
+      await new Promise((r) => setTimeout(r, 50))
+    }
   }
 
   isFailed(ref: PdfRef) {

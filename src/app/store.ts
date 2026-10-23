@@ -165,6 +165,9 @@ function loadTabs(): TabsState {
   return { tabs, split, splitRatio: clampSplit(typeof t.splitRatio === 'number' ? t.splitRatio : 0.6), splitSide: t.splitSide === 'left' ? 'left' : 'right' }
 }
 
+/** 이미지로 보낼 곳 — { page: 0부터 } 또는 'selection'(올가미) */
+export type SendImageTarget = { page: number } | 'selection'
+
 export interface Toast {
   id: number
   text: string
@@ -210,6 +213,8 @@ interface UIState {
   split: SplitRoute | null
   splitRatio: number
   splitSide: 'left' | 'right'
+  /** 이미지로 보내기 창 (편집 화면이 그린다) — 페이지 하나, 또는 올가미로 고른 영역 */
+  sendImage: SendImageTarget | null
   /** 마지막으로 본 홈 화면 (라이브러리 / 작업보드) — 홈 탭을 누르면 여기로 */
   home: Extract<Route, { name: 'library' | 'board' }>
 
@@ -294,6 +299,7 @@ export const useUI = create<UIState>((set, get) => ({
   split: firstTabs.split,
   splitRatio: firstTabs.splitRatio,
   splitSide: firstTabs.splitSide,
+  sendImage: null,
   home: firstRoute.name === 'board' ? { name: 'board' } : { name: 'library' },
 
   navigate: (route) => {
@@ -315,6 +321,7 @@ export const useUI = create<UIState>((set, get) => ({
       route,
       panel: 'none',
       selection: null,
+      sendImage: null,
       // 노트·앱·파일을 열 때는 열기 전 화면을 기억해 뒤로가기 때 돌아간다 (작업보드 → 노트 → 뒤로 = 작업보드)
       returnRoute: opens ? prev : null,
       tabs: withTab(tabs, route, prev),
