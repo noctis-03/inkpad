@@ -1,7 +1,7 @@
 // 이미지로 보내기 — 페이지·올가미 영역을 읽기 좋은 해상도로 다시 그려 복사한다 (AI 앱에 붙여넣기용)
 //  - 페이지 전체: 기본 PDF 포함, 화면 줌과 관계없이 같은 크기(긴 변 2000px, 1pt에 4px까지)
 //  - 올가미: 감싼 모양 그대로 자른다(고른 획 기준이 아니다). 기본 글씨만, 'PDF·속지 포함'을 켜면 밑의 PDF까지
-//  - 자유 / 사각 올가미 (도구창에서 올가미를 한 번 더 눌러 고른다), 획 없이 감싸도 '영역'으로 보낼 수 있다
+//  - 자유 / 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 바로), 획 없이 감싸도 '영역'으로 보낼 수 있다
 //  - 요청 문구는 이미지 위쪽 띠에 글자로 — 끄면 띠 없이
 //  - 복사하면 클립보드에 PNG — 네트워크는 쓰지 않는다
 import { device, drawStroke, openEditor, sleep, type Ctx } from './lib.ts'
@@ -143,14 +143,16 @@ export default async function sendimage(ctx: Ctx) {
   check('올가미: PDF 포함은 기억하고, 요청 문구를 끄면 띠 없이', remembered && !!noCap && noCap.w === diaBg?.w && noCap.h === diaBg?.h, JSON.stringify({ remembered, noCap }))
   check('올가미: 선택은 그대로 (보낸 뒤에도 이어서 옮기기·지우기)', (await p.locator('.selection-bar').count()) === 1)
 
-  // ── 사각 올가미 (도구창에서 올가미를 한 번 더 눌러 고른다) ──
-  await p.locator('.ft-tool[aria-label="올가미"]').click()
+  // ── 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 자유/사각) ──
+  const freeOnBar = (await p.locator('.ft-lasso [aria-label="자유 올가미"]').getAttribute('aria-checked')) === 'true'
+  const styleHidden = !(await p.locator('.ft-bar .ft-style').first().isVisible())
+  await p.locator('.ft-lasso [aria-label="사각 올가미"]').click()
   if (process.env.SHOT) {
-    await p.locator('.ft-menu').waitFor()
-    await sleep(600)
-    await p.screenshot({ path: process.env.SHOT.replace(/\.png$/, '-pop.png') })
+    await p.mouse.move(5, 5) // 버튼 위 hover·전환이 끝난 뒤에
+    await sleep(500)
+    await p.locator('.ft-bar').screenshot({ path: process.env.SHOT.replace(/\.png$/, '-bar.png') })
   }
-  await p.locator('.ft-menu').getByRole('menuitemradio', { name: /사각 올가미/ }).click()
+  const rectIcon = await p.locator('.ft-tool[aria-label="올가미"] svg path').getAttribute('d')
   const shape = await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().settings.lassoShape)
   // 획의 왼쪽 절반만 걸치는 가로로 긴 네모 — 획 기준이면 획 전체 폭이 된다
   const rx0 = cx - 150
@@ -170,7 +172,13 @@ export default async function sendimage(ctx: Ctx) {
     return 100 / (e.worldOfClient(x + 100, y).x - e.worldOfClient(x, y).x)
   }, [rx0, ry0])
   const want = ((rx1 - rx0) / zoom + 16) / ((ry1 - ry0) / zoom + 16)
-  check('사각 올가미: 도구창에서 고르고, 끈 네모 그대로 자른다 (획 기준 아님)', shape === 'rect' && Math.abs(ratio - want) < 0.04 && /^25\d,2\d\d,2\d\d$/.test(rect!.inside), JSON.stringify({ shape, rect, ratio, want }))
+  check('사각 올가미: 도구창에서 바로 고르고, 끈 네모 그대로 자른다 (획 기준 아님)', shape === 'rect' && Math.abs(ratio - want) < 0.04 && /^25\d,2\d\d,2\d\d$/.test(rect!.inside), JSON.stringify({ shape, rect, ratio, want }))
+  check('올가미 모양: 올가미일 때 색·굵기 자리에 자유/사각이 바로 보이고, 사각이면 도구 아이콘도 네모', freeOnBar && styleHidden && !!rectIcon && rectIcon.startsWith('M3 3h4'), JSON.stringify({ freeOnBar, styleHidden, rectIcon }))
+  // 펜으로 바꾸면 자유/사각은 숨고 색·굵기가 보인다
+  await p.locator('.ft-tool[aria-label="펜"]').click()
+  const penBar = { lasso: await p.locator('.ft-lasso').first().isVisible(), style: await p.locator('.ft-bar .ft-style').first().isVisible() }
+  await p.locator('.ft-tool[aria-label="올가미"]').click()
+  check('올가미 모양: 펜으로 바꾸면 숨고 색·굵기가 다시 보인다', !penBar.lasso && penBar.style, JSON.stringify(penBar))
 
   // ── 획 없이 감싼 영역 — '영역'으로 보내기만 ──
   await lassoDrag([

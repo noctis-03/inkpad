@@ -89,7 +89,7 @@ function widthMarkOf(tool: Tool, color: string, w: number) {
   )
 }
 
-export type PopKind = 'style' | 'more' | 'blocks' | 'lasso'
+export type PopKind = 'style' | 'more' | 'blocks'
 type Side = 'below' | 'above' | 'left' | 'right'
 const sideOf = (p: ToolbarPos): Side =>
   p.startsWith('top') ? 'below' : p.startsWith('bottom') ? 'above' : p === 'left' ? 'right' : 'left'
@@ -319,8 +319,8 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
         setCollapsed(false)
         return
       }
-      // 같은 도구를 한 번 더 — 펜·형광펜·지우개는 색·굵기, 올가미는 모양(자유/사각)
-      togglePop(t === 'lasso' ? 'lasso' : 'style', btn)
+      // 같은 도구를 한 번 더 — 펜·형광펜·지우개는 색·굵기 (올가미 모양은 바에 바로 보인다)
+      if (t !== 'lasso') togglePop('style', btn)
       return
     }
     setTool(t)
@@ -432,6 +432,30 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
           </button>
         </div>
 
+        {/* 올가미일 때 색·굵기 자리에 — 자유 / 사각 (설정에 기억) */}
+        <span className="ft-sep ft-hide ft-lasso" />
+        <div className="ft-group ft-hide ft-lasso" role="radiogroup" aria-label="올가미 모양">
+          {(
+            [
+              ['free', 'lasso', '자유 올가미'],
+              ['rect', 'lassoRect', '사각 올가미']
+            ] as const
+          ).map(([shape, icon, label]) => (
+            <button
+              key={shape}
+              className={'ft-btn ft-lasso-btn' + (settings.lassoShape === shape ? ' is-active' : '')}
+              role="radio"
+              aria-checked={settings.lassoShape === shape}
+              aria-label={label}
+              title={label}
+              onClick={() => setSettings({ lassoShape: shape })}
+            >
+              <Icon name={icon} />
+              <span className="ft-lasso-label">{shape === 'free' ? '자유' : '사각'}</span>
+            </button>
+          ))}
+        </div>
+
         <span className="ft-sep ft-hide ft-hist-sep" />
         <div className="ft-group ft-hide ft-hist">
           <button className="ft-btn ft-k-undo" disabled={!view.canUndo} onClick={() => engine?.undo()} aria-label="실행 취소">
@@ -468,30 +492,6 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
             />
           ) : pop.kind === 'blocks' ? (
             <BlocksPalette engine={engine} onClose={() => setPop(null)} />
-          ) : pop.kind === 'lasso' ? (
-            <div className="ft-menu" role="menu" aria-label="올가미 모양">
-              {(
-                [
-                  ['free', 'lasso', '자유 올가미', '손으로 그린 모양대로'],
-                  ['rect', 'lassoRect', '사각 올가미', '끌어서 네모로']
-                ] as const
-              ).map(([shape, icon, label, desc]) => (
-                <button
-                  key={shape}
-                  className={'menu-item' + (settings.lassoShape === shape ? ' is-current' : '')}
-                  role="menuitemradio"
-                  aria-checked={settings.lassoShape === shape}
-                  onClick={() => {
-                    setSettings({ lassoShape: shape })
-                    setPop(null)
-                  }}
-                >
-                  <Icon name={icon} />
-                  {label}
-                  <small className="ft-menu-desc">{desc}</small>
-                </button>
-              ))}
-            </div>
           ) : (
             <div className="ft-menu">
               {hide.includes('undo') && (
