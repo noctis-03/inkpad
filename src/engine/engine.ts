@@ -2,7 +2,7 @@ import { BlockStore, anchorBlock, refreshBlockIds } from './blocks'
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, strokeInPolygon } from './geometry'
-import { History, type Command, type PageSnapshot } from './history'
+import { History, type Command, type PageSnapshot, type SheetChange } from './history'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
@@ -20,7 +20,7 @@ import type {
   ViewInfo
 } from './types'
 import type { Background, Block, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
-import { BLOCK_MAX_OUTSIDE } from '../shared/model'
+import { BLOCK_MAX_OUTSIDE, SCHEMA_VERSION, SHEET_MAX, SHEET_MIN, makeBackground, type SheetInfo } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
@@ -101,6 +101,15 @@ const MAX_PREDICTED = 6
 
 /** 페이지 기준 상대 좌표를 허용 범위(페이지 밖 BLOCK_MAX_OUTSIDE까지)로 clamp한다 */
 const clampBlockRel = (v: number, max: number) => Math.min(Math.max(v, -BLOCK_MAX_OUTSIDE), Math.max(-BLOCK_MAX_OUTSIDE, max))
+
+/** 보조 용지가 페이지 가장자리에 붙는 거리(화면 px) */
+const SHEET_SNAP_PX = 18
+/** 새 보조 용지 폭(pt) — 페이지보다 넓지 않게 */
+const SHEET_DEFAULT_W = 320
+const clampSheetSize = (w: number, h: number) => ({
+  w: Math.round(Math.min(SHEET_MAX.w, Math.max(SHEET_MIN.w, w))),
+  h: Math.round(Math.min(SHEET_MAX.h, Math.max(SHEET_MIN.h, h)))
+})
 
 export class Engine {
   readonly root: HTMLElement
@@ -202,6 +211,10 @@ export class Engine {
   private saving: Promise<void> | null = null
   private saveState: SaveState = 'saved'
 
+  // 보조 용지 구독 (SheetLayer의 useSyncExternalStore) — 용지 목록·배치가 바뀔 때마다 rev가 오른다
+  private sheetListeners = new Set<() => void>()
+  private sheetRev = 0
+
   // 카메라 리스너 — React state가 아니라 DOM transform을 직접 갱신하는 UI(BlockLayer)용
   private camListeners = new Set<(cam: { x: number; y: number; zoom: number }) => void>()
   private lastCamNotified = { x: NaN, y: NaN, zoom: NaN }
@@ -235,6 +248,10 @@ export class Engine {
     this.layout = new Layout(this.doc.mode)
     for (const p of o.doc.pages) this.allPages.set(p.id, p)
     this.layout.setPages(o.doc.pages)
+    // 보조 용지는 문서형에서만 — 획을 읽기 전에 배치해야 용지 위 획의 원점이 잡힌다
+    const sheets = this.layout.paged ? (o.doc.sheets ?? []) : []
+    for (const sh of sheets) this.allPages.set(sh.id, sh)
+    this.layout.setSheets(sheets)
     this.scene = new Scene(this.layout)
     this.loadChunks(o.doc)
     this.blocks.load(o.doc.blocks ?? [])
@@ -401,6 +418,10 @@ export class Engine {
     // 전체 보기에는 블록 bounds도 포함한다 (편집 화면 기능 — PDF bounds 계산과 무관)
     const bb = this.blocks.bounds(this.layout)
     if (bb) b = b ? unionBox(b, bb) : bb
+    for (const sh of this.layout.sheets) {
+      const r = this.layout.rects.get(sh.id)
+      if (r) b = unionBox(b, { minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h })
+    }
     if (!b) return this.resetView()
     const pad = 32
     const w = Math.max(1, b.maxX - b.minX)
@@ -599,6 +620,191 @@ export class Engine {
     this.updateBlock(id, { z: maxOther + 1 })
   }
 
+  // ─────────────────────────── 외부 API: 보조 용지 ───────────────────────────
+  // 보조 용지 = pageOrder 밖의 Page(sheet 필드). 페이지처럼 획을 갖고 같은 저장·동기화 경로를 탄다.
+  // 위치는 기준 페이지 원점 기준 상대값이라 페이지가 옮겨 가면 따라간다. 문서형 노트에서만 쓴다.
+
+  get sheets(): Page[] {
+    return this.layout.sheets
+  }
+
+  sheet(id: ID): Page | undefined {
+    return this.layout.sheets.find((s) => s.id === id)
+  }
+
+  subscribeSheets = (fn: () => void): (() => void) => {
+    this.sheetListeners.add(fn)
+    return () => {
+      this.sheetListeners.delete(fn)
+    }
+  }
+
+  /** useSyncExternalStore용 — 용지 목록이나 배치(페이지 이동 포함)가 바뀌면 달라진다 */
+  sheetsVersion = () => this.sheetRev
+
+  private bumpSheets() {
+    this.sheetRev++
+    for (const fn of [...this.sheetListeners]) fn()
+  }
+
+  private maxSheetZ() {
+    let m = 0
+    for (const s of this.layout.sheets) m = Math.max(m, s.sheet!.z)
+    return m
+  }
+
+  private sheetsOf(pageId: ID): Page[] {
+    return this.layout.sheets.filter((s) => s.sheet!.anchorPageId === pageId)
+  }
+
+  /** 페이지 왼쪽·오른쪽에 붙은 새 보조 용지. 만든 용지 id (못 만들면 null) */
+  addSheet(pageIndex: number, side: 'left' | 'right'): ID | null {
+    if (!this.layout.paged || this.readOnly) return null
+    const page = this.layout.pages[pageIndex]
+    if (!page?.size) return null
+    const now = Date.now()
+    const size = clampSheetSize(Math.min(SHEET_DEFAULT_W, page.size.w), page.size.h)
+    // 같은 쪽에 이미 붙은 용지가 있으면 조금씩 내려 겹쳐도 보이게 한다
+    const same = this.sheetsOf(page.id).filter((s) => s.sheet!.snap === side).length
+    const sheet: Page = {
+      id: ulid(),
+      documentId: this.doc.id,
+      schemaVersion: SCHEMA_VERSION,
+      size,
+      background: makeBackground('blank'),
+      sheet: { anchorPageId: page.id, x: side === 'left' ? -size.w : page.size.w, y: same * 24, snap: side, title: '', z: this.maxSheetZ() + 1 },
+      createdAt: now,
+      updatedAt: now,
+      version: 0
+    }
+    this.exec({ removed: [], added: [], sheets: [{ before: null, after: sheet }], label: '보조 용지 추가' })
+    return sheet.id
+  }
+
+  /**
+   * 용지 정보·크기·속지를 바꾼다. history: false는 끄는 동안처럼 값이 연속으로 바뀔 때 —
+   * 저장만 예약하고 히스토리에 넣지 않는다. 마치면 commitSheetEdit(시작 값)으로 한 번만 기록한다.
+   */
+  updateSheet(id: ID, patch: { sheet?: Partial<SheetInfo>; size?: { w: number; h: number }; background?: Background }, opts: { history?: boolean } = {}) {
+    if (this.readOnly) return
+    const cur = this.sheet(id)
+    if (!cur) return
+    const next: Page = {
+      ...cur,
+      ...(patch.size ? { size: clampSheetSize(patch.size.w, patch.size.h) } : {}),
+      ...(patch.background ? { background: patch.background } : {}),
+      sheet: { ...cur.sheet!, ...patch.sheet },
+      updatedAt: Date.now()
+    }
+    if (opts.history === false) {
+      this.applySheetChanges([{ before: cur, after: next }], false)
+      this.scheduleSave()
+      return
+    }
+    this.exec({ removed: [], added: [], sheets: [{ before: cur, after: next }], label: '보조 용지' })
+  }
+
+  /** 연속 편집(끌기·크기 조절)을 마칠 때 — 시작 값과 지금 값으로 히스토리 1건 */
+  commitSheetEdit(before: Page) {
+    if (this.readOnly) return
+    const cur = this.sheet(before.id)
+    if (!cur) return
+    if (JSON.stringify({ ...before, updatedAt: 0 }) === JSON.stringify({ ...cur, updatedAt: 0 })) return
+    // 화면은 이미 cur 상태다 — 다시 적용하지 않고 기록만 한다
+    this.history.push({ removed: [], added: [], sheets: [{ before, after: cur }], label: '보조 용지' })
+    this.emitView(true)
+  }
+
+  /**
+   * 용지 왼쪽 위를 월드 좌표 (wx, wy)에 두면 어디에 붙는가. 용지 가운데에서 가장 가까운 페이지가 기준이 되고,
+   * 그 페이지 왼쪽·오른쪽 가장자리 가까이(세로로 겹칠 때)면 붙는다. 붙으면 위쪽 끝도 가까우면 맞춘다.
+   */
+  sheetPlacement(id: ID, wx: number, wy: number): Pick<SheetInfo, 'anchorPageId' | 'x' | 'y' | 'snap'> | null {
+    const cur = this.sheet(id)
+    if (!cur?.size) return null
+    const { w, h } = cur.size
+    const page = this.layout.pageNear(wx + w / 2, wy + h / 2)
+    const r = page && this.layout.rects.get(page.id)
+    if (!page || !r) return null
+    const tol = SHEET_SNAP_PX / this.cam.zoom
+    const overlapsV = wy < r.y + r.h && wy + h > r.y
+    let snap: SheetInfo['snap'] = null
+    if (overlapsV && Math.abs(wx + w - r.x) < tol) snap = 'left'
+    else if (overlapsV && Math.abs(wx - (r.x + r.w)) < tol) snap = 'right'
+    let y = wy - r.y
+    if (snap && Math.abs(y) < tol) y = 0
+    const x = snap === 'left' ? -w : snap === 'right' ? r.w : wx - r.x
+    return { anchorPageId: page.id, x: q2(x), y: q2(y), snap }
+  }
+
+  /** 용지를 월드 좌표로 옮긴다 (sheetPlacement 규칙). 끄는 동안은 history: false */
+  moveSheet(id: ID, wx: number, wy: number, opts: { history?: boolean } = {}) {
+    const at = this.sheetPlacement(id, wx, wy)
+    if (at) this.updateSheet(id, { sheet: at }, opts)
+  }
+
+  /** 용지를 지운다 — 그 위 획도 같은 명령으로 지워 Undo하면 함께 돌아온다 */
+  deleteSheet(id: ID) {
+    if (this.readOnly) return
+    const cur = this.sheet(id)
+    if (!cur) return
+    this.exec({ removed: this.scene.entriesOfPage(id), added: [], sheets: [{ before: cur, after: null }], label: '보조 용지 삭제' })
+  }
+
+  /** 용지와 그 위 획을 복제한다. 사본은 떼어서 조금 옆에 둔다. 사본 id */
+  duplicateSheet(id: ID): ID | null {
+    if (this.readOnly) return null
+    const cur = this.sheet(id)
+    const r = cur && this.layout.rects.get(id)
+    const anchor = cur && this.layout.rects.get(cur.sheet!.anchorPageId)
+    if (!cur || !r || !anchor) return null
+    const now = Date.now()
+    const copy: Page = {
+      ...cur,
+      id: ulid(),
+      sheet: { ...cur.sheet!, snap: null, x: q2(r.x - anchor.x + 24), y: q2(r.y - anchor.y + 24), z: this.maxSheetZ() + 1 },
+      createdAt: now,
+      updatedAt: now,
+      version: 0,
+      deletedAt: undefined
+    }
+    const added = this.scene.entriesOfPage(id).map((e) => ({ ...e, pageId: copy.id, stroke: { ...e.stroke, id: ulid() } }))
+    this.exec({ removed: [], added, sheets: [{ before: null, after: copy }], label: '보조 용지 복제' })
+    return copy.id
+  }
+
+  /** 맨 위로 — 이미 맨 위면 그대로 */
+  bringSheetToFront(id: ID) {
+    const cur = this.sheet(id)
+    if (!cur || cur.sheet!.z >= this.maxSheetZ()) return
+    this.updateSheet(id, { sheet: { z: this.maxSheetZ() + 1 } })
+  }
+
+  /** 용지 변경을 적용한다 (Command 적용과 history: false 편집이 함께 쓴다) */
+  private applySheetChanges(changes: SheetChange[], inverse: boolean) {
+    const map = new Map(this.layout.sheets.map((s) => [s.id, s]))
+    const moved: ID[] = []
+    for (const ch of changes) {
+      const next = inverse ? ch.before : ch.after
+      const gone = inverse ? ch.after : ch.before
+      if (next) {
+        map.set(next.id, next)
+        this.allPages.set(next.id, next)
+        this.dirtyPages.add(next.id)
+        this.deletedPages.delete(next.id)
+        moved.push(next.id)
+      } else if (gone) {
+        map.delete(gone.id)
+        this.dirtyPages.delete(gone.id)
+        this.deletedPages.add(gone.id)
+      }
+    }
+    this.layout.setSheets([...map.values()])
+    for (const id of moved) this.scene.relayoutPage(id)
+    this.committedDirty = true
+    this.bumpSheets()
+  }
+
   // ─────────────────────────── 외부 API: 블록 위 화면 이동·확대 ───────────────────────────
   // 블록 DOM은 #canvas-root 밖에 있어 그 위의 입력이 엔진에 닿지 않는다.
   // BlockLayer가 화면 이동·확대에 쓰는 입력(손가락·휠·가운데 버튼)만 골라 넘긴다. 펜·마우스 왼쪽 버튼은 넘기지 않는다.
@@ -683,7 +889,9 @@ export class Engine {
     const page = this.layout.pages[index]
     if (!page) return
     this.clearSelection()
-    const removed = this.scene.entriesOfPage(page.id)
+    // 이 페이지에 붙은 보조 용지와 그 위 획도 함께 지운다 — Undo하면 함께 돌아온다
+    const sheets = this.sheetsOf(page.id)
+    const removed = [page, ...sheets].flatMap((p) => this.scene.entriesOfPage(p.id))
     const before = this.snapshot([page])
     const order = before.order.filter((id) => id !== page.id)
     // 그 페이지에 소속된 블록(여백 블록 포함)도 같은 명령으로 지운다 — Undo하면 함께 복원된다.
@@ -695,6 +903,7 @@ export class Engine {
       pagesBefore: before,
       pagesAfter: { order, pages: [] },
       blocks: pageBlocks.map((b) => ({ before: b, after: null })),
+      sheets: sheets.map((sh) => ({ before: sh, after: null })),
       label: '페이지 삭제'
     })
   }
@@ -710,6 +919,14 @@ export class Engine {
     const blockCopies = this.blocks
       .ofPage(src.id)
       .map((b, i) => ({ ...refreshBlockIds(b), id: ulid(), pageId: page.id, z: zBase + 1 + i, createdAt: now, updatedAt: now }) as Block)
+    // 보조 용지도 새 페이지에 붙여 복제한다
+    let sheetZ = this.maxSheetZ()
+    const sheetCopies: Page[] = []
+    for (const sh of this.sheetsOf(src.id)) {
+      const copy: Page = { ...sh, id: ulid(), sheet: { ...sh.sheet!, anchorPageId: page.id, z: ++sheetZ }, createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
+      sheetCopies.push(copy)
+      for (const e of this.scene.entriesOfPage(sh.id)) added.push({ ...e, pageId: copy.id, stroke: { ...e.stroke, id: ulid() } })
+    }
     const before = this.snapshot([])
     const order = [...before.order]
     order.splice(index + 1, 0, page.id)
@@ -719,6 +936,7 @@ export class Engine {
       pagesBefore: before,
       pagesAfter: { order, pages: [page] },
       blocks: blockCopies.map((b) => ({ before: null, after: b })),
+      sheets: sheetCopies.map((sh) => ({ before: null, after: sh })),
       label: '페이지 복제'
     })
   }
@@ -808,6 +1026,7 @@ export class Engine {
     this.cb.onPagesChanged?.(next)
     this.pagesDirty = true
     this.blocks._notify() // 블록 위치는 페이지 원점 기준 상대값 — UI가 다시 계산하게 한다
+    this.bumpSheets() // 보조 용지도 기준 페이지를 따라 옮겨 갔다 (setPages가 다시 배치)
   }
 
   private applyCommand(cmd: Command, inverse: boolean) {
@@ -825,6 +1044,8 @@ export class Engine {
       }
     }
     if (snap) this.applySnapshot(snap)
+    // 보조 용지는 획을 더하기 전에 — 되살린 용지 위 획이 용지 원점을 찾아야 한다
+    if (cmd.sheets?.length) this.applySheetChanges(cmd.sheets, inverse)
     for (const e of toAdd) {
       const rec = this.scene.add(e)
       box = unionBox(box, rec.item)
@@ -847,10 +1068,10 @@ export class Engine {
     }
     if (this.selection.length) this.clearSelection(false)
     // 블록만 바뀐 Command는 DOM 오버레이만 갱신하면 된다 — 획 캔버스를 다시 그리지 않는다.
-    const blocksOnly = toRemove.length === 0 && toAdd.length === 0 && !snap
+    const blocksOnly = toRemove.length === 0 && toAdd.length === 0 && !snap && !cmd.sheets?.length
     if (blocksOnly) {
       // 캔버스에 그릴 변경 없음 — 블록은 BlockLayer가 렌더한다
-    } else if (snap || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
+    } else if (snap || cmd.sheets?.length || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
       this.committedDirty = true
     } else {
       this.renderer.redrawRegion(this.scene, this.cam, box)
@@ -913,7 +1134,7 @@ export class Engine {
     this.dirtyBlocks.clear()
     this.deletedBlocks.clear()
     this.orderDirty = false
-    const liveIds = new Set(this.layout.pages.map((p) => p.id))
+    const liveIds = new Set([...this.layout.pages, ...this.layout.sheets].map((p) => p.id))
     const batch: SaveBatch = {
       documentId: this.doc.id,
       chunks: groups.map((gk) => {
@@ -1322,7 +1543,11 @@ export class Engine {
   private eraseAt(a: ActiveStroke, wx: number, wy: number) {
     const r = this.style.eraserSize / 2 / this.cam.zoom
     let box: Box | null = null
+    // 보조 용지 위에서는 그 용지의 획만 — 용지에 가려 보이지 않는 페이지 획을 지우지 않는다.
+    // 용지 밖에서는 용지 획을 건드리지 않는다 — 용지 획은 용지 안으로 잘려 그 밖 부분은 보이지 않는다
+    const sheet = this.layout.sheetAt(wx, wy)
     for (const rec of this.scene.query(wx - r, wy - r, wx + r, wy + r)) {
+      if (sheet ? rec.pageId !== sheet.id : this.layout.isSheet(rec.pageId)) continue
       const s = rec.stroke
       // 지우개는 획 단위만 — 획을 잘라 새 ID 조각을 만들면 기기 간 머지에서 원래 획과 조각이 함께 남는다
       if (!hitStroke(s.points, wx - rec.ox, wy - rec.oy, r + s.width / 2)) continue
@@ -1388,7 +1613,8 @@ export class Engine {
     this.markDirty(a.pageId, a.key)
     this.bumpPage(a.pageId)
     if (this.renderer.inSync(this.cam)) {
-      if (stroke.layer === 'under') this.renderer.redrawRegion(this.scene, this.cam, rec.item)
+      // 보조 용지와 겹치면 쌓임 순서(페이지 획 → 용지 → 용지 획)를 지키려고 영역을 다시 그린다
+      if (stroke.layer === 'under' || this.layout.sheetOverlaps(rec.item)) this.renderer.redrawRegion(this.scene, this.cam, rec.item)
       else this.renderer.drawIncremental(rec, this.cam)
     } else this.committedDirty = true
     this.scheduleSave()
@@ -1418,7 +1644,11 @@ export class Engine {
       minX = Math.min(minX, poly[i]); maxX = Math.max(maxX, poly[i])
       minY = Math.min(minY, poly[i + 1]); maxY = Math.max(maxY, poly[i + 1])
     }
-    const sel = this.scene.query(minX, minY, maxX, maxY).filter((r) => strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
+    // 보조 용지 위에서 시작한 올가미는 그 용지의 획만 고른다 (용지에 가린 페이지 획은 빼고)
+    const startSheet = this.layout.sheetAt(poly[0], poly[1])
+    const sel = this.scene
+      .query(minX, minY, maxX, maxY)
+      .filter((r) => (!startSheet || r.pageId === startSheet.id) && strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
     // 너무 작은 영역(살짝 누른 것)은 획이 없으면 고르지 않는다
     const big = (maxX - minX) * this.cam.zoom > 8 && (maxY - minY) * this.cam.zoom > 8
     this.lassoPoly = sel.length || big ? poly.slice() : null
@@ -1690,7 +1920,7 @@ export class Engine {
       const a = this.active
       const live: LiveDraw | null =
         a && (a.tool === 'pen' || a.tool === 'highlighter')
-          ? { ox: a.ox, oy: a.oy, points: a.points, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts }
+          ? { ox: a.ox, oy: a.oy, points: a.points, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts, clip: this.sheetClip(a.pageId) }
           : null
       let overlay: Overlay | null = null
       if (a && a.tool === 'lasso' && !a.moveFrom) overlay = { lasso: a.lasso }
@@ -1719,6 +1949,13 @@ export class Engine {
     } else if (now - this.lastStatsAt >= 500) this.flushStats(now)
 
     if (this.needsFrame()) this.wake()
+  }
+
+  /** 보조 용지 위 획은 용지 안으로 자른다 (확정 레이어와 같게) */
+  private sheetClip(pageId: ID): Box | undefined {
+    if (!this.layout.isSheet(pageId)) return undefined
+    const r = this.layout.rects.get(pageId)
+    return r ? { minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h } : undefined
   }
 
   private flushStats(now: number) {

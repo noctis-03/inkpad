@@ -136,6 +136,12 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
               <button className="text-btn" onClick={() => engine.duplicatePage(view.currentPage)}>
                 <Icon name="copy" size={16} /> 복제
               </button>
+              <button className="text-btn" onClick={() => engine.addSheet(view.currentPage, 'left')}>
+                <Icon name="page" size={16} /> 왼쪽에 보조 용지
+              </button>
+              <button className="text-btn" onClick={() => engine.addSheet(view.currentPage, 'right')}>
+                <Icon name="page" size={16} /> 오른쪽에 보조 용지
+              </button>
               <button className="text-btn" onClick={insertPdf}>
                 <Icon name="filePdf" size={16} /> PDF 페이지 삽입
               </button>

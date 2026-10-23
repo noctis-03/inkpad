@@ -45,6 +45,28 @@ export type Background =
 
 export type BackgroundType = Background['type']
 
+/**
+ * 보조 용지 — 페이지 옆에서 추가로 필기하는 용지. 페이지처럼 획(청크)을 갖지만 페이지 번호·순서에 들지 않는다.
+ * 좌표는 기준 페이지 왼쪽 위에 대한 상대값(pt). snap이면 x는 무시하고 기준 페이지 가장자리에 붙인다.
+ */
+export interface SheetInfo {
+  anchorPageId: ID
+  x: number
+  y: number
+  snap: 'left' | 'right' | null
+  title: string
+  /** 쌓임 순서 (위에 있는 용지가 큰 값) */
+  z: number
+  /** 고정 — 헤더로 옮기거나 크기를 바꿀 수 없다 */
+  fixed?: boolean
+}
+
+export const SHEET_MIN = { w: 80, h: 80 }
+export const SHEET_MAX = { w: 2400, h: 3600 }
+
+/** 살아 있는 보조 용지인가 — 지워지지 않았고 기준 페이지가 살아 있다 */
+export const isLiveSheet = (p: Page, livePageIds: Set<ID>): boolean => !!p.sheet && !p.deletedAt && livePageIds.has(p.sheet.anchorPageId)
+
 export interface PdfRef {
   assetId: ID
   pageIndex: number // 0부터
@@ -58,6 +80,8 @@ export interface Page {
   size: { w: number; h: number } | null // null = 무한 캔버스
   background: Background
   pdf?: PdfRef
+  /** 있으면 보조 용지 — pageOrder에 들지 않고 기준 페이지 옆에 붙거나 떠 있다. size가 용지 크기다 */
+  sheet?: SheetInfo
   createdAt: number
   updatedAt: number
   deletedAt?: number

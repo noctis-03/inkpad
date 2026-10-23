@@ -77,6 +77,8 @@ export function PageSidebar({ engine, pages, tick }: { engine: Engine; pages: Pa
     if (action === 'before') engine.addPage(i - 1)
     else if (action === 'after') engine.addPage(i)
     else if (action === 'dup') engine.duplicatePage(i)
+    else if (action === 'sheetL') engine.addSheet(i, 'left')
+    else if (action === 'sheetR') engine.addSheet(i, 'right')
     else if (action === 'up' && i > 0) engine.movePage(i, i - 1)
     else if (action === 'down' && i < pages.length - 1) engine.movePage(i, i + 1)
     else if (action === 'delete') {
@@ -137,6 +139,8 @@ export function PageSidebar({ engine, pages, tick }: { engine: Engine; pages: Pa
           <MenuItem icon="plus" label="앞에 새 페이지" onClick={() => act('before', menu.index)} />
           <MenuItem icon="plus" label="뒤에 새 페이지" onClick={() => act('after', menu.index)} />
           <MenuItem icon="copy" label="복제" onClick={() => act('dup', menu.index)} />
+          <MenuItem icon="page" label="왼쪽에 보조 용지" onClick={() => act('sheetL', menu.index)} />
+          <MenuItem icon="page" label="오른쪽에 보조 용지" onClick={() => act('sheetR', menu.index)} />
           <MenuItem
             icon="share"
             label="이미지로 보내기"

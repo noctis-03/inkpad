@@ -302,12 +302,19 @@ export function compose(main: DocFileV1, branch: DocFileV1, plan: MergePlan, dra
     else if (item.kind === 'el') placed.push(editPlaced(valueOf<Placed>(item, side), draft.move.get(item.key), draft.color.get(item.key), doc.mode === 'infinite'))
     else blocks.push(valueOf<Block>(item, side))
   }
-  const live = new Set(pages.map((p) => p.id))
+  // 보조 용지(sheet)는 pageOrder에 넣지 않는다. 기준 페이지가 결과에 없으면 용지도 함께 빠진다
+  const livePages = new Set(pages.filter((p) => !p.sheet).map((p) => p.id))
   const primary = orderSide === 'main' ? main.doc.pageOrder : branch.doc.pageOrder
   const secondary = orderSide === 'main' ? branch.doc.pageOrder : main.doc.pageOrder
-  doc.pageOrder = mergePageOrder(primary ?? [], secondary ?? [], live)
+  doc.pageOrder = mergePageOrder(primary ?? [], secondary ?? [], livePages)
+  const keptPages = pages.filter((p) => !p.sheet || livePages.has(p.sheet.anchorPageId))
+  pages.length = 0
+  pages.push(...keptPages)
+  const live = new Set(pages.map((p) => p.id))
   const byOrder = new Map(doc.pageOrder.map((id, i) => [id, i]))
-  pages.sort((a, b) => (byOrder.get(a.id) ?? 0) - (byOrder.get(b.id) ?? 0))
+  // 페이지는 순서대로, 보조 용지는 그 뒤에 (용지끼리는 id 순 — 머지 결과가 늘 같게)
+  const rankOf = (p: Page) => byOrder.get(p.id) ?? doc.pageOrder.length
+  pages.sort((a, b) => rankOf(a) - rankOf(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 
   // 청크로 다시 묶는다. 안쪽 순서는 엔진의 저장 순서(획을 z순, 그 밖의 요소는 뒤)와 같게 —
   // 같은 z(두 기기가 각자 매긴 값)는 ID로 순서를 고정해 머지 결과가 늘 같게 한다

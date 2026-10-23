@@ -157,6 +157,23 @@ export class Scene {
     this.tree.load(items)
   }
 
+  /** 한 페이지(보조 용지)의 원점만 바뀌었을 때 — 그 획만 다시 계산한다 (용지를 끄는 동안 매번 전체를 다시 짓지 않게) */
+  relayoutPage(pageId: ID) {
+    const { ox, oy } = this.layout.origin(pageId, '')
+    for (const [gk, g] of this.groups) {
+      if (!gk.startsWith(pageId + '|')) continue
+      for (const rec of g.values()) {
+        if (rec.ox === ox && rec.oy === oy) continue
+        this.tree.remove(rec.item)
+        rec.ox = ox
+        rec.oy = oy
+        const [a, b, c, d] = rec.stroke.bbox
+        rec.item = { minX: a + ox, minY: b + oy, maxX: c + ox, maxY: d + oy, rec }
+        this.tree.insert(rec.item)
+      }
+    }
+  }
+
   clear() {
     this.recs.clear()
     this.groups.clear()

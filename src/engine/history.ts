@@ -6,6 +6,12 @@ export interface PageSnapshot {
   pages: Page[] // 이 명령으로 바뀌는 페이지들의 상태
 }
 
+/** 보조 용지(sheet 필드가 있는 Page) 한 장의 변경. before null = 추가, after null = 삭제 */
+export interface SheetChange {
+  before: Page | null
+  after: Page | null
+}
+
 /** 블록 변경 한 건. null = 존재하지 않음 (생성은 before: null, 삭제는 after: null) */
 export interface BlockChange {
   before: Block | null
@@ -25,6 +31,8 @@ export interface Command {
   pagesBefore?: PageSnapshot
   pagesAfter?: PageSnapshot
   blocks?: BlockChange[]
+  /** 보조 용지 추가·변경·삭제 (용지 위 획은 removed/added로 함께 담는다) */
+  sheets?: SheetChange[]
   label?: string
 }
 
@@ -33,7 +41,7 @@ export class History {
   private redoStack: Command[] = []
 
   push(cmd: Command) {
-    if (!cmd.removed.length && !cmd.added.length && !cmd.pagesAfter && !cmd.blocks?.length) return
+    if (!cmd.removed.length && !cmd.added.length && !cmd.pagesAfter && !cmd.blocks?.length && !cmd.sheets?.length) return
     this.undoStack.push(cmd)
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift()
     this.redoStack.length = 0

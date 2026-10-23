@@ -2,7 +2,7 @@
 // 편집은 저장될 때마다 올리기 대기(outbox)를 남긴다 — 되돌리기도 같은 길을 타므로
 // 내용이 마지막 동기화 시점으로 돌아왔으면 대기를 치워야 노트가 '수정함'으로 남지 않는다
 // (git의 "작업 사본이 HEAD와 같으면 변경 없음"에 해당).
-import type { ID } from '../shared/model'
+import { isLiveSheet, type ID } from '../shared/model'
 import { db } from '../storage/db'
 import { baseSummary, loadBase, summarize } from './base'
 import { packDocument, type DocFileV1 } from './pack'
@@ -84,7 +84,8 @@ async function localSummary(docId: ID): Promise<string | null> {
   const doc = await db.documents.get(docId)
   if (!doc) return null
   const pages = await db.pages.where('documentId').equals(docId).toArray()
-  const livePages = new Set(pages.filter((p) => !p.deletedAt && doc.pageOrder.includes(p.id)).map((p) => p.id))
+  const livePages = new Set(pages.filter((p) => !p.deletedAt && !p.sheet && doc.pageOrder.includes(p.id)).map((p) => p.id))
+  for (const p of pages) if (isLiveSheet(p, livePages)) livePages.add(p.id) // 보조 용지 청크도 packDocument처럼 센다
   const rows = await db.chunks.where('documentId').equals(docId).toArray()
   const chunks = rows.filter((r) => !r.deletedAt && livePages.has(r.pageId)).map((r) => [`${r.pageId}|${r.key}`, r.count] as [string, number])
   const blocks = await db.blocks.where('documentId').equals(docId).count()
