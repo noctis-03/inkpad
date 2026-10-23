@@ -2,7 +2,7 @@
  * 브라우저 시나리오 실행기 — 개발 서버를 띄우고 실제 앱 코드를 Chromium에서 돌린다.
  *
  * 실행:  npm run test:e2e              (처음 한 번: npx playwright install chromium)
- *        npm run test:e2e -- sync      (이름으로 골라 실행: editor · sync · merge · archive · comfort · study · delta · scratch · splash · toolbar · stores · bigfile · idle · board · catgroup · marks · menus · drop · tabs · sendimage)
+ *        npm run test:e2e -- sync      (이름으로 골라 실행: editor · sync · merge · archive · comfort · study · delta · scratch · splash · toolbar · stores · bigfile · idle · board · catgroup · marks · menus · drop · tabs · sendimage · blockgesture)
  *        PW_CHROMIUM=/path/to/chrome npm run test:e2e   (이미 설치된 다른 Chromium을 쓸 때)
  *
  * 동기화 시나리오는 진짜 Google Drive 대신 가짜 Drive(fake-drive.ts)를 쓴다 — 네트워크·계정 없이 돈다.
@@ -34,8 +34,9 @@ import menus from './menus.ts'
 import drop from './drop.ts'
 import tabs from './tabs.ts'
 import sendimage from './sendimage.ts'
+import blockgesture from './blockgesture.ts'
 
-const SCENARIOS: Record<string, (ctx: Ctx) => Promise<void>> = { editor, sync, merge, archive, comfort, study, delta, scratch, splash, toolbar, stores, bigfile, idle, board, catgroup, marks, noteassets, syncwait, openpanel, menus, drop, tabs, sendimage }
+const SCENARIOS: Record<string, (ctx: Ctx) => Promise<void>> = { editor, sync, merge, archive, comfort, study, delta, scratch, splash, toolbar, stores, bigfile, idle, board, catgroup, marks, noteassets, syncwait, openpanel, menus, drop, tabs, sendimage, blockgesture }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const picked = process.argv.slice(2).filter((a) => !a.startsWith('-'))
