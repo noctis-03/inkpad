@@ -14,8 +14,10 @@
 }
 .menu {
   position: fixed;
-  min-width: 220px;
-  padding: 6px;
+  min-width: 184px;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 4px;
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--e2), 0 0 0 1px var(--tag-border);
@@ -28,14 +30,14 @@
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  font-size: 15px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
@@ -51,14 +53,14 @@
 }
 /* 메뉴 안 묶음 제목·구분선 */
 .menu-label {
-  padding: 8px 12px 4px;
+  padding: 6px 10px 2px;
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--muted);
 }
 .menu-sep {
   height: 1px;
-  margin: 6px 4px;
+  margin: 4px;
   background: var(--line);
 }
 /* 휴대폰 폭에서만 보이는 항목 (상단 바에서 빠진 버튼을 메뉴로 옮긴 것) */
