@@ -27,7 +27,7 @@ export function FileRunner({ fileId, pane = 'main' }: { fileId: ID; pane?: PaneS
       if (!f || f.deletedAt) return setRow(null)
       setRow(f)
       try {
-        // 원본이 이 기기에 없을 때만 받는다 — 그때만 큰 파일 확인 (탭·오른쪽 칸을 오가며 다시 열 때마다 묻지 않게)
+        // 원본이 이 기기에 없을 때만 받는다 — 그때만 큰 파일 확인 (탭·옆 칸을 오가며 다시 열 때마다 묻지 않게)
         const hasOrig = f.text !== undefined || !!f.blob
         if (!hasOrig && !(await confirmTransfer('down', f.size))) throw new Error('다운로드를 취소했습니다.')
         const full = await ensureFileLocal(fileId)

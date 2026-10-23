@@ -301,7 +301,8 @@ document.getElementById('c').onclick=function(){inkpad.saveFile('CCC','c.txt','t
   if (process.env.SHOT) await p.screenshot({ path: process.env.SHOT.replace(/\.png$/, '-pdf.png') })
   const pdfButtons = await saveModal.getByRole('button').allTextContents()
   await saveModal.getByRole('button', { name: '노트로 저장' }).click()
-  let st = await until((s) => s.docs.some((d) => d.title === '보고서'))
+  // 노트를 만든 뒤 카테고리를 붙이므로 카테고리까지 붙을 때를 기다린다
+  let st = await until((s) => s.docs.some((d) => d.title === '보고서' && d.category === '도구'))
   check('앱 내보내기: PDF는 "노트로 저장"(기본)·"기타 파일로"를 고른다', pdfButtons.some((t) => t.includes('노트로 저장')) && pdfButtons.some((t) => t.includes('기타 파일로')), JSON.stringify(pdfButtons))
   check('앱 내보내기: PDF → 노트로 저장하면 앱과 같은 카테고리의 노트', st.docs.some((d) => d.title === '보고서' && d.category === '도구') && !st.files.includes('보고서.pdf'), JSON.stringify(st.docs))
 

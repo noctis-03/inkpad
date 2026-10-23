@@ -1,5 +1,5 @@
 // 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일.
-// 탭 목록·오른쪽 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없으면 바를 그리지 않는다.
+// 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없으면 바를 그리지 않는다.
 import { useEffect, useRef, useState } from 'react'
 import { isTabRoute, routeKey, useUI, type TabRoute } from '../app/store'
 import { getDocument } from '../storage/repo'
@@ -24,7 +24,7 @@ async function titleOf(t: TabRoute): Promise<string | null> {
   return f && !f.deletedAt ? f.title : null
 }
 
-/** 오른쪽 칸(듀얼)을 쓸 수 있는 폭 — 좁으면 칸을 숨기고(기억은 한다) 옆에 띄우기 버튼도 내지 않는다 */
+/** 옆 칸(듀얼)을 쓸 수 있는 폭 — 좁으면 칸을 숨기고(기억은 한다) 옆에 띄우기 버튼도 내지 않는다 */
 export const SPLIT_QUERY = '(min-width: 760px)'
 export function useSplitAllowed() {
   const [ok, setOk] = useState(() => window.matchMedia(SPLIT_QUERY).matches)
@@ -48,6 +48,7 @@ export function TabBar() {
   const closeOtherTabs = useUI((s) => s.closeOtherTabs)
   const openSplit = useUI((s) => s.openSplit)
   const closeSplit = useUI((s) => s.closeSplit)
+  const swapSplit = useUI((s) => s.swapSplit)
   const splitAllowed = useSplitAllowed()
   const [titles, setTitles] = useState<Map<string, string>>(new Map())
   const [menu, setMenu] = useState<{ tab: TabRoute; x: number; y: number } | null>(null)
@@ -146,9 +147,19 @@ export function TabBar() {
           {menu.tab.name !== 'editor' && splitAllowed && routeKey(menu.tab) !== splitKey && (
             <MenuItem
               icon="sidebar"
-              label="오른쪽 칸에 열기"
+              label="옆 칸에 열기"
               onClick={() => {
                 if (menu.tab.name !== 'editor') openSplit(menu.tab)
+                setMenu(null)
+              }}
+            />
+          )}
+          {routeKey(menu.tab) === splitKey && splitAllowed && (
+            <MenuItem
+              icon="swap"
+              label="좌우 바꾸기"
+              onClick={() => {
+                swapSplit()
                 setMenu(null)
               }}
             />
@@ -156,7 +167,7 @@ export function TabBar() {
           {routeKey(menu.tab) === splitKey && (
             <MenuItem
               icon="close"
-              label="오른쪽 칸 닫기"
+              label="옆 칸 닫기"
               onClick={() => {
                 closeSplit()
                 setMenu(null)
