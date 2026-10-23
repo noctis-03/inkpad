@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useUI, type Toast } from './store'
+import { useEffect, useRef, useState } from 'react'
+import { isTabRoute, routeKey, useUI, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { MergeHost } from '../ui/merge/MergeView'
 import { ArchiveHost } from '../ui/ArchiveSheet'
@@ -9,14 +9,16 @@ import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
 import { Editor } from '../ui/editor/Editor'
 import { AppRunner } from '../ui/app/AppRunner'
+import type { PaneSlot } from '../ui/app/RunnerNav'
 import { FileRunner } from '../ui/app/FileRunner'
 import { Icon } from '../ui/Icon'
+import { TabBar, useSplitAllowed } from '../ui/TabBar'
+import type { ID } from '../shared/model'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
 import { installPress } from '../ui/motion/press'
 
 export function App() {
-  const route = useUI((s) => s.route)
   useEffect(() => {
     // 휴지통 30일 정리 (로컬). 서버 쪽은 Phase 2에서 요청 시 lazy 정리
     void purgeExpiredTrash().catch(() => {})
@@ -66,17 +68,8 @@ export function App() {
   }, [])
   return (
     <div className="app-shell">
-      {route.name === 'editor' ? (
-        <Editor key={route.docId} docId={route.docId} />
-      ) : route.name === 'app' ? (
-        <AppRunner key={route.appId} appId={route.appId} />
-      ) : route.name === 'file' ? (
-        <FileRunner key={route.fileId} fileId={route.fileId} />
-      ) : route.name === 'board' ? (
-        <Board />
-      ) : (
-        <Library />
-      )}
+      <TabBar />
+      <Panes />
       <InstallHint />
       <Toasts />
       <Busy />
@@ -84,6 +77,111 @@ export function App() {
       <ArchiveHost />
       <ChangesHost />
       <DialogHost />
+    </div>
+  )
+}
+
+/** 숨겨 두고 켜 둘 앱 수 — 앱 탭을 오가도 앱 안의 상태가 남는다. 넘으면 가장 오래 안 본 앱부터 끈다 */
+const ALIVE_APPS = 5
+
+/**
+ * 가운데 칸(지금 탭)과 오른쪽 칸(듀얼). 모든 칸은 같은 부모 아래에서 CSS grid 자리(main·side·숨김)만 바꾼다 —
+ * iframe은 DOM에서 옮기면 다시 로드되므로 앱 칸은 늘 같은 순서(앱 ID 순)로 먼저 그리고 자리만 바꾼다.
+ * 노트·파일·라이브러리는 볼 때만 그린다 (노트 편집 화면은 무겁고, 보던 위치는 노트가 기억한다).
+ */
+function Panes() {
+  const route = useUI((s) => s.route)
+  const split = useUI((s) => s.split)
+  const tabs = useUI((s) => s.tabs)
+  const ratio = useUI((s) => s.splitRatio)
+  const splitAllowed = useSplitAllowed()
+  const sideOn = !!split && splitAllowed
+  const box = useRef<HTMLDivElement>(null)
+
+  // 이번에 켠 앱 (최근 본 순서) — 다시 켜면 탭만 남고 앱은 볼 때 켠다
+  const [recent, setRecent] = useState<ID[]>([])
+  const now = [route.name === 'app' ? route.appId : null, split?.name === 'app' ? split.appId : null].filter((x): x is ID => !!x)
+  const open = new Set(tabs.flatMap((t) => (t.name === 'app' ? [t.appId] : [])))
+  useEffect(() => {
+    setRecent((prev) => {
+      const next = [...prev.filter((id) => !now.includes(id) && open.has(id)), ...now]
+      while (next.length > ALIVE_APPS) next.splice(next.findIndex((id) => !now.includes(id)), 1)
+      return next.length === prev.length && next.every((id, i) => id === prev[i]) ? prev : next
+    })
+  }) // 매 렌더 — 같으면 그대로 둔다
+  const alive = [...new Set([...recent.filter((id) => open.has(id)), ...now])].sort()
+
+  const mainKey = isTabRoute(route) ? routeKey(route) : route.name
+  const sideKey = split ? routeKey(split) : null
+  const slot = (key: string): PaneSlot => (key === mainKey ? 'main' : sideOn && key === sideKey ? 'side' : 'hidden')
+
+  return (
+    <div ref={box} className={'panes' + (sideOn ? ' is-split' : '')} style={sideOn ? ({ '--split-main': `${ratio * 100}%` } as React.CSSProperties) : undefined}>
+      {alive.map((id) => {
+        const where = slot(`app:${id}`)
+        return (
+          <section key={`app:${id}`} className={`pane pane-${where}`} aria-hidden={where === 'hidden' || undefined}>
+            <AppRunner appId={id} pane={where} />
+          </section>
+        )
+      })}
+      {route.name !== 'app' && (
+        <section key={`main:${mainKey}`} className="pane pane-main">
+          {route.name === 'editor' ? (
+            <Editor docId={route.docId} />
+          ) : route.name === 'file' ? (
+            <FileRunner fileId={route.fileId} pane="main" />
+          ) : route.name === 'board' ? (
+            <Board />
+          ) : (
+            <Library />
+          )}
+        </section>
+      )}
+      {sideOn && split.name === 'file' && (
+        <section key={`side:${sideKey}`} className="pane pane-side">
+          <FileRunner fileId={split.fileId} pane="side" />
+        </section>
+      )}
+      {sideOn && <SplitDivider box={box} />}
+    </div>
+  )
+}
+
+/** 가운데·오른쪽 칸 사이 막대 — 끌어 폭을 바꾼다 (화살표 키로도). 끄는 동안 앱(iframe)이 포인터를 가져가지 않게 막는다 */
+function SplitDivider({ box }: { box: React.RefObject<HTMLDivElement | null> }) {
+  const ratio = useUI((s) => s.splitRatio)
+  const setRatio = useUI((s) => s.setSplitRatio)
+  const at = (x: number) => {
+    const r = box.current?.getBoundingClientRect()
+    if (r?.width) setRatio((x - r.left) / r.width)
+  }
+  return (
+    <div
+      className="split-divider"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="칸 크기 조절"
+      aria-valuenow={Math.round(ratio * 100)}
+      tabIndex={0}
+      onPointerDown={(e) => {
+        e.preventDefault()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        box.current?.classList.add('is-resizing')
+      }}
+      onPointerMove={(e) => e.currentTarget.hasPointerCapture(e.pointerId) && at(e.clientX)}
+      onPointerUp={(e) => {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+        box.current?.classList.remove('is-resizing')
+      }}
+      onPointerCancel={() => box.current?.classList.remove('is-resizing')}
+      onDoubleClick={() => setRatio(0.6)}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft') setRatio(ratio - 0.05)
+        else if (e.key === 'ArrowRight') setRatio(ratio + 0.05)
+      }}
+    >
+      <span className="split-grip" />
     </div>
   )
 }

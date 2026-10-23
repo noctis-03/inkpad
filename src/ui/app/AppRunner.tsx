@@ -14,6 +14,7 @@ import { addFile } from '../../sync/files'
 import { uploadAsk, uploadChoice } from '../../sync/transfer'
 import { buildSrcDoc } from './bridge'
 import { InkpadFilePicker } from './InkpadFilePicker'
+import { RunnerBack, RunnerSplit, type PaneSlot } from './RunnerNav'
 
 // allow-same-origin은 절대 넣지 않는다 — 넣으면 앱이 Inkpad의 IndexedDB(노트)와 Drive 토큰에 접근할 수 있다
 const SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads'
@@ -30,7 +31,7 @@ const SAVE_NOTE: Record<FileRoute, string> = {
   pdf: '노트로 저장하면 필기할 수 있는 노트가 됩니다(클라우드에는 동기화의 올리기로). 기타 파일로 저장하면 보관용으로 클라우드에 바로 올라갑니다.'
 }
 
-export function AppRunner({ appId }: { appId: ID }) {
+export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot }) {
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
   const setBusy = useUI((s) => s.setBusy)
@@ -196,10 +197,9 @@ export function AppRunner({ appId }: { appId: ID }) {
   return (
     <div className="app-runner">
       <header className="app-runner-bar">
-        <button className="tb-btn" onClick={() => navigate(useUI.getState().returnRoute ?? { name: 'library' })} aria-label="뒤로">
-          <Icon name="back" />
-        </button>
+        <RunnerBack pane={pane} />
         <h1 className="app-runner-title">{app?.title ?? ''}</h1>
+        <RunnerSplit pane={pane} route={{ name: 'app', appId }} />
         <button
           className="tb-btn"
           onClick={() => {
