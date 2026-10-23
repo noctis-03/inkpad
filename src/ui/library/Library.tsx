@@ -40,7 +40,7 @@ import {
 import type { Mark } from '../../storage/repo'
 import { pickFiles, saveFile } from '../../io/download'
 import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
-import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
+import { exportInkpad, importInkpad, isInkpadZip } from '../../io/inkpadFormat'
 import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
 import { openChanges } from '../ChangesView'
@@ -1033,6 +1033,10 @@ export function Library() {
 
   const onImportInkpad = async () => {
     const files = await pickFiles('.inkpad,.zip,application/zip', true)
+    if (files.length) await importInkpadFiles(files)
+  }
+
+  const importInkpadFiles = async (files: File[]) => {
     for (const f of files) {
       try {
         setBusy({ text: `${f.name} 가져오는 중` })
@@ -1050,26 +1054,46 @@ export function Library() {
     await refresh()
   }
 
-  // 드래그 앤 드롭 (Split View에서 파일 앱으로부터)
+  // 드래그 앤 드롭 (Split View에서 파일 앱으로부터) — "파일 추가"와 같은 길로 나눠 넣는다
+  const [dropHint, setDropHint] = useState(false)
+  const dragDepth = useRef(0)
+  const hasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes('Files')
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!hasFiles(e)) return
+    dragDepth.current++
+    setDropHint(true)
+  }
+  // 안쪽 요소를 지날 때마다 enter/leave가 오므로 깊이를 세어 완전히 나갔을 때만 끈다
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!hasFiles(e)) return
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (!dragDepth.current) setDropHint(false)
+  }
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    if (hasFiles(e)) e.dataTransfer.dropEffect = 'copy'
+  }
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault()
+    dragDepth.current = 0
+    setDropHint(false)
     const files = [...e.dataTransfer.files]
-    const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf')
-    const inks = files.filter((f) => /\.(inkpad|zip)$/i.test(f.name))
-    const htmls = files.filter((f) => /\.html?$/i.test(f.name) || f.type === 'text/html')
-    const rest = files.filter((f) => !pdfs.includes(f) && !inks.includes(f) && !htmls.includes(f))
-    if (pdfs.length) await importPdfFiles(pdfs, currentFolderId)
-    if (htmls.length) await addAppFiles(htmls)
-    for (const f of inks) {
-      try {
-        await importInkpad(f, currentFolderId)
-      } catch (err) {
-        toast(err instanceof Error ? err.message : '가져오기 실패', 'error')
-      }
-    }
-    if (rest.length) await addFileItems(rest)
-    if (inks.length) await refresh()
+    if (files.length) await addAnyFiles(files)
   }
+  // 창 밖에서 끌기를 그만두면 leave가 오지 않는 브라우저가 있다
+  useEffect(() => {
+    if (!dropHint) return
+    const reset = () => {
+      dragDepth.current = 0
+      setDropHint(false)
+    }
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+    }
+  }, [dropHint])
 
   const onNewFolder = async (parentId: ID | null) => {
     const name = await promptDialog('새 폴더', { value: '새 폴더', ok: '만들기' })
@@ -1162,7 +1186,7 @@ export function Library() {
   const FILE_ACCEPT =
     '.pdf,.html,.htm,image/*,text/*,.md,.markdown,.csv,.tsv,.json,.jsonc,.xml,.yaml,.yml,.toml,.ini,.log,.txt' +
     ',.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.c,.h,.cpp,.cs,.php,.sh,.sql,.css,.scss,.vue,.svelte' +
-    ',.docx,.xlsx,.pptx,.zip'
+    ',.docx,.xlsx,.pptx,.zip,.inkpad'
 
   const addFileItems = async (list: File[]) => {
     const total = list.reduce((n, f) => n + f.size, 0)
@@ -1196,13 +1220,21 @@ export function Library() {
     if (list.length === 1) navigate({ name: 'file', fileId: lastFile.id })
   }
 
-  /** 형식에 따라 PDF 노트 가져오기 / HTML 앱 / 일반 파일로 나눠 처리한다 */
+  /**
+   * 형식에 따라 PDF 노트 가져오기 / HTML 앱 / .inkpad 가져오기 / 일반 파일로 나눠 처리한다 ("파일 추가"·끌어 놓기).
+   * .zip은 안을 들여다봐 Inkpad 파일(manifest.json)일 때만 가져오고, 아니면 기타 파일로 추가한다
+   */
   const addAnyFiles = async (list: File[]) => {
+    const zips = list.filter((f) => /\.zip$/i.test(f.name))
+    const zipInks = new Set<File>()
+    for (const f of zips) if (await isInkpadZip(f)) zipInks.add(f)
     const pdfs = list.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf')
+    const inks = list.filter((f) => /\.inkpad$/i.test(f.name) || zipInks.has(f))
     const htmls = list.filter((f) => /\.html?$/i.test(f.name) || f.type === 'text/html')
-    const rest = list.filter((f) => !pdfs.includes(f) && !htmls.includes(f))
+    const rest = list.filter((f) => !pdfs.includes(f) && !inks.includes(f) && !htmls.includes(f))
     if (pdfs.length) await importPdfFiles(pdfs, currentFolderId)
     if (htmls.length) await addAppFiles(htmls)
+    if (inks.length) await importInkpadFiles(inks)
     if (rest.length) await addFileItems(rest)
   }
 
@@ -1401,7 +1433,22 @@ export function Library() {
   )
 
   return (
-    <div className={'library' + (selected ? ' is-selecting' : '')} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div
+      className={'library' + (selected ? ' is-selecting' : '')}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      {dropHint && (
+        <div className="lib-drop-hint" aria-hidden="true">
+          <div className="lib-drop-card">
+            <Icon name="download" size={28} />
+            <b>여기에 놓아 추가</b>
+            <span>PDF는 노트로 · HTML은 앱으로 · .inkpad는 가져오기 · 나머지는 기타 파일로</span>
+          </div>
+        </div>
+      )}
       <header className={'library-header' + (selected ? ' is-selecting' : '') + (!selected && (searchOpen || query) ? ' is-searching' : '')}>
         {selected ? (
           <>
