@@ -599,6 +599,32 @@ export class Engine {
     this.updateBlock(id, { z: maxOther + 1 })
   }
 
+  // ─────────────────────────── 외부 API: 블록 위 화면 이동·확대 ───────────────────────────
+  // 블록 DOM은 #canvas-root 밖에 있어 그 위의 입력이 엔진에 닿지 않는다.
+  // BlockLayer가 화면 이동·확대에 쓰는 입력(손가락·휠·가운데 버튼)만 골라 넘긴다. 펜·마우스 왼쪽 버튼은 넘기지 않는다.
+
+  overlayWheel(e: WheelEvent) {
+    this.onWheel(e)
+  }
+
+  /** phase를 따로 받는다 — 블록 헤더 드래그를 넘겨받을 때는 pointermove 이벤트를 'down'으로 넘긴다 */
+  overlayPointer(e: PointerEvent, phase: 'down' | 'move' | 'up' | 'cancel') {
+    if (phase === 'down') {
+      if (e.pointerType === 'mouse' && e.button === 1) {
+        this.momentum = null
+        this.startMiddlePan(e)
+      } else if (e.pointerType === 'touch') {
+        this.momentum = null
+        this.touchDown(e, false)
+      }
+      return
+    }
+    if (e.pointerType !== 'touch' && this.middlePan?.id !== e.pointerId) return
+    if (phase === 'move') this.onPointerMove(e)
+    else if (phase === 'up') this.onPointerUp(e)
+    else this.onPointerCancel(e)
+  }
+
   /** 카메라가 실제로 바뀐 프레임마다 리스너를 호출한다. React state로 매 프레임 전달하지 말 것. */
   onCamera(fn: (cam: { x: number; y: number; zoom: number }) => void): () => void {
     this.camListeners.add(fn)
@@ -1015,6 +1041,11 @@ export class Engine {
       this.startStroke(e)
       return
     }
+    this.touchDown(e, true)
+  }
+
+  /** 손가락이 닿음. fromCanvas가 아니면(블록 위) 획을 시작하지 않고 pointer capture도 하지 않는다 — 블록의 탭·클릭은 그대로 둔다 */
+  private touchDown(e: PointerEvent, fromCanvas: boolean) {
     const p = this.local(e)
     const t: TouchInfo = { id: e.pointerId, x: p.x, y: p.y, sx: p.x, sy: p.y, ignored: false }
     const penBusy = !!this.active && this.active.pointerType !== 'touch'
@@ -1026,12 +1057,12 @@ export class Engine {
       this.touches.set(e.pointerId, t)
       return
     }
-    this.capture(e.pointerId)
+    if (fromCanvas) this.capture(e.pointerId)
     this.touches.set(e.pointerId, t)
     if (this.active && this.active.pointerType === 'touch') this.finishActive(false)
 
     const live = this.liveTouches()
-    if (live.length === 1 && this.settings.fingerDraw && !this.readOnly) {
+    if (fromCanvas && live.length === 1 && this.settings.fingerDraw && !this.readOnly) {
       this.startStroke(e)
       this.gesture = this.newGesture(live, 1)
       return

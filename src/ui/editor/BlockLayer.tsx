@@ -1,6 +1,7 @@
 // 편집 블록 레이어 — 캔버스 위의 DOM 오버레이.
 // 블록은 절대 캔버스(scene)에 그리지 않고, 엔진 카메라에 맞춰 transform으로 따라간다.
 // 블록 DOM은 #canvas-root의 자식이 아니므로 포인터 이벤트가 엔진으로 새지 않는다.
+// 화면 이동·확대 입력(손가락·휠·가운데 버튼)만 골라 engine.overlayPointer/overlayWheel로 넘긴다.
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { GESTURE_SETTLE_MS, TAP_SLOP_PX } from '../../engine/constants'
 import type { Engine } from '../../engine/engine'
@@ -23,6 +24,16 @@ interface TimerRun {
   endAt: number | null
   remainSec: number
 }
+
+/** 손가락으로 시작한 헤더 드래그. 다른 손가락이 닿으면 BlockLayer가 취소하고 엔진 핀치로 넘긴다 */
+interface HeadDragHandle {
+  pointerId: number
+  last: PointerEvent
+  cancel: () => void
+}
+
+/** 엔진에 넘긴(화면 이동·확대용) pointerdown — 블록 헤더·크기 조절은 이 이벤트로 드래그를 시작하지 않는다 */
+const gestureDowns = new WeakSet<Event>()
 
 export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boolean }) {
   const blocks = useSyncExternalStore(engine.blocks.subscribe, () => engine.blocks.list())
@@ -108,6 +119,80 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
     },
     []
   )
+
+  // ── 블록 위 화면 이동·확대: 블록 DOM은 #canvas-root 밖이라 엔진이 입력을 못 받는다 ──
+  // 손가락(팬·핀치)·휠(이동·Ctrl 확대)·가운데 버튼(팬)을 골라 엔진에 넘긴다. 펜·마우스 왼쪽 버튼은 블록이 그대로 쓴다.
+  const layerRef = useRef<HTMLDivElement>(null)
+  const headDragRef = useRef<HeadDragHandle | null>(null)
+  useEffect(() => {
+    const layer = layerRef.current
+    if (!layer) return
+    const down = new Set<number>() // 화면 어디든 닿아 있는 손가락
+    const fwd = new Set<number>() // 엔진에 넘긴 손가락
+    const inLayer = (t: EventTarget | null) => t instanceof Node && layer.contains(t)
+    // 캔버스 위로 간 이벤트(블록이 사라져 capture가 풀린 경우)는 엔진이 직접 받는다 — 두 번 넘기지 않는다
+    const engineGets = (t: EventTarget | null) => t instanceof Node && engine.root.contains(t)
+    // 손가락 하나로 시작한 헤더 드래그·크기 조절은 블록이 맡는다
+    const ownedByBlock = (t: HTMLElement) => {
+      if (readOnly) return false
+      if (t.closest('.blk-resize')) return true
+      const head = t.closest('.blk-head')
+      return !!head && !t.closest('button') && !head.closest('.blk[data-fixed]')
+    }
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        down.add(e.pointerId)
+        // 헤더 드래그 중 다른 손가락이 닿으면(블록·캔버스 어디든) 드래그를 취소하고 그 손가락도 엔진에 넘겨 핀치로 잇는다
+        const hd = headDragRef.current
+        if (hd && hd.pointerId !== e.pointerId) {
+          hd.cancel()
+          fwd.add(hd.pointerId)
+          engine.overlayPointer(hd.last, 'down')
+        }
+      }
+      if (!inLayer(e.target)) return
+      if (e.pointerType === 'mouse') {
+        if (e.button === 1) {
+          e.preventDefault()
+          engine.overlayPointer(e, 'down')
+        }
+        return
+      }
+      if (e.pointerType !== 'touch') return
+      if (down.size === 1 && ownedByBlock(e.target as HTMLElement)) return
+      gestureDowns.add(e)
+      fwd.add(e.pointerId)
+      engine.overlayPointer(e, 'down')
+    }
+    const onMove = (e: PointerEvent) => {
+      if (!fwd.has(e.pointerId) || engineGets(e.target)) return
+      engine.overlayPointer(e, 'move')
+    }
+    const onEnd = (e: PointerEvent) => {
+      down.delete(e.pointerId)
+      if (!fwd.delete(e.pointerId)) return
+      if (!engineGets(e.target)) engine.overlayPointer(e, e.type === 'pointerup' ? 'up' : 'cancel')
+    }
+    const onWheel = (e: WheelEvent) => engine.overlayWheel(e)
+    // 가운데 버튼 자동 스크롤 방지 (캔버스와 같게)
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault()
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointermove', onMove, true)
+    window.addEventListener('pointerup', onEnd, true)
+    window.addEventListener('pointercancel', onEnd, true)
+    layer.addEventListener('wheel', onWheel, { passive: false })
+    layer.addEventListener('mousedown', onMouseDown)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('pointerup', onEnd, true)
+      window.removeEventListener('pointercancel', onEnd, true)
+      layer.removeEventListener('wheel', onWheel)
+      layer.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [engine, readOnly])
 
   // ── 블록 목록·표시 상태가 바뀌면 culling 다시 적용 ──
   useLayoutEffect(() => {
@@ -255,7 +340,7 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
   )
 
   return (
-    <div className="block-layer" data-export-open={panel === 'export' ? '' : undefined} hidden={!blocksVisible}>
+    <div className="block-layer" ref={layerRef} data-export-open={panel === 'export' ? '' : undefined} hidden={!blocksVisible}>
       <div className="block-world" ref={worldRef}>
         {blocks.map((b) => {
           const world = blockWorldPos(engine.layout, b)
@@ -281,6 +366,7 @@ export function BlockLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
               onFreshConsumed={onFreshConsumed}
               timerRun={timerRun}
               ensureTick={ensureTick}
+              headDragRef={headDragRef}
             />
           )
         })}
@@ -310,6 +396,7 @@ interface CardProps {
   timerRun: (id: ID, durationSec: number) => TimerRun
   ensureTick: () => void
   onFreshConsumed: () => void
+  headDragRef: { current: HeadDragHandle | null }
 }
 
 const BlockCard = memo(function BlockCard(p: CardProps) {
@@ -352,10 +439,17 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
   }
 
   // ── 헤더 드래그: 소속 페이지 재지정(anchorBlock) + attach 표시. 본문 드래그는 블록을 움직이지 않는다 ──
-  const drag = useRef<null | { id: number; sx: number; sy: number; wx: number; wy: number; moved: boolean; el: HTMLElement }>(null)
+  // gx/gy: 잡은 지점과 블록 왼쪽 위의 월드 좌표 차이. 위치는 월드 좌표로 계산해 드래그 중 화면이 움직여도 손가락을 따라간다.
+  const drag = useRef<null | { id: number; sx: number; sy: number; wx: number; wy: number; gx: number; gy: number; moved: boolean; el: HTMLElement }>(null)
+  const dragPos = (d: NonNullable<typeof drag.current>, e: { clientX: number; clientY: number }) => {
+    const w = engine.worldOfClient(e.clientX, e.clientY)
+    return { x: w.x - d.gx, y: w.y - d.gy }
+  }
   const onHeadDown = (e: ReactPointerEvent) => {
     if (readOnly) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    // 화면 이동·확대로 엔진에 넘긴 손가락은 블록을 옮기지 않는다
+    if (gestureDowns.has(e.nativeEvent)) return
     // 고정된 블록은 옮길 수 없다 (선택은 루트의 onPointerDownCapture가 맡는다)
     if (block.fixed) return
     // 블록 메뉴(점3개) 버튼 위에서는 드래그를 시작하지 않는다 — 헤더가 pointer capture를 잠그면
@@ -368,27 +462,31 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
     p.onSelect(block.id)
     e.currentTarget.setPointerCapture(e.pointerId)
     const w0 = blockWorldPos(engine.layout, block)
-    drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx: w0.x, wy: w0.y, moved: false, el }
+    const g = engine.worldOfClient(e.clientX, e.clientY)
+    const d = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx: w0.x, wy: w0.y, gx: g.x - w0.x, gy: g.y - w0.y, moved: false, el }
+    drag.current = d
+    if (e.pointerType === 'touch') p.headDragRef.current = { pointerId: e.pointerId, last: e.nativeEvent, cancel: () => drag.current === d && endHeadDrag(d) }
     p.onDragStart()
   }
   const onHeadMove = (e: ReactPointerEvent) => {
     const d = drag.current
     if (!d || e.pointerId !== d.id) return
+    if (p.headDragRef.current?.pointerId === d.id) p.headDragRef.current.last = e.nativeEvent
     if (!d.moved) {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < TAP_SLOP_PX) return
       d.moved = true
       d.el.classList.add('is-drag')
       d.el.style.zIndex = '9999'
     }
-    const dx = (e.clientX - d.sx) / engine.cam.zoom
-    const dy = (e.clientY - d.sy) / engine.cam.zoom
-    d.el.style.left = `${d.wx + dx}px`
-    d.el.style.top = `${d.wy + dy}px`
-    p.onDragMove(block.id, d.wx + dx, d.wy + dy, d.el.offsetHeight)
+    const at = dragPos(d, e)
+    d.el.style.left = `${at.x}px`
+    d.el.style.top = `${at.y}px`
+    p.onDragMove(block.id, at.x, at.y, d.el.offsetHeight)
   }
   /** onHeadUp/onHeadCancel 공통 정리 — DOM 위치를 원래 값으로 되돌리고 드래그 상태를 비운다 */
   const endHeadDrag = (d: NonNullable<typeof drag.current>) => {
     drag.current = null
+    if (p.headDragRef.current?.pointerId === d.id) p.headDragRef.current = null
     d.el.classList.remove('is-drag')
     d.el.style.zIndex = ''
     // 직접 고친 left/top을 원래 값으로 되돌린다 — exec 후 React가 새 위치를 다시 쓴다
@@ -401,7 +499,8 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
     if (!d || e.pointerId !== d.id) return
     endHeadDrag(d)
     if (!d.moved) return
-    engine.moveBlockToWorld(block.id, d.wx + (e.clientX - d.sx) / engine.cam.zoom, d.wy + (e.clientY - d.sy) / engine.cam.zoom, d.el.offsetHeight)
+    const at = dragPos(d, e)
+    engine.moveBlockToWorld(block.id, at.x, at.y, d.el.offsetHeight)
   }
   // 포인터가 취소된 드래그(시스템 제스처·팜 리젝션)는 커밋하지 않는다 — 원래 자리로 되돌린다
   const onHeadCancel = (e: ReactPointerEvent) => {
@@ -421,6 +520,7 @@ const BlockCard = memo(function BlockCard(p: CardProps) {
   const onResizeDown = (e: ReactPointerEvent) => {
     if (readOnly) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (gestureDowns.has(e.nativeEvent)) return
     e.preventDefault()
     e.stopPropagation()
     const before = engine.blocks.get(block.id)
