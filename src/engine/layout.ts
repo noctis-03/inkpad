@@ -106,6 +106,27 @@ export class Layout {
     return false
   }
 
+  /**
+   * 이 점에서 보이는 획 소속 — 위에서부터 이 점을 덮는 용지를 모으다 불투명 용지에서 멈춘다.
+   * pages: 페이지 획까지 보이는가 (덮는 용지가 없거나 모두 투명). 지우개·올가미가 보이는 획만 건드리게 한다.
+   */
+  surfacesAt(wx: number, wy: number): { sheets: Set<ID>; pages: boolean } {
+    const sheets = new Set<ID>()
+    for (let i = this.sheets.length - 1; i >= 0; i--) {
+      const s = this.sheets[i]
+      const r = this.rects.get(s.id)
+      if (!r || wx < r.x || wx > r.x + r.w || wy < r.y || wy > r.y + r.h) continue
+      sheets.add(s.id)
+      if (!s.sheet!.transparent) return { sheets, pages: false }
+    }
+    return { sheets, pages: true }
+  }
+
+  /** 이 획 소속(pageId)이 surfacesAt 결과에서 보이는가 */
+  visibleIn(surf: { sheets: Set<ID>; pages: boolean }, pageId: ID): boolean {
+    return this.isSheet(pageId) ? surf.sheets.has(pageId) : surf.pages
+  }
+
   /** 이 점을 덮는 맨 위 보조 용지 */
   sheetAt(wx: number, wy: number): Page | null {
     for (let i = this.sheets.length - 1; i >= 0; i--) {

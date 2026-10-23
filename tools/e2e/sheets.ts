@@ -45,7 +45,7 @@ export default async function sheets(ctx: Ctx) {
   /** 확정 레이어의 화면 점 색 (r,g,b,a) */
   const pixel = (pt: { x: number; y: number }) =>
     p.evaluate(([x, y]) => {
-      const c = document.querySelector('.layer-committed') as HTMLCanvasElement
+      const c = (window as unknown as W).inkpad.root.querySelector('.layer-committed') as HTMLCanvasElement
       const b = c.getBoundingClientRect()
       const k = c.width / b.width
       return [...c.getContext('2d')!.getImageData(Math.round((x - b.left) * k), Math.round((y - b.top) * k), 1, 1).data]
@@ -200,6 +200,64 @@ export default async function sheets(ctx: Ctx) {
   check('동기화 파일에 용지 포함, 순서에는 없음', sync.packed === 1 && sync.order === 2, JSON.stringify(sync))
   check('머지 결과도 용지 유지, 순서에는 없음', sync.merged === 1 && sync.mergedOrder === 2, JSON.stringify(sync))
   check('노트 복제 → 용지·획이 새 페이지에 이어짐', sync.dupSheets === 1 && sync.dupAnchorOk && sync.dupChunk, JSON.stringify(sync))
+
+  // ── 속지 고르기 + 투명(테두리만) 용지 ──
+  await p.evaluate((y) => {
+    const e = (window as unknown as W).inkpad
+    e.cam.zoom = 0.7
+    e.cam.x = -340
+    e.cam.y = y + 400
+    e.zoomBy(1)
+  }, p0.y)
+  await sleep(150)
+  const inkAt = { x: p0.x + 200, y: p0.y + 600 }
+  await draw(await screen(inkAt.x - 60, inkAt.y), await screen(inkAt.x + 60, inkAt.y))
+  const pageStrokes = async () => (await strokePages()).filter((x) => x === page0).length
+  const pageInk0 = await pageStrokes()
+  /** 획 가운데 둘레(가로 ±10·세로 ±30px — 가는 획의 흐린 가장자리도 잡게)에서 가장 진한 값 (작을수록 진함, 없으면 255) */
+  const darkest = (pt: { x: number; y: number }) =>
+    p.evaluate(([x, y]) => {
+      const c = (window as unknown as W).inkpad.root.querySelector('.layer-committed') as HTMLCanvasElement
+      const b = c.getBoundingClientRect()
+      const k = c.width / b.width
+      const d = c.getContext('2d')!.getImageData(Math.round((x - b.left) * k) - 10, Math.round((y - b.top) * k) - 30, 21, 60).data
+      let min = 255
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 80) min = Math.min(min, d[i])
+      return min
+    }, [pt.x, pt.y])
+  check('페이지 획이 보임 (가림 확인의 기준)', (await darkest(await screen(inkAt.x, inkAt.y))) < 120)
+  const id2 = await eng<string>('addSheet', 0, 'right')
+  await eng('moveSheet', id2, inkAt.x - 150, inkAt.y - 150)
+  await sleep(150)
+  check('새 용지는 무지·불투명', (await sheetOf(id2)).background.type === 'blank' && !(await sheetOf(id2)).sheet.transparent)
+  check('불투명 용지 → 아래 획 가림', (await darkest(await screen(inkAt.x, inkAt.y))) > 240)
+  const head2 = `.sheet-frame[data-sheet-id="${id2}"] .sheet-head`
+  await p.locator(`${head2} .sheet-menu-btn`).click()
+  await p.getByRole('button', { name: '속지 줄' }).click()
+  check('메뉴 → 속지 줄', (await sheetOf(id2)).background.type === 'lined' && (await p.getByRole('button', { name: '속지 줄' }).getAttribute('aria-pressed')) === 'true')
+  await p.getByRole('button', { name: '속지 투명' }).click()
+  await p.keyboard.press('Escape')
+  await sleep(150)
+  check('메뉴 → 투명 (속지는 기억)', (await sheetOf(id2)).sheet.transparent === true && (await sheetOf(id2)).background.type === 'lined')
+  check('투명 용지 → 아래 획이 비쳐 보임', (await darkest(await screen(inkAt.x, inkAt.y))) < 120)
+  await draw(await screen(inkAt.x - 40, inkAt.y + 60), await screen(inkAt.x + 40, inkAt.y + 80))
+  check('투명 용지 위 획 → 용지 소속', (await strokePages()).filter((x) => x === id2).length === 1)
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setTool('eraser'))
+  await draw(await screen(inkAt.x - 70, inkAt.y), await screen(inkAt.x + 70, inkAt.y))
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setTool('pen'))
+  check('투명 용지 위 지우개 → 비쳐 보이는 페이지 획도 지움', (await pageStrokes()) === pageInk0 - 1)
+  await eng('undo')
+  check('Undo → 페이지 획 복원', (await pageStrokes()) === pageInk0)
+  await eng('undo')
+  await eng('undo')
+  check('Undo → 다시 불투명·줄', !(await sheetOf(id2)).sheet.transparent && (await sheetOf(id2)).background.type === 'lined')
+  await eng('flush')
+  const persisted = await p.evaluate(async ([docId, id2]) => {
+    const r = await import('/src/storage/repo.ts')
+    const s = (await r.loadDocument(docId)).sheets.find((x) => x.id === id2)
+    return s ? { bg: s.background.type, tr: !!s.sheet!.transparent } : null
+  }, [docId, id2] as const)
+  check('속지 저장', persisted?.bg === 'lined' && !persisted.tr, JSON.stringify(persisted))
 
   check('보조 용지: 페이지 오류 없음', errs.length === 0, errs.join(' | '))
   await p.context().close()

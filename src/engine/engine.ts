@@ -1548,11 +1548,11 @@ export class Engine {
   private eraseAt(a: ActiveStroke, wx: number, wy: number) {
     const r = this.style.eraserSize / 2 / this.cam.zoom
     let box: Box | null = null
-    // 보조 용지 위에서는 그 용지의 획만 — 용지에 가려 보이지 않는 페이지 획을 지우지 않는다.
-    // 용지 밖에서는 용지 획을 건드리지 않는다 — 용지 획은 용지 안으로 잘려 그 밖 부분은 보이지 않는다
-    const sheet = this.layout.sheetAt(wx, wy)
+    // 이 점에서 보이는 획만 — 불투명 용지에 가린 아래 획은 지우지 않고(투명 용지는 비쳐 보이는 획까지),
+    // 용지 밖에서는 용지 획을 건드리지 않는다(용지 획은 용지 안으로 잘려 그 밖 부분은 보이지 않는다)
+    const surf = this.layout.surfacesAt(wx, wy)
     for (const rec of this.scene.query(wx - r, wy - r, wx + r, wy + r)) {
-      if (sheet ? rec.pageId !== sheet.id : this.layout.isSheet(rec.pageId)) continue
+      if (!this.layout.visibleIn(surf, rec.pageId)) continue
       const s = rec.stroke
       // 지우개는 획 단위만 — 획을 잘라 새 ID 조각을 만들면 기기 간 머지에서 원래 획과 조각이 함께 남는다
       if (!hitStroke(s.points, wx - rec.ox, wy - rec.oy, r + s.width / 2)) continue
@@ -1649,11 +1649,12 @@ export class Engine {
       minX = Math.min(minX, poly[i]); maxX = Math.max(maxX, poly[i])
       minY = Math.min(minY, poly[i + 1]); maxY = Math.max(maxY, poly[i + 1])
     }
-    // 보조 용지 위에서 시작한 올가미는 그 용지의 획만 고른다 (용지에 가린 페이지 획은 빼고)
-    const startSheet = this.layout.sheetAt(poly[0], poly[1])
+    // 보조 용지 위에서 시작한 올가미는 그 자리에서 보이는 획만 고른다 (불투명 용지에 가린 아래 획은 빼고)
+    const surf = this.layout.surfacesAt(poly[0], poly[1])
+    const onSheet = surf.sheets.size > 0
     const sel = this.scene
       .query(minX, minY, maxX, maxY)
-      .filter((r) => (!startSheet || r.pageId === startSheet.id) && strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
+      .filter((r) => (!onSheet || this.layout.visibleIn(surf, r.pageId)) && strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
     // 너무 작은 영역(살짝 누른 것)은 획이 없으면 고르지 않는다
     const big = (maxX - minX) * this.cam.zoom > 8 && (maxY - minY) * this.cam.zoom > 8
     this.lassoPoly = sel.length || big ? poly.slice() : null
