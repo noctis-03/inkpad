@@ -1,9 +1,11 @@
 // 떠 있는 메뉴(ui/Menu.tsx)는 화면 안에 다 보인다 — 카드가 많아 맨 아랫줄 카드의 ⋯ 메뉴를 열어도 아래가 잘리지 않는다
+// 탭 바·듀얼(옆 칸 왼쪽/오른쪽)에서도 누른 버튼 바로 아래에 뜬다 — 카드 ⋯ · 동기화(구름) · 노트 ⋯ · 노트 동기화 칩
+import { createFakeDrive } from './fake-drive.ts'
 import { createDoc, device, sleep, type Ctx } from './lib.ts'
 
 export default async function menus(ctx: Ctx) {
   const { check } = ctx
-  const p = await device(ctx)
+  const p = await device(ctx, { drive: createFakeDrive() }) // 노트 동기화 칩은 클라우드에 연결됐을 때만 보인다
   for (let i = 0; i < 30; i++) await createDoc(p, `노트 ${String(i + 1).padStart(2, '0')}`)
   for (const [w, h] of [
     [1200, 900],
@@ -38,5 +40,52 @@ export default async function menus(ctx: Ctx) {
     if (process.env.SHOT) await p.screenshot({ path: `${process.env.SHOT}-${w}.png` })
     await p.keyboard.press('Escape')
   }
+
+  // ── 탭 바·듀얼에서도 버튼 바로 아래 ──
+  await p.setViewportSize({ width: 1200, height: 900 })
+  const A = await createDoc(p, '노트 메뉴')
+  const app = await p.evaluate(async () => (await (await import('/src/sync/apps.ts')).addApp(new File(['<title>옆 앱</title>'], 'a.html', { type: 'text/html' }), null)).app.id)
+  const ui = (fn: string) => p.evaluate(async (fn) => new Function('s', fn)((await import('/src/app/store.ts')).useUI.getState()), fn)
+  // 버튼 오른쪽 아래 모서리에 메뉴 오른쪽 위 모서리를 붙인다(화면 안으로 밀 때만 어긋난다)
+  const anchored = async (btnSel: string, label: string) => {
+    const btn = p.locator(btnSel).first()
+    const b = (await btn.boundingBox())!
+    await btn.click()
+    const menu = p.locator('.menu[role="menu"]')
+    await menu.waitFor()
+    await sleep(100)
+    const m = (await menu.boundingBox())!
+    const back = await p.locator('.menu-backdrop').evaluate((e) => e.getBoundingClientRect().toJSON())
+    await p.keyboard.press('Escape')
+    await menu.waitFor({ state: 'detached' })
+    const pinned = m.x > 8.5 && m.x + m.width < 1191.5 ? Math.abs(m.x + m.width - (b.x + b.width)) < 1.5 : true
+    const ok = Math.abs(m.y - (b.y + b.height + 4)) < 1.5 && pinned && back.width === 1200 && back.height === 900 && back.x === 0 && back.y === 0
+    return { ok, detail: `${label} ${JSON.stringify({ btn: [b.x + b.width, b.y + b.height], menu: [m.x + m.width, m.y], back: [back.x, back.y, back.width, back.height] })}` }
+  }
+  await ui(`s.navigate({ name: 'app', appId: '${app}' }); s.openSplit({ name: 'app', appId: '${app}' })`)
+  for (const side of ['right', 'left']) {
+    if (side === 'left') await ui(`if (s.splitSide !== 'left') s.swapSplit()`)
+    await ui(`s.navigate({ name: 'library' })`)
+    await p.waitForSelector('.panes.is-split .pane-main .library .doc-more')
+    // 위의 맨 아랫줄 검사로 내려 둔 목록을 맨 위로 — 첫 카드가 화면 안에 오게
+    const lb = (await p.locator('.pane-main .library').boundingBox())!
+    await p.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2)
+    for (let i = 0; i < 20; i++) await p.mouse.wheel(0, -800)
+    await sleep(500)
+    const r = [await anchored('.pane-main .doc-more', '카드 ⋯'), await anchored('.pane-main .sync-btn', '동기화')]
+    await ui(`s.navigate({ name: 'editor', docId: '${A}' })`)
+    await p.waitForSelector('.pane-main .editor .toolbar-doc')
+    await sleep(500)
+    r.push(await anchored('.pane-main .toolbar-doc [aria-label="더보기"]', '노트 ⋯'), await anchored('.pane-main .note-sync', '노트 동기화'))
+    check(`메뉴: 듀얼(옆 칸 ${side === 'left' ? '왼쪽' : '오른쪽'})에서도 누른 버튼 바로 아래에 뜬다 — 카드·동기화·노트 ⋯·노트 동기화`, r.every((x) => x.ok), r.filter((x) => !x.ok).map((x) => x.detail).join(' | '))
+  }
+  // 라이브러리 안의 시트(동기화 등)도 화면 전체를 덮는다 — 칸 안에 갇히지 않는다
+  await ui(`s.navigate({ name: 'library' })`)
+  await p.waitForSelector('.pane-main .library')
+  await sleep(400)
+  await p.click('.pane-main .sync-btn')
+  await p.locator('.menu').getByRole('menuitem').first().click()
+  const sheetBack = await p.locator('.modal-backdrop').first().evaluate((e) => e.getBoundingClientRect().toJSON()).catch(() => null)
+  check('메뉴: 듀얼에서 라이브러리 시트도 화면 전체를 덮는다', !!sheetBack && sheetBack.x === 0 && sheetBack.y === 0 && sheetBack.width === 1200 && sheetBack.height === 900, JSON.stringify(sheetBack))
   await p.context().close()
 }

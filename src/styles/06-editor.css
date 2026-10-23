@@ -4,9 +4,11 @@
   flex-direction: column;
   height: 100%;
 }
-/* 노트 열림 애니메이션 — 카드에서 넘어올 때는 JS가 FLIP 변환(확대)을 걸고, 그 외 진입은 페이드업 */
+/* 노트 열림 애니메이션 — 카드에서 넘어올 때는 JS가 FLIP 변환(확대)을 걸고, 그 외 진입은 페이드업.
+   fill은 backwards — 끝난 뒤 transform이 남으면 이 화면이 position:fixed의 기준이 되어
+   안의 메뉴·시트·모달이 탭 바·옆 칸만큼 밀려 뜬다 (화면 좌표로 자리를 잡으므로) */
 .editor.doc-enter {
-  animation: doc-in 0.22s ease-out both;
+  animation: doc-in 0.22s ease-out backwards;
 }
 @keyframes doc-in {
   from {
@@ -19,7 +21,7 @@
   }
 }
 .library {
-  animation: lib-in 0.2s ease-out both;
+  animation: lib-in 0.2s ease-out backwards; /* backwards인 까닭은 위 .editor.doc-enter */
 }
 @keyframes lib-in {
   from {

@@ -1,6 +1,7 @@
 // 작은 떠 있는 메뉴 — 라이브러리 카드·폴더, 편집 화면 문서 바·페이지 사이드바·툴바가 함께 쓴다.
 // x·y가 둘 다 0이면 화면 가운데에 띄운다.
 import { useEffect, useLayoutEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 
 export function Menu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
@@ -22,12 +23,15 @@ export function Menu({ x, y, onClose, children }: { x: number; y: number; onClos
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  return (
+  // body에 그린다 — 자리를 화면 좌표(버튼의 getBoundingClientRect)로 잡으므로, 조상에 transform이 있어
+  // position:fixed의 기준이 바뀌거나 칸(.pane)의 overflow에 잘리면 엉뚱한 곳에 뜬다 (탭 바·듀얼 칸)
+  return createPortal(
     <div className="menu-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} tabIndex={-1} className={'menu' + (centered ? ' centered' : '')} role="menu">
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
