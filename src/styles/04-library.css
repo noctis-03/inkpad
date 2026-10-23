@@ -1151,3 +1151,45 @@
     display: none;
   }
 }
+/* 파일을 끌고 들어오면 — 놓을 수 있다는 표시 (끌어 놓기를 가리지 않게 포인터는 통과) */
+.lib-drop-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  box-shadow: inset 0 0 0 3px var(--accent);
+  animation: lib-drop-in 0.12s ease-out both;
+}
+.lib-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 420px;
+  padding: 22px 26px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e2);
+  color: var(--accent);
+  text-align: center;
+}
+.lib-drop-card b {
+  font-size: 17px;
+  color: var(--ink);
+}
+.lib-drop-card span {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.4;
+}
+@keyframes lib-drop-in {
+  from {
+    opacity: 0;
+  }
+}

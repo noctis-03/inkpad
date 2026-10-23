@@ -83,6 +83,21 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
   return new Blob([bytes as BlobPart], { type: 'application/zip' })
 }
 
+/**
+ * .zip이 Inkpad 파일(노트·백업)인지 — manifest.json만 풀어 본다(나머지는 목차만 읽고 풀지 않는다).
+ * 일반 zip은 기타 파일로 추가하기 위해 쓴다
+ */
+export async function isInkpadZip(file: Blob): Promise<boolean> {
+  try {
+    const data = new Uint8Array(await file.arrayBuffer())
+    const files = await new Promise<Unzipped>((res, rej) => unzip(data, { filter: (f) => f.name === 'manifest.json' }, (e, d) => (e ? rej(e) : res(d))))
+    const mf = files['manifest.json']
+    return !!mf && (JSON.parse(strFromU8(mf)) as Partial<Manifest>).format === FORMAT
+  } catch {
+    return false
+  }
+}
+
 export interface ImportResult {
   documents: DocumentMeta[]
   skipped: number
