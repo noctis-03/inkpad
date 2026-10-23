@@ -89,13 +89,15 @@ function widthMarkOf(tool: Tool, color: string, w: number) {
   )
 }
 
-export type PopKind = 'style' | 'more' | 'blocks'
+export type PopKind = 'style' | 'more' | 'blocks' | 'lasso'
 type Side = 'below' | 'above' | 'left' | 'right'
 const sideOf = (p: ToolbarPos): Side =>
   p.startsWith('top') ? 'below' : p.startsWith('bottom') ? 'above' : p === 'left' ? 'right' : 'left'
 
 export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const tool = useUI((s) => s.tool)
+  const settings = useUI((s) => s.settings)
+  const setSettings = useUI((s) => s.setSettings)
   const setTool = useUI((s) => s.setTool)
   const style = useUI((s) => s.style)
   const setStyle = useUI((s) => s.setStyle)
@@ -317,7 +319,8 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
         setCollapsed(false)
         return
       }
-      if (t !== 'lasso') togglePop('style', btn)
+      // 같은 도구를 한 번 더 — 펜·형광펜·지우개는 색·굵기, 올가미는 모양(자유/사각)
+      togglePop(t === 'lasso' ? 'lasso' : 'style', btn)
       return
     }
     setTool(t)
@@ -379,7 +382,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
               aria-pressed={tool === t.id}
               onClick={(e) => onToolClick(t.id, e.currentTarget)}
             >
-              <Icon name={t.icon} />
+              <Icon name={t.id === 'lasso' && settings.lassoShape === 'rect' ? 'lassoRect' : t.icon} />
             </button>
           ))}
         </div>
@@ -465,6 +468,30 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
             />
           ) : pop.kind === 'blocks' ? (
             <BlocksPalette engine={engine} onClose={() => setPop(null)} />
+          ) : pop.kind === 'lasso' ? (
+            <div className="ft-menu" role="menu" aria-label="올가미 모양">
+              {(
+                [
+                  ['free', 'lasso', '자유 올가미', '손으로 그린 모양대로'],
+                  ['rect', 'lassoRect', '사각 올가미', '끌어서 네모로']
+                ] as const
+              ).map(([shape, icon, label, desc]) => (
+                <button
+                  key={shape}
+                  className={'menu-item' + (settings.lassoShape === shape ? ' is-current' : '')}
+                  role="menuitemradio"
+                  aria-checked={settings.lassoShape === shape}
+                  onClick={() => {
+                    setSettings({ lassoShape: shape })
+                    setPop(null)
+                  }}
+                >
+                  <Icon name={icon} />
+                  {label}
+                  <small className="ft-menu-desc">{desc}</small>
+                </button>
+              ))}
+            </div>
           ) : (
             <div className="ft-menu">
               {hide.includes('undo') && (

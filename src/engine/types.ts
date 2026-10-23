@@ -48,6 +48,8 @@ export interface Settings {
   motion: 'auto' | 'off' | 'normal' | 'rich'
   // 테마 (다크 모드). auto = 기기의 외관 설정을 따름
   theme: 'auto' | 'light' | 'dark'
+  // 올가미 모양 — 자유(손으로 그린 모양) / 사각(끌어서 네모)
+  lassoShape: 'free' | 'rect'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -75,7 +77,8 @@ export const DEFAULT_SETTINGS: Settings = {
   appBadge: true,
   cloudCheckOnOpen: false,
   motion: 'auto',
-  theme: 'auto'
+  theme: 'auto',
+  lassoShape: 'free'
 }
 
 export interface PenStyle {
@@ -136,5 +139,7 @@ export interface ViewInfo {
 export interface SelectionInfo {
   count: number
   rect: { x: number; y: number; w: number; h: number } // 화면 좌표 (캔버스 기준)
+  /** 고른 영역의 모양 (화면 좌표 평탄 [x, y, …]) — 올가미 모양 그대로, 이미지로 보내면 이 모양대로 잘린다 */
+  poly: number[]
   moving: boolean
 }

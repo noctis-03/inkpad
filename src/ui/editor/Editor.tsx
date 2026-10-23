@@ -436,7 +436,7 @@ export function Editor({ docId }: { docId: ID }) {
           {panel === 'debug' && engine && <DebugPanel engine={engine} />}
         </div>
       </div>
-      {sendImage && engine && <SendImageSheet engine={engine} title={doc?.title ?? ''} target={sendImage} />}
+      {sendImage && engine && <SendImageSheet engine={engine} title={doc?.title ?? ''} target={sendImage} paged={paged} />}
     </div>
   )
 }
