@@ -43,7 +43,7 @@ export interface DocFileV1 {
 
 /** 문서를 Drive 파일로 직렬화. 문서가 없으면 예외. */
 export async function packDocument(id: ID): Promise<DocFileV1> {
-  const { doc, pages, chunks } = await loadDocument(id)
+  const { doc, pages, sheets, chunks } = await loadDocument(id)
   const blocks = await loadBlocks(id, { includeDeleted: true }) // tombstone까지 포함 — 머지에 필요하다
   const assetIds = new Set<ID>()
   for (const p of pages) if (p.pdf) assetIds.add(p.pdf.assetId)
@@ -73,7 +73,7 @@ export async function packDocument(id: ID): Promise<DocFileV1> {
       updatedAt: doc.updatedAt,
       ...(doc.deletedAt ? { deletedAt: doc.deletedAt } : {})
     },
-    pages,
+    pages: [...pages, ...sheets], // 보조 용지는 pageOrder에 없는 Page (sheet 필드)
     chunks,
     blocks,
     assets

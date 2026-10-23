@@ -16,6 +16,14 @@ export interface Target {
   oy: number
 }
 
+/** 보조 용지의 월드 사각형 — 기준 페이지 사각형(anchor)에 상대 좌표를 더한다. snap이면 가장자리에 붙인다 */
+export function sheetRect(s: Page, anchor: Rect | undefined): Rect | null {
+  if (!anchor || !s.sheet || !s.size) return null
+  const { w, h } = s.size
+  const x = s.sheet.snap === 'left' ? -w : s.sheet.snap === 'right' ? anchor.w : s.sheet.x
+  return { x: anchor.x + x, y: anchor.y + s.sheet.y, w, h }
+}
+
 export function chunkOf(wx: number, wy: number) {
   const cx = Math.floor(wx / CHUNK_SIZE)
   const cy = Math.floor(wy / CHUNK_SIZE)
@@ -40,6 +48,11 @@ export class Layout {
   rects = new Map<ID, Rect>()
   index = new Map<ID, number>()
   bounds: Rect = { x: 0, y: 0, w: 0, h: 0 }
+  /**
+   * 보조 용지 (paged 전용). z 오름차순. 사각형은 rects에 함께 들어 있어 그 위 획의 원점이 된다.
+   * pages·placed에는 넣지 않는다 — 페이지 번호·순서·가장 가까운 페이지 계산에서 빠진다.
+   */
+  sheets: Page[] = []
 
   constructor(mode: 'infinite' | 'paged') {
     this.mode = mode
@@ -62,6 +75,44 @@ export class Layout {
       maxW = Math.max(maxW, p.size.w)
     })
     this.bounds = { x: -maxW / 2, y: 0, w: maxW, h: Math.max(0, y - PAGE_GAP) }
+    this.placeSheets()
+  }
+
+  /** 보조 용지 목록을 바꾼다. 기준 페이지가 없는 용지는 배치하지 않는다 */
+  setSheets(sheets: Page[]) {
+    this.sheets = [...sheets].sort((a, b) => a.sheet!.z - b.sheet!.z)
+    this.placeSheets()
+  }
+
+  private placeSheets() {
+    for (const s of this.sheets) this.rects.delete(s.id)
+    if (!this.paged) return
+    for (const s of this.sheets) {
+      const r = sheetRect(s, this.rects.get(s.sheet!.anchorPageId))
+      if (r) this.rects.set(s.id, r)
+    }
+  }
+
+  isSheet(id: ID): boolean {
+    return this.sheets.some((s) => s.id === id)
+  }
+
+  /** 이 상자와 겹치는 보조 용지가 있는가 */
+  sheetOverlaps(b: { minX: number; minY: number; maxX: number; maxY: number }): boolean {
+    for (const s of this.sheets) {
+      const r = this.rects.get(s.id)
+      if (r && b.maxX >= r.x && b.minX <= r.x + r.w && b.maxY >= r.y && b.minY <= r.y + r.h) return true
+    }
+    return false
+  }
+
+  /** 이 점을 덮는 맨 위 보조 용지 */
+  sheetAt(wx: number, wy: number): Page | null {
+    for (let i = this.sheets.length - 1; i >= 0; i--) {
+      const r = this.rects.get(this.sheets[i].id)
+      if (r && wx >= r.x && wx <= r.x + r.w && wy >= r.y && wy <= r.y + r.h) return this.sheets[i]
+    }
+    return null
   }
 
   get paged() {
@@ -84,7 +135,8 @@ export class Layout {
       const c = chunkOf(wx, wy)
       return { pageId: page.id, key: c.key, ox: c.ox, oy: c.oy }
     }
-    const p = this.pageNear(wx, wy)
+    // 보조 용지가 페이지 위에 겹쳐 있으면 용지가 먼저다
+    const p = this.sheetAt(wx, wy) ?? this.pageNear(wx, wy)
     if (!p) return null
     const r = this.rects.get(p.id)!
     return { pageId: p.id, key: PAGE_CHUNK_KEY, ox: r.x, oy: r.y }

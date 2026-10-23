@@ -37,12 +37,13 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
   const assetIds = new Set<ID>()
   let i = 0
   for (const id of documentIds) {
-    const { doc, pages, chunks, blocks } = await loadDocument(id)
+    const { doc, pages, sheets, chunks, blocks } = await loadDocument(id)
     const base = `documents/${id}/`
     const { lastView: _lv, ...docOut } = doc
     void _lv
     files[base + 'document.json'] = json(docOut)
-    files[base + 'pages.json'] = json(pages)
+    // 보조 용지는 pageOrder 밖의 Page(sheet 필드)라 같은 파일에 담는다 — 옛 버전 앱은 순서에 없는 페이지로 보고 무시한다
+    files[base + 'pages.json'] = json([...pages, ...sheets])
     // 살아 있는 블록만 담는다 (tombstone 제외). 블록이 1개 이상일 때만 파일을 쓴다
     if (blocks.length) files[base + 'blocks.json'] = json(blocks)
     for (const c of chunks) {
@@ -170,7 +171,7 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
     const now = Date.now()
     const newId = ulid()
     const pageMap = new Map<ID, ID>()
-    const pages: Page[] = srcPages.map((p) => {
+    const mapped: Page[] = srcPages.map((p) => {
       const id = ulid()
       pageMap.set(p.id, id)
       return {
@@ -182,6 +183,15 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
         updatedAt: now
       }
     })
+    // 보조 용지는 기준 페이지를 새 ID로 다시 잇는다. 기준 페이지가 파일에 없으면 뺀다
+    const pages: Page[] = []
+    for (const p of mapped) {
+      if (!p.sheet) pages.push(p)
+      else {
+        const anchor = pageMap.get(p.sheet.anchorPageId)
+        if (anchor) pages.push({ ...p, sheet: { ...p.sheet, anchorPageId: anchor } })
+      }
+    }
     const doc: DocumentMeta = {
       ...src,
       id: newId,

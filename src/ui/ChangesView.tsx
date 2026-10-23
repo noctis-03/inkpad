@@ -148,7 +148,7 @@ function ChangesView({ docId, title, actions }: Opened) {
             pages.map((p, i) => (
               <section key={p.id} className="merge-page">
                 <div className="merge-page-head">
-                  <span>p.{(lc?.local.doc.pageOrder.indexOf(p.id) ?? i) + 1}</span>
+                  <span>{p.page.sheet ? `보조 용지${p.page.sheet.title ? ` · ${p.page.sheet.title}` : ''}` : `p.${(lc?.local.doc.pageOrder.indexOf(p.id) ?? i) + 1}`}</span>
                   {p.changes > 0 && <span className="merge-page-changes">변경 {p.changes}</span>}
                 </div>
                 <PageCanvas

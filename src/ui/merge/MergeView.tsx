@@ -286,7 +286,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
   const finish = async () => {
     if (!session || !result) return
     const ok = await confirmDialog('최종 머지', {
-      message: `“${entry.title}”의 main을 이 결과(획 ${resultStrokes}개 · 페이지 ${result.pages.length}장)로 바꿉니다. 두 쪽의 원래 내용은 main 버전 기록과 ${branchName}에 그대로 남습니다.`,
+      message: `“${entry.title}”의 main을 이 결과(획 ${resultStrokes}개 · 페이지 ${result.pages.filter((p) => !p.sheet).length}장)로 바꿉니다. 두 쪽의 원래 내용은 main 버전 기록과 ${branchName}에 그대로 남습니다.`,
       ok: '머지'
     })
     if (!ok) return
@@ -617,7 +617,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
       )}
 
       <footer className="merge-foot">
-        <span className="merge-total">{result ? `결과: 획 ${resultStrokes}개 · 페이지 ${result.pages.length}장` : ''}</span>
+        <span className="merge-total">{result ? `결과: 획 ${resultStrokes}개 · 페이지 ${result.pages.filter((p) => !p.sheet).length}장` : ''}</span>
         <button className="text-btn" onClick={closeMergeView} disabled={busy}>
           나중에
         </button>
@@ -681,7 +681,7 @@ function MergePreview(
             }}
           >
             <div className="merge-page-head">
-              <span>p.{i + 1}</span>
+              <span>{p.page.sheet ? `보조 용지${p.page.sheet.title ? ` · ${p.page.sheet.title}` : ''}` : `p.${i + 1}`}</span>
               {p.item.cls !== 'common' && <span className={'merge-chip l-' + p.item.cls}>{pageChip(p.item, props.sideName)}</span>}
               {p.changes > 0 && <span className="merge-page-changes">변경 {p.changes}</span>}
               {(p.item.cls === 'mainOnly' || p.item.cls === 'branchOnly') && (

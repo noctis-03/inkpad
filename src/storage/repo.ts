@@ -11,7 +11,8 @@ import {
   type Element,
   type Folder,
   type ID,
-  type Page
+  type Page,
+  isLiveSheet
 } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { sha256Hex } from '../shared/util'
@@ -294,6 +295,8 @@ async function decodeChunk(row: ChunkRow): Promise<Element[]> {
 export interface LoadedDocument {
   doc: DocumentMeta
   pages: Page[] // pageOrder 순서, 삭제된 페이지 제외
+  /** 보조 용지 (pageOrder 밖의 Page, 기준 페이지가 살아 있는 것만) */
+  sheets: Page[]
   chunks: ChunkData[]
   /** 편집 블록 (tombstone 제외, 살아 있는 페이지에 소속된 것만) — PDF 내보내기는 이 값을 절대 읽지 않는다 */
   blocks: Block[]
@@ -311,6 +314,9 @@ export async function loadDocument(id: ID): Promise<LoadedDocument> {
     if (p && !p.deletedAt) pages.push(p)
   }
   const live = new Set(pages.map((p) => p.id))
+  const sheets = pagesAll.filter((p) => isLiveSheet(p, live))
+  // 청크·블록에서 '살아 있는' 기준: 페이지 + 보조 용지 (블록은 페이지에만 붙지만 같은 집합으로 걸러도 같다)
+  for (const sh of sheets) live.add(sh.id)
   const rows = (await db.chunks.where('documentId').equals(id).toArray()).filter((r) => live.has(r.pageId) && !r.deletedAt)
   // 오래된 스키마는 마이그레이션 전에 원본을 백업한다
   const old = rows.filter((r) => needsMigration(r.schemaVersion))
@@ -318,7 +324,7 @@ export async function loadDocument(id: ID): Promise<LoadedDocument> {
   const chunks: ChunkData[] = []
   for (const r of rows) chunks.push({ pageId: r.pageId, key: r.key, elements: await decodeChunk(r) })
   const blocks = (await db.blocks.where('documentId').equals(id).toArray()).filter((b) => !b.deletedAt && live.has(b.pageId))
-  return { doc, pages, chunks, blocks }
+  return { doc, pages, sheets, chunks, blocks }
 }
 
 /** 편집 블록 전체 (tombstone 포함). 동기화 pack 등 머지가 필요한 곳에서 쓴다 */
@@ -491,6 +497,12 @@ export async function duplicateDocument(id: ID): Promise<DocumentMeta> {
     pageMap.set(p.id, np.id)
     return np
   })
+  // 보조 용지도 새 ID로 — 기준 페이지는 새 페이지로 다시 잇는다
+  const sheets = src.sheets.map((sh) => {
+    const ns = { ...sh, id: ulid(), documentId: newId, createdAt: now, updatedAt: now, version: 0, sheet: { ...sh.sheet!, anchorPageId: pageMap.get(sh.sheet!.anchorPageId)! } }
+    pageMap.set(sh.id, ns.id)
+    return ns
+  })
   const doc: DocumentMeta = {
     ...src.doc,
     id: newId,
@@ -503,9 +515,9 @@ export async function duplicateDocument(id: ID): Promise<DocumentMeta> {
   }
   await db.transaction('rw', db.documents, db.pages, db.outbox, async () => {
     await db.documents.add(doc)
-    await db.pages.bulkAdd(pages)
+    await db.pages.bulkAdd([...pages, ...sheets])
     await enqueue('document', doc.id)
-    for (const p of pages) await enqueue('page', p.id)
+    for (const p of [...pages, ...sheets]) await enqueue('page', p.id)
   })
   const chunks = src.chunks.map((c) => ({
     pageId: pageMap.get(c.pageId)!,

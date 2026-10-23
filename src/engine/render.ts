@@ -2,10 +2,10 @@ import { Camera } from './camera'
 import { MAX_CANVAS_PIXELS } from './constants'
 import { drawPattern } from './background'
 import { outlineToPath, strokeOutline } from './geometry'
-import type { Layout } from './layout'
+import type { Layout, Rect } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
 import { getPath, type Scene, type StrokeRec } from './scene'
-import type { Background, StrokeOpts } from '../shared/model'
+import type { Background, ID, Page, StrokeOpts } from '../shared/model'
 
 export interface Box {
   minX: number
@@ -212,8 +212,49 @@ export class Renderer {
     ctx.fill(getPath(rec))
   }
 
-  private drawList(ctx: CanvasRenderingContext2D, recs: StrokeRec[], cam: Camera) {
+  /**
+   * 확정 레이어 그리기 순서: 페이지 획 → 보조 용지(z순)마다 종이 + 그 용지의 획.
+   * 용지 종이도 이 레이어에 그려야 용지 아래 페이지 획을 가린다 (페이지 종이는 배경 레이어).
+   */
+  private drawList(ctx: CanvasRenderingContext2D, layout: Layout, recs: StrokeRec[], cam: Camera, view: Box) {
     const k = cam.zoom * this.scale
+    if (!layout.sheets.length) return this.drawPasses(ctx, recs, cam, k)
+    const onSheet = new Map<ID, StrokeRec[]>()
+    for (const sh of layout.sheets) onSheet.set(sh.id, [])
+    const base: StrokeRec[] = []
+    for (const rec of recs) (onSheet.get(rec.pageId) ?? base).push(rec)
+    let n = this.drawPasses(ctx, base, cam, k)
+    for (const sh of layout.sheets) {
+      const r = layout.rects.get(sh.id)
+      if (!r || r.x > view.maxX || r.x + r.w < view.minX || r.y > view.maxY || r.y + r.h < view.minY) continue
+      this.drawSheetPaper(ctx, sh, r, cam, k)
+      const list = onSheet.get(sh.id)!
+      if (!list.length) continue
+      // 용지 획은 용지 밖으로 삐져나오지 않게 자른다
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(0, 0, r.w, r.h) // drawSheetPaper가 용지 원점 변환을 걸어 두었다
+      ctx.clip()
+      n += this.drawPasses(ctx, list, cam, k)
+      ctx.restore()
+    }
+    return n
+  }
+
+  /** 보조 용지 종이: 그림자 + 종이 + 속지 + 테두리. 변환을 용지 원점으로 남겨 둔다 */
+  private drawSheetPaper(ctx: CanvasRenderingContext2D, sh: Page, r: Rect, cam: Camera, k: number) {
+    ctx.setTransform(k, 0, 0, k, (r.x - cam.x) * k, (r.y - cam.y) * k)
+    ctx.fillStyle = 'rgba(0,0,0,0.10)'
+    ctx.fillRect(2 / cam.zoom, 3 / cam.zoom, r.w, r.h)
+    ctx.fillStyle = sh.background.type === 'blank' ? sh.background.color : '#ffffff'
+    ctx.fillRect(0, 0, r.w, r.h)
+    drawPattern(ctx, sh.background, r.w, r.h, cam.zoom * this.scale)
+    ctx.lineWidth = 1 / cam.zoom
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)'
+    ctx.strokeRect(0, 0, r.w, r.h)
+  }
+
+  private drawPasses(ctx: CanvasRenderingContext2D, recs: StrokeRec[], cam: Camera, k: number) {
     const minScreen = 0.5 / cam.zoom // LOD
     const hidden = this.hidden
     let n = 0
@@ -236,7 +277,7 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.committed.width, this.committed.height)
     const v = this.viewBox(cam)
-    this.visibleCount = this.drawList(ctx, scene.query(v.minX, v.minY, v.maxX, v.maxY), cam)
+    this.visibleCount = this.drawList(ctx, scene.layout, scene.query(v.minX, v.minY, v.maxX, v.maxY), cam, v)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     this.renderedCam.copy(cam)
     if (this.transformed) {
@@ -261,7 +302,8 @@ export class Renderer {
     ctx.beginPath()
     ctx.rect(x0, y0, x1 - x0, y1 - y0)
     ctx.clip()
-    this.drawList(ctx, scene.query(x0 / k + cam.x, y0 / k + cam.y, x1 / k + cam.x, y1 / k + cam.y), cam)
+    const region = { minX: x0 / k + cam.x, minY: y0 / k + cam.y, maxX: x1 / k + cam.x, maxY: y1 / k + cam.y }
+    this.drawList(ctx, scene.layout, scene.query(region.minX, region.minY, region.maxX, region.maxY), cam, region)
     ctx.restore()
   }
 
