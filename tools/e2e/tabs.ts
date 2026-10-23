@@ -41,7 +41,9 @@ export default async function tabs(ctx: Ctx) {
 
   // 앱·파일 화면 머리는 노트 머리와 같은 높이
   const barH = (sel: string) => p.locator(sel).evaluate((e) => e.getBoundingClientRect().height)
+  const barLook = (sel: string) => p.locator(sel).evaluate((e) => { const cs = getComputedStyle(e); return `${cs.backgroundColor} / ${cs.borderBottomColor}` })
   const appBarH = await barH('.pane-main .app-runner-bar')
+  const appLook = await barLook('.pane-main .app-runner-bar')
 
   // 앱 안의 상태가 남는다
   let fr = await appFrame()
@@ -53,6 +55,8 @@ export default async function tabs(ctx: Ctx) {
   await sleep(400) // 노트 열림 애니메이션(살짝 축소)이 끝난 뒤에 잰다
   const docBarH = await barH('.pane-main .toolbar-doc')
   check('머리 높이: 앱 화면 머리 = 노트 머리', Math.abs(appBarH - docBarH) < 0.5, JSON.stringify({ appBarH, docBarH }))
+  const docLook = await barLook('.pane-main .toolbar-doc')
+  check('머리 색: 앱 화면 머리 바탕·선 = 노트 머리', appLook === docLook, JSON.stringify({ appLook, docLook }))
   const hiddenApp = (await p.locator('.pane-hidden iframe.app-runner-frame').count()) === 1
   await p.click(`.tabbar .tab[data-tab="app:${ids.app}"]`)
   await sleep(200)
@@ -140,6 +144,8 @@ export default async function tabs(ctx: Ctx) {
   await p.waitForSelector('.pane-main .file-runner')
   const fileBarH = await barH('.pane-main .file-runner .app-runner-bar')
   check('머리 높이: 파일 화면 머리 = 노트 머리', Math.abs(fileBarH - docBarH) < 0.5, JSON.stringify({ fileBarH, docBarH }))
+  const fileLook = await barLook('.pane-main .file-runner .app-runner-bar')
+  check('머리 색: 파일 화면 머리 바탕·선 = 노트 머리', fileLook === docLook, JSON.stringify({ fileLook, docLook }))
   await go({ name: 'editor', docId: B })
   await p.click(`.tabbar .tab[data-tab="file:${ids.file}"]`, { button: 'right' })
   await p.locator('.menu').getByRole('menuitem', { name: '옆 칸에 열기' }).click()
