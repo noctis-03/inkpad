@@ -133,7 +133,7 @@ export type Route =
 
 /** 탭으로 열리는 화면 — 라이브러리·작업보드는 맨 앞 '홈' 탭이다 */
 export type TabRoute = Extract<Route, { name: 'editor' | 'app' | 'file' }>
-/** 오른쪽 칸에 띄울 수 있는 화면 — 편집 화면은 상태(도구·선택·보기)를 앱 전체에 하나만 두므로 왼쪽(가운데)에만 */
+/** 옆 칸에 띄울 수 있는 화면 — 편집 화면은 상태(도구·선택·보기)를 앱 전체에 하나만 두므로 왼쪽(가운데)에만 */
 export type SplitRoute = Extract<Route, { name: 'app' | 'file' }>
 
 export const isTabRoute = (r: Route): r is TabRoute => r.name === 'editor' || r.name === 'app' || r.name === 'file'
@@ -144,8 +144,10 @@ const sameTab = (a: Route | null, b: Route | null) => !!a && !!b && isTabRoute(a
 interface TabsState {
   tabs: TabRoute[]
   split: SplitRoute | null
-  /** 왼쪽(가운데) 칸이 차지하는 비율 */
+  /** 가운데 칸이 차지하는 비율 */
   splitRatio: number
+  /** 옆 칸이 놓인 쪽 */
+  splitSide: 'left' | 'right'
 }
 const SPLIT_MIN = 0.3
 const SPLIT_MAX = 0.75
@@ -153,14 +155,14 @@ export const clampSplit = (r: number) => Math.min(SPLIT_MAX, Math.max(SPLIT_MIN,
 
 /** 이 기기에만 저장 (동기화하지 않음). 망가진 값은 버린다 */
 function loadTabs(): TabsState {
-  const t = load<{ tabs?: unknown; split?: unknown; splitRatio?: unknown }>(LS_TABS, {})
+  const t = load<{ tabs?: unknown; split?: unknown; splitRatio?: unknown; splitSide?: unknown }>(LS_TABS, {})
   const ok = (r: unknown): r is TabRoute => {
     const x = r as TabRoute | null
     return !!x && ((x.name === 'editor' && typeof x.docId === 'string') || (x.name === 'app' && typeof x.appId === 'string') || (x.name === 'file' && typeof x.fileId === 'string'))
   }
   const tabs = Array.isArray(t.tabs) ? t.tabs.filter(ok) : []
   const split = ok(t.split) && t.split.name !== 'editor' && tabs.some((x) => sameTab(x, t.split as Route)) ? (t.split as SplitRoute) : null
-  return { tabs, split, splitRatio: clampSplit(typeof t.splitRatio === 'number' ? t.splitRatio : 0.6) }
+  return { tabs, split, splitRatio: clampSplit(typeof t.splitRatio === 'number' ? t.splitRatio : 0.6), splitSide: t.splitSide === 'left' ? 'left' : 'right' }
 }
 
 export interface Toast {
@@ -204,9 +206,10 @@ interface UIState {
   returnRoute: Route | null
   /** 열린 탭 (노트·앱·파일). 지금 보는 탭은 route다 */
   tabs: TabRoute[]
-  /** 오른쪽 칸 (듀얼) — 탭 하나를 옆에 띄운다 */
+  /** 옆 칸 (듀얼) — 탭 하나를 옆에 띄운다 */
   split: SplitRoute | null
   splitRatio: number
+  splitSide: 'left' | 'right'
   /** 마지막으로 본 홈 화면 (라이브러리 / 작업보드) — 홈 탭을 누르면 여기로 */
   home: Extract<Route, { name: 'library' | 'board' }>
 
@@ -229,10 +232,12 @@ interface UIState {
   setSelectedBlockId: (id: ID | null) => void
   closeTab: (r: TabRoute) => void
   closeOtherTabs: (r: TabRoute) => void
-  /** 앱·파일을 오른쪽 칸으로 — 가운데에는 그 전에 보던 화면이 온다 */
+  /** 앱·파일을 옆 칸으로 — 가운데에는 그 전에 보던 화면이 온다 */
   openSplit: (r: SplitRoute) => void
   closeSplit: () => void
   setSplitRatio: (r: number) => void
+  /** 좌우 바꾸기 — 옆 칸을 왼쪽↔오른쪽으로 (각 칸의 폭은 그대로) */
+  swapSplit: () => void
 }
 
 let toastSeq = 0
@@ -288,6 +293,7 @@ export const useUI = create<UIState>((set, get) => ({
   tabs: firstTabs.tabs,
   split: firstTabs.split,
   splitRatio: firstTabs.splitRatio,
+  splitSide: firstTabs.splitSide,
   home: firstRoute.name === 'board' ? { name: 'board' } : { name: 'library' },
 
   navigate: (route) => {
@@ -312,7 +318,7 @@ export const useUI = create<UIState>((set, get) => ({
       // 노트·앱·파일을 열 때는 열기 전 화면을 기억해 뒤로가기 때 돌아간다 (작업보드 → 노트 → 뒤로 = 작업보드)
       returnRoute: opens ? prev : null,
       tabs: withTab(tabs, route, prev),
-      // 오른쪽 칸에 있던 것을 가운데로 열면 칸을 닫는다 (같은 화면을 두 번 띄우지 않는다)
+      // 옆 칸에 있던 것을 가운데로 열면 칸을 닫는다 (같은 화면을 두 번 띄우지 않는다)
       split: sameTab(split, route) ? null : split,
       ...(route.name === 'library' || route.name === 'board' ? { home: route } : {})
     })
@@ -323,7 +329,7 @@ export const useUI = create<UIState>((set, get) => ({
     if (at < 0) return
     const rest = tabs.filter((_, i) => i !== at)
     set({ tabs: rest, split: sameTab(split, r) ? null : split })
-    // 보던 탭을 닫으면 오른쪽 이웃(없으면 왼쪽), 탭이 없으면 홈으로 — 오른쪽 칸에 떠 있는 탭은 건너뛴다
+    // 보던 탭을 닫으면 오른쪽 이웃(없으면 왼쪽), 탭이 없으면 홈으로 — 옆 칸에 떠 있는 탭은 건너뛴다
     if (sameTab(route, r)) {
       const sp = get().split
       const pick = [...rest.slice(at), ...rest.slice(0, at).reverse()].find((t) => !sameTab(t, sp))
@@ -350,6 +356,7 @@ export const useUI = create<UIState>((set, get) => ({
   },
   closeSplit: () => set({ split: null }),
   setSplitRatio: (r) => set({ splitRatio: clampSplit(r) }),
+  swapSplit: () => set({ splitSide: get().splitSide === 'left' ? 'right' : 'left' }),
   setTool: (t) => {
     const cur = get().tool
     if (t !== cur) set({ tool: t, prevTool: cur })
@@ -421,7 +428,8 @@ window.addEventListener('popstate', () => {
   })
 })
 
-// 탭·오른쪽 칸은 이 기기에만 기억한다 — 앱을 다시 켜면 그대로
+// 탭·옆 칸은 이 기기에만 기억한다 — 앱을 다시 켜면 그대로
 useUI.subscribe((st, prev) => {
-  if (st.tabs !== prev.tabs || st.split !== prev.split || st.splitRatio !== prev.splitRatio) save(LS_TABS, { tabs: st.tabs, split: st.split, splitRatio: st.splitRatio })
+  if (st.tabs !== prev.tabs || st.split !== prev.split || st.splitRatio !== prev.splitRatio || st.splitSide !== prev.splitSide)
+    save(LS_TABS, { tabs: st.tabs, split: st.split, splitRatio: st.splitRatio, splitSide: st.splitSide })
 })

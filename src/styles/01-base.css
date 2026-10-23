@@ -330,6 +330,11 @@ button {
   grid-template-columns: minmax(0, var(--split-main)) 1px minmax(0, 1fr);
   grid-template-areas: 'main div side';
 }
+/* 좌우 바꾸기 — 칸은 DOM에서 옮기지 않고 자리만 바꾼다 (앱이 다시 로드되지 않게) */
+.panes.is-split.side-left {
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, var(--split-main));
+  grid-template-areas: 'side div main';
+}
 .pane {
   position: relative;
   min-width: 0;

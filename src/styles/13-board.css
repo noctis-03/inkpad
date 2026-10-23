@@ -3,7 +3,7 @@
    격자·편집 도구는 편집 모드에서만 나타난다. 배치는 localStorage/프리셋에. */
 
 .board {
-  /* 칸(.pane) 안을 채운다 — 탭 바 아래에, 오른쪽 칸을 띄우면 그 옆에 */
+  /* 칸(.pane) 안을 채운다 — 탭 바 아래에, 옆 칸을 띄우면 그 옆에 */
   position: absolute;
   inset: 0;
   z-index: 30;

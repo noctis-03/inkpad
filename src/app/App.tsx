@@ -85,7 +85,7 @@ export function App() {
 const ALIVE_APPS = 5
 
 /**
- * 가운데 칸(지금 탭)과 오른쪽 칸(듀얼). 모든 칸은 같은 부모 아래에서 CSS grid 자리(main·side·숨김)만 바꾼다 —
+ * 가운데 칸(지금 탭)과 옆 칸(듀얼). 모든 칸은 같은 부모 아래에서 CSS grid 자리(main·side·숨김)만 바꾼다 —
  * iframe은 DOM에서 옮기면 다시 로드되므로 앱 칸은 늘 같은 순서(앱 ID 순)로 먼저 그리고 자리만 바꾼다.
  * 노트·파일·라이브러리는 볼 때만 그린다 (노트 편집 화면은 무겁고, 보던 위치는 노트가 기억한다).
  */
@@ -94,6 +94,7 @@ function Panes() {
   const split = useUI((s) => s.split)
   const tabs = useUI((s) => s.tabs)
   const ratio = useUI((s) => s.splitRatio)
+  const side = useUI((s) => s.splitSide)
   const splitAllowed = useSplitAllowed()
   const sideOn = !!split && splitAllowed
   const box = useRef<HTMLDivElement>(null)
@@ -116,7 +117,7 @@ function Panes() {
   const slot = (key: string): PaneSlot => (key === mainKey ? 'main' : sideOn && key === sideKey ? 'side' : 'hidden')
 
   return (
-    <div ref={box} className={'panes' + (sideOn ? ' is-split' : '')} style={sideOn ? ({ '--split-main': `${ratio * 100}%` } as React.CSSProperties) : undefined}>
+    <div ref={box} className={'panes' + (sideOn ? ' is-split' + (side === 'left' ? ' side-left' : '') : '')} style={sideOn ? ({ '--split-main': `${ratio * 100}%` } as React.CSSProperties) : undefined}>
       {alive.map((id) => {
         const where = slot(`app:${id}`)
         return (
@@ -148,14 +149,19 @@ function Panes() {
   )
 }
 
-/** 가운데·오른쪽 칸 사이 막대 — 끌어 폭을 바꾼다 (화살표 키로도). 끄는 동안 앱(iframe)이 포인터를 가져가지 않게 막는다 */
+/** 가운데·옆 칸 사이 막대 — 끌어 폭을 바꾼다 (화살표 키로도). 끄는 동안 앱(iframe)이 포인터를 가져가지 않게 막는다 */
 function SplitDivider({ box }: { box: React.RefObject<HTMLDivElement | null> }) {
   const ratio = useUI((s) => s.splitRatio)
+  const side = useUI((s) => s.splitSide)
   const setRatio = useUI((s) => s.setSplitRatio)
+  // 비율은 늘 가운데 칸의 몫 — 옆 칸이 왼쪽이면 막대 오른쪽이 가운데 칸이다
   const at = (x: number) => {
     const r = box.current?.getBoundingClientRect()
-    if (r?.width) setRatio((x - r.left) / r.width)
+    if (!r?.width) return
+    const f = (x - r.left) / r.width
+    setRatio(side === 'left' ? 1 - f : f)
   }
+  const nudge = (dx: number) => setRatio(ratio + (side === 'left' ? -dx : dx))
   return (
     <div
       className="split-divider"
@@ -177,8 +183,8 @@ function SplitDivider({ box }: { box: React.RefObject<HTMLDivElement | null> }) 
       onPointerCancel={() => box.current?.classList.remove('is-resizing')}
       onDoubleClick={() => setRatio(0.6)}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowLeft') setRatio(ratio - 0.05)
-        else if (e.key === 'ArrowRight') setRatio(ratio + 0.05)
+        if (e.key === 'ArrowLeft') nudge(-0.05)
+        else if (e.key === 'ArrowRight') nudge(0.05)
       }}
     >
       <span className="split-grip" />
