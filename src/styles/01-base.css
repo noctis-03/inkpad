@@ -215,3 +215,169 @@ button {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* ───────── 탭 바 (ui/TabBar) · 칸 (app/App Panes) ───────── */
+.tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 38px;
+  padding: 4px 6px 0;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tabbar-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabbar-scroll::-webkit-scrollbar {
+  display: none;
+}
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 200px;
+  min-width: 104px;
+  height: 100%;
+  padding: 0 4px 0 10px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tab:hover {
+  background: var(--hover);
+}
+.tab.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line);
+  clip-path: inset(-1px -1px 0 -1px);
+}
+.tab + .tab:not(.is-active)::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--line);
+}
+.tab.is-active + .tab::before,
+.tab:hover + .tab::before {
+  display: none;
+}
+.tab-home {
+  flex: 0 0 40px;
+  min-width: 40px;
+  justify-content: center;
+  padding: 0;
+}
+.tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-side {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.tab-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.tab-close:hover {
+  background: var(--hover);
+  opacity: 1;
+}
+
+.panes {
+  /* 탭 바·칸은 app-shell의 안전 영역 여백 아래에 있다 — 칸 안의 화면은 다시 띄우지 않는다 */
+  --safe-top: 0px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'main';
+}
+.panes.is-split {
+  grid-template-columns: minmax(0, var(--split-main)) 1px minmax(0, 1fr);
+  grid-template-areas: 'main div side';
+}
+.pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.pane > .library,
+.pane > .editor {
+  height: 100%;
+}
+.pane-main {
+  grid-area: main;
+}
+.pane-side {
+  grid-area: side;
+}
+.pane-hidden {
+  display: none;
+}
+.split-divider {
+  grid-area: div;
+  position: relative;
+  z-index: 40;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+/* 잡기 쉬운 넓은 손잡이 (보이는 선은 1px) */
+.split-divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 -9px;
+}
+.split-grip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 44px;
+  border-radius: 3px;
+  background: var(--muted-2);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.split-divider:focus-visible .split-grip,
+.panes.is-resizing .split-grip {
+  background: var(--accent);
+}
+.panes.is-resizing iframe {
+  pointer-events: none;
+}

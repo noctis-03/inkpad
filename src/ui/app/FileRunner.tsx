@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useUI } from '../../app/store'
 import { Icon } from '../Icon'
 import { saveFile } from '../../io/download'
 import type { ID } from '../../shared/model'
 import type { FileRow } from '../../storage/db'
 import { ensureFileLocal, fileToBlob, getFile } from '../../sync/files'
 import { confirmTransfer } from '../../sync/transfer'
+import { RunnerBack, RunnerSplit, type PaneSlot } from './RunnerNav'
 
 /** 일반 파일 뷰어 — 종류별로 읽기 전용 표시 (텍스트 / 이미지 / 그 외 다운로드) */
-export function FileRunner({ fileId }: { fileId: ID }) {
-  const navigate = useUI((s) => s.navigate)
+export function FileRunner({ fileId, pane = 'main' }: { fileId: ID; pane?: PaneSlot }) {
   const [row, setRow] = useState<FileRow | null | undefined>(undefined)
   const [url, setUrl] = useState('')
   const [text, setText] = useState('')
@@ -28,7 +27,9 @@ export function FileRunner({ fileId }: { fileId: ID }) {
       if (!f || f.deletedAt) return setRow(null)
       setRow(f)
       try {
-        if (!(await confirmTransfer('down', f.size))) throw new Error('다운로드를 취소했습니다.')
+        // 원본이 이 기기에 없을 때만 받는다 — 그때만 큰 파일 확인 (탭·오른쪽 칸을 오가며 다시 열 때마다 묻지 않게)
+        const hasOrig = f.text !== undefined || !!f.blob
+        if (!hasOrig && !(await confirmTransfer('down', f.size))) throw new Error('다운로드를 취소했습니다.')
         const full = await ensureFileLocal(fileId)
         if (!alive) return
         setRow(full)
@@ -64,10 +65,9 @@ export function FileRunner({ fileId }: { fileId: ID }) {
   return (
     <div className="file-runner">
       <header className="app-runner-bar">
-        <button className="tb-btn" onClick={() => navigate(useUI.getState().returnRoute ?? { name: 'library' })} aria-label="뒤로">
-          <Icon name="back" />
-        </button>
+        <RunnerBack pane={pane} />
         <h1 className="app-runner-title">{row ? row.title : ''}</h1>
+        <RunnerSplit pane={pane} route={{ name: 'file', fileId }} />
         <button className="tb-btn" onClick={() => void download()} aria-label="내보내기" title="파일로 내보내기" disabled={!row}>
           <Icon name="download" />
         </button>

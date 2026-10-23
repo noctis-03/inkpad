@@ -201,7 +201,8 @@ document.getElementById('c').onclick=function(){inkpad.saveFile('CCC','c.txt','t
   let downloads: string[] = []
   p.on('download', (d) => downloads.push(d.suggestedFilename()))
   await p.goto(`${base}/#/app/${exporter}`)
-  const fr = p.frameLocator('iframe.app-runner-frame')
+  // 앞서 연 앱도 탭으로 숨겨 둔 채 켜 두므로(ui/TabBar) 지금 칸의 앱만 가리킨다
+  const fr = p.frameLocator('.pane-main iframe.app-runner-frame')
   await fr.locator('#out').waitFor({ state: 'attached' })
   const saveModal = p.locator('.modal', { hasText: '파일 저장' })
   const fileRow = (name: string) =>
@@ -263,7 +264,7 @@ document.getElementById('c').onclick=function(){inkpad.saveFile('CCC','c.txt','t
     const ink = new Uint8Array(await (await exportInkpad([d.id], 'document')).arrayBuffer())
     return { pdf: b64(await pdf.save()), ink: b64(ink), html: btoa(unescape(encodeURIComponent('<!doctype html><title>앱이 만든 앱</title><p>x</p>'))) }
   })
-  const appFrame = p.frames().find((f) => f !== p.mainFrame())!
+  const appFrame = (await (await p.$('.pane-main iframe.app-runner-frame'))!.contentFrame())!
   const emit = (name: string, b64: string, type: string) =>
     appFrame.evaluate(
       ([name, b64, type]) => {
