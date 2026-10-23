@@ -90,7 +90,7 @@ export default async function sendimage(ctx: Ctx) {
   const pageCaption = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
   const page1 = await copyFromSheet()
   const pageRaw = await raw({ page: 0 }, true)
-  check('이미지로 보내기: 페이지는 기본 PDF 포함, 요청 문구는 문제·풀이 확인', pageBgOn && pageCaption.includes('문제와 풀이'), JSON.stringify({ pageBgOn, pageCaption }))
+  check('이미지로 보내기: 페이지는 기본 PDF 포함, 요청 문구는 쉽게 풀이', pageBgOn && pageCaption === '사진 속 내용을 쉽게 풀이해줘.', JSON.stringify({ pageBgOn, pageCaption }))
   check('이미지로 보내기: 페이지 전체를 고해상도로 (300×400pt → 1200×1600px, 1pt에 4px)', pageRaw?.w === 1200 && pageRaw?.h === 1600, JSON.stringify(pageRaw))
   check('이미지로 보내기: 요청 문구가 이미지 위쪽 띠에 글자로 들어간다', !!page1 && page1.w === 1200 && page1.h > 1600 && page1.bandInk > 50 && page1.pink > 0.6 && page1.ink > 50, JSON.stringify(page1))
 

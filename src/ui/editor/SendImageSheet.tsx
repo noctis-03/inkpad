@@ -37,8 +37,8 @@ function savePrefs(p: Prefs) {
   }
 }
 
-/** 기본 요청 문구 — 글씨만이면 손글씨 받아쓰기, PDF까지면 문제·풀이 확인 */
-export const defaultCaption = (bg: boolean) => (bg ? '이 문제와 풀이를 보고 맞는지 확인해줘.' : '이 손글씨를 그대로 텍스트로 다시 적어줘.')
+/** 기본 요청 문구 — 글씨만이면 손글씨 받아쓰기, PDF까지면 쉽게 풀이 */
+export const defaultCaption = (bg: boolean) => (bg ? '사진 속 내용을 쉽게 풀이해줘.' : '이 손글씨를 그대로 텍스트로 다시 적어줘.')
 
 /**
  * 이미지 위에 요청 문구 띠를 붙인다. 좁은 이미지(작은 올가미)도 문구가 너무 잘게 줄바꿈되지 않게
