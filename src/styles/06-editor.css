@@ -562,3 +562,27 @@
   opacity: 0.45;
   cursor: default;
 }
+
+/* ───────── 이미지로 보내기 (ui/editor/SendImageSheet) ───────── */
+.modal.send-image {
+  width: min(480px, 100%);
+}
+.send-image-preview {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  max-height: min(52vh, 460px);
+  margin: 12px 0 4px;
+  padding: 8px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.send-image-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(min(52vh, 460px) - 16px);
+  object-fit: contain;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line);
+}

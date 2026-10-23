@@ -137,6 +137,14 @@ export function PageSidebar({ engine, pages, tick }: { engine: Engine; pages: Pa
           <MenuItem icon="plus" label="앞에 새 페이지" onClick={() => act('before', menu.index)} />
           <MenuItem icon="plus" label="뒤에 새 페이지" onClick={() => act('after', menu.index)} />
           <MenuItem icon="copy" label="복제" onClick={() => act('dup', menu.index)} />
+          <MenuItem
+            icon="share"
+            label="이미지로 보내기"
+            onClick={() => {
+              useUI.setState({ sendImage: { page: menu.index } })
+              setMenu(null)
+            }}
+          />
           <MenuItem icon="arrowUp" label="위로" onClick={() => act('up', menu.index)} />
           <MenuItem icon="arrowDown" label="아래로" onClick={() => act('down', menu.index)} />
           <MenuItem icon="trash" label="삭제" danger onClick={() => act('delete', menu.index)} />

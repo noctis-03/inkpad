@@ -47,6 +47,9 @@ export function SelectionBar({ engine }: { engine: Engine }) {
             aria-label={`${ro(PEN_COLOR_NAMES[i])} 바꾸기`}
           />
         ))}
+        <button className="tb-btn" onClick={() => useUI.setState({ sendImage: 'selection' })} aria-label="이미지로 보내기" title="이미지로 보내기 — 복사·공유해 AI 앱에 붙여넣기">
+          <Icon name="share" size={20} />
+        </button>
         <button className="tb-btn danger" onClick={() => engine.deleteSelection()} aria-label="삭제">
           <Icon name="trash" size={20} />
         </button>

@@ -150,6 +150,8 @@ export class Engine {
   // 선택
   private selection: StrokeRec[] = []
   private selectionBox: Box | null = null
+  /** 마지막 올가미가 감싼 영역(월드) — 이미지로 보낼 때 획만이 아니라 감싼 곳(PDF 문제 등)까지 담는다. 옮기면 지운다 */
+  private lassoBox: Box | null = null
 
   // 렌더 — 프레임은 할 일이 있을 때만 돈다.
   // 예전에는 노트를 열어 두기만 해도 매 프레임(120Hz iPad에서 초당 120번) 깨어났다. 이제 아래 표시를
@@ -496,6 +498,7 @@ export class Engine {
     if (!this.selection.length) return
     this.selection = []
     this.selectionBox = null
+    this.lassoBox = null
     this.renderer.hidden = null
     if (redraw) this.committedDirty = true
     this.liveDirty = true
@@ -1362,6 +1365,7 @@ export class Engine {
       }
       const removed = this.selection.map(toEntry)
       const added = this.selection.map((r) => this.movedEntry(r, dx, dy, r.stroke.id))
+      this.lassoBox = null // 옮긴 뒤에는 옮긴 획의 영역만
       this.exec({ removed, added })
       this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
       return
@@ -1374,6 +1378,7 @@ export class Engine {
       minY = Math.min(minY, poly[i + 1]); maxY = Math.max(maxY, poly[i + 1])
     }
     const sel = this.scene.query(minX, minY, maxX, maxY).filter((r) => strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
+    this.lassoBox = { minX, minY, maxX, maxY }
     this.setSelection(sel)
   }
 
@@ -1396,6 +1401,7 @@ export class Engine {
   private setSelection(recs: StrokeRec[]) {
     this.selection = recs
     if (!recs.length) {
+      this.lassoBox = null
       this.clearSelection()
       return
     }
@@ -1768,6 +1774,70 @@ export class Engine {
     }
     if (!drew) return null
     return c
+  }
+
+  /**
+   * 이미지로 보내기(복사·공유) — 화면 줌과 관계없이 읽기 좋은 해상도로 다시 그린 PNG.
+   *  - { page }: 그 페이지 전체 (무한 캔버스면 지금 보이는 화면)
+   *  - 'selection': 올가미로 감싼 영역 + 고른 획 (여백 조금)
+   * 종이·속지·PDF·필기(형광펜 포함)를 그린다. 블록(메모·할 일 등)은 PDF 내보내기처럼 담지 않는다.
+   * PDF 원본이 이 기기에 없으면 화면에 그릴 때처럼 받아 온다.
+   */
+  async exportImage(target: { page: number } | 'selection', longSide = 2000): Promise<Blob | null> {
+    let box: Box | null
+    if (target === 'selection') {
+      const b = this.lassoBox && this.selectionBox ? unionBox(this.lassoBox, this.selectionBox) : this.selectionBox
+      const pad = 12
+      box = b ? { minX: b.minX - pad, minY: b.minY - pad, maxX: b.maxX + pad, maxY: b.maxY + pad } : null
+    } else if (this.layout.paged) {
+      const p = this.layout.pages[target.page]
+      const r = p && this.layout.rects.get(p.id)
+      box = r ? { minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h } : null
+    } else box = this.renderer.viewBox(this.cam)
+    if (!box) return null
+    const w = box.maxX - box.minX
+    const h = box.maxY - box.minY
+    if (w <= 0 || h <= 0) return null
+    // 긴 변 longSide px, 작은 영역도 1pt에 4px까지만 (흐릿하게 키우지 않는다), 캔버스 한도 안에서
+    let k = Math.min(longSide / Math.max(w, h), 4)
+    if (w * h * k * k > 16_000_000) k = Math.sqrt(16_000_000 / (w * h))
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.round(w * k))
+    c.height = Math.max(1, Math.round(h * k))
+    const ctx = c.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, c.width, c.height)
+    if (this.layout.paged) {
+      for (const p of this.layout.visiblePages(box.minY, box.maxY, box.minX, box.maxX)) {
+        const r = this.layout.rects.get(p.id)
+        if (!r) continue
+        ctx.save()
+        ctx.setTransform(k, 0, 0, k, (r.x - box.minX) * k, (r.y - box.minY) * k)
+        ctx.beginPath()
+        ctx.rect(0, 0, r.w, r.h)
+        ctx.clip()
+        ctx.fillStyle = p.background.type === 'blank' ? p.background.color : '#ffffff'
+        ctx.fillRect(0, 0, r.w, r.h)
+        if (p.pdf) {
+          const bmp = await this.pdf.getExact(p.pdf, r.w, r.h, k)
+          if (bmp) {
+            ctx.imageSmoothingQuality = 'high'
+            ctx.drawImage(bmp, 0, 0, r.w, r.h)
+          }
+        } else drawPattern(ctx, p.background, r.w, r.h, k)
+        ctx.restore()
+      }
+    }
+    const recs = this.scene.query(box.minX, box.minY, box.maxX, box.maxY)
+    for (const pass of ['under', 'main'] as const) {
+      for (const rec of recs) {
+        if (rec.stroke.layer !== pass) continue
+        ctx.setTransform(k, 0, 0, k, (rec.ox - box.minX) * k, (rec.oy - box.minY) * k)
+        ctx.fillStyle = rec.stroke.color
+        ctx.fill(getPath(rec))
+      }
+    }
+    return new Promise((res) => c.toBlob((b) => res(b), 'image/png'))
   }
 
   private async pdfThumb(page: Page, scale: number): Promise<CanvasImageSource | null> {

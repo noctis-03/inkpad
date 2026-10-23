@@ -145,6 +145,11 @@ export function EditorToolbar(props: {
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           {!props.scratch && <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />}
           <MenuItem icon="share" label="내보내기" onClick={run(() => setPanel('export'))} />
+          <MenuItem
+            icon="copy"
+            label={doc?.mode === 'infinite' ? '지금 화면을 이미지로 보내기' : '이 페이지를 이미지로 보내기'}
+            onClick={run(() => useUI.setState({ sendImage: { page: useUI.getState().view.currentPage } }))}
+          />
           <MenuItem icon="gear" label="설정" onClick={run(() => setPanel('settings'))} />
           <MenuItem icon="cloud" label="동기화" onClick={run(() => setPanel('sync'))} />
         </Menu>
