@@ -816,6 +816,7 @@ export class Engine {
   /** phase를 따로 받는다 — 블록 헤더 드래그를 넘겨받을 때는 pointermove 이벤트를 'down'으로 넘긴다 */
   overlayPointer(e: PointerEvent, phase: 'down' | 'move' | 'up' | 'cancel') {
     if (phase === 'down') {
+      this.syncRect()
       if (e.pointerType === 'mouse' && e.button === 1) {
         this.momentum = null
         this.startMiddlePan(e)
@@ -842,6 +843,7 @@ export class Engine {
 
   /** 클라이언트 좌표 → 월드 좌표 (rectLeft/Top 보정 포함) */
   worldOfClient(clientX: number, clientY: number): { x: number; y: number } {
+    this.syncRect()
     return {
       x: (clientX - this.rectLeft) / this.cam.zoom + this.cam.x,
       y: (clientY - this.rectTop) / this.cam.zoom + this.cam.y
@@ -1188,6 +1190,7 @@ export class Engine {
     this.on(r, 'pointerup', this.onPointerUp)
     this.on(r, 'pointercancel', this.onPointerCancel)
     this.on(r, 'pointerleave', this.onPointerLeave)
+    this.on(r, 'pointerenter', () => this.syncRect()) // 펜·마우스 커서(누르기 전)도 제자리에
     this.on(r, 'wheel', this.onWheel, { passive: false })
     const prevent = (e: Event) => e.preventDefault()
     // 휠(가운데) 버튼: 브라우저 자동 스크롤 대신 드래그 팬으로 사용
@@ -1248,6 +1251,7 @@ export class Engine {
   // ─────────────────────────── 포인터 ───────────────────────────
 
   private onPointerDown = (e: PointerEvent) => {
+    this.syncRect()
     this.recordPointerStats(e)
     this.momentum = null
     if (this.isPenLike(e)) {
@@ -1398,6 +1402,7 @@ export class Engine {
   }
 
   private onWheel = (e: WheelEvent) => {
+    this.syncRect()
     e.preventDefault()
     this.momentum = null
     const p = this.local(e)
@@ -1840,10 +1845,19 @@ export class Engine {
     this.notifyCamera()
   }
 
-  private handleResize(force = false) {
+  /**
+   * 캔버스의 화면 위치를 다시 읽는다. 노트를 여는 애니메이션처럼 크기는 그대로인 채 자리만 옮겨 가면
+   * ResizeObserver가 알려 주지 않아, 처음 읽은 값(애니메이션 도중)이 남아 펜 입력이 몇 px 어긋났다.
+   * 입력이 시작될 때마다 부른다 (pointerdown 빈도라 레이아웃 읽기 비용은 무시할 만하다).
+   */
+  private syncRect() {
     const rect = this.root.getBoundingClientRect()
     this.rectLeft = rect.left
     this.rectTop = rect.top
+  }
+
+  private handleResize(force = false) {
+    this.syncRect()
     const w = this.root.clientWidth
     const h = this.root.clientHeight
     const r = this.renderer
