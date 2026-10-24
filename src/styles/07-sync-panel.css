@@ -1378,6 +1378,60 @@
   font-size: var(--fs-sm);
   font-weight: 600;
 }
+.merge-items {
+  margin-top: 14px;
+}
+.merge-items h4 {
+  margin: 0 0 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.merge-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.merge-item.discarded .merge-item-label {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.merge-item-label {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  align-items: center;
+  column-gap: 8px;
+  flex: 1 1 100%;
+  min-height: 40px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.merge-item-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.merge-item-info {
+  grid-column: 2;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.merge-item > .text-btn,
+.merge-item > .merge-seg {
+  margin-left: 18px;
+}
+.merge-item > .text-btn {
+  min-height: 40px;
+}
+.merge-item > .merge-seg {
+  flex-basis: auto;
+}
 .merge-check {
   display: flex;
   align-items: center;

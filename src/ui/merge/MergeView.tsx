@@ -3,7 +3,7 @@
 //
 // 레이어: 원래 있던 내용(공통) / main에만 / 브랜치에만 / 양쪽에서 내용이 다름. 기본은 모두 살리기(머지에는 삭제가 없다).
 // 도구는 강조한 레이어(없으면 보이는 레이어 전부)에만 닿는다: 올가미로 골라 옮기기·버리기·살리기·색·다른 쪽 버전,
-// 지우개로 버리기. 한 일은 작업본에만 쌓이고(되돌리기·다시 가능, 이 기기에 저장), '최종 머지'를 눌러야 main이 바뀐다.
+// 지우개로 버리기. 페이지·보조 용지·편집 블록은 패널의 목록에서 하나씩 어느 쪽을 쓸지·버릴지 고른다. 한 일은 작업본에만 쌓이고(되돌리기·다시 가능, 이 기기에 저장), '최종 머지'를 눌러야 main이 바뀐다.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { PEN_COLORS, PEN_COLOR_NAMES, useUI } from '../../app/store'
@@ -12,7 +12,7 @@ import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
 import { closePdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
 import { formatDate } from '../../shared/util'
-import type { ID, Stroke } from '../../shared/model'
+import type { Block, ID, Page, Stroke } from '../../shared/model'
 import { commitMerge, listMergeQueue, MergeStaleError, openMerge, pushBeforeMerge, type MergeQueueEntry, type MergeSession } from '../../sync/sync'
 import { deleteMergeDraft, loadMergeDraft, saveMergeDraft } from '../../sync/mergeDraft'
 import {
@@ -31,6 +31,7 @@ import {
 } from '../../sync/merge'
 import { LAYER_COLOR, PageCanvas, buildPages, type CanvasProps, type Selection, type Tool, type ViewPage, type Visible } from './MergeCanvas'
 import { TextDiffList, buildTextRows, type TextChange } from './TextMerge'
+import { BLOCK_NAME, blockDiff, blockSnippet, pageDiff } from './itemText'
 
 /** 최종 머지가 끝났을 때 — 동기화 패널이 목록을 다시 읽는다 */
 export const MERGE_DONE_EVENT = 'inkpad-merge-done'
@@ -58,6 +59,13 @@ const ZOOMS = [1, 1.5, 2, 3]
 
 /** 문서 블록이 양쪽 다 지운 것인가 — 보일 것도 셀 것도 없다 */
 const bothDeleted = (it: MergeItem) => [it.main, it.branch].every((b) => !b || !!(b as { deletedAt?: number }).deletedAt)
+
+/** 편집 블록 — 살아 있는 쪽 (자리·이름을 보일 때) */
+const liveBlock = (i: MergeItem): Block => {
+  const m = i.main as Block | undefined
+  const b = i.branch as Block | undefined
+  return (m && !m.deletedAt ? m : (b ?? m))!
+}
 
 const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
 
@@ -232,6 +240,53 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     return 'auto'
   }
   const setMetaSide = (m: MetaItem, side: Side) => apply((d) => edit(d, (n) => (side === m.pick ? n.flip.delete(m.key) : n.flip.add(m.key))))
+  const setItemSide = (i: MergeItem, side: Side) => apply((d) => edit(d, (n) => (side === i.pick ? n.flip.delete(i.key) : n.flip.add(i.key))))
+
+  // ── 페이지·보조 용지·편집 블록 — 하나씩 고르는 목록 ──
+  // 페이지 번호는 미리보기와 같게 (머지 결과의 순서)
+  const pageNo = useMemo(() => new Map(pages.filter((p) => !p.page.sheet).map((p, i) => [p.id, i + 1])), [pages])
+  /** 페이지·용지 — 고른 쪽 (용지 제목을 고른 대로 보인다) */
+  const pageById = useMemo(() => {
+    const m = new Map<ID, Page>()
+    for (const i of session?.plan.items ?? []) if (i.kind === 'page') m.set(i.id, pick<Page>(i, resolveItem(i, draft).side))
+    return m
+  }, [session, draft])
+  const pageName = (id: ID) => {
+    const pg = pageById.get(id)
+    if (pg?.sheet) return `보조 용지${pg.sheet.title ? ` · ${pg.sheet.title}` : ''}`
+    const no = pageNo.get(id)
+    return no ? `p.${no}` : '페이지'
+  }
+  const itemRows = useMemo(
+    () =>
+      session && !isText
+        ? session.plan.items
+            .filter((i) => (i.kind === 'page' || i.kind === 'block') && i.cls !== 'common' && !bothDeleted(i))
+            .map((i) => ({ item: i, at: i.kind === 'page' ? i.id : liveBlock(i).pageId }))
+            .sort((a, b) => (pageNo.get(a.at) ?? 1e9) - (pageNo.get(b.at) ?? 1e9) || (a.item.kind === 'page' ? -1 : 0) - (b.item.kind === 'page' ? -1 : 0))
+        : [],
+    [session, isText, pageNo]
+  )
+  const itemName = (i: MergeItem) => {
+    if (i.kind === 'page') return pageName(i.id) + (pageById.get(i.id)?.sheet ? '' : ' 페이지')
+    // 내용은 고른 쪽 것으로 (지운 쪽을 골랐으면 살아 있는 쪽) — 바꾸면 무엇이 남는지 이름에서 보인다
+    const chosen = (resolveItem(i, draft).side === 'main' ? i.main : i.branch) as Block | undefined
+    const b = chosen && !chosen.deletedAt ? chosen : liveBlock(i)
+    const snip = blockSnippet(b)
+    return `${BLOCK_NAME[b.type]}${snip ? ` “${snip}”` : ''}`
+  }
+  const itemInfo = (i: MergeItem) => {
+    const where = i.kind === 'block' ? pageName(liveBlock(i).pageId) + ' · ' : ''
+    if (i.cls === 'mainOnly') return `${where}${mainName}에만`
+    if (i.cls === 'branchOnly') return `${where}${branchName}에만`
+    const diff = i.kind === 'page' ? pageDiff(i.main as Page, i.branch as Page) : blockDiff(i.main as Block, i.branch as Block)
+    return `${where}${diff}${i.both ? ' · 양쪽이 고침' : ''}`
+  }
+  const itemSideLabel = (i: MergeItem, side: Side) => {
+    const v = (side === 'main' ? i.main : i.branch) as { deletedAt?: number } | undefined
+    return (side === 'main' ? 'main' : '브랜치') + (v?.deletedAt ? ' · 지움' : '')
+  }
+  const showPage = (id: ID) => pageRefs.current.get(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   // ── 도구 ──
   const editable = useCallback((item: MergeItem) => visible[item.cls] && (!focus || item.cls === focus), [visible, focus])
@@ -379,7 +434,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
         common: '양쪽에 같은 내용으로 있는 획 — 버릴 수 없다. 고르면 이것만 또렷하게 보인다',
         mainOnly: 'main 쪽에서 새로 그렸거나, 브랜치에서 지운 획 — 기본은 살린다',
         branchOnly: '브랜치에서 새로 그렸거나, main 쪽에서 지운 획 — 기본은 살린다',
-        modified: `한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽`
+        modified: `한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽 — 페이지·용지·블록은 아래 목록에서 하나씩 고른다`
       }
   const target = focus ? layerLabel[focus] : '보이는 레이어 전부'
 
@@ -514,6 +569,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
                 pdfs={pdfs.current}
                 pageRefs={pageRefs.current}
                 onTogglePage={toggleDiscard}
+                onFlipPage={toggleFlip}
                 sideName={sideName}
                 {...canvasHandlers}
               />
@@ -607,12 +663,12 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
                     {cls === 'modified' && items.length > 0 && (
                       <Segmented
                         className="merge-seg"
-                        label="고친 획을 어느 쪽으로"
+                        label="고친 항목 모두(획·페이지·블록)를 어느 쪽으로"
                         value={modifiedMode()}
                         options={[
                           ['auto', '기본 규칙'],
-                          ['main', 'main 쪽'],
-                          ['branch', '브랜치 쪽']
+                          ['main', '모두 main'],
+                          ['branch', '모두 브랜치']
                         ]}
                         onChange={setModifiedSide}
                       />
@@ -621,6 +677,42 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
                 )
               })}
             </ul>
+
+            {itemRows.length > 0 && (
+              <section className="merge-items" aria-label="페이지·용지·블록">
+                <h4>
+                  페이지·용지·블록 <b>{itemRows.length}</b>
+                </h4>
+                {itemRows.map(({ item: i, at }) => {
+                  const st = resolveItem(i, draft)
+                  return (
+                    <div key={i.key} className={'merge-item l-' + i.cls + (st.discarded ? ' discarded' : '')} data-key={i.key}>
+                      <button className="merge-item-label" onClick={() => showPage(at)} title="그 페이지로">
+                        <i className="merge-swatch" style={{ background: LAYER_COLOR[i.cls] }} aria-hidden="true" />
+                        <span className="merge-item-name">{itemName(i)}</span>
+                        <span className="merge-item-info">{itemInfo(i)}</span>
+                      </button>
+                      {i.cls === 'modified' ? (
+                        <Segmented
+                          className="merge-seg"
+                          label={`${itemName(i)} — 어느 쪽`}
+                          value={st.side}
+                          options={[
+                            ['main', itemSideLabel(i, 'main')],
+                            ['branch', itemSideLabel(i, 'branch')]
+                          ]}
+                          onChange={(side) => setItemSide(i, side)}
+                        />
+                      ) : (
+                        <button className={'text-btn' + (st.discarded ? '' : ' danger')} onClick={() => toggleDiscard(i.key)}>
+                          {st.discarded ? '살리기' : '버리기'}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </section>
+            )}
 
             {session.plan.meta.length > 0 && (
               <section className="merge-meta">
@@ -707,6 +799,7 @@ function MergePreview(
     zoom: number
     pageRefs: Map<ID, HTMLElement>
     onTogglePage: (key: string) => void
+    onFlipPage: (key: string) => void
     sideName: (s: Side) => string
   }
 ) {
@@ -736,11 +829,16 @@ function MergePreview(
           >
             <div className="merge-page-head">
               <span>{p.page.sheet ? `보조 용지${p.page.sheet.title ? ` · ${p.page.sheet.title}` : ''}` : `p.${i + 1}`}</span>
-              {p.item.cls !== 'common' && <span className={'merge-chip l-' + p.item.cls}>{pageChip(p.item, props.sideName)}</span>}
+              {p.item.cls !== 'common' && <span className={'merge-chip l-' + p.item.cls}>{pageChip(p.item, p.side, props.sideName)}</span>}
               {p.changes > 0 && <span className="merge-page-changes">변경 {p.changes}</span>}
               {(p.item.cls === 'mainOnly' || p.item.cls === 'branchOnly') && (
                 <button className={'text-btn' + (p.discarded ? '' : ' danger')} onClick={() => props.onTogglePage(p.item.key)}>
                   {p.discarded ? '이 페이지 살리기' : '이 페이지 버리기'}
+                </button>
+              )}
+              {p.item.cls === 'modified' && (
+                <button className="text-btn" onClick={() => props.onFlipPage(p.item.key)}>
+                  다른 쪽으로
                 </button>
               )}
             </div>
@@ -752,8 +850,8 @@ function MergePreview(
   )
 }
 
-function pageChip(item: MergeItem, sideName: (s: Side) => string): string {
+function pageChip(item: MergeItem, side: Side, sideName: (s: Side) => string): string {
   if (item.cls === 'mainOnly') return `${sideName('main')}에만 있는 페이지`
   if (item.cls === 'branchOnly') return `${sideName('branch')}에만 있는 페이지`
-  return `속지·크기가 다름 → ${sideName(item.pick)}`
+  return `${pageDiff(item.main as Page, item.branch as Page)} → ${sideName(side)}`
 }
