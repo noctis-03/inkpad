@@ -59,6 +59,8 @@ export interface SheetInfo {
   z: number
   /** 고정 — 헤더로 옮기거나 크기를 바꿀 수 없다 */
   fixed?: boolean
+  /** 투명 — 종이·속지 없이 테두리만. 아래 페이지가 비쳐 보인다 (background는 되돌릴 때를 위해 그대로 둔다) */
+  transparent?: boolean
 }
 
 export const SHEET_MIN = { w: 80, h: 80 }

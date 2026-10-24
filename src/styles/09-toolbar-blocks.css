@@ -366,3 +366,17 @@
 .sheet-resize::after { content:''; position:absolute; right:5px; bottom:5px; width:8px; height:8px; border-right:2.5px solid var(--muted); border-bottom:2.5px solid var(--muted); border-bottom-right-radius:3px; opacity:.6; }
 .sheet-resize.is-left::after { right:auto; left:5px; border-right:0; border-left:2.5px solid var(--muted); border-bottom-right-radius:0; border-bottom-left-radius:3px; }
 .sheet-resize:active::after { border-color:var(--accent); opacity:1; }
+/* 용지 메뉴의 속지 고르기 (페이지 패널 미리보기를 작게) */
+.sheet-paper-label { margin: 6px 12px 4px; }
+.sheet-paper-row { display:grid; grid-template-columns:repeat(6, 1fr); gap:2px; padding:0 4px 4px; }
+.sheet-paper { display:flex; flex-direction:column; align-items:center; gap:3px; padding:5px 0 4px; border:2px solid transparent; border-radius:10px;
+  background:transparent; color:var(--ink-2); font:inherit; cursor:pointer; }
+.sheet-paper small { font-size: var(--fs-xs); }
+.sheet-paper.is-active { border-color:var(--accent); color:var(--accent); }
+.sheet-paper:disabled { opacity:.4; }
+.sheet-paper .paper-preview { width:26px; height:34px; }
+.sheet-paper .paper-cornell { background-image: linear-gradient(to right, transparent 7px, #9fb0c8 7px, #9fb0c8 8px, transparent 8px),
+    linear-gradient(to bottom, transparent 26px, #9fb0c8 26px, #9fb0c8 27px, transparent 27px),
+    linear-gradient(to bottom, #d3d9e2 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 5px; }
+.sheet-paper .paper-none { background:transparent; box-shadow:none; border:1.5px dashed var(--accent); }

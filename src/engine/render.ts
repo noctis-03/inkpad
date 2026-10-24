@@ -241,9 +241,17 @@ export class Renderer {
     return n
   }
 
-  /** 보조 용지 종이: 그림자 + 종이 + 속지 + 테두리. 변환을 용지 원점으로 남겨 둔다 */
+  /** 보조 용지 종이: 그림자 + 종이 + 속지 + 테두리 (투명 용지는 점선 테두리만). 변환을 용지 원점으로 남겨 둔다 */
   private drawSheetPaper(ctx: CanvasRenderingContext2D, sh: Page, r: Rect, cam: Camera, k: number) {
     ctx.setTransform(k, 0, 0, k, (r.x - cam.x) * k, (r.y - cam.y) * k)
+    if (sh.sheet?.transparent) {
+      ctx.lineWidth = 1.2 / cam.zoom
+      ctx.strokeStyle = 'rgba(37,99,235,0.55)'
+      ctx.setLineDash([6 / cam.zoom, 4 / cam.zoom])
+      ctx.strokeRect(0, 0, r.w, r.h)
+      ctx.setLineDash([])
+      return
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.10)'
     ctx.fillRect(2 / cam.zoom, 3 / cam.zoom, r.w, r.h)
     ctx.fillStyle = sh.background.type === 'blank' ? sh.background.color : '#ffffff'

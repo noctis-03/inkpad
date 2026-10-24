@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { TAP_SLOP_PX } from '../../engine/constants'
 import type { Engine } from '../../engine/engine'
-import type { ID, Page } from '../../shared/model'
+import { BACKGROUND_LABELS, makeBackground, type BackgroundType, type ID, type Page } from '../../shared/model'
 import { Icon } from '../Icon'
 import { FtPopover } from './FloatingToolbar'
 
@@ -184,14 +184,37 @@ function SheetFrame({ engine, sheet, readOnly, frameRef }: { engine: Engine; she
   )
 }
 
+/** 용지 속지 고르기: 페이지 속지 + 투명(테두리만) */
+const SHEET_PAPERS: (BackgroundType | 'none')[] = ['blank', 'lined', 'grid', 'dot', 'cornell', 'none']
+
 function SheetMenu({ engine, sheet, readOnly, onRename, onClose }: { engine: Engine; sheet: Page; readOnly: boolean; onRename: () => void; onClose: () => void }) {
   const info = sheet.sheet!
   const done = (fn: () => void) => () => {
     fn()
     onClose()
   }
+  const paper = info.transparent ? 'none' : sheet.background.type
+  // 메뉴는 열어 둔다 — 바뀐 속지를 바로 보며 다시 고를 수 있게
+  const setPaper = (t: BackgroundType | 'none') => {
+    if (t === paper) return
+    if (t === 'none') engine.updateSheet(sheet.id, { sheet: { transparent: true } })
+    else engine.updateSheet(sheet.id, { background: sheet.background.type === t ? sheet.background : makeBackground(t), sheet: { transparent: false } })
+  }
   return (
     <div className="ft-menu">
+      <div className="ft-pop-label sheet-paper-label">속지</div>
+      <div className="sheet-paper-row" role="group" aria-label="보조 용지 속지">
+        {SHEET_PAPERS.map((t) => {
+          const label = t === 'none' ? '투명' : BACKGROUND_LABELS[t]
+          return (
+            <button key={t} className={'sheet-paper' + (paper === t ? ' is-active' : '')} disabled={readOnly} aria-label={`속지 ${label}`} aria-pressed={paper === t} onClick={() => setPaper(t)}>
+              <span className={`paper-preview paper-${t}`} />
+              <small>{label}</small>
+            </button>
+          )
+        })}
+      </div>
+      <div className="ft-menu-sep" />
       <button className="menu-item" disabled={readOnly} onClick={done(onRename)}>
         <Icon name="edit" />
         이름 바꾸기
