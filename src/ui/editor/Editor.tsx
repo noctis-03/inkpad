@@ -385,7 +385,7 @@ export function Editor({ docId }: { docId: ID }) {
       await engineRef.current?.flush().catch(() => {}) // 방금 쓴 획도 '썼다'로 센다(기록은 하지 않는다)
       if (scribbledRef.current) toast('낙서는 저장하지 않았습니다.', 'info')
     } else if (!readOnly) remindOnLeave(docId, doc?.title ?? '')
-    navigate(useUI.getState().returnRoute ?? { name: 'library' })
+    useUI.getState().backHome()
   }
   /** 낙서 모두 지우기 — 노트를 처음 연 상태로 다시 연다 */
   const clearScratch = () => {

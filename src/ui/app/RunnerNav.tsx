@@ -1,4 +1,4 @@
-// 앱·파일 화면 머리의 칸 버튼 — 가운데 칸이면 뒤로 · 옆 칸에 띄우기, 옆 칸이면 칸 닫기 · 가운데로.
+// 앱·파일 화면 머리의 칸 버튼 — 가운데 칸이면 뒤로(탭을 닫고 홈으로) · 옆 칸에 띄우기, 옆 칸이면 칸 닫기 · 가운데로.
 import { useUI, type SplitRoute } from '../../app/store'
 import { Icon } from '../Icon'
 import { useSplitAllowed } from '../TabBar'
@@ -8,7 +8,7 @@ export type PaneSlot = 'main' | 'side' | 'hidden'
 
 /** 머리 왼쪽: 뒤로(가운데) 또는 칸 닫기(오른쪽) */
 export function RunnerBack({ pane }: { pane: PaneSlot }) {
-  const navigate = useUI((s) => s.navigate)
+  const backHome = useUI((s) => s.backHome)
   const closeSplit = useUI((s) => s.closeSplit)
   if (pane === 'side')
     return (
@@ -17,7 +17,7 @@ export function RunnerBack({ pane }: { pane: PaneSlot }) {
       </button>
     )
   return (
-    <button className="tb-btn" onClick={() => navigate(useUI.getState().returnRoute ?? useUI.getState().home)} aria-label="뒤로">
+    <button className="tb-btn" onClick={backHome} aria-label="뒤로" title="탭 닫고 홈으로">
       <Icon name="back" />
     </button>
   )

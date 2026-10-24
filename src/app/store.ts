@@ -236,6 +236,8 @@ interface UIState {
   setPlacingBlock: (t: BlockType | null) => void
   setSelectedBlockId: (id: ID | null) => void
   closeTab: (r: TabRoute) => void
+  /** 화면 머리의 뒤로 — 지금 탭을 닫고 홈(라이브러리·작업보드)으로 */
+  backHome: () => void
   closeOtherTabs: (r: TabRoute) => void
   /** 앱·파일을 옆 칸으로 — 가운데에는 그 전에 보던 화면이 온다 */
   openSplit: (r: SplitRoute) => void
@@ -342,6 +344,12 @@ export const useUI = create<UIState>((set, get) => ({
       const pick = [...rest.slice(at), ...rest.slice(0, at).reverse()].find((t) => !sameTab(t, sp))
       get().navigate(pick ?? home)
     }
+  },
+  backHome: () => {
+    const { route, tabs, split, home } = get()
+    // 다른 탭으로 옮겨 가지 않는다(closeTab과 다르다) — 뒤로는 늘 홈. 옆 칸은 그대로 둔다
+    if (isTabRoute(route)) set({ tabs: tabs.filter((t) => !sameTab(t, route)), split: sameTab(split, route) ? null : split })
+    get().navigate(home)
   },
   closeOtherTabs: (r) => {
     const { route, split } = get()

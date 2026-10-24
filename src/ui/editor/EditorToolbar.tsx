@@ -64,7 +64,7 @@ export function EditorToolbar(props: {
       {/* ── 1단: 문서 바 ── */}
       <div className="toolbar toolbar-doc">
         <nav className="toolbar-group" aria-label="탐색">
-          <button className="tb-btn" onClick={props.onBack} aria-label="문서 목록">
+          <button className="tb-btn" onClick={props.onBack} aria-label="문서 목록" title="탭 닫고 홈으로">
             <Icon name="back" size={20} />
           </button>
           {doc?.mode === 'paged' && (
