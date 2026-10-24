@@ -1,6 +1,6 @@
 // 문서(text 모드) 편집 상태 — 블록 목록, 되돌리기, 저장 예약.
 // React는 useSyncExternalStore로 rev를 구독한다. DOM(contenteditable)은 편집기가 다루고, 여기는 값만 안다.
-import { byPos, keyBetween } from '../shared/fracIndex'
+import { byPos, slotKeys } from '../shared/fracIndex'
 import { escapeHtml, plainText, sanitizeInline } from '../shared/richText'
 import { TEXT_MAX_INDENT, type ID, type TextBlock, type TextBlockType } from '../shared/model'
 import { ulid } from '../shared/ulid'
@@ -52,6 +52,8 @@ export class TextDocModel {
   private redoStack: Entry[] = []
   /** 입력 중인 블록의 시작 값 — 쉬면(TYPING_IDLE_MS) 한 건으로 기록한다 */
   private typing: { start: TextBlock; caret?: Caret; timer: number } | null = null
+  /** makeBlock이 만든 새 블록 id → 함께 다시 매길 이웃 키 (같은 키 이웃 사이에 끼울 때, shared/fracIndex slotKeys). exec가 변경에 넣는다 */
+  private pendingRepos = new Map<ID, Map<ID, string>>()
   private dirty = new Map<ID, TextBlock>()
   private deleted = new Set<ID>()
   private saveTimer = 0
@@ -123,13 +125,29 @@ export class TextDocModel {
 
   /** 기록되는 편집 한 건. 진행 중이던 입력을 먼저 한 건으로 닫는다 */
   exec(changes: Change[], caret?: { before?: Caret; after?: Caret }) {
+    const repos = new Map<ID, string>()
+    for (const ch of changes) if (!ch.before && ch.after) this.pendingRepos.get(ch.after.id)?.forEach((pos, id) => repos.set(id, pos))
+    this.pendingRepos.clear()
     if (this.readOnly || !changes.length) return
+    changes = this.withRepos(changes, repos)
     this.commitTyping()
     this.applyChanges(changes, false)
     this.undoStack.push({ changes, caretBefore: caret?.before, caretAfter: caret?.after })
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift()
     this.redoStack.length = 0
     if (caret?.after) this.onFocus?.(caret.after)
+  }
+
+  /** 다시 매길 키(repos)를 변경에 넣는다 — 이미 바뀌는 블록이면 그 변경에, 아니면 키만 바꾸는 변경을 더한다 */
+  private withRepos(changes: Change[], repos: Map<ID, string>): Change[] {
+    if (!repos.size) return changes
+    const now = Date.now()
+    const out = changes.map((ch) => (ch.after && repos.has(ch.after.id) ? { ...ch, after: { ...ch.after, pos: repos.get(ch.after.id)! } } : ch))
+    for (const [id, pos] of repos) {
+      const b = this.get(id)
+      if (b && !changes.some((ch) => (ch.after ?? ch.before)?.id === id)) out.push({ before: b, after: { ...b, pos, updatedAt: now } })
+    }
+    return out
   }
 
   /**
@@ -201,17 +219,18 @@ export class TextDocModel {
   /** 새 블록 — after 뒤에 (null = 맨 앞) */
   makeBlock(afterId: ID | null, init: Partial<TextBlock> = {}): TextBlock {
     const i = afterId ? this.indexOf(afterId) : -1
-    const prev = i >= 0 ? this.list[i] : null
-    const next = this.list[i + 1] ?? null
+    const { keys, repos } = slotKeys(this.list, i + 1, 1)
+    const id = ulid()
+    if (repos.size) this.pendingRepos.set(id, repos)
     const now = Date.now()
     return {
-      id: ulid(),
+      id,
       documentId: this.documentId,
       type: 'p',
       html: '',
       indent: 0,
       ...init,
-      pos: keyBetween(prev?.pos ?? null, next?.pos ?? null),
+      pos: keys[0],
       createdAt: now,
       updatedAt: now
     }
@@ -317,31 +336,22 @@ export class TextDocModel {
     const prev = rest[at - 1] ?? null
     const next = rest[at] ?? null
     if (prev?.id === this.list[this.indexOf(id) - 1]?.id && next?.id === this.list[this.indexOf(group[group.length - 1].id) + 1]?.id) return
-    let lo = prev?.pos ?? null
+    const { keys, repos } = slotKeys(rest, at, group.length)
     const maxIndent = prev ? Math.min(TEXT_MAX_INDENT, prev.indent + 1) : 0
     const shift = Math.min(0, maxIndent - group[0].indent) // 새 자리에서 너무 깊으면 함께 얕게
     const now = Date.now()
-    const changes: Change[] = group.map((b) => {
-      const pos = keyBetween(lo, next?.pos ?? null)
-      lo = pos
-      return { before: b, after: { ...b, pos, indent: Math.max(0, b.indent + shift), updatedAt: now } }
-    })
-    this.exec(changes, { before: { id, offset: 'end' }, after: { id, offset: 'end' } })
+    const changes: Change[] = group.map((b, k) => ({ before: b, after: { ...b, pos: keys[k], indent: Math.max(0, b.indent + shift), updatedAt: now } }))
+    this.exec(this.withRepos(changes, repos), { before: { id, offset: 'end' }, after: { id, offset: 'end' } })
   }
 
   duplicate(id: ID) {
     const group = this.subtree(id)
     const last = group[group.length - 1]
     const i = this.indexOf(last.id)
-    let lo = last.pos
-    const hi = this.list[i + 1]?.pos ?? null
+    const { keys, repos } = slotKeys(this.list, i + 1, group.length)
     const now = Date.now()
-    const copies = group.map((b) => {
-      const pos = keyBetween(lo, hi)
-      lo = pos
-      return { before: null, after: { ...b, id: ulid(), pos, createdAt: now, updatedAt: now } }
-    })
-    this.exec(copies, { after: { id: copies[0].after.id, offset: 'end' } })
+    const copies = group.map((b, k) => ({ before: null, after: { ...b, id: ulid(), pos: keys[k], createdAt: now, updatedAt: now } }))
+    this.exec(this.withRepos(copies, repos), { after: { id: copies[0].after.id, offset: 'end' } })
   }
 
   /**
@@ -355,22 +365,20 @@ export class TextDocModel {
     const now = Date.now()
     const [first, ...more] = lines
     const i = this.indexOf(id)
-    const hi = this.list[i + 1]?.pos ?? null
-    let lo = cur.pos
+    const { keys, repos } = slotKeys(this.list, i + 1, more.length)
     const firstHtml = head + first.html + (more.length ? '' : tail)
     changes.push({ before: cur, after: { ...cur, html: firstHtml, ...(cur.html === '' && head === '' && first.type !== 'p' ? { type: first.type, checked: first.checked } : {}), updatedAt: now } })
     let lastId = id
     let lastLen = plainText(firstHtml).length - plainText(more.length ? '' : tail).length
     more.forEach((ln, k) => {
-      const pos = keyBetween(lo, hi)
-      lo = pos
+      const pos = keys[k]
       const html = ln.html + (k === more.length - 1 ? tail : '')
       const nb: TextBlock = { id: ulid(), documentId: this.documentId, type: ln.type, html, indent: cur.indent, pos, createdAt: now, updatedAt: now, ...(ln.type === 'todo' ? { checked: !!ln.checked } : {}) }
       changes.push({ before: null, after: nb })
       lastId = nb.id
       lastLen = plainText(ln.html).length
     })
-    this.exec(changes, { before: { id, offset: plainText(head).length }, after: { id: lastId, offset: lastLen } })
+    this.exec(this.withRepos(changes, repos), { before: { id, offset: plainText(head).length }, after: { id: lastId, offset: lastLen } })
   }
 
   // ───────── 저장 ─────────

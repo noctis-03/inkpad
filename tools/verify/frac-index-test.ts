@@ -1,5 +1,5 @@
 // 분수 인덱스 — 문서 블록의 순서 키(src/shared/fracIndex.ts). 어디에 끼워 넣어도 순서가 지켜지는가
-import { byPos, keyBetween, keysBetween } from '../../src/shared/fracIndex.ts'
+import { byPos, jitterKeyBetween, keyBetween, keysBetween, slotKeys } from '../../src/shared/fracIndex.ts'
 
 let pass = 0
 let fail = 0
@@ -66,6 +66,67 @@ try {
 check('a >= b면 오류', threw)
 const rows = [{ pos: 'i', id: '2' }, { pos: 'i', id: '1' }, { pos: 'a', id: '9' }].sort(byPos)
 check('같은 pos는 id 순', rows.map((r) => r.id).join('') === '912')
+
+// 6) 무작위 글자를 덧붙인 키 — 두 기기가 같은 자리에 넣어도 키가 다르다
+{
+  let seed = 11
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+  let ok = true
+  for (let i = 0; i < 2000; i++) {
+    const lo = i % 3 ? keyBetween(null, null) + (i % 7 ? '' : 'x') : null
+    const hi = i % 5 ? keyBetween(lo, null) : null
+    const k = jitterKeyBetween(lo, hi, rnd)
+    if (!valid(k) || (lo !== null && !(lo < k)) || (hi !== null && !(k < hi))) ok = false
+  }
+  check('덧붙인 키도 이웃 사이 (2000번)', ok)
+  check('rand가 1에 가까워도 올바른 키', valid(jitterKeyBetween('i', 'r', () => 0.9999999)) && valid(jitterKeyBetween(null, null, () => 0)))
+  const tail = keyBetween('h', 'i5')
+  check('덧붙이면 b를 넘는 경우는 덧붙이지 않음', jitterKeyBetween('h', 'i5', () => 0.99) === tail && tail < 'i5', tail)
+  let diff = 0
+  for (let i = 0; i < 200; i++) if (jitterKeyBetween('i', 'r', rnd) !== jitterKeyBetween('i', 'r', rnd)) diff++
+  check(`같은 자리에 따로 넣은 두 키가 다름 (${diff}/200)`, diff >= 180)
+  for (const where of ['front', 'back', 'middle'] as const) {
+    const list = [keyBetween(null, null)]
+    let ord = true
+    for (let i = 0; i < 400; i++) {
+      const at = where === 'front' ? 0 : where === 'back' ? list.length : Math.floor(list.length / 2)
+      const k = jitterKeyBetween(at > 0 ? list[at - 1] : null, at < list.length ? list[at] : null, rnd)
+      if (!valid(k)) ord = false
+      list.splice(at, 0, k)
+    }
+    const maxLen = Math.max(...list.map((k) => k.length))
+    check(`덧붙인 키로 ${where}에 400번 → 순서 유지, 키 길이 ${maxLen} (100자 미만)`, ord && [...list].sort().every((k, i) => k === list[i]) && maxLen < 100)
+  }
+}
+
+// 7) 같은 키 블록 사이에 끼우기 — 두 기기가 같은 자리에 넣은 뒤 (예전 키에는 덧붙인 글자가 없다)
+{
+  type R = { id: string; pos: string }
+  const order = (list: R[]) => [...list].sort(byPos).map((r) => r.id).join(' ')
+  const put = (list: R[], at: number, ids: string[]) => {
+    const { keys, repos } = slotKeys(list, at, ids.length)
+    const out = list.map((r) => (repos.has(r.id) ? { ...r, pos: repos.get(r.id)! } : r))
+    return { out: [...out, ...ids.map((id, k) => ({ id, pos: keys[k] }))], repos }
+  }
+  const base: R[] = [{ id: 'a', pos: 'i' }, { id: 'A', pos: 'n' }, { id: 'B', pos: 'n' }, { id: 'c', pos: 'r' }]
+  check('출발: 두 기기가 넣은 줄 A·B의 키가 같다 (id 순)', order(base) === 'a A B c', order(base))
+  const { out, repos } = put(base, 2, ['N'])
+  check('A·B 사이에 새 줄 → A 다음, B 앞', order(out) === 'a A N B c', order(out))
+  check('…앞쪽(A)만 다시 매김, 오류 없음', [...repos.keys()].join() === 'A', [...repos.keys()].join())
+  const many = put(base, 2, ['N1', 'N2', 'N3'])
+  check('사이에 여러 줄 → 차례대로', order(many.out) === 'a A N1 N2 N3 B c', order(many.out))
+  const three: R[] = [{ id: 'a', pos: 'i' }, { id: 'X', pos: 'n' }, { id: 'Y', pos: 'n' }, { id: 'Z', pos: 'n' }]
+  const t3 = put(three, 2, ['N'])
+  check('셋이 같은 키, X·Y 사이 → X N Y Z', order(t3.out) === 'a X N Y Z', order(t3.out))
+  const t3b = put(three, 3, ['N'])
+  check('…Y·Z 사이 → X Y N Z (X·Y 다시 매김)', order(t3b.out) === 'a X Y N Z' && [...t3b.repos.keys()].join() === 'X,Y', order(t3b.out))
+  const front: R[] = [{ id: 'X', pos: 'n' }, { id: 'Y', pos: 'n' }]
+  const tf = put(front, 1, ['N'])
+  check('맨 앞의 같은 키 둘 사이 → X N Y', order(tf.out) === 'X N Y', order(tf.out))
+  const plain = put(base, 1, ['N'])
+  check('같은 키가 아닌 자리는 다시 매기지 않음', plain.repos.size === 0 && order(plain.out) === 'a N A B c', order(plain.out))
+  check('맨 뒤·빈 목록', order(put(base, 4, ['N']).out) === 'a A B c N' && order(put([], 0, ['N']).out) === 'N')
+}
 
 console.log(`\n분수 인덱스: ${pass}개 통과, ${fail}개 실패`)
 if (fail) process.exitCode = 1
