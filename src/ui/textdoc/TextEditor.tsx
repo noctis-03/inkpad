@@ -16,6 +16,7 @@ import { NoteSyncChip } from '../editor/NoteSyncChip'
 import { VersionPanel } from '../editor/VersionPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { SyncPanel } from '../SyncSection'
+import { TextExportPanel } from './TextExportPanel'
 import { emitThumbsChanged } from '../../io/docThumb'
 import { trackRecentDoc } from '../../shared/recentDocs'
 import { plainText } from '../../shared/richText'
@@ -337,6 +338,7 @@ export function TextEditor({ docId }: { docId: ID }) {
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />
+          <MenuItem icon="share" label="내보내기" onClick={run(() => setPanel('export'))} />
           <MenuItem icon="gear" label="설정" onClick={run(() => setPanel('settings'))} />
           <MenuItem icon="cloud" label="동기화" onClick={run(() => setPanel('sync'))} />
         </Menu>
@@ -351,6 +353,7 @@ export function TextEditor({ docId }: { docId: ID }) {
           {panel === 'settings' && <SettingsPanel />}
           {panel === 'sync' && <SyncPanel />}
           {panel === 'history' && <VersionPanel docId={docId} />}
+          {panel === 'export' && model && doc && <TextExportPanel model={model} doc={doc} />}
         </div>
       </div>
     </div>
