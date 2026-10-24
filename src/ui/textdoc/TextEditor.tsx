@@ -275,7 +275,7 @@ export function TextEditor({ docId }: { docId: ID }) {
   const leave = () => {
     useUI.setState({ returnDocId: docId })
     if (!readOnly) remindOnLeave(docId, doc?.title ?? '')
-    navigate(useUI.getState().returnRoute ?? { name: 'library' })
+    useUI.getState().backHome()
   }
   const run = (fn: () => void) => () => {
     setMenu(null)
@@ -298,7 +298,7 @@ export function TextEditor({ docId }: { docId: ID }) {
       <header id="editor-toolbar" className="toolbar-stack">
         <div className="toolbar toolbar-doc">
           <nav className="toolbar-group" aria-label="탐색">
-            <button className="tb-btn" onClick={leave} aria-label="문서 목록">
+            <button className="tb-btn" onClick={leave} aria-label="문서 목록" title="탭 닫고 홈으로">
               <Icon name="back" size={20} />
             </button>
             <span className="doc-title-btn tdoc-bar-title">
