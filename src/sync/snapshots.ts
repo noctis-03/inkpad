@@ -59,7 +59,8 @@ export async function takeSnapshot(docId: ID, why: SnapshotWhy): Promise<void> {
       docId,
       why,
       title: doc.title,
-      strokes: file.chunks.reduce((n, c) => n + c.elements.length, 0),
+      // 문서(text 모드)는 획 대신 살아 있는 블록 수
+      strokes: file.textBlocks ? file.textBlocks.filter((b) => !b.deletedAt).length : file.chunks.reduce((n, c) => n + c.elements.length, 0),
       hash
     })
     await pruneSnapshots(docId)

@@ -30,6 +30,7 @@ import {
   type Side
 } from '../../sync/merge'
 import { LAYER_COLOR, PageCanvas, buildPages, type CanvasProps, type Selection, type Tool, type ViewPage, type Visible } from './MergeCanvas'
+import { TextDiffList, buildTextRows, type TextChange } from './TextMerge'
 
 /** 최종 머지가 끝났을 때 — 동기화 패널이 목록을 다시 읽는다 */
 export const MERGE_DONE_EVENT = 'inkpad-merge-done'
@@ -54,6 +55,9 @@ export function MergeHost() {
 
 const LAYERS: ItemClass[] = ['common', 'mainOnly', 'branchOnly', 'modified']
 const ZOOMS = [1, 1.5, 2, 3]
+
+/** 문서 블록이 양쪽 다 지운 것인가 — 보일 것도 셀 것도 없다 */
+const bothDeleted = (it: MergeItem) => [it.main, it.branch].every((b) => !b || !!(b as { deletedAt?: number }).deletedAt)
 
 const pick = <T,>(item: MergeItem, side: Side): T => (side === 'main' ? (item.main ?? item.branch) : (item.branch ?? item.main)) as T
 
@@ -185,9 +189,15 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     }
   }, [])
 
-  const pages = useMemo(() => (session ? buildPages(session, draft, resultOnly) : []), [session, draft, resultOnly])
+  /** 문서(text 모드) — 캔버스 대신 블록 목록으로 머지한다 */
+  const isText = !!session && (session.main.doc.mode === 'text' || session.branch.doc.mode === 'text')
+  const pages = useMemo(() => (session && !isText ? buildPages(session, draft, resultOnly) : []), [session, draft, resultOnly, isText])
+  const textRows = useMemo(() => (session && isText ? buildTextRows(session.plan, draft, resultOnly) : []), [session, draft, resultOnly, isText])
   const result = useMemo(() => (session ? compose(session.main, session.branch, session.plan, draft) : null), [session, draft])
   const resultStrokes = result ? result.chunks.reduce((n, c) => n + c.elements.length, 0) : 0
+  const resultBlocks = result?.textBlocks?.filter((b) => !b.deletedAt).length ?? 0
+  /** 결과 한 줄 요약 — 노트는 획·페이지, 문서는 블록 */
+  const resultText = !result ? '' : isText ? `블록 ${resultBlocks}개` : `획 ${resultStrokes}개 · 페이지 ${result.pages.filter((p) => !p.sheet).length}장`
   const itemByKey = useMemo(() => new Map((session?.plan.items ?? []).map((i) => [i.key, i])), [session])
 
   const mainName = `main · ${entry.mainDevice ?? '클라우드'}`
@@ -203,6 +213,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
       return edit(d, (n) => keys.forEach((k) => (all ? n.discard.delete(k) : n.discard.add(k))))
     })
   const toggleDiscard = (key: string) => apply((d) => edit(d, (n) => (n.discard.has(key) ? n.discard.delete(key) : n.discard.add(key))))
+  const toggleFlip = (key: string) => apply((d) => edit(d, (n) => (n.flip.has(key) ? n.flip.delete(key) : n.flip.add(key))))
   /** 고친 항목 전체를 한쪽으로 — 'auto'는 기본 규칙(한쪽만 고침 → 고친 쪽, 양쪽 → 머지하는 기기 쪽) */
   const setModifiedSide = (to: 'auto' | Side) =>
     apply((d) =>
@@ -271,22 +282,25 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     if (t !== 'lasso') setSelection(null)
   }
 
-  // ── 변경 있는 페이지로 이동 ──
+  // ── 변경 있는 페이지(문서는 블록)로 이동 ──
   const pageRefs = useRef(new Map<ID, HTMLElement>())
+  const rowRefs = useRef(new Map<string, HTMLElement>())
   const [cursor, setCursor] = useState(-1)
-  const changed = pages.filter((p) => p.changes > 0)
+  const changed: string[] = isText ? textRows.filter((r) => r.item.cls !== 'common').map((r) => r.item.key) : pages.filter((p) => p.changes > 0).map((p) => p.id)
   const jump = (dir: 1 | -1) => {
     if (!changed.length) return
     const next = (cursor + dir + changed.length) % changed.length
     setCursor(next)
-    pageRefs.current.get(changed[next].id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    ;(isText ? rowRefs.current : pageRefs.current).get(changed[next])?.scrollIntoView({ behavior: 'smooth', block: isText ? 'center' : 'start' })
   }
+  const textChangeLabel = (c: TextChange) =>
+    c === 'mainOnly' ? `${mainName}에만` : c === 'branchOnly' ? `${branchName}에만` : c === 'delMain' ? 'main에서 지움' : c === 'delBranch' ? '브랜치에서 지움' : c === 'edited' ? '양쪽에서 다름' : ''
 
   // ── 최종 머지 ──
   const finish = async () => {
     if (!session || !result) return
     const ok = await confirmDialog('최종 머지', {
-      message: `“${entry.title}”의 main을 이 결과(획 ${resultStrokes}개 · 페이지 ${result.pages.filter((p) => !p.sheet).length}장)로 바꿉니다. 두 쪽의 원래 내용은 main 버전 기록과 ${branchName}에 그대로 남습니다.`,
+      message: `“${entry.title}”의 main을 이 결과(${resultText})로 바꿉니다. 두 쪽의 원래 내용은 main 버전 기록과 ${branchName}에 그대로 남습니다.`,
       ok: '머지'
     })
     if (!ok) return
@@ -354,12 +368,19 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
     branchOnly: `${branchName}에만`,
     modified: '양쪽에서 내용이 다름'
   }
-  const layerHint: Record<ItemClass, string> = {
-    common: '양쪽에 같은 내용으로 있는 획 — 버릴 수 없다. 고르면 이것만 또렷하게 보인다',
-    mainOnly: 'main 쪽에서 새로 그렸거나, 브랜치에서 지운 획 — 기본은 살린다',
-    branchOnly: '브랜치에서 새로 그렸거나, main 쪽에서 지운 획 — 기본은 살린다',
-    modified: `한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽`
-  }
+  const layerHint: Record<ItemClass, string> = isText
+    ? {
+        common: '양쪽에 같은 내용으로 있는 블록 — 버릴 수 없다',
+        mainOnly: 'main 쪽에만 있는 블록 — 기본은 살린다',
+        branchOnly: '브랜치에만 있는 블록 — 기본은 살린다',
+        modified: `한쪽만 고쳤으면 고친 쪽(지운 것이면 지운다), 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽 — 한쪽이 지우고 한쪽이 고쳤으면 살린다`
+      }
+    : {
+        common: '양쪽에 같은 내용으로 있는 획 — 버릴 수 없다. 고르면 이것만 또렷하게 보인다',
+        mainOnly: 'main 쪽에서 새로 그렸거나, 브랜치에서 지운 획 — 기본은 살린다',
+        branchOnly: '브랜치에서 새로 그렸거나, main 쪽에서 지운 획 — 기본은 살린다',
+        modified: `한쪽만 고쳤으면 고친 쪽, 양쪽이 고쳤으면 ${session ? sideName(session.prefer) : ''} 쪽`
+      }
   const target = focus ? layerLabel[focus] : '보이는 레이어 전부'
 
   return (
@@ -383,7 +404,20 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
         </button>
       </header>
 
-      {session && (
+      {session && isText && (
+        <div className="merge-tools" role="toolbar" aria-label="머지 도구">
+          <span className="merge-target">블록마다 버리기·살리기, 양쪽이 다른 블록은 '다른 쪽'으로 바꿉니다</span>
+          <div className="merge-tool-group">
+            <button className="tb-btn" onClick={undo} disabled={!past.length} aria-label="되돌리기" title="되돌리기 (⌘Z)">
+              <Icon name="undo" />
+            </button>
+            <button className="tb-btn" onClick={redo} disabled={!future.length} aria-label="다시 하기" title="다시 하기 (⇧⌘Z)">
+              <Icon name="redo" />
+            </button>
+          </div>
+        </div>
+      )}
+      {session && !isText && (
         <div className="merge-tools" role="toolbar" aria-label="머지 도구">
           <div className="merge-tool-group" role="radiogroup" aria-label="도구">
             {(
@@ -454,24 +488,36 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
       ) : (
         <div className={'merge-body' + (panelOpen ? '' : ' panel-closed')}>
           <div className="merge-stage">
-            <MergePreview
-              pages={pages}
-              zoom={zoom}
-              visible={visible}
-              focus={focus}
-              resultOnly={resultOnly}
-              outline={outline}
-              glow
-              tool={tool}
-              fingerTool={fingerTool}
-              selection={selection}
-              editable={editable}
-              pdfs={pdfs.current}
-              pageRefs={pageRefs.current}
-              onTogglePage={toggleDiscard}
-              sideName={sideName}
-              {...canvasHandlers}
-            />
+            {isText ? (
+              <TextDiffList
+                rows={textRows.filter((r) => visible[r.item.cls])}
+                sideName={sideName}
+                changeLabel={textChangeLabel}
+                onToggleDiscard={toggleDiscard}
+                onFlip={toggleFlip}
+                rowRefs={rowRefs.current}
+                focus={focus}
+              />
+            ) : (
+              <MergePreview
+                pages={pages}
+                zoom={zoom}
+                visible={visible}
+                focus={focus}
+                resultOnly={resultOnly}
+                outline={outline}
+                glow
+                tool={tool}
+                fingerTool={fingerTool}
+                selection={selection}
+                editable={editable}
+                pdfs={pdfs.current}
+                pageRefs={pageRefs.current}
+                onTogglePage={toggleDiscard}
+                sideName={sideName}
+                {...canvasHandlers}
+              />
+            )}
 
             {selection && selItems.length > 0 && (
               <div className="merge-selbar" role="toolbar" aria-label="고른 획">
@@ -509,7 +555,7 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
           <aside className="merge-panel" aria-label="레이어">
             <div className="merge-nav">
               <span>
-                변경 있는 페이지 <b>{changed.length}</b>
+                {isText ? '변경 있는 블록' : '변경 있는 페이지'} <b>{changed.length}</b>
               </span>
               <button className="tb-btn" onClick={() => jump(-1)} disabled={!changed.length} aria-label="이전 변경">
                 <Icon name="arrowUp" size={16} />
@@ -546,8 +592,8 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
                       <i className="merge-swatch" style={{ background: LAYER_COLOR[cls] }} aria-hidden="true" />
                       <span className="merge-layer-name">{layerLabel[cls]}</span>
                       <span className="merge-layer-count">
-                        획 {strokes}
-                        {others > 0 ? ` · 페이지·블록 ${others}` : ''}
+                        {isText ? `블록 ${items.filter((it) => it.kind === 'tblock' && !bothDeleted(it)).length}` : `획 ${strokes}`}
+                        {!isText && others > 0 ? ` · 페이지·블록 ${others}` : ''}
                         {discarded > 0 ? ` · 버림 ${discarded}` : ''}
                         {cls === 'modified' && session.plan.bothCount > 0 ? ` · 양쪽이 고침 ${session.plan.bothCount}` : ''}
                       </span>
@@ -597,27 +643,35 @@ function MergeView({ entry }: { entry: MergeQueueEntry }) {
               </section>
             )}
 
-            <label className="merge-check">
-              <input type="checkbox" checked={outline} onChange={(e) => setOutline(e.target.checked)} /> 출처를 빛나는 테두리로 표시
-            </label>
+            {!isText && (
+              <label className="merge-check">
+                <input type="checkbox" checked={outline} onChange={(e) => setOutline(e.target.checked)} /> 출처를 빛나는 테두리로 표시
+              </label>
+            )}
             {!isEmptyDraft(draft) && (
               <button className="text-btn danger merge-reset" onClick={() => apply(emptyDraft())}>
                 작업본 처음부터 다시
               </button>
             )}
-            <p className="merge-keys">
-              도구는 강조한 레이어(없으면 보이는 레이어 전부)에만 닿습니다. 패드에서는 펜이 도구, 손가락은 화면 이동입니다. 작업본은 이 기기에 저장돼 닫아도
-              이어서 할 수 있습니다.
-            </p>
-            <p className="merge-keys">
-              단축키: V 보기 · L 올가미 · E 지우개 · Delete 버리기 · Enter 살리기 · ⌘Z / ⇧⌘Z · 1–4 레이어 강조 · H 숨기기 · [ ] 변경 이동 · +/− 확대 · Esc
-            </p>
+            {isText ? (
+              <p className="merge-keys">작업본은 이 기기에 저장돼 닫아도 이어서 할 수 있습니다. 단축키: ⌘Z / ⇧⌘Z · 1–4 레이어 강조 · [ ] 변경 이동 · Esc</p>
+            ) : (
+              <>
+                <p className="merge-keys">
+                  도구는 강조한 레이어(없으면 보이는 레이어 전부)에만 닿습니다. 패드에서는 펜이 도구, 손가락은 화면 이동입니다. 작업본은 이 기기에 저장돼 닫아도
+                  이어서 할 수 있습니다.
+                </p>
+                <p className="merge-keys">
+                  단축키: V 보기 · L 올가미 · E 지우개 · Delete 버리기 · Enter 살리기 · ⌘Z / ⇧⌘Z · 1–4 레이어 강조 · H 숨기기 · [ ] 변경 이동 · +/− 확대 · Esc
+                </p>
+              </>
+            )}
           </aside>
         </div>
       )}
 
       <footer className="merge-foot">
-        <span className="merge-total">{result ? `결과: 획 ${resultStrokes}개 · 페이지 ${result.pages.filter((p) => !p.sheet).length}장` : ''}</span>
+        <span className="merge-total">{result ? `결과: ${resultText}` : ''}</span>
         <button className="text-btn" onClick={closeMergeView} disabled={busy}>
           나중에
         </button>

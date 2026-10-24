@@ -38,6 +38,7 @@ export function canonical(file: DocFileV1): string {
       .map((c) => ({ pageId: c.pageId, key: c.key, elements: c.elements }))
       .sort((a, b) => (a.pageId === b.pageId ? (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) : a.pageId < b.pageId ? -1 : 1)),
     blocks: [...(file.blocks ?? [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((b) => ({ ...b, updatedAt: 0 })),
+    textBlocks: [...(file.textBlocks ?? [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((b) => ({ ...b, updatedAt: 0 })),
     assets: [...file.assets].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   })
 }
@@ -88,7 +89,7 @@ async function localSummary(docId: ID): Promise<string | null> {
   for (const p of pages) if (isLiveSheet(p, livePages)) livePages.add(p.id) // 보조 용지 청크도 packDocument처럼 센다
   const rows = await db.chunks.where('documentId').equals(docId).toArray()
   const chunks = rows.filter((r) => !r.deletedAt && livePages.has(r.pageId)).map((r) => [`${r.pageId}|${r.key}`, r.count] as [string, number])
-  const blocks = await db.blocks.where('documentId').equals(docId).count()
+  const blocks = (await db.blocks.where('documentId').equals(docId).count()) + (doc.mode === 'text' ? await db.textBlocks.where('documentId').equals(docId).count() : 0)
   return summarize(doc.pageOrder, chunks, blocks)
 }
 

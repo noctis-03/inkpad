@@ -4,12 +4,14 @@
 // 이 기기에 확보된 원본(PDF)으로 첫 페이지를 그려 미리보기를 복구한다.
 // 이렇게 하면 다른 기기에서 받은 노트도, 원본만 확보되면 카드 미리보기가 뜬다.
 import { db, type ThumbRow } from '../storage/db'
-import { loadDocument, putThumbnail } from '../storage/repo'
+import { loadDocument, loadTextBlocks, putThumbnail } from '../storage/repo'
 import { drawPattern } from '../engine/background'
 import { getPath } from '../engine/scene'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
 import { useUI } from '../app/store'
-import type { ID, Page, Stroke } from '../shared/model'
+import type { ID, Page, Stroke, TextBlock } from '../shared/model'
+import { byPos } from '../shared/fracIndex'
+import { renderTextThumb } from '../textdoc/thumb'
 
 const THUMB_W = 320
 
@@ -88,7 +90,14 @@ async function renderPageBlob(page: Page, strokes: Stroke[]): Promise<Blob | nul
 
 /** 문서 첫 페이지로 미리보기를 다시 만든다. 문서가 없거나 그릴 게 없으면 false. */
 export async function regenerateThumbnail(docId: ID): Promise<boolean> {
-  const { pages, chunks } = await loadDocument(docId)
+  const { doc, pages, chunks } = await loadDocument(docId)
+  if (doc.mode === 'text') {
+    // 문서(text 모드) — 제목과 앞쪽 블록
+    const blob = await renderTextThumb(doc.title, await loadTextBlocks(docId))
+    if (!blob) return false
+    await putThumbnail(docId, blob)
+    return true
+  }
   const first = pages[0]
   if (!first) return false
   const strokes = chunks
@@ -105,7 +114,14 @@ export async function regenerateThumbnail(docId: ID): Promise<boolean> {
  * 노트 파일(버전 기록의 한 버전) 첫 페이지 미리보기 — 되돌리기 전에 보여 준다. 저장하지 않는다.
  * 무한 캔버스이거나 그릴 게 없으면 null.
  */
-export async function renderFilePreview(file: { doc: { pageOrder: ID[] }; pages: Page[]; chunks: { pageId: ID; elements: { type: string }[] }[] }): Promise<Blob | null> {
+export async function renderFilePreview(file: {
+  doc: { pageOrder: ID[]; mode?: string; title?: string }
+  pages: Page[]
+  chunks: { pageId: ID; elements: { type: string }[] }[]
+  textBlocks?: TextBlock[]
+}): Promise<Blob | null> {
+  // 문서(text 모드)는 제목과 앞쪽 블록으로
+  if (file.doc.mode === 'text') return renderTextThumb(file.doc.title ?? '', (file.textBlocks ?? []).filter((b) => !b.deletedAt).sort(byPos))
   const first = file.pages.find((p) => p.id === file.doc.pageOrder[0]) ?? file.pages[0]
   if (!first) return null
   const strokes = file.chunks

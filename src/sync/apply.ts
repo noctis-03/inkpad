@@ -1,11 +1,12 @@
 // Drive 파일 → 로컬 적용. sync.ts(동기화 엔진)와 revisions.ts(버전 되돌리기)가 함께 쓴다.
 // 순환 import를 피하려고 분리했다.
-import { SCHEMA_VERSION, type Block } from '../shared/model'
+import { SCHEMA_VERSION, TEXT_MAX_INDENT, type Block } from '../shared/model'
 import { normalizeBlockUrl } from '../engine/blocks'
 import { gunzipJson, gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { isDocExclusive } from '../storage/docGuard'
 import { gcOrphanAssets } from '../storage/repo'
+import { cleanForSave } from '../textdoc/model'
 import type { DocFileV1 } from './pack'
 
 /**
@@ -21,8 +22,10 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
   if (!isDocExclusive(docId)) console.warn('[sync] applyDocFile을 노트 보호(withDocExclusive) 밖에서 불렀습니다 — 열린 편집 화면이 덮어쓸 수 있습니다:', docId)
   const encoded: { c: DocFileV1['chunks'][number]; blob: Blob }[] = []
   for (const c of file.chunks) if (c.elements.length) encoded.push({ c, blob: await gzipJson(c.elements) })
+  // 문서(text 모드) 블록 — 원격에서 온 서식 HTML도 직접 입력과 같은 정리를 거친다 (tombstone은 그대로 — 머지에 필요)
+  const textBlocks = file.textBlocks?.map((b) => cleanForSave({ ...b, documentId: docId, indent: Math.max(0, Math.min(TEXT_MAX_INDENT, b.indent | 0)) }))
   let applied = true
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.assets, db.outbox], async () => {
+  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.textBlocks, db.assets, db.outbox], async () => {
     if (!opts.force) {
       const pending = await db.outbox.where('[entity+entityId]').equals(['document', docId]).first()
       if (pending) {
@@ -68,6 +71,11 @@ export async function applyDocFile(file: DocFileV1, opts: { force?: boolean } = 
       }
       await db.blocks.where('documentId').equals(docId).delete()
       if (blocks.length) await db.blocks.bulkPut(blocks)
+    }
+    // 문서 블록 — 파일에 textBlocks가 있을 때만 교체한다 (없으면 노트이거나 옛 클라이언트 파일)
+    if (textBlocks) {
+      await db.textBlocks.where('documentId').equals(docId).delete()
+      if (textBlocks.length) await db.textBlocks.bulkPut(textBlocks)
     }
     for (const am of file.assets) {
       if (!(await db.assets.get(am.id))) await db.assets.put({ ...am, version: 0 }) // 원본 blob은 지연 로딩이 받는다

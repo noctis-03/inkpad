@@ -12,7 +12,7 @@
 import { classify, compose, draftFromJson, draftToJson, editPlaced, emptyDraft, mergePageOrder, resolveItem, retainDraft, type MergeDraft, type Side } from '../../src/sync/merge.ts'
 import { computeModified } from '../../src/sync/branch.ts'
 import type { DocFileV1 } from '../../src/sync/pack.ts'
-import type { Block, Element, Page, Stroke } from '../../src/shared/model.ts'
+import type { Block, Element, Page, Stroke, TextBlock } from '../../src/shared/model.ts'
 
 let pass = 0
 const failures: string[] = []
@@ -227,6 +227,39 @@ function run(base: DocFileV1 | null, main: DocFileV1, branch: DocFileV1, prefer:
   const kept = retainDraft(d, plan)
   check('M14 새 입력에 없는 항목은 빠진다', !kept.discard.has('el:gone') && !kept.color.has('el:gone'))
   check('M14 있는 항목은 그대로 얹힌다', kept.discard.has('el:x') && kept.move.get('el:x')?.dy === 2 && kept.flip.has('doc:title'))
+}
+
+/* ── T1~T6 · 문서(text 모드) 블록 — 블록 단위로 합치고, 한쪽만 지웠으면 지운다 ───── */
+const tb = (id: string, html: string, pos: string, o: Partial<TextBlock> = {}): TextBlock => ({ id, documentId: 'D', type: 'p', html, indent: 0, pos, createdAt: 0, updatedAt: 0, ...o })
+const tdoc = (blocks: TextBlock[]): DocFileV1 => ({ ...doc({}, { pages: [], order: [] }), doc: { ...doc({}, { pages: [], order: [] }).doc, mode: 'text' }, textBlocks: blocks })
+const live = (f: DocFileV1) => (f.textBlocks ?? []).filter((b) => !b.deletedAt)
+const htmls = (f: DocFileV1) => live(f).map((b) => b.html).join('|')
+{
+  const base = tdoc([tb('a', '하나', 'a'), tb('b', '둘', 'b'), tb('c', '셋', 'c')])
+  // T1 서로 다른 블록을 고침
+  const r1 = run(base, tdoc([tb('a', '하나 (main)', 'a', { updatedAt: 9 }), tb('b', '둘', 'b'), tb('c', '셋', 'c')]), tdoc([tb('a', '하나', 'a'), tb('b', '둘', 'b'), tb('c', '셋 (브랜치)', 'c', { updatedAt: 7 })]))
+  check('T1 서로 다른 블록을 고치면 둘 다 반영', htmls(r1.out) === '하나 (main)|둘|셋 (브랜치)', htmls(r1.out))
+  check('T1 updatedAt만 다른 블록은 공통', r1.item('tblock:b').cls === 'common')
+  // T2 같은 블록을 양쪽이 고침 → 머지하는 기기 쪽, 양쪽 고침 표시
+  const m2 = tdoc([tb('a', 'M', 'a'), tb('b', '둘', 'b'), tb('c', '셋', 'c')])
+  const b2 = tdoc([tb('a', 'B', 'a'), tb('b', '둘', 'b'), tb('c', '셋', 'c')])
+  const r2 = run(base, m2, b2, 'branch')
+  check('T2 같은 블록 양쪽 고침 → prefer 쪽', htmls(r2.out).startsWith('B|') && r2.item('tblock:a').both === true, htmls(r2.out))
+  check('T2 작업본으로 반대쪽 선택', htmls(compose(m2, b2, r2.plan, D({ flip: new Set(['tblock:a']) }), 5000)).startsWith('M|'))
+  // T3 브랜치만 지움 → 지운다
+  const r3 = run(base, base, tdoc([tb('a', '하나', 'a'), tb('b', '둘', 'b', { deletedAt: 50 }), tb('c', '셋', 'c')]))
+  check('T3 한쪽만 지웠으면 지운다', htmls(r3.out) === '하나|셋', htmls(r3.out))
+  check('T3 지운 표식은 결과에 남는다 (다음 머지용)', (r3.out.textBlocks ?? []).some((b) => b.id === 'b' && b.deletedAt))
+  // T4 main은 지우고 브랜치는 고침 → 살린다(고친 내용)
+  const r4 = run(base, tdoc([tb('a', '하나', 'a'), tb('b', '둘', 'b', { deletedAt: 50 }), tb('c', '셋', 'c')]), tdoc([tb('a', '하나', 'a'), tb('b', '둘 고침', 'b'), tb('c', '셋', 'c')]), 'main')
+  check('T4 한쪽은 지우고 한쪽은 고쳤으면 살린다', htmls(r4.out) === '하나|둘 고침|셋', htmls(r4.out))
+  // T5 양쪽이 같은 자리에 새 블록 — 순서 키로 둘 다 자리 잡음
+  const r5 = run(base, tdoc([...base.textBlocks!, tb('m', '새 main', 'am')]), tdoc([...base.textBlocks!, tb('n', '새 브랜치', 'an')]))
+  check('T5 양쪽이 끼워 넣은 블록 둘 다, 순서 키대로', htmls(r5.out) === '하나|새 main|새 브랜치|둘|셋', htmls(r5.out))
+  // T6 출발점 없이 올린 브랜치 — 누가 지웠는지 모르면 살린다
+  const r6 = run(null, base, tdoc([tb('a', '하나', 'a'), tb('b', '둘', 'b', { deletedAt: 50 }), tb('c', '셋', 'c')]))
+  check('T6 출발점이 없으면 지운 것보다 살린다', htmls(r6.out) === '하나|둘|셋', htmls(r6.out))
+  check('T6 노트 머지 결과엔 textBlocks가 생기지 않는다', !('textBlocks' in run(null, doc({}), doc({})).out))
 }
 
 /* ── 리포트 ─────────────────────────────────────────────────────── */

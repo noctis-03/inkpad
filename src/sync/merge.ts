@@ -9,18 +9,22 @@
 //    출발점 없이 올린 브랜치(baseMid 없음)는 누가 고쳤는지 알 수 없어 모두 '양쪽 고침'으로 본다.
 //  - 획의 위치(페이지·청크)도 내용의 일부라, 다른 페이지로 옮긴 획도 ID가 같아 두 군데 생기지 않는다.
 //
+//  - 문서(text 모드)의 블록(tblock)은 예외로 지운 것을 따른다: 한쪽만 손댔는데 그게 지운 것이면 지운다
+//    (문단을 지웠는데 머지마다 되살아나면 문서가 엉망이 된다). 한쪽은 고치고 한쪽은 지웠으면 살린다(고친 내용을 잃지 않게).
+//    순서는 블록의 순서 키(pos)로 정해지므로 양쪽이 따로 끼워 넣은 블록도 자리를 찾는다.
+//
 // classify가 항목마다 분류(레이어)와 기본 선택을 정하고, compose가 사용자의 작업본(버린 것·반대쪽으로 바꾼 것)을
 // 얹어 결과 노트를 만든다. 머지 화면은 classify 결과로 레이어를 그린다.
-import type { Block, Element, ID, Page } from '../shared/model'
+import type { Block, Element, ID, Page, TextBlock } from '../shared/model'
 // 확장자를 붙여 부른다 — 이 모듈은 브라우저 없이 node 테스트(tools/verify/merge-test.ts)에서도 그대로 돈다
-import { blockSig, elementSig, pageSig, shortHash } from './branch.ts'
+import { blockSig, elementSig, pageSig, shortHash, textBlockSig } from './branch.ts'
 import { mergedUpdatedAt } from './judge.ts'
 import type { DocFileV1 } from './pack'
 
 export type Side = 'main' | 'branch'
 /** 레이어 — 공통 / main에만 / 브랜치에만 / 양쪽에 있는데 내용이 다름 */
 export type ItemClass = 'common' | 'mainOnly' | 'branchOnly' | 'modified'
-export type ItemKind = 'el' | 'page' | 'block'
+export type ItemKind = 'el' | 'page' | 'block' | 'tblock'
 
 export interface Placed {
   pageId: ID
@@ -29,7 +33,7 @@ export interface Placed {
 }
 
 export interface MergeItem {
-  /** 'el:{id}' | 'page:{id}' | 'block:{id}' — 작업본이 이 키로 항목을 가리킨다 */
+  /** 'el:{id}' | 'page:{id}' | 'block:{id}' | 'tblock:{id}' — 작업본이 이 키로 항목을 가리킨다 */
   key: string
   kind: ItemKind
   id: ID
@@ -38,8 +42,8 @@ export interface MergeItem {
   pick: Side
   /** 양쪽이 다 고쳤다 (modified일 때만) — pick은 머지하는 기기 쪽 */
   both?: boolean
-  main?: Placed | Page | Block
-  branch?: Placed | Page | Block
+  main?: Placed | Page | Block | TextBlock
+  branch?: Placed | Page | Block | TextBlock
 }
 
 export type MetaField = 'title' | 'category' | 'mode' | 'pageOrder'
@@ -196,6 +200,26 @@ export function classify(
     else items.push({ key, kind: 'block', id, cls: 'branchOnly', pick: 'branch', branch: b })
   }
 
+  // ── 문서(text 모드) 블록 ──
+  const mText = new Map((main.textBlocks ?? []).map((b) => [b.id, b]))
+  const bText = new Map((branch.textBlocks ?? []).map((b) => [b.id, b]))
+  for (const id of new Set<ID>([...mText.keys(), ...bText.keys()])) {
+    const m = mText.get(id)
+    const b = bText.get(id)
+    const key = 'tblock:' + id
+    if (m && b) {
+      const ms = textBlockSig(m)
+      if (ms === textBlockSig(b)) items.push({ key, kind: 'tblock', id, cls: 'common', pick: 'main', main: m, branch: b })
+      else {
+        const d = decide(key, ms)
+        // 한쪽만 손댔으면 그쪽(지운 것이면 지운다). 양쪽이 손댔는데 한쪽은 지웠으면 살아 있는 쪽 — 고친 내용을 잃지 않게
+        const pick = d.both && !!m.deletedAt !== !!b.deletedAt ? { pick: (m.deletedAt ? 'branch' : 'main') as Side, both: true } : d
+        items.push({ key, kind: 'tblock', id, cls: 'modified', ...pick, main: m, branch: b })
+      }
+    } else if (m) items.push({ key, kind: 'tblock', id, cls: 'mainOnly', pick: 'main', main: m })
+    else items.push({ key, kind: 'tblock', id, cls: 'branchOnly', pick: 'branch', branch: b })
+  }
+
   // ── 문서 정보 ──
   const meta: MetaItem[] = []
   for (const field of ['title', 'category', 'mode', 'pageOrder'] as const) {
@@ -295,11 +319,13 @@ export function compose(main: DocFileV1, branch: DocFileV1, plan: MergePlan, dra
   const pages: Page[] = []
   const placed: Placed[] = []
   const blocks: Block[] = []
+  const textBlocks: TextBlock[] = []
   for (const item of plan.items) {
     const { side, discarded } = resolveItem(item, draft)
     if (discarded) continue
     if (item.kind === 'page') pages.push(valueOf<Page>(item, side))
     else if (item.kind === 'el') placed.push(editPlaced(valueOf<Placed>(item, side), draft.move.get(item.key), draft.color.get(item.key), doc.mode === 'infinite'))
+    else if (item.kind === 'tblock') textBlocks.push(valueOf<TextBlock>(item, side))
     else blocks.push(valueOf<Block>(item, side))
   }
   // 보조 용지(sheet)는 pageOrder에 넣지 않는다. 기준 페이지가 결과에 없으면 용지도 함께 빠진다
@@ -336,6 +362,9 @@ export function compose(main: DocFileV1, branch: DocFileV1, plan: MergePlan, dra
   for (const a of branch.assets) if (!assets.some((x) => x.id === a.id)) assets.push(a)
 
   const keepBlocks = main.blocks !== undefined || branch.blocks !== undefined
+  const keepText = main.textBlocks !== undefined || branch.textBlocks !== undefined
+  // 순서 키(pos), 같으면 id — 머지 결과가 늘 같게
+  textBlocks.sort((a, b) => (a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   return {
     kind: 'inkpad-doc',
     schemaVersion: 1,
@@ -343,6 +372,7 @@ export function compose(main: DocFileV1, branch: DocFileV1, plan: MergePlan, dra
     pages,
     chunks,
     ...(keepBlocks ? { blocks: blocks.filter((b) => live.has(b.pageId)) } : {}),
+    ...(keepText ? { textBlocks } : {}),
     assets
   }
 }
