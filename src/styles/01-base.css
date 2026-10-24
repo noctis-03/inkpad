@@ -230,6 +230,7 @@ button {
   -webkit-user-select: none;
 }
 .tabbar-scroll {
+  position: relative; /* 탭의 offsetLeft 기준 — 끌어서 순서 바꾸기 */
   flex: 1;
   min-width: 0;
   display: flex;
@@ -278,6 +279,19 @@ button {
 }
 .tab.is-active + .tab::before,
 .tab:hover + .tab::before {
+  display: none;
+}
+.tab.is-dragging {
+  z-index: 2;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0, 0, 0, 0.14);
+  clip-path: none; /* 보는 탭도 들어 올린 듯 그림자를 다 보인다 */
+  border-radius: 8px;
+  cursor: grabbing;
+}
+.tab.is-dragging::before,
+.tab.is-dragging + .tab::before {
   display: none;
 }
 .tab-home {

@@ -239,6 +239,8 @@ interface UIState {
   /** 화면 머리의 뒤로 — 지금 탭을 닫고 홈(라이브러리·작업보드)으로 */
   backHome: () => void
   closeOtherTabs: (r: TabRoute) => void
+  /** 탭 순서 바꾸기 — r을 to 자리로 (탭 바에서 끌기·단축키) */
+  moveTab: (r: TabRoute, to: number) => void
   /** 앱·파일을 옆 칸으로 — 가운데에는 그 전에 보던 화면이 온다 */
   openSplit: (r: SplitRoute) => void
   closeSplit: () => void
@@ -350,6 +352,15 @@ export const useUI = create<UIState>((set, get) => ({
     // 다른 탭으로 옮겨 가지 않는다(closeTab과 다르다) — 뒤로는 늘 홈. 옆 칸은 그대로 둔다
     if (isTabRoute(route)) set({ tabs: tabs.filter((t) => !sameTab(t, route)), split: sameTab(split, route) ? null : split })
     get().navigate(home)
+  },
+  moveTab: (r, to) => {
+    const tabs = get().tabs
+    const from = tabs.findIndex((t) => sameTab(t, r))
+    const at = Math.max(0, Math.min(tabs.length - 1, to))
+    if (from < 0 || at === from) return
+    const next = tabs.filter((_, i) => i !== from)
+    next.splice(at, 0, tabs[from])
+    set({ tabs: next })
   },
   closeOtherTabs: (r) => {
     const { route, split } = get()
