@@ -1,13 +1,15 @@
-// 자체 포맷: .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
+// 자체 포맷: .inkpad = zip { manifest.json, documents/<id>/{document.json, pages.json, blocks.json, textblocks.json, chunks/<pageId>/<key>.json}, assets/<id> }
 // 전체 백업도 같은 구조에 문서가 여러 개 들어간다.
 // blocks.json은 선택 파일이다(블록이 있을 때만 쓴다) — FORMAT_VERSION을 올리지 않고도 옛 버전 앱이 무시하고 가져올 수 있다.
+// textblocks.json도 선택 파일 — 문서(text 모드)의 블록.
 import { unzip, zip, strFromU8, strToU8, type Unzipped, type Zippable } from 'fflate'
-import { BLOCK_SCHEMA_VERSION, SCHEMA_VERSION, type Asset, type Block, type DocumentMeta, type Folder, type ID, type Page } from '../shared/model'
+import { BLOCK_SCHEMA_VERSION, SCHEMA_VERSION, TEXT_MAX_INDENT, type Asset, type Block, type DocumentMeta, type Folder, type ID, type Page, type TextBlock } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { normalizeBlockUrl } from '../engine/blocks'
 import { db } from '../storage/db'
 import { assertNotTooNew } from '../storage/migrate'
-import { listFolders, loadDocument, putAsset, saveBatch, type ChunkData } from '../storage/repo'
+import { listFolders, loadDocument, loadTextBlocks, putAsset, saveBatch, saveTextBatch, type ChunkData } from '../storage/repo'
+import { cleanForSave } from '../textdoc/model'
 import { tryEnsureAssetLocal } from '../sync/assets'
 
 const FORMAT = 'inkpad'
@@ -46,6 +48,8 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
     files[base + 'pages.json'] = json([...pages, ...sheets])
     // 살아 있는 블록만 담는다 (tombstone 제외). 블록이 1개 이상일 때만 파일을 쓴다
     if (blocks.length) files[base + 'blocks.json'] = json(blocks)
+    // 문서(text 모드)의 블록 — 선택 파일이라 옛 버전 앱은 무시한다(빈 문서로 들어간다)
+    if (doc.mode === 'text') files[base + 'textblocks.json'] = json(await loadTextBlocks(id))
     for (const c of chunks) {
       if (!c.elements.length) continue
       files[`${base}chunks/${c.pageId}/${c.key}.json`] = json(c.elements)
@@ -256,6 +260,15 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
     }
     // 청크가 없고 블록만 있는 문서도 저장되도록 호출 조건을 넓힌다
     if (chunks.length || blocks.length) await saveBatch({ documentId: doc.id, chunks, blocksUpsert: blocks })
+    // 문서(text 모드) 블록 — 새 ID로, 순서 키는 그대로. 서식은 저장 때처럼 정리한다
+    const textFile = files[base + 'textblocks.json']
+    if (doc.mode === 'text' && textFile) {
+      const raw = JSON.parse(strFromU8(textFile)) as TextBlock[]
+      const tb = raw
+        .filter((b) => !b.deletedAt && typeof b.pos === 'string')
+        .map((b) => cleanForSave({ ...b, id: ulid(), documentId: newId, indent: Math.max(0, Math.min(TEXT_MAX_INDENT, b.indent | 0)), createdAt: b.createdAt ?? now, updatedAt: now, deletedAt: undefined }))
+      if (tb.length) await saveTextBatch({ documentId: doc.id, upsert: tb })
+    }
     out.push(doc)
     onProgress?.(++i, manifest.documents.length)
   }

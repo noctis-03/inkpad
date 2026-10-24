@@ -1263,7 +1263,7 @@ export function Board() {
   }
 
   // ── 카드 얼굴 ──
-  const kindIcon = (it: Item) => (it.kind === 'doc' ? (it.d.mode === 'infinite' ? 'infinite' : 'page') : it.kind === 'app' ? 'app' : 'file')
+  const kindIcon = (it: Item) => (it.kind === 'doc' ? (it.d.mode === 'infinite' ? 'infinite' : it.d.mode === 'text' ? 'textDoc' : 'page') : it.kind === 'app' ? 'app' : 'file')
 
   const face = (it: Item) => {
     if (it.kind === 'doc') {
@@ -1272,7 +1272,7 @@ export function Board() {
       const infinite = it.d.mode === 'infinite'
       return (
         <span className={'board-face is-empty' + (infinite ? ' is-infinite' : '')}>
-          <Icon name={infinite ? 'infinite' : 'page'} size={26} />
+          <Icon name={infinite ? 'infinite' : it.d.mode === 'text' ? 'textDoc' : 'page'} size={26} />
         </span>
       )
     }

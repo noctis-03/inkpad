@@ -54,8 +54,9 @@ export class Layout {
    */
   sheets: Page[] = []
 
-  constructor(mode: 'infinite' | 'paged') {
-    this.mode = mode
+  /** text(문서)는 엔진으로 열지 않는다 — 들어와도 문서형처럼 다룬다 */
+  constructor(mode: 'infinite' | 'paged' | 'text') {
+    this.mode = mode === 'infinite' ? 'infinite' : 'paged'
   }
 
   setPages(pages: Page[]) {

@@ -7,10 +7,13 @@ import {
   PAGE_SIZES,
   makeBackground,
   type BackgroundType,
+  type DocMode,
   type DocumentMeta,
   type ID,
   type PageSizeKey
 } from '../../shared/model'
+
+const DEFAULT_TITLE: Record<DocMode, string> = { paged: '새 노트', infinite: '무한 캔버스', text: '새 문서' }
 
 const PAGED_BGS: BackgroundType[] = ['blank', 'lined', 'grid', 'dot', 'cornell']
 const INFINITE_BGS: BackgroundType[] = ['dot', 'grid', 'lined', 'blank']
@@ -31,7 +34,7 @@ export function NewDocumentSheet(props: {
   onAddApp: () => void
   onAddFile: () => void
 }) {
-  const [mode, setMode] = useState<'paged' | 'infinite'>('paged')
+  const [mode, setMode] = useState<DocMode>('paged')
   const [title, setTitle] = useState('')
   const [sizeKey, setSizeKey] = useState<PageSizeKey>('a4')
   // 입력 중에는 문자열로 들고 있다가 blur·'만들기' 때 범위를 맞춘다 — 지우는 중에 최솟값으로 튀지 않게
@@ -62,7 +65,12 @@ export function NewDocumentSheet(props: {
   }
 
   const create = async () => {
-    const t = title.trim() || (mode === 'infinite' ? '무한 캔버스' : '새 노트')
+    const t = title.trim() || DEFAULT_TITLE[mode]
+    if (mode === 'text') {
+      // 문서는 페이지·속지가 없다 — 빈 문단 하나로 시작한다
+      props.onCreated(await createDocument({ title: t, mode, folderId: props.folderId, category: props.category ?? undefined, pages: [] }))
+      return
+    }
     const background = makeBackground(mode === 'infinite' && bg === 'cornell' ? 'dot' : bg, mode === 'infinite' ? 32 : 24)
     const s = size()
     const doc = await createDocument({
@@ -92,19 +100,24 @@ export function NewDocumentSheet(props: {
           <button className={'mode-card' + (mode === 'paged' ? ' is-active' : '')} onClick={() => (setMode('paged'), setBg('lined'))}>
             <Icon name="notebook" size={30} />
             <strong>노트</strong>
-            <small>페이지 단위 문서</small>
+            <small>페이지 단위 필기</small>
           </button>
           <button className={'mode-card' + (mode === 'infinite' ? ' is-active' : '')} onClick={() => (setMode('infinite'), setBg('dot'))}>
             <Icon name="infinite" size={30} />
             <strong>무한 캔버스</strong>
             <small>스케치, 마인드맵</small>
           </button>
+          <button className={'mode-card' + (mode === 'text' ? ' is-active' : '')} onClick={() => setMode('text')}>
+            <Icon name="textDoc" size={30} />
+            <strong>문서</strong>
+            <small>키보드로 쓰는 블록 문서</small>
+          </button>
         </div>
 
         <section className="sheet-section">
           <label className="field">
             <span>제목</span>
-            <input id="new-doc-title" value={title} placeholder={mode === 'infinite' ? '무한 캔버스' : '새 노트'} onChange={(e) => setTitle(e.target.value)} />
+            <input id="new-doc-title" value={title} placeholder={DEFAULT_TITLE[mode]} onChange={(e) => setTitle(e.target.value)} />
           </label>
 
           {mode === 'paged' && (
@@ -170,17 +183,21 @@ export function NewDocumentSheet(props: {
             </>
           )}
 
-          <div className="field">
-            <span>{mode === 'paged' ? '속지' : '배경'}</span>
-            <div className="paper-picker">
-              {bgs.map((t) => (
-                <button key={t} className={'paper-option' + (bg === t ? ' is-active' : '')} onClick={() => setBg(t)}>
-                  <span className={`paper-preview paper-${t}`} />
-                  {BACKGROUND_LABELS[t]}
-                </button>
-              ))}
+          {mode === 'text' && <p className="hint">제목·목록·할 일·토글·코드 같은 블록을 쌓아 쓰는 문서입니다. '/'를 눌러 블록을 고르고, # · - · [ ] 같은 마크다운으로도 바꿀 수 있습니다.</p>}
+
+          {mode !== 'text' && (
+            <div className="field">
+              <span>{mode === 'paged' ? '속지' : '배경'}</span>
+              <div className="paper-picker">
+                {bgs.map((t) => (
+                  <button key={t} className={'paper-option' + (bg === t ? ' is-active' : '')} onClick={() => setBg(t)}>
+                    <span className={`paper-preview paper-${t}`} />
+                    {BACKGROUND_LABELS[t]}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         {/* 바로 실행되는 동작은 가져오기 줄로 — 버튼 모양으로 선택/실행이 구분된다 */}
