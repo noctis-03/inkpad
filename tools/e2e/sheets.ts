@@ -138,6 +138,17 @@ export default async function sheets(ctx: Ctx) {
   const w1 = (await sheetOf(id)).size
   check('모서리 끌기 → 폭·높이 변경', w1.w > w0.w + 50 && w1.h < w0.h - 100, JSON.stringify([w0, w1]))
   check('…붙은 채로', (await sheetOf(id)).sheet.snap === 'right')
+  check('…맞출 크기에서 멀면 그대로 (붙지 않음)', Math.abs(w1.w - (w0.w + 70 / zoom)) < 0.6 && Math.abs(w1.h - (w0.h - 140 / zoom)) < 0.6, JSON.stringify([w0, w1, zoom]))
+
+  // ── 크기 붙기: 페이지 폭 절반·페이지 높이 가까이(화면 18px 안) 놓으면 딱 맞춘다 ──
+  {
+    const want = { w: p0.w / 2 + 8, h: p0.h - 12 } // 각각 8pt·12pt 모자라게/넘치게 (배율 0.7에서 화면 6~8px)
+    await dragEl(`.sheet-frame[data-sheet-id="${id}"] .sheet-resize`, (want.w - w1.w) * zoom, (want.h - w1.h) * zoom)
+    const w2 = (await sheetOf(id)).size
+    check('크기 조절이 페이지 폭 절반·페이지 높이에 붙음', w2.w === Math.round((p0.w / 2) * 100) / 100 && w2.h === p0.h, JSON.stringify([w2, p0.w / 2, p0.h]))
+    await eng('undo')
+    check('…Undo → 붙기 전 크기', (await sheetOf(id)).size.w === w1.w && (await sheetOf(id)).size.h === w1.h)
+  }
 
   // ── 제목 ──
   const hb = (await p.locator(head).boundingBox())!

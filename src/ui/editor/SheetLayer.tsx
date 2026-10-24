@@ -126,7 +126,8 @@ function SheetFrame({ engine, sheet, readOnly, frameRef }: { engine: Engine; she
     const dx = (e.clientX - d.sx) / z
     const dy = (e.clientY - d.sy) / z
     const s0 = d.before.size!
-    engine.updateSheet(sheet.id, { size: { w: s0.w + (fromLeft ? -dx : dx), h: s0.h + dy } }, { history: false })
+    // 페이지·다른 용지 크기에 가까우면 맞춘다 (엔진이 판단)
+    engine.resizeSheet(sheet.id, s0.w + (fromLeft ? -dx : dx), s0.h + dy, { history: false })
   }
   const onResizeUp = (e: ReactPointerEvent) => {
     const d = resize.current
