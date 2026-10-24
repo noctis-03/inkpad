@@ -1,0 +1,69 @@
+/* ═══════ 문서(text 모드) — 노션형 블록 편집 ═══════ */
+.text-editor { position: relative; background: var(--paper); }
+.tdoc-bar-title { cursor: default; }
+.tdoc-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+.tdoc-page { max-width: 760px; margin: 0 auto; padding: 56px 64px 0; }
+@media (max-width: 640px) { .tdoc-page { padding: 28px 20px 0 34px; } }
+
+.tdoc-title { font-size: 36px; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; color: var(--ink); outline: none; margin: 0 0 14px; word-break: break-word; }
+.tdoc-title:empty::before { content: attr(data-placeholder); color: var(--muted); opacity: .45; }
+
+.tdoc-blocks { position: relative; }
+.tdoc-tail { min-height: 40vh; cursor: text; }
+
+/* 블록 한 줄 — 들여쓰기는 --ind 단계 × 24px */
+.tb-row { position: relative; display: flex; align-items: flex-start; gap: 2px; padding-left: calc(var(--ind, 0) * 24px); margin: 1px 0; }
+.tb-gutter { position: absolute; top: 3px; left: calc(var(--ind, 0) * 24px - 50px); display: flex; opacity: 0; transition: opacity .12s; }
+.tb-row:hover .tb-gutter, .tb-row:focus-within .tb-gutter { opacity: 1; }
+@media (hover: none) { .tb-row:hover:not(:focus-within) .tb-gutter { opacity: 0; } }
+.tb-add, .tb-grip { width: 24px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.tb-grip { cursor: grab; touch-action: none; }
+.tb-add:hover, .tb-grip:hover { background: var(--hover); }
+.t-h1 .tb-gutter { top: 22px; } .t-h2 .tb-gutter { top: 16px; } .t-h3 .tb-gutter { top: 12px; }
+
+.tb-text { flex: 1 1 auto; min-width: 0; padding: 3px 2px; outline: none; color: var(--ink); font-size: 16px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; caret-color: var(--accent); }
+.tb-text:empty::before { content: attr(data-placeholder); color: var(--muted); opacity: .5; pointer-events: none; }
+/* 문단 안내는 캐럿이 있을 때만 (빈 줄마다 보이면 시끄럽다) */
+.t-p .tb-text:empty:not(:focus)::before { content: ''; }
+.tb-text b { font-weight: 700; }
+.tb-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.tb-text code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; padding: 1px 5px; border-radius: 5px; background: var(--surface-2); color: #c2410c; }
+
+.t-h1 .tb-text { font-size: 30px; font-weight: 700; line-height: 1.3; margin-top: 22px; }
+.t-h2 .tb-text { font-size: 23px; font-weight: 700; line-height: 1.35; margin-top: 16px; }
+.t-h3 .tb-text { font-size: 19px; font-weight: 650; line-height: 1.4; margin-top: 10px; }
+.t-quote .tb-text { border-left: 3px solid var(--ink); padding-left: 14px; margin: 2px 0; }
+.tb-text.is-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; line-height: 1.55; padding: 14px 16px; margin: 4px 0; border-radius: 10px; background: var(--surface-2); tab-size: 2; }
+
+/* 글머리·번호·체크·토글 */
+.tb-marker { flex: none; min-width: 24px; padding-top: 3px; text-align: center; color: var(--ink); font-size: 16px; line-height: 1.65; user-select: none; -webkit-user-select: none; }
+.tb-number { padding-right: 4px; text-align: right; font-variant-numeric: tabular-nums; }
+.tb-check { min-width: 0; width: 18px; height: 18px; margin: 7px 6px 0 3px; padding: 0; border: 1.5px solid var(--muted); border-radius: 5px; background: var(--surface); color: transparent; display: grid; place-items: center; cursor: pointer; }
+.tb-check.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-ink); }
+.tb-row[data-checked] .tb-text { color: var(--muted); text-decoration: line-through; }
+.tb-toggle { height: 28px; margin-top: 1px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer; }
+.tb-toggle svg { transition: transform .15s; }
+.tb-toggle.is-open svg { transform: rotate(90deg); }
+.tb-toggle:hover { background: var(--hover); }
+.tb-check:disabled, .tb-toggle:disabled { cursor: default; }
+
+.tb-divider { flex: 1 1 auto; padding: 12px 2px; outline: none; cursor: pointer; }
+.tb-divider hr { margin: 0; border: 0; border-top: 1px solid var(--line); }
+.tb-divider:focus hr { border-top-color: var(--accent); }
+.tdoc-drop { position: absolute; left: 0; right: 0; height: 3px; margin-top: -1px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+
+/* 슬래시(/) 메뉴 */
+.tdoc-slash { position: fixed; z-index: 60; width: 270px; max-height: 340px; overflow: auto; padding: 6px; border-radius: 14px; background: var(--surface); box-shadow: var(--e2); }
+.tdoc-slash-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.tdoc-slash-item.is-current { background: var(--hover); }
+.tdoc-slash-glyph { flex: none; width: 36px; height: 36px; border-radius: 9px; background: var(--surface-2); display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.tdoc-slash-text { display: flex; flex-direction: column; min-width: 0; }
+.tdoc-slash-text b { font-size: var(--fs-md); font-weight: 600; }
+.tdoc-slash-text small { font-size: var(--fs-xs); color: var(--muted); }
+.tdoc-slash-empty { margin: 0; padding: 10px 12px; color: var(--muted); font-size: var(--fs-sm); }
+
+/* 글자를 고르면 뜨는 서식 막대 */
+.tdoc-fmt { position: fixed; z-index: 55; display: flex; gap: 2px; padding: 4px; border-radius: 11px; background: var(--ink); box-shadow: var(--e2); transform: translate(-50%, calc(-100% - 8px)); }
+.tdoc-fmt-btn { width: 32px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--on-ink); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.tdoc-fmt-btn:hover { background: #ffffff22; }
+.tdoc-fmt-btn code { font-size: 11px; background: none; color: inherit; }

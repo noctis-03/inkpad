@@ -12,8 +12,11 @@ import {
   type Folder,
   type ID,
   type Page,
+  type DocMode,
+  type TextBlock,
   isLiveSheet
 } from '../shared/model'
+import { byPos, keyBetween } from '../shared/fracIndex'
 import { ulid } from '../shared/ulid'
 import { sha256Hex } from '../shared/util'
 import { gunzipJson, gzipJson } from './compress'
@@ -108,15 +111,20 @@ export function makePage(documentId: ID, spec: NewPageSpec): Page {
 
 export async function createDocument(opts: {
   title: string
-  mode: 'infinite' | 'paged'
+  mode: DocMode
   folderId: ID | null
+  /** text(문서)는 페이지가 없다 — 빈 배열을 넘긴다 */
   pages: NewPageSpec[]
   category?: string | null
 }): Promise<DocumentMeta> {
   const now = Date.now()
   const id = ulid()
-  const specs = opts.mode === 'infinite' ? [{ size: null, background: opts.pages[0]?.background ?? makeBackground('dot') }] : opts.pages
+  const specs =
+    opts.mode === 'text' ? [] : opts.mode === 'infinite' ? [{ size: null, background: opts.pages[0]?.background ?? makeBackground('dot') }] : opts.pages
   const pages = specs.map((s) => makePage(id, s))
+  // 문서는 빈 문단 하나로 시작한다 — 바로 쓸 수 있게
+  const firstBlock: TextBlock | null =
+    opts.mode === 'text' ? { id: ulid(), documentId: id, type: 'p', html: '', indent: 0, pos: keyBetween(null, null), createdAt: now, updatedAt: now } : null
   const doc: DocumentMeta = {
     id,
     schemaVersion: SCHEMA_VERSION,
@@ -130,13 +138,41 @@ export async function createDocument(opts: {
     updatedAt: now,
     version: 0
   }
-  await db.transaction('rw', db.documents, db.pages, db.outbox, async () => {
+  await db.transaction('rw', db.documents, db.pages, db.textBlocks, db.outbox, async () => {
     await db.documents.add(doc)
     await db.pages.bulkAdd(pages)
+    if (firstBlock) await db.textBlocks.add(firstBlock)
     await enqueue('document', id)
     for (const p of pages) await enqueue('page', p.id)
   })
   return doc
+}
+
+// ───────────────────────── 문서(text 모드) 블록 ─────────────────────────
+
+/** 문서의 블록 — 순서대로. 기본은 지운 것(tombstone) 제외 */
+export async function loadTextBlocks(documentId: ID, opts: { includeDeleted?: boolean } = {}): Promise<TextBlock[]> {
+  const rows = await db.textBlocks.where('documentId').equals(documentId).toArray()
+  return (opts.includeDeleted ? rows : rows.filter((b) => !b.deletedAt)).sort(byPos)
+}
+
+export interface TextSaveBatch {
+  documentId: ID
+  upsert?: TextBlock[]
+  /** soft delete (tombstone) — 동기화 머지에 필요하다 */
+  delete?: ID[]
+}
+
+/** 문서 편집 결과를 한 트랜잭션으로 기록. HTML 정리(sanitize)는 부르는 쪽(편집기)이 한다 */
+export async function saveTextBatch(b: TextSaveBatch) {
+  const now = Date.now()
+  await db.transaction('rw', [db.documents, db.textBlocks, db.outbox], async () => {
+    if (b.upsert?.length) await db.textBlocks.bulkPut(b.upsert.map((x) => ({ ...x, deletedAt: undefined })))
+    for (const id of b.delete ?? []) await db.textBlocks.update(id, { deletedAt: now, updatedAt: now })
+    await db.documents.update(b.documentId, { updatedAt: now })
+    // 블록은 문서 파일 안에 동기화된다 (블록 전용 outbox 항목 없음)
+    await enqueue('document', b.documentId)
+  })
 }
 
 export async function updateDocument(id: ID, patch: Partial<Omit<DocumentMeta, 'id'>>, opts: { touch?: boolean; sync?: boolean } = {}) {
@@ -178,7 +214,7 @@ export async function restoreDocument(id: ID) {
 
 /** 영구 삭제 (로컬). 어떤 문서도 참조하지 않는 에셋도 함께 지운다 (여러 개를 지울 때는 gc: false로 미루고 끝에 한 번) */
 export async function purgeDocument(id: ID, opts: { gc?: boolean } = {}) {
-  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.thumbnails, db.outbox, db.syncState], async () => {
+  await db.transaction('rw', [db.documents, db.pages, db.chunks, db.blocks, db.textBlocks, db.thumbnails, db.outbox, db.syncState], async () => {
     await db.documents.delete(id)
     // gone 표식을 남겨 받기가 이 노트를 되살리지 않게 한다 — 푸시 전에 영구 삭제하면
     // pushTombstone(푸시 시점) 기회가 없어 표식이 없다. 표식 없이 로컬 행만 없으면
@@ -187,6 +223,7 @@ export async function purgeDocument(id: ID, opts: { gc?: boolean } = {}) {
     await db.pages.where('documentId').equals(id).delete()
     await db.chunks.where('documentId').equals(id).delete()
     await db.blocks.where('documentId').equals(id).delete()
+    await db.textBlocks.where('documentId').equals(id).delete()
     await db.thumbnails.delete(id)
     await enqueue('document', id, 'delete')
   })
@@ -200,6 +237,7 @@ export async function purgeExpiredTrash() {
   if (expired.length) await gcOrphanAssets() // 원본 정리는 끝에 한 번 (노트마다 전체 청크를 다시 풀지 않게)
   // 오래된 블록 tombstone도 함께 정리한다 (tombstone은 동기화 머지에만 필요)
   await db.blocks.where('deletedAt').below(limit).delete()
+  await db.textBlocks.where('deletedAt').below(limit).delete()
   return expired.length
 }
 
@@ -535,6 +573,11 @@ export async function duplicateDocument(id: ID): Promise<DocumentMeta> {
     blocks.push(nb)
   }
   await saveBatch({ documentId: doc.id, chunks, blocksUpsert: blocks })
+  // 문서(text 모드)는 블록을 새 ID로 복사한다 (순서 키는 그대로)
+  if (src.doc.mode === 'text') {
+    const tb = await loadTextBlocks(id)
+    if (tb.length) await saveTextBatch({ documentId: doc.id, upsert: tb.map((x) => ({ ...x, id: ulid(), documentId: doc.id, createdAt: now, updatedAt: now })) })
+  }
   return doc
 }
 

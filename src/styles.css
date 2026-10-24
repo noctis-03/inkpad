@@ -18,3 +18,4 @@
 @import './styles/12-misc.css'; /* 숫자 스테퍼·문서 바·여는 중 스켈레톤·설정 고급·가져오기 줄 */
 @import './styles/13-board.css'; /* 작업보드 */
 @import './styles/14-late.css'; /* 라이브러리 상단 바 — 좁은 화면에서 줄이기 */
+@import './styles/15-textdoc.css'; /* 문서(text 모드) — 노션형 블록 편집 */

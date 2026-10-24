@@ -10,10 +10,15 @@ import { Menu, MenuItem } from './Menu'
 
 const ICON: Record<TabRoute['name'], string> = { editor: 'notebook', app: 'app', file: 'file' }
 
+/** 문서(text 모드) 탭 — 아이콘만 다르다 */
+const textTabs = new Set<string>()
+
 /** 탭 제목 — 없으면(지워졌으면) null */
 async function titleOf(t: TabRoute): Promise<string | null> {
   if (t.name === 'editor') {
     const d = await getDocument(t.docId)
+    if (d?.mode === 'text') textTabs.add(routeKey(t))
+    else textTabs.delete(routeKey(t))
     return d && !d.deletedAt ? d.title || '제목 없음' : null
   }
   if (t.name === 'app') {
@@ -124,7 +129,7 @@ export function TabBar() {
               // 가운데 버튼으로 닫기 (크롬처럼)
               onAuxClick={(e) => e.button === 1 && closeTab(t)}
             >
-              <Icon name={ICON[t.name]} size={15} />
+              <Icon name={textTabs.has(key) ? 'textDoc' : ICON[t.name]} size={15} />
               <span className="tab-title">{title}</span>
               {side && <Icon name="sidebar" size={13} className="tab-side" />}
               <button

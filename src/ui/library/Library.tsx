@@ -449,7 +449,7 @@ export function Library() {
   /** 카드 한 줄 메타 — 노트는 쪽수·날짜, 앱은 'HTML 앱'·날짜, 파일은 확장자·날짜.
       격자에서는 누르면 뜨는 오버레이 맨 위에, 목록에서는 캡션 줄에 앉는다. */
   const docMetaText = (d: DocumentMeta) =>
-    `${d.mode === 'infinite' ? '무한' : `${d.pageOrder.length}쪽`} · ${
+    `${d.mode === 'infinite' ? '무한' : d.mode === 'text' ? '문서' : `${d.pageOrder.length}쪽`} · ${
       section.kind === 'trash' && d.deletedAt ? `삭제 ${formatDate(d.deletedAt)}` : formatDate(d.updatedAt)
     }`
   /** 카테고리 — 색 점 + 이름 */
@@ -1806,7 +1806,7 @@ export function Library() {
                       {thumbs.get(i.d.id) ? (
                         <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
                       ) : (
-                        <Icon name={i.d.mode === 'infinite' ? 'infinite' : 'page'} size={36} />
+                        <Icon name={i.d.mode === 'infinite' ? 'infinite' : i.d.mode === 'text' ? 'textDoc' : 'page'} size={36} />
                       )}
                       <span className="doc-gloss" aria-hidden="true" />
                       {syncPillFor(i.d.id)}
@@ -1818,7 +1818,10 @@ export function Library() {
                           { icon: 'edit', label: '편집', aria: '편집 — 편집모드로 열기', run: (card) => openIn(i.d, card, false) },
                           [
                             { icon: 'eye', label: '보기', aria: '보기 — 뷰어보드(읽기 전용)로 열기', run: (card) => openIn(i.d, card, true) },
-                            { icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: (card) => openIn(i.d, card, 'scratch') }
+                            // 낙서(저장 안 하는 필기)는 필기 노트에만
+                            ...(i.d.mode === 'text'
+                              ? []
+                              : [{ icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: (card: HTMLElement | null | undefined) => openIn(i.d, card, 'scratch') }])
                           ]
                         )}
                     </div>

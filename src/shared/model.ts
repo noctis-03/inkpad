@@ -25,7 +25,8 @@ export interface DocumentMeta {
   id: ID
   schemaVersion: number
   title: string
-  mode: 'infinite' | 'paged'
+  /** paged: 노트(페이지) · infinite: 무한 캔버스 · text: 문서(키보드로 쓰는 블록 문서 — 페이지·필기 없이 textBlocks만) */
+  mode: DocMode
   folderId: ID | null // 로컬 전용 — 동기화하지 않는다 (폴더는 기기별 정리 도구)
   category: string | null // 단일 카테고리, null = 미분류 (동기화함)
   pageOrder: ID[] // paged: 페이지 순서 / infinite: 페이지 1개
@@ -35,6 +36,36 @@ export interface DocumentMeta {
   version: number
   lastView?: ViewState // 로컬 전용: 마지막으로 보던 위치
 }
+
+export type DocMode = 'infinite' | 'paged' | 'text'
+
+// ───────── 문서(text 모드)의 블록 ─────────
+// 노션처럼 한 줄 한 블록. 필기 노트의 편집 블록(Block — 메모·링크 등)과는 다른 것이다.
+// 평평한 목록 + 들여쓰기(indent)로 중첩을 나타낸다 — 블록 단위로 머지하기 쉽게.
+
+export type TextBlockType = 'p' | 'h1' | 'h2' | 'h3' | 'bullet' | 'number' | 'todo' | 'quote' | 'code' | 'divider' | 'toggle'
+
+export interface TextBlock {
+  id: ID // ULID
+  documentId: ID
+  type: TextBlockType
+  /** 인라인 서식이 든 HTML 조각 — b·i·u·s·code·a·br만 (shared/richText의 sanitizeInline이 지킨다). code 블록은 서식 없이 글자만 */
+  html: string
+  /** 들여쓰기 0~TEXT_MAX_INDENT — 목록 중첩, 토글 안쪽 */
+  indent: number
+  /** 순서 키 (분수 인덱스, shared/fracIndex) — 두 기기가 따로 끼워 넣어도 순서가 정해진다 */
+  pos: string
+  /** todo: 했음 */
+  checked?: boolean
+  /** toggle: 접음 — 아래 더 깊이 들여쓴 블록을 숨긴다 */
+  collapsed?: boolean
+  createdAt: number
+  updatedAt: number
+  /** tombstone (동기화 머지용) */
+  deletedAt?: number
+}
+
+export const TEXT_MAX_INDENT = 6
 
 export type Background =
   | { type: 'blank'; color: string }

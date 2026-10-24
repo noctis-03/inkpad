@@ -7,7 +7,7 @@ import { ChangesHost } from '../ui/ChangesView'
 import { installSyncReminders } from './syncReminders'
 import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
-import { Editor } from '../ui/editor/Editor'
+import { DocEditor } from '../ui/editor/DocEditor'
 import { AppRunner } from '../ui/app/AppRunner'
 import type { PaneSlot } from '../ui/app/RunnerNav'
 import { FileRunner } from '../ui/app/FileRunner'
@@ -129,7 +129,7 @@ function Panes() {
       {route.name !== 'app' && (
         <section key={`main:${mainKey}`} className="pane pane-main">
           {route.name === 'editor' ? (
-            <Editor docId={route.docId} />
+            <DocEditor docId={route.docId} />
           ) : route.name === 'file' ? (
             <FileRunner fileId={route.fileId} pane="main" />
           ) : route.name === 'board' ? (
