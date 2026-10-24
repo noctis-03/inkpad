@@ -182,6 +182,86 @@ export default async function tabs(ctx: Ctx) {
     await p.screenshot({ path: process.env.SHOT })
   }
 
+  // ── 끌어서 순서 바꾸기 ──
+  await go({ name: 'editor', docId: A })
+  await p.waitForSelector('.pane-main .editor')
+  const order0 = await tabKeys()
+  const box = async (k: string) => (await p.locator(`.tabbar .tab[data-tab="${k}"]`).boundingBox())!
+  const stored = () => p.evaluate(() => (JSON.parse(localStorage.getItem('inkpad.tabs.v1') ?? '{}').tabs ?? []).map((t: { name: string; docId?: string; appId?: string; fileId?: string }) => `${t.name === 'editor' ? 'doc' : t.name}:${t.docId ?? t.appId ?? t.fileId}`))
+  // 마우스: 첫 탭을 맨 뒤로 끈다
+  {
+    const a = await box(order0[0])
+    const z = await box(order0[order0.length - 1])
+    await p.mouse.move(a.x + 30, a.y + a.height / 2)
+    await p.mouse.down()
+    for (let i = 1; i <= 12; i++) await p.mouse.move(a.x + 30 + ((z.x + z.width - 20 - a.x - 30) * i) / 12, a.y + a.height / 2)
+    const mid = await p.locator('.tabbar .tab.is-dragging').count()
+    await p.mouse.up()
+    await sleep(300)
+    const order1 = await tabKeys()
+    check('끌기(마우스): 끄는 동안 탭이 떠 있고, 놓으면 맨 뒤로', mid === 1 && JSON.stringify(order1) === JSON.stringify([...order0.slice(1), order0[0]]), JSON.stringify({ order0, order1 }))
+    check('…끌고 놓아도 그 탭을 열지 않는다 (보던 탭 그대로)', (await active()) === `doc:${A}`)
+    check('…순서를 기억한다 (새로고침해도 남게)', JSON.stringify(await stored()) === JSON.stringify(order1), JSON.stringify(await stored()))
+    check('…놓은 뒤 탭이 제자리 (끌던 흔적 없음)', (await p.locator('.tabbar .tab.is-dragging').count()) === 0 && (await p.locator(`.tabbar .tab[data-tab="${order0[0]}"]`).evaluate((e) => (e as HTMLElement).style.transform)) === '')
+  }
+  // 마우스: 조금만 움직이면 누르기 — 그 탭이 열린다
+  {
+    const order = await tabKeys()
+    const t = order.find((k) => k !== `doc:${A}`)!
+    const b = await box(t)
+    await p.mouse.move(b.x + 30, b.y + b.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(b.x + 33, b.y + b.height / 2)
+    await p.mouse.up()
+    await sleep(300)
+    check('누르기(조금 움직임): 순서는 그대로, 그 탭을 연다', JSON.stringify(await tabKeys()) === JSON.stringify(order) && (await active()) === t)
+  }
+  // 손가락(합성 터치 포인터): 그냥 밀면 넘기기, 길게 눌러 끌면 순서 바꾸기
+  const touchDrag = async (k: string, toX: number, holdMs: number) => {
+    const b = await box(k)
+    const y = b.y + b.height / 2
+    await p.evaluate(
+      async ([k, x0, x1, y, hold]) => {
+        const el = document.querySelector(`.tabbar .tab[data-tab="${k}"]`)!
+        const ev = (type: string, x: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true }))
+        ev('pointerdown', x0)
+        await new Promise((r) => setTimeout(r, hold))
+        for (let i = 1; i <= 10; i++) {
+          ev('pointermove', x0 + ((x1 - x0) * i) / 10)
+          await new Promise((r) => setTimeout(r, 16))
+        }
+        ev('pointerup', x1)
+      },
+      [k, b.x + 30, toX, y, holdMs] as const
+    )
+    await sleep(300)
+  }
+  {
+    const order = await tabKeys()
+    const last = order[order.length - 1]
+    const first = await box(order[0])
+    await touchDrag(last, first.x + 10, 50)
+    check('손가락: 길게 누르지 않고 밀면 순서를 바꾸지 않는다 (탭 바 넘기기)', JSON.stringify(await tabKeys()) === JSON.stringify(order))
+    await touchDrag(last, first.x + 10, 450)
+    const after = await tabKeys()
+    check('손가락: 길게 눌러 끌면 순서를 바꾼다', JSON.stringify(after) === JSON.stringify([last, ...order.slice(0, -1)]), JSON.stringify({ order, after }))
+  }
+  // 단축키: Ctrl+Shift+→
+  {
+    const order = await tabKeys()
+    await p.locator(`.tabbar .tab[data-tab="${order[0]}"]`).focus()
+    await p.keyboard.press('Control+Shift+ArrowRight')
+    await sleep(100)
+    const after = await tabKeys()
+    const focused = await p.evaluate(() => (document.activeElement as HTMLElement)?.dataset?.tab)
+    check('단축키 Ctrl+Shift+→: 한 칸 오른쪽으로, 포커스는 그 탭에', JSON.stringify(after) === JSON.stringify([order[1], order[0], ...order.slice(2)]) && focused === order[0], JSON.stringify({ after, focused }))
+  }
+  await p.reload()
+  await p.waitForSelector('.tabbar .tab[data-tab]')
+  await sleep(300)
+  const reloaded = await tabKeys()
+  check('바꾼 순서는 새로고침해도 남는다', JSON.stringify(reloaded) === JSON.stringify(await stored()) && reloaded.length === order0.length, JSON.stringify(reloaded))
+
   // ── 탭 닫기 ──
   await go({ name: 'editor', docId: A })
   await p.waitForSelector('.pane-main .editor')
