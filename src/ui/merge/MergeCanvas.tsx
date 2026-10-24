@@ -1,6 +1,7 @@
 // 머지 화면의 페이지 캔버스 — 레이어를 그리고, 올가미·지우개 입력을 받는다 (편집 엔진을 쓰지 않는 가벼운 캔버스).
 //
-//  - 아래 캔버스: 속지(PDF·무늬) + 획. 작업본의 옮김·색은 그릴 때 얹는다(원래 획은 건드리지 않는다).
+//  - 아래 캔버스: 속지(PDF·무늬) + 획 + 편집 블록(메모·할 일 등을 상자로). 작업본의 옮김·색은 그릴 때 얹는다(원래 획은 건드리지 않는다).
+//    블록은 도구(올가미·지우개)가 닿지 않는다 — 머지 화면 패널의 목록에서 하나씩 고른다.
 //  - 위 캔버스(덮개): 올가미 선, 선택 상자, 끌고 있는 획, 지우개에 닿은 획 — 움직일 때마다 이것만 다시 그린다.
 //  - 입력: 펜·마우스는 도구, 손가락은 화면 이동(설정의 '손가락으로 그리기'를 켜면 손가락도 도구). '보기' 도구에서는 손대지 않는다.
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -10,9 +11,10 @@ import { parseChunkKey } from '../../engine/layout'
 import { hitStroke, strokeInPolygon } from '../../engine/geometry'
 import { openPdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
 import { db } from '../../storage/db'
-import type { ID, Page, Stroke } from '../../shared/model'
+import type { Block, ID, MemoColor, Page, Stroke } from '../../shared/model'
 import { mergePageOrder, resolveItem, resolveMeta, type ItemClass, type MergeDraft, type MergeItem, type MergePlan, type Placed, type Side } from '../../sync/merge'
 import type { DocFileV1 } from '../../sync/pack'
+import { BLOCK_NAME, blockSnippet } from './itemText'
 
 export type Tool = 'view' | 'lasso' | 'eraser'
 export type Visible = Record<ItemClass, boolean>
@@ -41,12 +43,24 @@ export interface ViewEl {
   color?: string
 }
 
+/** 편집 블록 하나 — gone: 고른 쪽에서는 지운 블록(지운 자리를 점선으로) */
+export interface ViewBlock {
+  item: MergeItem
+  block: Block
+  side: Side
+  discarded: boolean
+  gone: boolean
+}
+
 export interface ViewPage {
   id: ID
   item: MergeItem
   page: Page
+  /** 작업본을 얹어 고른 쪽 */
+  side: Side
   discarded: boolean
   els: ViewEl[]
+  blocks: ViewBlock[]
   /** 이 페이지에서 공통이 아닌 항목 수 (페이지 자체 포함) */
   changes: number
 }
@@ -94,7 +108,23 @@ export function buildPages(s: { plan: MergePlan; main: DocFileV1; branch: DocFil
     if (item.kind !== 'page') continue
     const { side, discarded } = resolveItem(item, draft)
     if (discarded && resultOnly) continue
-    pages.set(item.id, { id: item.id, item, page: pick<Page>(item, side), discarded, els: [], changes: item.cls === 'common' ? 0 : 1 })
+    pages.set(item.id, { id: item.id, item, page: pick<Page>(item, side), side, discarded, els: [], blocks: [], changes: item.cls === 'common' ? 0 : 1 })
+  }
+  for (const item of s.plan.items) {
+    if (item.kind !== 'block') continue
+    const m = item.main as Block | undefined
+    const b = item.branch as Block | undefined
+    if ((!m || m.deletedAt) && (!b || b.deletedAt)) continue // 양쪽 다 지운 블록 — 보일 것이 없다
+    const { side, discarded } = resolveItem(item, draft)
+    const block = pick<Block>(item, side)
+    const gone = !!block.deletedAt
+    if ((discarded || gone) && resultOnly) continue
+    // 지운 쪽을 골랐으면 살아 있는 쪽의 자리에 지운 표시를 둔다
+    const at = gone ? ((side === 'main' ? b : m) ?? block) : block
+    const vp = pages.get(at.pageId)
+    if (!vp) continue
+    vp.blocks.push({ item, block: gone ? { ...at, deletedAt: block.deletedAt } : block, side, discarded, gone })
+    if (item.cls !== 'common') vp.changes++
   }
   for (const item of s.plan.items) {
     if (item.kind !== 'el') continue
@@ -110,6 +140,67 @@ export function buildPages(s: { plan: MergePlan; main: DocFileV1; branch: DocFil
   const orderSide = orderMeta ? resolveMeta(orderMeta, draft) : 'main'
   const [primary, secondary] = orderSide === 'main' ? [s.main.doc.pageOrder, s.branch.doc.pageOrder] : [s.branch.doc.pageOrder, s.main.doc.pageOrder]
   return mergePageOrder(primary ?? [], secondary ?? [], new Set(pages.keys())).map((id) => pages.get(id)!)
+}
+
+/** 편집 블록 상자의 높이(pt) — 화면에서는 내용으로 정해지므로 대강 어림한다 */
+function blockHeight(b: Block): number {
+  const head = b.minimal ? 0 : 26
+  if (b.type === 'memo') {
+    if (b.data.collapsed) return Math.max(head, 26)
+    const perLine = Math.max(8, Math.floor((b.w - 20) / 9))
+    const lines = b.data.text.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0)
+    return head + 12 + Math.min(10, Math.max(1, lines)) * 18
+  }
+  if (b.type === 'todo') return head + 12 + Math.max(1, b.data.items.length) * 24
+  if (b.type === 'timer') return head + 40
+  return head + 30
+}
+const MEMO_FILL: Record<MemoColor, string> = { yellow: '#fff3b0', pink: '#ffd9e4', blue: '#d6e8ff', green: '#d6f3da' }
+
+/** 편집 블록을 상자로 — 이름과 내용 한 줄. px는 화면 1px의 페이지 단위 */
+function drawBlock(ctx: CanvasRenderingContext2D, v: ViewBlock, o: { alpha: number; outline: string | null; px: number }) {
+  const b = v.block
+  const h = blockHeight(b)
+  ctx.save()
+  ctx.globalAlpha = o.alpha
+  ctx.beginPath()
+  ctx.roundRect(b.x, b.y, b.w, h, 8)
+  if (v.gone) {
+    ctx.setLineDash([6 * o.px, 4 * o.px])
+    ctx.strokeStyle = '#8a8a93'
+    ctx.lineWidth = 1.5 * o.px
+    ctx.stroke()
+    ctx.setLineDash([])
+  } else {
+    if (!b.transparent) {
+      ctx.fillStyle = b.type === 'memo' ? MEMO_FILL[b.data.color] ?? MEMO_FILL.yellow : '#f5f5f7'
+      ctx.fill()
+    }
+    ctx.strokeStyle = '#c4c4cc'
+    ctx.lineWidth = 1 * o.px
+    ctx.stroke()
+  }
+  if (v.discarded) {
+    ctx.globalAlpha = Math.min(1, o.alpha + 0.3)
+    ctx.strokeStyle = ERASE_COLOR
+    ctx.lineWidth = 1.6 * o.px
+    ctx.stroke()
+  } else if (o.outline) {
+    ctx.globalAlpha = Math.min(1, o.alpha + 0.3)
+    ctx.strokeStyle = o.outline
+    ctx.lineWidth = 2.4 * o.px
+    ctx.stroke()
+  }
+  ctx.clip()
+  ctx.globalAlpha = o.alpha * (v.gone ? 0.7 : 1)
+  ctx.fillStyle = '#3a3a42'
+  ctx.textBaseline = 'middle'
+  ctx.font = '600 12px system-ui, sans-serif'
+  const name = (v.gone ? '지움 · ' : '') + BLOCK_NAME[b.type]
+  ctx.fillText(name, b.x + 10, b.y + 14)
+  ctx.font = '12px system-ui, sans-serif'
+  ctx.fillText(blockSnippet(b, 40), b.x + 10, b.y + 34)
+  ctx.restore()
 }
 
 /** 획 외곽선은 비싸다 — 같은 획 객체는 한 번만 만든다 */
@@ -143,8 +234,15 @@ interface Box {
   y1: number
 }
 
-function boxOf(els: ViewEl[], paged: boolean): Box | null {
+function boxOf(els: ViewEl[], paged: boolean, blocks: ViewBlock[] = []): Box | null {
   let b: Box | null = null
+  for (const v of blocks) {
+    const x0 = v.block.x
+    const y0 = v.block.y
+    const x1 = x0 + v.block.w
+    const y1 = y0 + blockHeight(v.block)
+    b = b ? { x0: Math.min(b.x0, x0), y0: Math.min(b.y0, y0), x1: Math.max(b.x1, x1), y1: Math.max(b.y1, y1) } : { x0, y0, x1, y1 }
+  }
   for (const v of els) {
     const s = v.placed.el
     if (s.type !== 'stroke') continue
@@ -181,7 +279,8 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   const frame = useMemo(() => {
     const b = boxOf(
       vp.els.map((v) => ({ ...v, move: undefined })),
-      !!vp.page.size
+      !!vp.page.size,
+      vp.blocks
     )
     if (vp.page.size) {
       const { w, h } = vp.page.size
@@ -200,7 +299,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
       w: b.x1 - b.x0 + pad * 2,
       h: Math.max(240, b.y1 - b.y0 + pad * 2)
     }
-  }, [vp.page.size, vp.els])
+  }, [vp.page.size, vp.els, vp.blocks])
   const height = Math.round((width * frame.h) / frame.w)
   // 캔버스 픽셀 상한 — 크게 확대해도 한 장이 너무 커지지 않게
   const dpr = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(12e6 / Math.max(1, width * height)))
@@ -285,6 +384,18 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
           ctx.stroke(path)
         }
         ctx.restore()
+      }
+      // 편집 블록은 획 위에 (편집 화면에서도 블록이 필기 위에 뜬다)
+      for (const v of vp.blocks) {
+        if (!props.visible[v.item.cls]) continue
+        let alpha = 1
+        if (props.focus === 'common' && v.item.cls !== 'common') alpha = 0
+        else if (v.discarded) alpha = props.resultOnly ? 0 : 0.3
+        else if (props.focus && props.focus !== v.item.cls) alpha = DIM_ALPHA
+        else if (glowing && v.item.cls === 'common' && props.focus !== 'common') alpha = DIM_ALPHA
+        if (alpha <= 0) continue
+        const outline = props.outline && v.item.cls !== 'common' && !props.resultOnly ? colorOf(v.item.cls) : null
+        drawBlock(ctx, v, { alpha, outline, px: dpr / scale })
       }
       drawOverlay()
       drawGlow()
