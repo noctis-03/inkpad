@@ -15,6 +15,7 @@ import { alignWithCloud, discardLocalChanges, pushOneNote } from '../sync/sync'
 import { closePdf, type PDFDocumentProxy } from '../engine/pdf/pdfjs'
 import { Icon } from './Icon'
 import { PageCanvas, buildPages, type ViewPage } from './merge/MergeCanvas'
+import { TextDiffList, buildTextRows, type TextChange } from './merge/TextMerge'
 
 /** 비교 화면에서 고를 수 있는 동작 */
 export type ChangeAction = 'discard' | 'align' | 'push'
@@ -40,6 +41,10 @@ const noop = () => {}
 const VISIBLE = { common: true, mainOnly: true, branchOnly: true, modified: true }
 /** 지운 획은 빨강 (머지 화면의 출처 색은 주황 그대로 — 거기서 빨강은 지우개) */
 const CHANGE_COLORS = { mainOnly: '#e5484d' }
+/** 문서 블록 — 지운 블록은 지운 표식이 남아 '양쪽에 있는데 다름'으로 분류되므로 색을 바뀐 종류로 고른다 (획 비교와 같은 색) */
+const TEXT_CHANGE_COLORS: Partial<Record<TextChange, string>> = { mainOnly: '#e5484d', delBranch: '#e5484d', branchOnly: '#2f6fe0', delMain: '#2f6fe0' }
+const changeText = (c: TextChange) =>
+  c === 'branchOnly' || c === 'delMain' ? '새로 씀' : c === 'mainOnly' || c === 'delBranch' ? '지움' : c === 'edited' ? '고침' : ''
 
 function ChangesView({ docId, title, actions }: Opened) {
   const [lc, setLc] = useState<LocalChanges | null | undefined>(undefined)
@@ -80,11 +85,18 @@ function ChangesView({ docId, title, actions }: Opened) {
     return () => window.removeEventListener('keydown', onKey)
   }, [busy])
 
+  const isText = lc?.local.doc.mode === 'text'
   const pages: ViewPage[] = useMemo(() => {
-    if (!lc) return []
+    if (!lc || isText) return []
     const all = buildPages({ plan: lc.plan, main: lc.base, branch: lc.local }, emptyDraft(), false)
     return allPages ? all : all.filter((p) => p.changes > 0)
-  }, [lc, allPages])
+  }, [lc, allPages, isText])
+  // 문서(text 모드) — 블록 목록 (main = 마지막으로 맞춘 기준본, 브랜치 = 이 기기)
+  const textRows = useMemo(() => {
+    if (!lc || !isText) return []
+    const all = buildTextRows(lc.plan, emptyDraft(), false)
+    return allPages ? all : all.filter((r) => r.item.cls !== 'common')
+  }, [lc, allPages, isText])
 
   const run = async (a: ChangeAction) => {
     setBusy(true)
@@ -127,23 +139,26 @@ function ChangesView({ docId, title, actions }: Opened) {
           {lc && lc.total === 0 && <span className="hint">마지막 동기화 이후 이 기기에서 바꾼 것이 없습니다.</span>}
           {lc && lc.total > 0 && (
             <>
-              <span className="changes-chip add">새로 쓴 획 +{lc.added}</span>
-              <span className="changes-chip del">지운 획 −{lc.removed}</span>
-              {lc.modified > 0 && <span className="changes-chip mod">고친 획 {lc.modified}</span>}
-              {lc.other > 0 && <span className="changes-chip">페이지·블록·제목 {lc.other}</span>}
+              <span className="changes-chip add">새로 쓴 {lc.unit} +{lc.added}</span>
+              <span className="changes-chip del">지운 {lc.unit} −{lc.removed}</span>
+              {lc.modified > 0 && <span className="changes-chip mod">고친 {lc.unit} {lc.modified}</span>}
+              {lc.other > 0 && <span className="changes-chip">{isText ? '제목·카테고리' : '페이지·블록·제목'} {lc.other}</span>}
               <label className="changes-all">
-                <input type="checkbox" checked={allPages} onChange={(e) => setAllPages(e.target.checked)} /> 모든 페이지
+                <input type="checkbox" checked={allPages} onChange={(e) => setAllPages(e.target.checked)} /> {isText ? '바뀌지 않은 블록도' : '모든 페이지'}
               </label>
             </>
           )}
         </div>
         {lc && lc.total > 0 && (
           <p className="changes-legend">
-            빛나는 테두리 — <i className="add" /> 새로 쓴 획(버리거나 덮으면 사라짐) <i className="del" /> 지운 획(버리거나 덮으면 돌아옴) <i className="mod" /> 고친 획
+            {isText ? '왼쪽 색 줄' : '빛나는 테두리'} — <i className="add" /> 새로 쓴 {lc.unit}(버리거나 덮으면 사라짐) <i className="del" /> 지운 {lc.unit}(버리거나 덮으면 돌아옴) <i className="mod" /> 고친 {lc.unit}
           </p>
         )}
 
         <div className="sheet-scroll changes-pages" ref={scroller}>
+          {isText && (
+            <TextDiffList rows={textRows} sideName={(side) => (side === 'main' ? '마지막 동기화' : '이 기기')} changeLabel={changeText} changeColors={TEXT_CHANGE_COLORS} />
+          )}
           {width > 0 &&
             pages.map((p, i) => (
               <section key={p.id} className="merge-page">

@@ -8,6 +8,14 @@ import { normalizeBlockUrl } from '../../engine/blocks'
 import { db } from '../../storage/db'
 import { loadTextBlocks, putThumbnail, saveTextBatch, updateDocument } from '../../storage/repo'
 import { acquireDocLock, releaseDocLock } from '../../storage/tabLock'
+import { registerOpenDoc, whenDocIdle } from '../../storage/docGuard'
+import { REMOTE_EVENT } from '../../sync/sync'
+import { scheduleUnchangedCheck } from '../../sync/unchanged'
+import { remindOnLeave } from '../../app/syncReminders'
+import { NoteSyncChip } from '../editor/NoteSyncChip'
+import { VersionPanel } from '../editor/VersionPanel'
+import { SettingsPanel } from '../SettingsPanel'
+import { SyncPanel } from '../SyncSection'
 import { emitThumbsChanged } from '../../io/docThumb'
 import { trackRecentDoc } from '../../shared/recentDocs'
 import { plainText } from '../../shared/richText'
@@ -75,7 +83,17 @@ export function TextEditor({ docId }: { docId: ID }) {
   const [error, setError] = useState<string | null>(null)
   const [access, setAccess] = useState<'pending' | 'edit' | 'read'>('pending')
   const readOnly = access === 'read'
+  const accessRef = useRef(access)
+  accessRef.current = access
   const gone = useRef<Promise<void>>(Promise.resolve())
+  /** 동기화가 이 문서를 바꾸면 내렸다가(suspended) DB에서 다시 연다(epoch) — 노트 편집 화면과 같은 노트 보호 */
+  const [epoch, setEpoch] = useState(0)
+  const [suspended, setSuspended] = useState(false)
+  const modelRef = useRef<TextDocModel | null>(null)
+  const skipThumb = useRef(false)
+  const panel = useUI((s) => s.panel)
+  const setPanel = useUI((s) => s.setPanel)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -129,14 +147,16 @@ export function TextEditor({ docId }: { docId: ID }) {
     }
   }, [docId, toast])
 
-  // 불러오기 / 정리
+  // 불러오기 / 정리 — 잠금 결과가 나온 뒤, 그리고 다시 열 때(epoch)마다
   useEffect(() => {
-    if (access === 'pending') return
+    if (access === 'pending' || suspended) return
     let disposed = false
     let m: TextDocModel | null = null
     ;(async () => {
       try {
-        await gone.current
+        await gone.current // 직전 모델이 마지막 변경을 기록할 때까지
+        await whenDocIdle(docId) // 동기화가 이 문서를 바꾸는 중이면 끝날 때까지
+        if (disposed) return
         const d = await db.documents.get(docId)
         if (!d || disposed) return void (!d && setError('문서를 찾을 수 없습니다.'))
         let blocks = await loadTextBlocks(docId)
@@ -147,7 +167,16 @@ export function TextEditor({ docId }: { docId: ID }) {
           if (access === 'edit') await saveTextBatch({ documentId: docId, upsert: blocks })
         }
         if (disposed) return
-        m = new TextDocModel(docId, blocks, saveTextBatch, access === 'read')
+        m = new TextDocModel(
+          docId,
+          blocks,
+          async (b) => {
+            await saveTextBatch(b)
+            // 되돌리기로 마지막 동기화 상태와 같아졌을 수도 있다 — 쉬었다가 한 번 본다 (노트와 같게)
+            scheduleUnchangedCheck(docId)
+          },
+          access === 'read'
+        )
         m.onSaveState = (s, err) => {
           useUI.setState({ saveState: s })
           if (s === 'error') {
@@ -157,6 +186,7 @@ export function TextEditor({ docId }: { docId: ID }) {
         }
         useUI.setState({ saveState: 'saved' })
         setDoc(d)
+        modelRef.current = m
         setModel(m)
         if (import.meta.env.DEV) (window as unknown as { inkpadText: TextDocModel }).inkpadText = m
       } catch (e) {
@@ -166,12 +196,15 @@ export function TextEditor({ docId }: { docId: ID }) {
     return () => {
       disposed = true
       const mm = m
+      const makeThumb = !skipThumb.current
+      skipThumb.current = false
+      modelRef.current = null
       setModel(null)
       if (!mm) return
       gone.current = (async () => {
         mm.destroy()
         await mm.flush()
-        if (mm.readOnly) return
+        if (mm.readOnly || !makeThumb) return
         // 카드 미리보기 — 제목과 앞쪽 블록 몇 줄
         const d = await db.documents.get(docId)
         const blob = await renderTextThumb(d?.title ?? '', mm.blocks).catch(() => null)
@@ -181,7 +214,49 @@ export function TextEditor({ docId }: { docId: ID }) {
         }
       })().catch((err) => console.warn('[text] 문서 화면 정리 중 오류', err))
     }
+  }, [docId, access, epoch, suspended])
+
+  // 노트 보호 등록 (storage/docGuard) — 동기화·버전 되돌리기가 이 문서를 바꿀 때 먼저 기록·멈추고, 끝나면 DB에서 다시 연다
+  useEffect(() => {
+    if (access !== 'edit') return
+    return registerOpenDoc(docId, {
+      flush: async () => {
+        await modelRef.current?.flush()
+      },
+      suspend: async () => {
+        const m = modelRef.current
+        if (m) {
+          const was = m.readOnly
+          m.readOnly = true // 입력을 막는다
+          m.commitTyping()
+          await m.flush()
+          if (m.hasPendingChanges) {
+            m.readOnly = was
+            throw new Error('편집 내용을 기기에 저장하지 못해 동기화를 멈췄습니다. 잠시 뒤 다시 시도해 주세요.')
+          }
+        }
+        skipThumb.current = true
+        setSuspended(true)
+      },
+      resume: () => {
+        setSuspended(false)
+        setEpoch((n) => n + 1)
+      }
+    })
   }, [docId, access])
+
+  // 읽기 전용(다른 탭이 편집 중·뷰어)은 원격 변경 알림을 받으면 바뀐 내용으로 다시 연다
+  useEffect(() => {
+    const onRemote = (ev: Event) => {
+      const ids = (ev as CustomEvent<Set<string>>).detail
+      if (!ids?.has(docId) || accessRef.current !== 'read') return
+      skipThumb.current = true
+      setEpoch((n) => n + 1)
+      toast('이 문서의 바뀐 내용을 다시 불러왔습니다.', 'info')
+    }
+    window.addEventListener(REMOTE_EVENT, onRemote)
+    return () => window.removeEventListener(REMOTE_EVENT, onRemote)
+  }, [docId, toast])
 
   // 백그라운드로 가거나 닫히면 바로 기록 (iPad는 뒤로 간 탭을 예고 없이 닫는다)
   useEffect(() => {
@@ -198,7 +273,12 @@ export function TextEditor({ docId }: { docId: ID }) {
 
   const leave = () => {
     useUI.setState({ returnDocId: docId })
+    if (!readOnly) remindOnLeave(docId, doc?.title ?? '')
     navigate(useUI.getState().returnRoute ?? { name: 'library' })
+  }
+  const run = (fn: () => void) => () => {
+    setMenu(null)
+    fn()
   }
 
   if (error) {
@@ -236,9 +316,43 @@ export function TextEditor({ docId }: { docId: ID }) {
               <span className="save-label">{SAVE_LABEL[saveState]}</span>
             </span>
           )}
+          {/* 이 문서의 동기화 상태 — 읽기 전용이면 내지 않는다 (노트와 같은 칩) */}
+          {doc && !readOnly && <NoteSyncChip docId={doc.id} title={doc.title} />}
+          <nav className="toolbar-group" aria-label="문서">
+            <button
+              className={'tb-btn' + (menu ? ' is-active' : '')}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setMenu((m) => (m ? null : { x: r.right, y: r.bottom }))
+              }}
+              aria-label="더보기"
+              aria-haspopup="menu"
+              aria-expanded={!!menu}
+            >
+              <Icon name="more" size={20} />
+            </button>
+          </nav>
         </div>
       </header>
-      {model && doc ? <DocBody model={model} doc={doc} readOnly={readOnly} onTitle={(t) => setDoc({ ...doc, title: t })} /> : <div className="doc-skeleton" role="status" aria-label="문서 여는 중" />}
+      {menu && (
+        <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />
+          <MenuItem icon="gear" label="설정" onClick={run(() => setPanel('settings'))} />
+          <MenuItem icon="cloud" label="동기화" onClick={run(() => setPanel('sync'))} />
+        </Menu>
+      )}
+      <div className="editor-body">
+        <div className="editor-area">
+          {model && doc ? (
+            <DocBody key={epoch} model={model} doc={doc} readOnly={readOnly} onTitle={(t) => setDoc({ ...doc, title: t })} />
+          ) : (
+            <div className="doc-skeleton" role="status" aria-label={suspended ? '동기화로 문서를 맞추는 중' : '문서 여는 중'} />
+          )}
+          {panel === 'settings' && <SettingsPanel />}
+          {panel === 'sync' && <SyncPanel />}
+          {panel === 'history' && <VersionPanel docId={docId} />}
+        </div>
+      </div>
     </div>
   )
 }

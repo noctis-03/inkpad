@@ -7,7 +7,7 @@
 //
 // main의 신원은 세대 번호(gen)가 아니라 쓸 때마다 새로 뽑는 mid로 판정한다. 두 기기가 같은 세대에서
 // 동시에 따라가면 둘 다 gen+1을 쓰므로 번호만으로는 덮인 것을 알 수 없다.
-import type { Block, Element, ID, Page } from '../shared/model'
+import type { Block, Element, ID, Page, TextBlock } from '../shared/model'
 import type { DocFileV1 } from './pack'
 
 // ───────── 파일 표식 ─────────
@@ -88,6 +88,8 @@ export const elementSig = (pageId: ID, key: string, el: Element) => j([pageId, k
 /** 저장할 때마다 다시 찍히는 updatedAt·version은 내용이 아니다 */
 export const pageSig = (p: Page) => j({ ...p, updatedAt: 0, version: 0 })
 export const blockSig = (b: Block) => j(b)
+/** 문서 블록 — 저장할 때마다 다시 찍히는 updatedAt은 내용이 아니다 (지운 표식 deletedAt은 내용이다 — 지운 것도 고친 것) */
+export const textBlockSig = (b: TextBlock) => j({ ...b, updatedAt: 0, deletedAt: b.deletedAt ? 1 : undefined })
 
 const DOC_FIELDS = ['title', 'category', 'mode', 'pageOrder'] as const
 
@@ -116,6 +118,11 @@ export function computeModified(base: DocFileV1, local: DocFileV1): Record<strin
   for (const blk of local.blocks ?? []) {
     const b = baseBlocks.get(blk.id)
     if (b !== undefined && b !== blockSig(blk)) out['block:' + blk.id] = shortHash(b)
+  }
+  const baseText = new Map((base.textBlocks ?? []).map((b) => [b.id, textBlockSig(b)]))
+  for (const tb of local.textBlocks ?? []) {
+    const b = baseText.get(tb.id)
+    if (b !== undefined && b !== textBlockSig(tb)) out['tblock:' + tb.id] = shortHash(b)
   }
   for (const f of DOC_FIELDS) {
     const b = j(base.doc[f] ?? null)

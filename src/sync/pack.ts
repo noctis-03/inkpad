@@ -1,6 +1,6 @@
-import { type Asset, type Block, type DocumentMeta, type Element, type ID, type Page } from '../shared/model'
+import { type Asset, type Block, type DocumentMeta, type Element, type ID, type Page, type TextBlock } from '../shared/model'
 import { db } from '../storage/db'
-import { loadBlocks, loadDocument } from '../storage/repo'
+import { loadBlocks, loadDocument, loadTextBlocks } from '../storage/repo'
 
 // 문서 ↔ Drive JSON 파일 변환 — 문서 1개 = 파일 1개
 // - 문서 파일: 문서 메타(folderId 제외·category 포함) + 페이지 + 청크(획 = 디코드된 좌표 배열) + 참조 에셋 메타
@@ -36,6 +36,8 @@ export interface DocFileV1 {
   chunks: { pageId: ID; key: string; elements: Element[] }[]
   /** 편집 블록 (tombstone 포함). 블록 기능 이전 클라이언트가 올린 파일엔 없다(선택 필드) */
   blocks?: Block[]
+  /** 문서(text 모드)의 블록 (tombstone 포함 — 블록 단위 머지에 필요). 문서가 아니거나 옛 클라이언트 파일엔 없다 */
+  textBlocks?: TextBlock[]
   assets: AssetMeta[]
   /** 리비전 표식 — 버전 기록의 기기명·머지됨·버려짐 표시에 쓴다 (옛 파일엔 없다) */
   rev?: RevMarker
@@ -45,6 +47,7 @@ export interface DocFileV1 {
 export async function packDocument(id: ID): Promise<DocFileV1> {
   const { doc, pages, sheets, chunks } = await loadDocument(id)
   const blocks = await loadBlocks(id, { includeDeleted: true }) // tombstone까지 포함 — 머지에 필요하다
+  const textBlocks = doc.mode === 'text' ? await loadTextBlocks(id, { includeDeleted: true }) : undefined
   const assetIds = new Set<ID>()
   for (const p of pages) if (p.pdf) assetIds.add(p.pdf.assetId)
   for (const c of chunks) {
@@ -76,6 +79,7 @@ export async function packDocument(id: ID): Promise<DocFileV1> {
     pages: [...pages, ...sheets], // 보조 용지는 pageOrder에 없는 Page (sheet 필드)
     chunks,
     blocks,
+    ...(textBlocks ? { textBlocks } : {}),
     assets
   }
 }

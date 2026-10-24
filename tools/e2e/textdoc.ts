@@ -1,5 +1,5 @@
 // 문서(text 모드): 새로 만들기 → 블록 편집(마크다운 단축키·나누기·합치기·들여쓰기·슬래시·번호·할 일·토글·되돌리기·서식·붙여넣기·끌기·메뉴)
-// → 저장·다시 열기·HTML 정리 → 카드 → 동기화 제외 → .inkpad 왕복
+// → 저장·다시 열기·HTML 정리 → 카드 → 동기화 대상 → .inkpad 왕복
 import type { Page } from 'playwright'
 import { device, sleep, type Ctx } from './lib.ts'
 
@@ -218,14 +218,14 @@ export default async function textdoc(ctx: Ctx) {
   const meta = await p.evaluate(() => document.body.innerText.includes('문서 ·'))
   check('카드 메타에 "문서"', meta)
 
-  // ── 동기화 제외 (이번 단계) ──
+  // ── 동기화 대상 (노트와 같게) ──
   const sync = await p.evaluate(async (id) => {
     const s = await import('/src/sync/sync.ts')
     const plan = await s.planPush()
     const states = await s.cardSyncStates()
     return { inPlan: plan.docs.some((d: { docId: string }) => d.docId === id), dot: states.has(id) }
   }, docId)
-  check('문서는 아직 올리기·카드 점에서 빠짐', !sync.inPlan && !sync.dot, JSON.stringify(sync))
+  check('문서도 올릴 것·카드 점에 들어감', sync.inPlan && sync.dot, JSON.stringify(sync))
 
   // ── .inkpad 왕복 ──
   const round = await p.evaluate(async (id) => {

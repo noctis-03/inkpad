@@ -59,6 +59,8 @@ export function VersionPanel({ docId }: { docId: ID }) {
   const [docUpdatedAt, setDocUpdatedAt] = useState<number | null>(null)
   const [myDevice, setMyDevice] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
+  /** 증감을 세는 단위 — 노트는 획, 문서(text 모드)는 블록 */
+  const [unit, setUnit] = useState<'획' | '블록'>('획')
 
   useEffect(() => {
     void getDeviceName().then(setMyDevice)
@@ -70,6 +72,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
     const [cur, doc, snapList] = await Promise.all([getSync<CurMarker>(`curRev:${docId}`), db.documents.get(docId), listSnapshots(docId)])
     setMarker(cur ?? null)
     setDocUpdatedAt(doc?.updatedAt ?? null)
+    setUnit(doc?.mode === 'text' ? '블록' : '획')
     setSnaps(snapList)
     try {
       const [list, br] = await Promise.all([listDocRevisions(docId), listDocBranches(docId).catch(() => [] as DocBranch[])])
@@ -108,7 +111,9 @@ export function VersionPanel({ docId }: { docId: ID }) {
     setPreview({ key, loading: true })
     try {
       const file = await loadVersionFile(docId, ref)
-      const ids = (f: { chunks: { elements: { id: string }[] }[] }) => new Set(f.chunks.flatMap((c) => c.elements.map((e) => e.id)))
+      // 노트는 획, 문서는 살아 있는 블록으로 센다
+      const ids = (f: { chunks: { elements: { id: string }[] }[]; textBlocks?: { id: string; deletedAt?: number }[] }) =>
+        new Set([...f.chunks.flatMap((c) => c.elements.map((e) => e.id)), ...(f.textBlocks ?? []).filter((b) => !b.deletedAt).map((b) => b.id)])
       const there = ids(file)
       const here = ids(await packDocument(docId).catch(() => ({ chunks: [] })))
       const blob = await renderFilePreview(file).catch(() => null)
@@ -207,7 +212,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
           <>
             {preview.url ? <img src={preview.url} alt="첫 페이지 미리보기" /> : <span className="hint">그릴 수 있는 첫 페이지가 없습니다.</span>}
             <span className="rev-diff">
-              지금 이 기기 대비 <b className="plus">획 +{preview.added}</b> <b className="minus">−{preview.removed}</b>
+              지금 이 기기 대비 <b className="plus">{unit} +{preview.added}</b> <b className="minus">−{preview.removed}</b>
             </span>
           </>
         )}
@@ -355,7 +360,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
                     <span className="rev-time">{when}</span>
                     <span className="rev-tags">
                       <span className="rev-tag restored">{WHY_LABEL[s.why]}</span>
-                      <span className="rev-size">획 {s.strokes}</span>
+                      <span className="rev-size">{unit} {s.strokes}</span>
                       <span className="rev-size">{formatBytesShort(s.size)}</span>
                     </span>
                   </div>

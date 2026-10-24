@@ -18,9 +18,11 @@ export interface LocalChanges {
   removed: number
   /** 옮기거나 색을 바꾼 획 */
   modified: number
-  /** 페이지·블록·제목 등 그 밖의 바뀐 것 */
+  /** 페이지·블록·제목 등 그 밖의 바뀐 것 (문서는 제목·카테고리) */
   other: number
   total: number
+  /** 센 단위 — 노트는 획, 문서(text 모드)는 블록 */
+  unit: '획' | '블록'
 }
 
 /** 기준본이 없으면(한 번도 맞춘 적 없는 노트) null */
@@ -29,9 +31,26 @@ export async function localChanges(docId: ID): Promise<LocalChanges | null> {
   if (!base) return null
   const local = await packDocument(docId)
   const plan = classify(base, local, { modified: computeModified(base, local), hasBase: true, prefer: 'branch' })
+  if (local.doc.mode === 'text') {
+    // 문서(text 모드)는 블록으로 센다 — 지운 블록은 지운 표식(deletedAt)이 남아 '양쪽에 있는데 다름'으로 분류된다
+    let added = 0
+    let removed = 0
+    let modified = 0
+    for (const i of plan.items) {
+      if (i.kind !== 'tblock' || i.cls === 'common') continue
+      const m = i.main as { deletedAt?: number } | undefined
+      const l = i.branch as { deletedAt?: number } | undefined
+      if ((!m || m.deletedAt) && (!l || l.deletedAt)) continue // 맞춘 뒤 만들었다 지운 블록 — 보일 것이 없다
+      if (i.cls === 'branchOnly' || (m?.deletedAt && !l?.deletedAt)) added++
+      else if (i.cls === 'mainOnly' || (l?.deletedAt && !m?.deletedAt)) removed++
+      else modified++
+    }
+    const other = plan.meta.length
+    return { base, local, plan, added, removed, modified, other, total: added + removed + modified + other, unit: '블록' }
+  }
   const added = plan.counts.branchOnly
   const removed = plan.counts.mainOnly
   const modified = plan.counts.modified
   const other = plan.items.filter((i) => i.kind !== 'el' && i.cls !== 'common').length + plan.meta.length
-  return { base, local, plan, added, removed, modified, other, total: added + removed + modified + other }
+  return { base, local, plan, added, removed, modified, other, total: added + removed + modified + other, unit: '획' }
 }

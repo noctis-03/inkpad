@@ -232,16 +232,9 @@ interface PendingDoc {
   seqs: number[]
 }
 
-/**
- * 문서(text 모드)는 아직 동기화하지 않는다 — 블록 머지를 갖춘 다음 단계에서 연다.
- * 올릴 것·카드 점·'로컬에만 있는 노트' 목록에서 모두 뺀다 (outbox 행은 남겨 두어 그때 함께 올라가게 한다).
- */
-const notSyncedYet = (d: { mode?: string } | undefined) => d?.mode === 'text'
-
 async function pendingDocs(): Promise<Map<ID, PendingDoc>> {
   const rows = await db.outbox.toArray()
   const docs = new Map<ID, PendingDoc>()
-  const textDocs = new Set((await db.documents.toArray()).filter(notSyncedYet).map((d) => d.id))
   for (const r of rows) {
     if (r.entity === 'asset') continue
     let docId: ID | undefined
@@ -252,7 +245,6 @@ async function pendingDocs(): Promise<Map<ID, PendingDoc>> {
       docId = (await db.chunks.get([r.entityId.slice(0, i), r.entityId.slice(i + 1)]))?.documentId
     }
     if (!docId) continue // 대상 행이 이미 정리됨(영구 삭제 등)
-    if (textDocs.has(docId)) continue
     const e = docs.get(docId) ?? { seqs: [] }
     e.seqs.push(r.seq!)
     docs.set(docId, e)
@@ -292,7 +284,6 @@ export async function cardSyncStates(): Promise<Map<ID, CardSyncState>> {
   const out = new Map<ID, CardSyncState>()
   for (const d of docs) {
     if (d.deletedAt) continue // 휴지통 노트는 점을 달지 않는다
-    if (notSyncedYet(d)) continue
     out.set(d.id, await cardStateOf(d.id, pending.has(d.id), cache))
   }
   return out
@@ -304,7 +295,7 @@ const getCloudStatesCache = () => getSync<CloudStatesCache>('cloudStates')
 /** 노트 하나의 카드 상태 (편집 화면의 노트 칩) — 네트워크 없음 */
 export async function noteCardState(docId: ID): Promise<CardSyncState | null> {
   const d = await db.documents.get(docId)
-  if (!d || d.deletedAt || notSyncedYet(d)) return null
+  if (!d || d.deletedAt) return null
   return cardStateOf(docId, (await pendingSeqsFor(docId)).length > 0, await getCloudStatesCache())
 }
 
@@ -911,7 +902,6 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
   // 로컬에만 있는 노트 — Drive 목록만으로는 보이지 않는다
   for (const doc of await db.documents.toArray()) {
     if (byDoc.has(doc.id)) continue // Drive에 있다 — 위에서 판정했다
-    if (notSyncedYet(doc)) continue
     if (doc.deletedAt) continue // 휴지통에 있는 노트는 목록에 내지 않는다
     if (doc.category && hidden.has(doc.category)) continue // 숨긴 카테고리 — 받기 규칙과 같게 (규칙 9)
     const rec = await getSync<FileRecord>(`doc:${doc.id}`)

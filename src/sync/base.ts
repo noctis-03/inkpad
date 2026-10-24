@@ -62,7 +62,7 @@ export async function baseSummary(docId: ID): Promise<string | null> {
   const summary = summarize(
     file.doc.pageOrder,
     file.chunks.map((c) => [`${c.pageId}|${c.key}`, c.elements.length] as [string, number]),
-    file.blocks?.length ?? 0
+    (file.blocks?.length ?? 0) + (file.textBlocks?.length ?? 0) // 문서 블록도 함께 센다 (tombstone 포함 — 로컬 요약과 같게)
   )
   summaryCache.set(docId, { key, summary })
   return summary
