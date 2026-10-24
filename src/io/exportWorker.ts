@@ -1,7 +1,27 @@
 /// <reference lib="webworker" />
 // PDF 내보내기 Worker: 원본 PDF 페이지 위에 필기를 벡터 경로로 합친다.
-import { PDFDocument, rgb, degrees, EncryptedPDFError, type PDFEmbeddedPage } from 'pdf-lib'
-import type { ExportJob, WorkerOut } from './exportTypes'
+import { PDFDocument, rgb, degrees, EncryptedPDFError, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, type PDFEmbeddedPage, type PDFPage } from 'pdf-lib'
+import type { ExportJob, ExportPath, ExportPattern, WorkerOut } from './exportTypes'
+
+/** 속지 무늬. (ox, oy) = 그 종이의 왼쪽 위(PDF 페이지 위쪽 기준), H = PDF 페이지 높이 */
+function drawPattern(page: PDFPage, g: ExportPattern, ox: number, oy: number, H: number) {
+  for (const [x1, y1, x2, y2] of g.lines) {
+    page.drawLine({ start: { x: ox + x1, y: H - oy - y1 }, end: { x: ox + x2, y: H - oy - y2 }, thickness: g.lineWidth, color: rgb(...g.color) })
+  }
+  for (const [x, y] of g.dots) page.drawCircle({ x: ox + x, y: H - oy - y, size: g.dotRadius, color: rgb(...g.color) })
+  if (g.accent) {
+    for (const [x1, y1, x2, y2] of g.accent.lines) {
+      page.drawLine({ start: { x: ox + x1, y: H - oy - y1 }, end: { x: ox + x2, y: H - oy - y2 }, thickness: g.accent.width, color: rgb(...g.accent.color) })
+    }
+  }
+}
+
+function drawPaths(page: PDFPage, paths: ExportPath[], ox: number, oy: number, H: number) {
+  for (const path of paths) {
+    // drawSvgPath는 SVG 좌표(y 아래로)를 (x, y) 기준으로 뒤집어 그린다
+    page.drawSvgPath(path.d, { x: ox, y: H - oy, color: rgb(path.r, path.g, path.b), opacity: path.a, borderWidth: 0 })
+  }
+}
 
 const post = (m: WorkerOut, transfer?: Transferable[]) => (self as unknown as Worker).postMessage(m, transfer ?? [])
 
@@ -42,38 +62,49 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
     // 3) 페이지 조립
     let done = 0
     for (const p of job.pages) {
-      const page = out.addPage([p.w, p.h])
-      if (p.paper) page.drawRectangle({ x: 0, y: 0, width: p.w, height: p.h, color: rgb(...p.paper) })
+      // 보조 용지를 함께 내보내면 PDF 페이지가 넓어지고 원래 페이지는 (ox, oy)에 놓인다
+      const H = p.frame?.h ?? p.h
+      const ox = p.frame?.ox ?? 0
+      const oy = p.frame?.oy ?? 0
+      const x0 = ox
+      const y0 = H - oy - p.h // 원래 페이지의 왼쪽 아래 (PDF 좌표)
+      const page = out.addPage([p.frame?.w ?? p.w, H])
+      if (p.paper) page.drawRectangle({ x: x0, y: y0, width: p.w, height: p.h, color: rgb(...p.paper) })
       if (p.raster) {
         const img = await out.embedJpg(p.raster.jpeg)
-        page.drawImage(img, { x: 0, y: 0, width: p.w, height: p.h })
+        page.drawImage(img, { x: x0, y: y0, width: p.w, height: p.h })
       } else if (p.pdf) {
         const src = srcDocs.get(p.pdf.assetId)!
         const emb = embedded.get(`${p.pdf.assetId}:${p.pdf.pageIndex}`)!
         const rot = (((src.getPage(p.pdf.pageIndex).getRotation().angle + p.pdf.rotation) % 360) + 360) % 360
-        const W = emb.width
-        const H = emb.height
         // /Rotate는 시계 방향 표시 회전. drawPage의 rotate는 (x, y) 기준 반시계 회전
-        if (rot === 90) page.drawPage(emb, { x: 0, y: W, rotate: degrees(-90) })
-        else if (rot === 180) page.drawPage(emb, { x: W, y: H, rotate: degrees(180) })
-        else if (rot === 270) page.drawPage(emb, { x: H, y: 0, rotate: degrees(90) })
-        else page.drawPage(emb, { x: 0, y: 0 })
+        const EW = emb.width
+        const EH = emb.height
+        if (rot === 90) page.drawPage(emb, { x: x0, y: y0 + EW, rotate: degrees(-90) })
+        else if (rot === 180) page.drawPage(emb, { x: x0 + EW, y: y0 + EH, rotate: degrees(180) })
+        else if (rot === 270) page.drawPage(emb, { x: x0 + EH, y: y0, rotate: degrees(90) })
+        else page.drawPage(emb, { x: x0, y: y0 })
       }
-      if (p.pattern) {
-        const g = p.pattern
-        for (const [x1, y1, x2, y2] of g.lines) {
-          page.drawLine({ start: { x: x1, y: p.h - y1 }, end: { x: x2, y: p.h - y2 }, thickness: g.lineWidth, color: rgb(...g.color) })
-        }
-        for (const [x, y] of g.dots) page.drawCircle({ x, y: p.h - y, size: g.dotRadius, color: rgb(...g.color) })
-        if (g.accent) {
-          for (const [x1, y1, x2, y2] of g.accent.lines) {
-            page.drawLine({ start: { x: x1, y: p.h - y1 }, end: { x: x2, y: p.h - y2 }, thickness: g.accent.width, color: rgb(...g.accent.color) })
-          }
-        }
-      }
-      for (const path of p.paths) {
-        // drawSvgPath는 SVG 좌표(y 아래로)를 (x, y) 기준으로 뒤집어 그린다
-        page.drawSvgPath(path.d, { x: 0, y: p.h, color: rgb(path.r, path.g, path.b), opacity: path.a, borderWidth: 0 })
+      if (p.pattern) drawPattern(page, p.pattern, ox, oy, H)
+      drawPaths(page, p.paths, ox, oy, H)
+      // 보조 용지 (z순): 종이 → 무늬 → 테두리 → 용지 안으로 자른 필기
+      for (const s of p.sheets ?? []) {
+        const sy0 = H - s.y - s.h
+        if (s.paper) page.drawRectangle({ x: s.x, y: sy0, width: s.w, height: s.h, color: rgb(...s.paper) })
+        if (s.pattern) drawPattern(page, s.pattern, s.x, s.y, H)
+        page.drawRectangle({
+          x: s.x,
+          y: sy0,
+          width: s.w,
+          height: s.h,
+          borderWidth: 0.6,
+          borderColor: s.border === 'dashed' ? rgb(0.45, 0.58, 0.85) : rgb(0.78, 0.78, 0.78),
+          borderDashArray: s.border === 'dashed' ? [4, 3] : undefined
+        })
+        if (!s.paths.length) continue
+        page.pushOperators(pushGraphicsState(), rectangle(s.x, sy0, s.w, s.h), clip(), endPath())
+        drawPaths(page, s.paths, s.x, s.y, H)
+        page.pushOperators(popGraphicsState())
       }
       done++
       if (done % 5 === 0 || done === job.pages.length) post({ type: 'progress', done, total: job.pages.length })

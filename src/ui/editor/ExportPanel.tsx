@@ -17,6 +17,11 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
   const [range, setRange] = useState<'all' | 'current' | 'custom'>('all')
   const [custom, setCustom] = useState('')
   const [pattern, setPattern] = useState(true)
+  // 보조 용지는 페이지가 아니라 기본은 빼고 내보낸다. 붙은(snap) 용지만 넣을 수 있다
+  const [withSheets, setWithSheets] = useState(false)
+  useSyncExternalStore(engine.subscribeSheets, engine.sheetsVersion)
+  const snapped = engine.sheets.filter((s) => s.sheet!.snap).length
+  const floating = engine.sheets.length - snapped
   // 살아 있는 블록 수 — 1개 이상이면 PDF 섹션에 제외 안내를 표시한다
   const blockCount = useSyncExternalStore(engine.blocks.subscribe, () => engine.blocks.list().length)
   const paged = doc.mode === 'paged'
@@ -35,6 +40,7 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
       const blob = await exportDocumentPdf(doc.id, {
         pageIndices,
         includePattern: pattern,
+        includeSheets: withSheets,
         askPassword: askPdfPassword,
         onProgress: (d, t, phase) => setBusy({ text: phase, progress: t ? d / t : undefined })
       })
@@ -101,6 +107,20 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
               <span className="setting-label">속지 무늬 포함</span>
               <input type="checkbox" className="switch" checked={pattern} onChange={(e) => setPattern(e.target.checked)} />
             </label>
+            {engine.sheets.length > 0 && (
+              <>
+                <label className="setting-row">
+                  <span className="setting-label">보조 용지 포함</span>
+                  <input type="checkbox" className="switch" checked={withSheets} disabled={!snapped} onChange={(e) => setWithSheets(e.target.checked)} />
+                </label>
+                <p className="hint">
+                  {snapped
+                    ? `페이지에 붙은 용지 ${snapped}장을 페이지 옆에 붙여 넓은 페이지로 내보냅니다.`
+                    : '페이지에 붙은 용지가 없습니다. 용지를 페이지 왼쪽·오른쪽에 붙이면 함께 내보낼 수 있습니다.'}
+                  {floating > 0 && ` 떠 있는 용지 ${floating}장은 넣지 않습니다.`}
+                </p>
+              </>
+            )}
           </>
         )}
         <button id="export-pdf-btn" className="primary-btn full" onClick={exportPdf}>
