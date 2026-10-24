@@ -72,6 +72,20 @@ export default async function sheets(ctx: Ctx) {
   check('용지는 페이지 수에 들지 않음', (await p.evaluate(() => (window as unknown as W).inkpad.pages.length)) === 2)
   check('제목 줄이 보임', (await p.locator(`.sheet-frame[data-sheet-id="${id}"] .sheet-head`).count()) === 1)
 
+  // ── 제목 줄은 배율을 따라 커지고 작아진다 (폭 = 용지 폭, 높이도 같은 비율) ──
+  const headBox = () => p.locator(`.sheet-frame[data-sheet-id="${id}"] .sheet-head`).boundingBox()
+  const z0 = await p.evaluate(() => (window as unknown as W).inkpad.cam.zoom as number)
+  const hb0 = (await headBox())!
+  await eng('zoomBy', 2)
+  await sleep(100)
+  const z1 = await p.evaluate(() => (window as unknown as W).inkpad.cam.zoom as number)
+  const hb1 = (await headBox())!
+  const k = z1 / z0
+  check('제목 줄 폭 = 용지 폭 × 배율', Math.abs(hb0.width - r.w * z0) < 1 && Math.abs(hb1.width - r.w * z1) < 1, JSON.stringify([hb0.width, r.w * z0, hb1.width, r.w * z1]))
+  check('확대하면 제목 줄 높이도 같은 비율로 커짐', Math.abs(hb1.height / hb0.height - k) < 0.05, JSON.stringify([hb0.height, hb1.height, k]))
+  await eng('zoomBy', 0.5)
+  await sleep(100)
+
   // ── 필기: 용지 위 획은 용지 소속 ──
   await draw(await screen(r.x + 40, r.y + 120), await screen(r.x + 220, r.y + 160))
   check('용지 위 획 → 용지 소속', (await strokePages()).filter((x) => x === id).length === 1)
@@ -124,6 +138,17 @@ export default async function sheets(ctx: Ctx) {
   const w1 = (await sheetOf(id)).size
   check('모서리 끌기 → 폭·높이 변경', w1.w > w0.w + 50 && w1.h < w0.h - 100, JSON.stringify([w0, w1]))
   check('…붙은 채로', (await sheetOf(id)).sheet.snap === 'right')
+  check('…맞출 크기에서 멀면 그대로 (붙지 않음)', Math.abs(w1.w - (w0.w + 70 / zoom)) < 0.6 && Math.abs(w1.h - (w0.h - 140 / zoom)) < 0.6, JSON.stringify([w0, w1, zoom]))
+
+  // ── 크기 붙기: 페이지 폭 절반·페이지 높이 가까이(화면 18px 안) 놓으면 딱 맞춘다 ──
+  {
+    const want = { w: p0.w / 2 + 8, h: p0.h - 12 } // 각각 8pt·12pt 모자라게/넘치게 (배율 0.7에서 화면 6~8px)
+    await dragEl(`.sheet-frame[data-sheet-id="${id}"] .sheet-resize`, (want.w - w1.w) * zoom, (want.h - w1.h) * zoom)
+    const w2 = (await sheetOf(id)).size
+    check('크기 조절이 페이지 폭 절반·페이지 높이에 붙음', w2.w === Math.round((p0.w / 2) * 100) / 100 && w2.h === p0.h, JSON.stringify([w2, p0.w / 2, p0.h]))
+    await eng('undo')
+    check('…Undo → 붙기 전 크기', (await sheetOf(id)).size.w === w1.w && (await sheetOf(id)).size.h === w1.h)
+  }
 
   // ── 제목 ──
   const hb = (await p.locator(head).boundingBox())!
@@ -206,7 +231,7 @@ export default async function sheets(ctx: Ctx) {
     const e = (window as unknown as W).inkpad
     e.cam.zoom = 0.7
     e.cam.x = -340
-    e.cam.y = y + 400
+    e.cam.y = y + 300 // 제목 줄이 떠 있는 도구 막대 아래로 가지 않게
     e.zoomBy(1)
   }, p0.y)
   await sleep(150)

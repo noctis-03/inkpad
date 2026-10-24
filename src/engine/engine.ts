@@ -106,10 +106,25 @@ const clampBlockRel = (v: number, max: number) => Math.min(Math.max(v, -BLOCK_MA
 const SHEET_SNAP_PX = 18
 /** 새 보조 용지 폭(pt) — 페이지보다 넓지 않게 */
 const SHEET_DEFAULT_W = 320
+// 소수 둘째 자리까지 — 페이지 크기(예: A4 595.28×841.89)에 딱 맞출 수 있게
 const clampSheetSize = (w: number, h: number) => ({
-  w: Math.round(Math.min(SHEET_MAX.w, Math.max(SHEET_MIN.w, w))),
-  h: Math.round(Math.min(SHEET_MAX.h, Math.max(SHEET_MIN.h, h)))
+  w: q2(Math.min(SHEET_MAX.w, Math.max(SHEET_MIN.w, w))),
+  h: q2(Math.min(SHEET_MAX.h, Math.max(SHEET_MIN.h, h)))
 })
+
+/** v에 가장 가까운 후보가 tol 안이면 그 값, 아니면 v */
+const snapTo = (v: number, targets: number[], tol: number) => {
+  let best = v
+  let bestD = tol
+  for (const t of targets) {
+    const d = Math.abs(v - t)
+    if (t > 0 && d < bestD) {
+      best = t
+      bestD = d
+    }
+  }
+  return best
+}
 
 export class Engine {
   readonly root: HTMLElement
@@ -735,6 +750,25 @@ export class Engine {
     if (snap && Math.abs(y) < tol) y = 0
     const x = snap === 'left' ? -w : snap === 'right' ? r.w : wx - r.x
     return { anchorPageId: page.id, x: q2(x), y: q2(y), snap }
+  }
+
+  /**
+   * 크기 조절 — 가까우면(화면 SHEET_SNAP_PX) 맞춘다.
+   *  폭: 기준 페이지 폭·절반, 같은 페이지 다른 용지의 폭, (떠 있는 용지) 오른쪽 끝이 페이지 왼쪽·오른쪽 끝에 닿는 폭
+   *  높이: 기준 페이지 높이·절반, 다른 용지의 높이, 아래 끝이 페이지·다른 용지의 아래 끝과 맞는 높이
+   * 끄는 동안은 history: false
+   */
+  resizeSheet(id: ID, w: number, h: number, opts: { history?: boolean } = {}) {
+    const cur = this.sheet(id)
+    const page = cur && this.layout.rects.get(cur.sheet!.anchorPageId)
+    if (!cur || !page) return
+    const info = cur.sheet!
+    const tol = SHEET_SNAP_PX / this.cam.zoom
+    const others = this.sheetsOf(info.anchorPageId).filter((s) => s.id !== id && s.size)
+    const ws = [page.w, page.w / 2, ...others.map((s) => s.size!.w)]
+    if (!info.snap) ws.push(page.w - info.x, -info.x)
+    const hs = [page.h, page.h / 2, page.h - info.y, ...others.map((s) => s.size!.h), ...others.map((s) => s.sheet!.y + s.size!.h - info.y)]
+    this.updateSheet(id, { size: { w: snapTo(w, ws, tol), h: snapTo(h, hs, tol) } }, opts)
   }
 
   /** 용지를 월드 좌표로 옮긴다 (sheetPlacement 규칙). 끄는 동안은 history: false */
