@@ -1,6 +1,7 @@
 // 보조 용지 레이어 — 용지 종이와 그 위 획은 엔진이 캔버스에 그린다.
 // 여기서는 용지마다 제목 줄(옮기기·이름·⋯ 메뉴)과 크기 조절 손잡이만 DOM으로 얹는다.
-// 위치는 화면 좌표로 맞춘다 — 제목 줄은 확대해도 같은 크기로 보인다. 카메라가 움직이면 React를 거치지 않고 style만 고친다.
+// 위치는 화면 좌표로 맞추고, 제목 줄은 용지처럼 배율을 따라 커지고 작아진다(블록과 같게 — --sw·--z로 CSS가 scale한다).
+// 크기 조절 손잡이만 화면 크기 그대로 둔다(축소해도 잡을 수 있게). 카메라가 움직이면 React를 거치지 않고 style만 고친다.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { TAP_SLOP_PX } from '../../engine/constants'
 import type { Engine } from '../../engine/engine'
@@ -28,6 +29,8 @@ export function SheetLayer({ engine, readOnly }: { engine: Engine; readOnly: boo
       el.style.transform = `translate(${(r.x - x) * zoom}px, ${(r.y - y) * zoom}px)`
       el.style.width = `${r.w * zoom}px`
       el.style.height = `${r.h * zoom}px`
+      el.style.setProperty('--sw', `${r.w}px`) // 제목 줄 폭 = 용지 폭(pt), 배율은 --z
+      el.style.setProperty('--z', String(zoom))
     }
   }, [engine])
 

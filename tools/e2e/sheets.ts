@@ -72,6 +72,20 @@ export default async function sheets(ctx: Ctx) {
   check('용지는 페이지 수에 들지 않음', (await p.evaluate(() => (window as unknown as W).inkpad.pages.length)) === 2)
   check('제목 줄이 보임', (await p.locator(`.sheet-frame[data-sheet-id="${id}"] .sheet-head`).count()) === 1)
 
+  // ── 제목 줄은 배율을 따라 커지고 작아진다 (폭 = 용지 폭, 높이도 같은 비율) ──
+  const headBox = () => p.locator(`.sheet-frame[data-sheet-id="${id}"] .sheet-head`).boundingBox()
+  const z0 = await p.evaluate(() => (window as unknown as W).inkpad.cam.zoom as number)
+  const hb0 = (await headBox())!
+  await eng('zoomBy', 2)
+  await sleep(100)
+  const z1 = await p.evaluate(() => (window as unknown as W).inkpad.cam.zoom as number)
+  const hb1 = (await headBox())!
+  const k = z1 / z0
+  check('제목 줄 폭 = 용지 폭 × 배율', Math.abs(hb0.width - r.w * z0) < 1 && Math.abs(hb1.width - r.w * z1) < 1, JSON.stringify([hb0.width, r.w * z0, hb1.width, r.w * z1]))
+  check('확대하면 제목 줄 높이도 같은 비율로 커짐', Math.abs(hb1.height / hb0.height - k) < 0.05, JSON.stringify([hb0.height, hb1.height, k]))
+  await eng('zoomBy', 0.5)
+  await sleep(100)
+
   // ── 필기: 용지 위 획은 용지 소속 ──
   await draw(await screen(r.x + 40, r.y + 120), await screen(r.x + 220, r.y + 160))
   check('용지 위 획 → 용지 소속', (await strokePages()).filter((x) => x === id).length === 1)
@@ -206,7 +220,7 @@ export default async function sheets(ctx: Ctx) {
     const e = (window as unknown as W).inkpad
     e.cam.zoom = 0.7
     e.cam.x = -340
-    e.cam.y = y + 400
+    e.cam.y = y + 300 // 제목 줄이 떠 있는 도구 막대 아래로 가지 않게
     e.zoomBy(1)
   }, p0.y)
   await sleep(150)
