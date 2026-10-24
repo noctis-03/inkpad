@@ -16,9 +16,26 @@ export interface ExportPattern {
   accent?: { lines: [number, number, number, number][]; color: [number, number, number]; width: number }
 }
 
-export interface ExportPage {
+/** 페이지 옆에 함께 내보내는 보조 용지. x·y는 PDF 페이지(frame) 왼쪽 위 기준, paths는 용지 왼쪽 위 기준 */
+export interface ExportSheet {
+  x: number
+  y: number
   w: number
   h: number
+  paper: [number, number, number] | null // null = 투명 용지
+  pattern: ExportPattern | null
+  /** 투명 용지는 점선, 불투명 용지는 옅은 실선 (흰 종이끼리 경계가 보이게) */
+  border: 'solid' | 'dashed'
+  paths: ExportPath[] // 용지 안으로 자른다
+}
+
+export interface ExportPage {
+  /** 원래 페이지 크기 — 원본 PDF·래스터·속지는 이 크기로 그린다 */
+  w: number
+  h: number
+  /** 보조 용지를 함께 내보내면 PDF 페이지를 넓힌다: 전체 크기와 그 안에서 원래 페이지가 놓이는 자리 */
+  frame?: { w: number; h: number; ox: number; oy: number }
+  sheets?: ExportSheet[]
   paper: [number, number, number] | null
   pattern: ExportPattern | null
   pdf?: { assetId: string; pageIndex: number; rotation: number }

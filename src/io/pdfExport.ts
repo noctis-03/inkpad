@@ -1,7 +1,7 @@
 // [규칙] 편집 블록(메모·링크·할 일·타이머·페이지 이동)은 PDF 내보내기에 절대 포함되지 않는다.
 // 블록은 Element 청크(chunks)와 별개 테이블(blocks)에 저장되므로 이 파일의 경로는 애초에 블록을 볼 수 없다.
 // 회귀 방지: loadDocument 반환값에 blocks 필드가 새로 생겼지만, 아래 어떤 경로도 그 값을 읽지 않는다 —
-// 구조 분해도 { doc, pages, chunks }만 유지할 것. ExportJob은 청크의 stroke로만 만들어진다.
+// 구조 분해에 blocks를 넣지 말 것. ExportJob은 청크의 stroke(+ 고른 경우 보조 용지)로만 만들어진다.
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
@@ -9,12 +9,14 @@ import type { Page, Stroke } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
 import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
-import type { ExportJob, ExportPage, ExportPath, WorkerOut } from './exportTypes'
+import type { ExportJob, ExportPage, ExportPath, ExportSheet, WorkerOut } from './exportTypes'
 import { recallPassword } from './passwords'
 
 export interface ExportOptions {
   pageIndices?: number[] // 없으면 전체
   includePattern?: boolean
+  /** 페이지 왼쪽·오른쪽에 붙은(snap) 보조 용지를 페이지 옆에 함께 — PDF 페이지가 그만큼 넓어진다. 떠 있는 용지는 넣지 않는다 */
+  includeSheets?: boolean
   onProgress?: (done: number, total: number, phase: string) => void
   askPassword?: (incorrect: boolean) => Promise<string | null>
 }
@@ -69,9 +71,39 @@ function patternFor(page: Page): ExportPage['pattern'] {
   }
 }
 
+/**
+ * 페이지에 붙은 보조 용지를 둘러 PDF 페이지(frame)를 넓힌다. 좌표는 원래 페이지 왼쪽 위 기준으로 모은 뒤
+ * frame 왼쪽 위 기준으로 옮긴다 (용지가 페이지보다 위로 올라가 있으면 frame도 위로 늘어난다)
+ */
+function attachSheets(page: Page, sheets: Page[], strokesByPage: Map<string, Stroke[]>, includePattern: boolean): Pick<ExportPage, 'frame' | 'sheets'> {
+  const { w, h } = page.size!
+  const placed = sheets.map((sh) => {
+    const sw = sh.size!.w
+    return { sh, x: sh.sheet!.snap === 'left' ? -sw : w, y: sh.sheet!.y, w: sw, h: sh.size!.h }
+  })
+  const minX = Math.min(0, ...placed.map((r) => r.x))
+  const minY = Math.min(0, ...placed.map((r) => r.y))
+  const maxX = Math.max(w, ...placed.map((r) => r.x + r.w))
+  const maxY = Math.max(h, ...placed.map((r) => r.y + r.h))
+  const out: ExportSheet[] = placed.map(({ sh, x, y, w, h }) => {
+    const transparent = !!sh.sheet!.transparent
+    return {
+      x: x - minX,
+      y: y - minY,
+      w,
+      h,
+      paper: transparent ? null : rgb3(sh.background.type === 'blank' ? sh.background.color : '#ffffff'),
+      pattern: transparent || !includePattern ? null : patternFor(sh),
+      border: transparent ? 'dashed' : 'solid',
+      paths: strokesToPaths(strokesByPage.get(sh.id) ?? [], 0, 0)
+    }
+  })
+  return { frame: { w: maxX - minX, h: maxY - minY, ox: -minX, oy: -minY }, sheets: out }
+}
+
 /** 문서형 문서 → PDF */
 export async function exportDocumentPdf(documentId: string, opts: ExportOptions = {}): Promise<Blob> {
-  const { doc, pages, chunks } = await loadDocument(documentId)
+  const { doc, pages, sheets, chunks } = await loadDocument(documentId)
   const strokesByPage = new Map<string, Stroke[]>()
   for (const c of chunks) {
     const arr = strokesByPage.get(c.pageId) ?? []
@@ -81,16 +113,31 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
 
   if (doc.mode === 'infinite') return exportInfinitePdf(doc.title, chunks, opts)
 
+  // 붙은 용지만 기준 페이지별로 (z순 — 화면과 같은 쌓임)
+  const attached = new Map<string, Page[]>()
+  if (opts.includeSheets) {
+    for (const sh of [...sheets].sort((a, b) => a.sheet!.z - b.sheet!.z)) {
+      if (!sh.sheet!.snap || !sh.size) continue
+      const arr = attached.get(sh.sheet!.anchorPageId) ?? []
+      arr.push(sh)
+      attached.set(sh.sheet!.anchorPageId, arr)
+    }
+  }
+
   const indices = opts.pageIndices ?? pages.map((_, i) => i)
   const selected = indices.map((i) => pages[i]).filter(Boolean)
-  const expPages: ExportPage[] = selected.map((p) => ({
-    w: p.size!.w,
-    h: p.size!.h,
-    paper: p.pdf ? null : rgb3(p.background.type === 'blank' ? p.background.color : '#ffffff'),
-    pattern: p.pdf || opts.includePattern === false ? null : patternFor(p),
-    pdf: p.pdf ? { ...p.pdf } : undefined,
-    paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0)
-  }))
+  const expPages: ExportPage[] = selected.map((p) => {
+    const ep: ExportPage = {
+      w: p.size!.w,
+      h: p.size!.h,
+      paper: p.pdf ? null : rgb3(p.background.type === 'blank' ? p.background.color : '#ffffff'),
+      pattern: p.pdf || opts.includePattern === false ? null : patternFor(p),
+      pdf: p.pdf ? { ...p.pdf } : undefined,
+      paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0)
+    }
+    const sh = attached.get(p.id)
+    return sh ? { ...ep, ...attachSheets(p, sh, strokesByPage, opts.includePattern !== false) } : ep
+  })
 
   const sources: Record<string, ArrayBuffer> = {}
   for (const p of selected) {
