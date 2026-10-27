@@ -196,10 +196,12 @@ interface UIState {
   blocksVisible: boolean
   placingBlock: BlockType | null
   selectedBlockId: ID | null
-  /** 노트 열기 애니메이션용 — 누른 카드의 화면 위치 (편집 화면 마운트 시 1회 읽고 지운다) */
+  /** 노트 열기 원형 리빌(App Panes)의 출발점 — 누른 카드 미리보기의 화면 위치 (편집 화면 마운트 시 1회 읽고 지운다) */
   docCardRect: DOMRect | null
-  /** 편집 화면을 닫을 때 — 라이브러리 복귀 전환이 이 카드로 축소한다 */
+  /** 편집 화면을 닫을 때 — 라이브러리가 이 카드를 찾아 returnTarget에 알린다 */
   returnDocId: ID | null
+  /** 닫기 원형 리빌(App Panes)이 줄어들 카드 위치 — 카드가 화면에 없으면 'none'(그냥 사라진다) */
+  returnTarget: DOMRect | 'none' | null
   /** 뷰어보드 열기 — 편집 화면을 보기 전용으로 연다 (편집 화면이 1회 읽고 지운다) */
   viewOnly: boolean
   /** 낙서 모드로 열기 — 쓸 수 있지만 아무것도 저장하지 않는다 (편집 화면이 1회 읽고 지운다) */
@@ -293,6 +295,7 @@ export const useUI = create<UIState>((set, get) => ({
   selectedBlockId: null,
   docCardRect: null,
   returnDocId: null,
+  returnTarget: null,
   viewOnly: false,
   scratch: false,
   returnRoute: null,
