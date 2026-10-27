@@ -162,6 +162,16 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
         p = 'top'
         L = fitLayout(el, 'h', availFor('h', W, H, ins, m))
       }
+      // 가로로는 가장 작은 단계(tiny, 버튼 30px)로만 들어가거나 아예 안 들어가면 — 휴대폰·화면 분할에서 페이지 목록을 연 때 —
+      // 세로 공간이 넉넉한 옆면(왼쪽: 오른손 손바닥이 닿지 않는 쪽)을 먼저 써 본다. 펜 버튼은 40px 밑으로 줄이지 않는다는 원칙.
+      // 저장한 위치는 그대로 두고 보이는 자리만 바꾼다 (normalizePos와 같은 방식)
+      if (L.orient === 'h' && (!L.fits || L.density === 'tiny')) {
+        const Lv = fitLayout(el, 'v', availFor('v', W, H, ins, m))
+        if (Lv.fits && Lv.density !== 'tiny') {
+          p = 'left'
+          L = Lv
+        } else L = fitLayout(el, 'h', availFor('h', W, H, ins, m)) // 세로도 안 되면 원래 가로로 되돌린다
+      }
       const [x, y] = anchorXY(p, L.w, L.h, W, H, ins, m)
       const first = !('ready' in el.dataset)
       if (!animate || first) el.style.transition = 'none'
