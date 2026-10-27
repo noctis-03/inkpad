@@ -9,13 +9,13 @@
   text-align: center;
 }
 .stepper-btn {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--h-control);
+  min-height: var(--h-control);
   border: 0;
   border-radius: var(--r-md);
   background: var(--surface-2);
   color: var(--ink);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -122,7 +122,7 @@ details.adv > summary::marker {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
+  min-height: var(--h-control);
   padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);

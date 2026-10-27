@@ -114,6 +114,12 @@
   --sync-hatch-w: 12px;     /* 빗금 굵기 */
   --sync-hatch-gap: 18px;   /* 빗금 간격(굵기 포함) — 빗금 사이 빈 폭 6px */
 
+  /* ── 크기 — 밀도 (docs/ui-plan.md 1b) — 값만 바꾸면 앱 전체 밀도가 따라간다 ── */
+  --h-bar: 52px;           /* 상단 바 */
+  --h-control: 34px;       /* 검색·세그먼트·버튼·입력 */
+  --h-control-sm: 28px;    /* 작은 버튼 */
+  --h-row: 32px;           /* 목록 행(왼쪽 메뉴·⋯ 메뉴) */
+  --h-tap: 40px;           /* 펜·손가락이 자주 누르는 곳(편집 도구창 등) — 이보다 줄이지 않는다 */
   --toolbar-h: 52px;
   --safe-top: env(safe-area-inset-top, 0px);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
