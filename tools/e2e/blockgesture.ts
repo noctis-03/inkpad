@@ -69,7 +69,16 @@ export default async function blockgesture(ctx: Ctx) {
   check('블록 본문 한 손가락 드래그 → 화면 이동', c1.x > c0.x + 10 && c1.y > c0.y + 10, JSON.stringify([c0, c1]))
 
   // ── 두 손가락 모두 블록 위 핀치 ──
+  // 앞의 팬으로 블록이 위로 밀려 본문 사각형의 가운데가 도구창(.ft-bar) 밑에 들어가는 일이 있었다 — 손가락이 도구창을 집어
+  // 핀치가 블록에 닿지 않았다. 페이지 폭 맞춤으로 블록을 제자리에 두고, 손가락 자리가 정말 블록 위인지도 확인한다
+  await p.evaluate(() => (window as unknown as { inkpad: { fitWidth: (keepPage?: boolean) => void } }).inkpad.fitWidth(false))
+  await sleep(300)
   c = center(await rect('.blk-body'))
+  const onBlock = await p.evaluate(
+    ([x, y, id]) => [x - 30, x + 30].every((px) => document.elementFromPoint(px, y as number)?.closest(`.blk[data-blk-id="${id}"]`)),
+    [c.x, c.y, memoId] as const
+  )
+  check('핀치 손가락 자리가 블록 위', onBlock)
   c0 = await cam()
   await touch('touchStart', [{ x: c.x - 30, y: c.y, id: 1 }])
   await touch('touchStart', [{ x: c.x - 30, y: c.y, id: 1 }, { x: c.x + 30, y: c.y, id: 2 }])
