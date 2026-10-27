@@ -331,7 +331,7 @@ function FolderCategorySettings({ onChanged }: { onChanged: () => void }) {
     <>
       <section className="panel-section">
         <h3>폴더 · 카테고리 매핑</h3>
-        <p className="hint">폴더는 이 기기의 정리 도구이고, 카테고리가 기기 사이에서 동기화됩니다. 폴더 하나가 카테고리 여러 개를 담을 수 있어요.</p>
+        <p className="hint">폴더는 이 기기의 정리 도구이고, 카테고리가 기기 사이에서 동기화됩니다. 폴더 하나가 카테고리 여러 개를 담을 수 있습니다.</p>
         <div className="folder-map-list">
           {folders.map((f) => (
             <div key={f.id} className="folder-map-card">

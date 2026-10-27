@@ -44,6 +44,7 @@ import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { routeFiles } from '../../io/fileRoute'
 import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
+import { SheetEmpty } from '../sheetParts'
 import { openChanges } from '../ChangesView'
 import { THUMBS_EVENT } from '../../io/docThumb'
 import { fileThumbKey, getItemThumbRows, syncItemThumbs } from '../../io/itemThumb'
@@ -1706,49 +1707,76 @@ export function Library() {
           )}
 
           {items.length === 0 ? (
+            // 빈 상태는 앱 전체가 같은 모양(SheetEmpty: 아이콘 칸 · 제목 · 설명 · 동작) — docs/ui-plan.md 4b
             <div className="empty-state">
               {recentActive ? (
-                <p>최근에 열람한 노트가 없습니다. 노트를 열면 여기에 표시됩니다.</p>
+                <SheetEmpty icon="restore" title="최근 열람한 노트가 없습니다" desc="노트를 열면 여기에 표시됩니다." />
               ) : section.kind === 'trash' ? (
-                <p>휴지통이 비어 있습니다.</p>
+                <SheetEmpty icon="trash" title="휴지통이 비어 있습니다" desc={`지운 노트는 ${TRASH_RETENTION_DAYS}일 동안 여기 남았다가 영구 삭제됩니다.`} />
               ) : section.kind === 'apps' ? (
-                <>
-                  <Icon name="app" size={48} />
-                  <p>아직 앱이 없습니다.</p>
-                  <div className="btn-row center">
-                    <button className="text-btn" onClick={() => setShowApps(true)}>
-                      <Icon name="apps" size={18} /> 앱 메뉴에서 설치하기
-                    </button>
-                    <button className="text-btn" onClick={() => void onAddApp()}>
-                      <Icon name="plus" size={18} /> 앱 추가
-                    </button>
-                  </div>
-                </>
+                <SheetEmpty
+                  icon="app"
+                  title="아직 앱이 없습니다"
+                  desc="HTML 파일을 앱으로 추가하거나, 앱 메뉴에서 클라우드의 앱을 설치하세요."
+                  action={
+                    <div className="btn-row center">
+                      <button className="text-btn" onClick={() => setShowApps(true)}>
+                        <Icon name="apps" size={18} /> 앱 메뉴에서 설치하기
+                      </button>
+                      <button className="text-btn" onClick={() => void onAddApp()}>
+                        <Icon name="plus" size={18} /> 앱 추가
+                      </button>
+                    </div>
+                  }
+                />
               ) : section.kind === 'files' ? (
-                <>
-                  <Icon name="file" size={48} />
-                  <p>아직 파일이 없습니다.</p>
-                  <div className="btn-row center">
-                    <button className="text-btn" onClick={() => void onAddFile()}>
-                      <Icon name="plus" size={18} /> 파일 추가
-                    </button>
-                  </div>
-                </>
+                <SheetEmpty
+                  icon="file"
+                  title="아직 파일이 없습니다"
+                  desc="노트·앱이 아닌 파일(이미지·문서 등)을 여기에 모아 둘 수 있습니다."
+                  action={
+                    <div className="btn-row center">
+                      <button className="text-btn" onClick={() => void onAddFile()}>
+                        <Icon name="plus" size={18} /> 파일 추가
+                      </button>
+                    </div>
+                  }
+                />
               ) : query ? (
-                <p>“{query}”와(과) 일치하는 문서가 없습니다.</p>
+                <SheetEmpty
+                  icon="search"
+                  title="검색 결과가 없습니다"
+                  desc={`“${query}”와(과) 일치하는 제목이 없습니다.`}
+                  action={
+                    <div className="btn-row center">
+                      <button
+                        className="text-btn"
+                        onClick={() => {
+                          setQuery('')
+                          setSearchOpen(false)
+                        }}
+                      >
+                        검색 지우기
+                      </button>
+                    </div>
+                  }
+                />
               ) : (
-                <>
-                  <Icon name="notebook" size={48} />
-                  <p>아직 노트가 없습니다.</p>
-                  <div className="btn-row center">
-                    <button className="primary-btn" onClick={() => setShowNew(true)}>
-                      <Icon name="plus" size={18} /> 새 노트
-                    </button>
-                    <button className="text-btn" onClick={onImportPdf}>
-                      <Icon name="filePdf" size={18} /> PDF 가져오기
-                    </button>
-                  </div>
-                </>
+                <SheetEmpty
+                  icon="notebook"
+                  title="아직 노트가 없습니다"
+                  desc="새 노트를 만들거나 PDF를 가져와 시작하세요."
+                  action={
+                    <div className="btn-row center">
+                      <button className="primary-btn" onClick={() => setShowNew(true)}>
+                        <Icon name="plus" size={18} /> 새 노트
+                      </button>
+                      <button className="text-btn" onClick={onImportPdf}>
+                        <Icon name="filePdf" size={18} /> PDF 가져오기
+                      </button>
+                    </div>
+                  }
+                />
               )}
             </div>
           ) : (
@@ -1889,7 +1917,7 @@ export function Library() {
           <MenuItem icon="apps" label="앱 관리" onClick={() => { setMoreMenu(null); setShowApps(true) }} />
           <MenuItem icon="files" label="기타 파일 관리" onClick={() => { setMoreMenu(null); setShowFiles(true) }} />
           <div className="menu-sep" />
-          <MenuItem icon="replace" label="카드 미리보기 새로고침" onClick={() => { setMoreMenu(null); refreshThumbnails() }} />
+          <MenuItem icon="replace" label="카드 미리보기 새로 고침" onClick={() => { setMoreMenu(null); refreshThumbnails() }} />
           <MenuItem icon="cloudDown" label="빠진 노트 원본 받기" onClick={() => { setMoreMenu(null); void downloadNoteAssets() }} />
         </Menu>
       )}

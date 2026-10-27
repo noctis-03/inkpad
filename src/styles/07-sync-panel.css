@@ -695,29 +695,12 @@
 
 .cloud-empty {
   margin: 0;
-  padding: 26px 16px;
   border: 1px dashed var(--line);
   border-radius: var(--r-md);
-  text-align: center;
-  font-size: var(--fs-base);
-  line-height: 1.6;
-  color: var(--muted);
 }
-.cloud-empty b {
-  color: var(--ink);
-}
-.cloud-empty .big {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--muted);
-  margin: 0 auto;
-}
-.cloud-empty .sync-link {
-  padding: 2px 4px;
+/* 안쪽은 공용 빈 상태(.store-empty) — 동기화 패널 안이라 여백만 줄인다 */
+.cloud-empty .store-empty {
+  padding: 20px 16px;
 }
 /* 이 기기 · 계정 정보 블록 */
 .sync-foot {

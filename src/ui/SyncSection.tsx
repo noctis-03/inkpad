@@ -36,7 +36,7 @@ import { mergeDraftKeys } from '../sync/mergeDraft'
 import { openArchive } from './ArchiveSheet'
 import { openChanges } from './ChangesView'
 import { Segmented } from './Segmented'
-import { useEscClose } from './sheetParts'
+import { SheetEmpty, useEscClose } from './sheetParts'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -310,14 +310,9 @@ function CloudList({
 
   if (!cloud.length) {
     return (
+      // 빈 상태는 앱 전체 공용 모양(SheetEmpty) — 전에는 제목·설명이 한 줄로 붙어 '…없습니다노트를…'로 보였다
       <div className="cloud-empty">
-        <span className="big">
-          <Icon name="cloud" size={24} />
-        </span>
-        <b>클라우드에 노트가 없습니다</b>
-        <span>
-          노트를 만든 뒤 위의 <b>올리기</b>를 눌러 주세요.
-        </span>
+        <SheetEmpty icon="cloud" title="클라우드에 노트가 없습니다" desc="노트를 만든 뒤 위의 올리기를 눌러 주세요." />
       </div>
     )
   }
@@ -376,20 +371,22 @@ function CloudList({
 
       {groups.length === 0 && (
         <div className="cloud-empty">
-          <span className="big">
-            <Icon name="search" size={22} />
-          </span>
-          <span>조건에 맞는 노트가 없습니다.</span>
-          <button
-            className="sync-link"
-            onClick={() => {
-              setFilter('all')
-              setCatFilter(CAT_ALL)
-              setQuery('')
-            }}
-          >
-            필터·검색 지우기
-          </button>
+          <SheetEmpty
+            icon="search"
+            title="조건에 맞는 노트가 없습니다"
+            action={
+              <button
+                className="text-btn small"
+                onClick={() => {
+                  setFilter('all')
+                  setCatFilter(CAT_ALL)
+                  setQuery('')
+                }}
+              >
+                필터·검색 지우기
+              </button>
+            }
+          />
         </div>
       )}
 
@@ -768,7 +765,7 @@ export function SyncSection() {
           <small>
             {status === 'idle' && (last ? `마지막 동기화 ${formatDate(last)}${device ? ` · ${device}` : ''}` : '아직 동기화 전')}
             {status === 'syncing' && (syncMsg || 'Drive와 맞추는 중')}
-            {status === 'offline' && '연결되면 받기·올리기를 할 수 있어요. 필기는 이 기기에 계속 저장됩니다.'}
+            {status === 'offline' && '연결되면 받기·올리기를 할 수 있습니다. 필기는 이 기기에 계속 저장됩니다.'}
             {status === 'error' && 'Drive 응답을 받지 못했습니다'}
           </small>
         </span>

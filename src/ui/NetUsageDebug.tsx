@@ -160,7 +160,7 @@ function NetUsageBody() {
         </div>
       </div>
       <p className="hint">
-        앱을 켠 뒤 {fmtElapsed(Date.now() - s.since)} 경과 · 새로고침하면 0부터 다시 셉니다.
+        앱을 켠 뒤 {fmtElapsed(Date.now() - s.since)} 경과 · 새로 고침하면 0부터 다시 셉니다.
         <br />
         브라우저가 Wi-Fi와 셀룰러를 구분하지 못해 합계만 표시합니다.
         {conn ? ` 참고: ${conn}` : ''}
@@ -179,7 +179,7 @@ function NetUsageBody() {
               <DestinationList dests={dests} />
               <RequestLog log={log} />
               <p className="hint">
-                목적지별로 내려받기(↓)·올리기(↑) 바이트를 합산합니다. 로그는 최근 200건까지만 남고 새로고침하면 사라집니다.
+                목적지별로 내려받기(↓)·올리기(↑) 바이트를 합산합니다. 로그는 최근 200건까지만 남고 새로 고침하면 사라집니다.
               </p>
             </>
           )}
