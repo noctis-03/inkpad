@@ -29,6 +29,11 @@
   --btn-bg: #23211d;       /* 잉크 버튼 면 — 다크에서 뒤집힌다 */
   --btn-fg: #ffffff;
   --toast-bg: #111827eb;
+  /* 토스트는 테마와 상관없이 '어두운 판 위 밝은 글자' — 뒤집히는 토큰(--surface-2 등)을 글자에 쓰지 않는다 */
+  --toast-fg: #f5f5f4;
+  --toast-action: #a8bcff;  /* 동작 버튼(되돌리기 등) */
+  --toast-dim: #ffffffa6;   /* 닫기 */
+  --toast-line: transparent;
 
   /* ── 상호작용 ── */
   --press: #1f29370d;
@@ -179,7 +184,8 @@
     --on-ink: #ffffff;
     --btn-bg: #ece8e1;
     --btn-fg: #161513;
-    --toast-bg: #2f3540f2;
+    --toast-bg: #3b404cf5;   /* 다크 바탕(#161513)보다 밝게 — 판이 바탕에서 떠 보이게 */
+    --toast-line: #ffffff1f;
 
     --press: #ffffff14;
     --hover: #ffffff0f;
