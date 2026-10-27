@@ -618,14 +618,21 @@ function MemoBody(p: Omit<CardProps, 'block'> & { block: MemoBlock }) {
   const { engine, block } = p
   const ref = useRef<HTMLTextAreaElement>(null)
   const startText = useRef(block.data.text)
-  useEffect(() => {
-    if (ref.current) ref.current.style.height = `${ref.current.scrollHeight}px`
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
   const grow = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }
+  // 처음 높이를 맞추고, 글꼴이 늦게 들어오면 다시 맞춘다 — 몇 px 모자라면 textarea가 스크롤 상자가 되어
+  // 손가락 끌기를 브라우저가 가져가(pointercancel) 화면 이동이 끊겼다 (CSS의 overflow: hidden과 함께)
+  useEffect(() => {
+    if (ref.current) grow(ref.current)
+    let alive = true
+    void document.fonts?.ready.then(() => alive && ref.current && grow(ref.current))
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // Undo/Redo·동기화로 block.data.text가 바뀌어도 uncontrolled textarea의 DOM 값은 그대로다.
   // 포커스 중이 아니면 DOM 값을 맞춰, 다음 입력이 취소된 내용을 되살리지 않게 한다.
   useEffect(() => {

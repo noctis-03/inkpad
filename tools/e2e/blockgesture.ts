@@ -51,6 +51,13 @@ export default async function blockgesture(ctx: Ctx) {
   const c2 = await cam()
   check('블록 위 Ctrl+휠 → 확대', c2.zoom > c1.zoom * 1.05, JSON.stringify([c1.zoom, c2.zoom]))
 
+  // 메모 textarea가 스크롤 상자가 되면 손가락 끌기를 브라우저가 가져가(pointercancel) 아래 팬이 가끔 두 걸음에서 끊겼다
+  const ta = await p.locator(`.blk[data-blk-id="${memoId}"] textarea`).evaluate((e) => {
+    const cs = getComputedStyle(e)
+    return { overflow: cs.overflowY, touch: cs.touchAction, fits: e.scrollHeight <= e.clientHeight + 1 }
+  })
+  check('메모 textarea는 스크롤 상자가 아니다 (overflow hidden · touch-action none · 내용 높이에 맞음)', ta.overflow === 'hidden' && ta.touch === 'none' && ta.fits, JSON.stringify(ta))
+
   // ── 한 손가락 팬 (블록 본문) ──
   c = center(await rect('.blk-body'))
   c0 = await cam()
