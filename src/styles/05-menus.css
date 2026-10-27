@@ -137,6 +137,25 @@
 .sheet-header h2 {
   margin: 0;
   font-size: var(--fs-lg);
+  white-space: nowrap; /* 휴대폰에서 '설 / 정'처럼 세로로 꺾이던 것 */
+}
+/* 휴대폰 폭: 머리의 탭(설정의 필기·폴더·저장소)은 제목·닫기 아랫줄에 한 줄로 */
+@media (max-width: 560px) {
+  .sheet-header {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .sheet-header > .seg {
+    order: 3;
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    margin: 0 11px 8px 0;
+  }
+  .sheet-header > .seg button {
+    flex: 1;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
 }
 /* 그릇 머리의 아이콘 버튼(닫기 등) — 편집 화면 크롬의 44px 대신 컨트롤 높이 */
 .sheet-header .tb-btn,

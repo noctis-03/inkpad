@@ -337,13 +337,14 @@ function CloudList({
         </button>
         {GROUPS.map((g) => {
           const on = filter === g.key
+          // 0개인 상태는 칩을 내지 않는다 — 흐린 '갈라짐 0 · 받을 것 0 · 삭제됨 0'이 줄을 채우지 않게
+          if (counts[g.key] === 0 && !on) return null
           return (
             <button
               key={g.key}
               className={'cloud-chip g-' + g.key + (on ? ' on' : '')}
               aria-pressed={on}
               title={on ? '필터 해제' : `${g.title}만 보기`}
-              disabled={counts[g.key] === 0 && !on}
               onClick={() => setFilter(on ? 'all' : g.key)}
             >
               <i className="dot" />
@@ -755,7 +756,7 @@ export function SyncSection() {
 
   return (
     <section className="panel-section" id="sync-settings">
-      <h3>동기화 · Google Drive</h3>
+      {/* 제목은 감싼 시트·패널 머리('동기화')가 맡는다 — 같은 말을 두 번 쓰지 않는다. Google Drive는 맨 아래 계정 줄에 */}
 
       {/* 상태 카드 — 색만으로 전달하지 않게 톤·아이콘·설명을 갖춘다 */}
       <div className={'sync-status tone-' + m.tone} role="status" aria-live="polite">

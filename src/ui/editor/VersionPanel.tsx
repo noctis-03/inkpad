@@ -260,7 +260,7 @@ export function VersionPanel({ docId }: { docId: ID }) {
               <span className="setting-label">
                 클라우드 버전 {revs.length}개<small>main 노트 파일의 기록 · 고정한 버전은 자동 삭제되지 않습니다</small>
               </span>
-              <span className="setting-control">{pinnedBytes > 0 ? `${formatBytesShort(pinnedBytes)} 고정됨` : '고정 없음'}</span>
+              <span className="setting-control setting-value">{pinnedBytes > 0 ? `${formatBytesShort(pinnedBytes)} 고정됨` : '고정 없음'}</span>
             </div>
           </section>
 
@@ -384,11 +384,15 @@ export function VersionPanel({ docId }: { docId: ID }) {
       </section>
 
       <section className="panel-section">
-        <p className="hint">
+        {/* 긴 설명은 접어 둔다 — 버전 목록보다 길게 늘어지지 않게 */}
+        <details className="hint-more">
+          <summary>되돌리기·고정·스냅샷 안내</summary>
+          <p className="hint">
           되돌리면 그 내용이 이 기기의 '현재'가 되고(지금 내용은 스냅샷으로 남는다), 동기화로 올리면 다른 기기에도 반영됩니다. 머지됨은 머지 결과, 되돌림은 되돌린 내용을 올린 버전입니다.
           버려짐·별도 보관은 자동 머지를 쓰던 때의 머지 백업입니다. 고정하지 않은 클라우드 버전은 새 버전이 올라온 뒤 약 30일이 지나면 Google Drive가 자동으로 지웁니다. 고정은
           파일당 최대 200개까지 가능하고 용량을 차지합니다. 스냅샷은 이 기기에만 노트당 최근 20개까지 남습니다. 정리는 동기화 › 보관함 관리에서 합니다.
-        </p>
+          </p>
+        </details>
         <div className="btn-row">
           <button className="text-btn" onClick={() => void load()}>
             새로 고침

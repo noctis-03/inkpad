@@ -52,6 +52,19 @@
   justify-content: space-between;
   gap: 10px;
   min-height: 40px;
+  padding: 4px 0; /* 설명이 두 줄인 줄끼리 맞닿지 않게 — 줄 사이 리듬 */
+}
+/* 휴대폰 폭: 설명이 서너 줄로 꺾이지 않게 이름·설명이 한 줄을 다 쓰고, 컨트롤은 필요하면 아랫줄 오른쪽으로 */
+@media (max-width: 560px) {
+  .setting-row {
+    flex-wrap: wrap;
+  }
+  .setting-label {
+    flex: 1 1 140px; /* 이보다 좁아질 때만 컨트롤이 아랫줄로 — 짧은 슬라이더 줄은 한 줄 그대로 */
+  }
+  .setting-control {
+    margin-left: auto;
+  }
 }
 .setting-label {
   display: flex;
@@ -137,6 +150,12 @@
 }
 .text-btn.danger {
   color: var(--danger);
+}
+/* 설정 줄 오른쪽에 컨트롤 대신 값만 있을 때 (예: 버전 기록 '고정 없음') — 본문 글자로 커지지 않게 */
+.setting-value {
+  font-size: var(--fs-base);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .hint {
   margin: 8px 0 0;
@@ -359,6 +378,32 @@ textarea {
 }
 .btn-row.center {
   justify-content: center;
+}
+/* 접어 둔 긴 설명 — 머리글만 한 줄 */
+.hint-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--h-row);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+.hint-more > summary::-webkit-details-marker {
+  display: none;
+}
+.hint-more > summary::before {
+  content: '›';
+  display: inline-block;
+  width: 10px;
+  transition: transform .15s;
+}
+.hint-more[open] > summary::before {
+  transform: rotate(90deg);
+}
+.hint-more > .hint {
+  margin-top: 0;
 }
 .hint.warn {
   color: var(--warn-ink);
