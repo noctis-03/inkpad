@@ -742,17 +742,15 @@
 }
 
 /* ───────── 카드 누름 오버레이 (격자) ─────────
-   카드를 누르면 미리보기 아래쪽만 흐려지고(위쪽은 남아 어느 노트인지 보인다), 왼쪽 위에 쪽수·날짜 꼬리표,
+   카드를 누르면 미리보기 아래쪽만 종이색으로 옅게 덮이고(블러 없음 · 위쪽은 남아 어느 노트인지 보인다), 왼쪽 위에 쪽수·날짜 꼬리표,
    카드 아래쪽(손가락이 닿는 자리)에 큰 주 버튼(편집 · 실행 · 열기)과 작은 보조 버튼(노트: 보기 · 낙서).
    카드 종이는 테마와 상관없이 밝으므로 판도 테마와 상관없이 먹(--tag-ink)·종이(--thumb-paper) —
    예전에는 테마를 따라 다크에서 밝은 글자·밝은 버튼이 밝은 종이 위에 놓여 거의 보이지 않았다(대비 1.13:1) */
 .doc-open-veil {
   position: absolute;
-  inset: 34% 0 0; /* 아래쪽만 — 위쪽 미리보기는 또렷하게 남긴다(가림이 흐림에 안 먹는 브라우저에서도) */
+  inset: 34% 0 0; /* 아래쪽만 — 위쪽 미리보기는 또렷하게 남긴다 */
   z-index: 3;
   background: color-mix(in srgb, var(--thumb-paper) 40%, transparent);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
   -webkit-mask-image: linear-gradient(180deg, transparent, #000 40%); /* 경계를 부드럽게 */
   mask-image: linear-gradient(180deg, transparent, #000 40%);
   opacity: 0;
@@ -780,7 +778,7 @@
 .doc-card.is-revealed .doc-open-panel {
   opacity: 1;
   transform: none;
-  pointer-events: auto; /* 버튼 밖을 누르면 닫는다 — 흐림 막이 아래쪽만 덮으므로 위쪽 누름도 여기서 받는다 */
+  pointer-events: auto; /* 버튼 밖을 누르면 닫는다 — 베일이 아래쪽만 덮으므로 위쪽 누름도 여기서 받는다 */
 }
 /* 판이 뜨면 같은 자리의 동기화 꼬리표는 숨긴다 */
 .doc-card.is-revealed .sync-tag.is-overlay {
@@ -967,7 +965,7 @@
   justify-content: center;
   pointer-events: none;
 }
-/* 블러 막은 따로 — 카드를 눌러 여는 창의 베일(같은 블러)이 뜨면 이건 사라져 블러가 겹치지 않는다(서로 엇갈려 페이드) */
+/* 블러 막은 따로 — 카드를 눌러 여는 창이 뜨면 이건 사라져 누른 카드에는 블러가 남지 않는다 */
 .card-mark::before {
   content: '';
   position: absolute;
