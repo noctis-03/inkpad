@@ -46,7 +46,7 @@
 
   /* ── 상태 ── */
   --success: #16a34a;
-  --success-ink: #15803d;
+  --success-ink: #166534;  /* 문서 바(--paper-2) 위 '저장됨' 4.5:1 이상 (전 #15803d는 4.4:1) */
   --success-soft: #f0fdf4;
   --success-line: #bbf7d0;
   --warn: #d97706;
@@ -129,7 +129,7 @@
 
   /* ── 머지·변경 표시 — main(이 기기 밖 기준) · 브랜치 · 고침 · 지움 ── */
   --merge-main: #e8890c;
-  --merge-main-ink: #b9690a;
+  --merge-main-ink: #9a5806; /* 흰 바탕 5.5:1 (전 #b9690a는 4.1:1) */
   --merge-branch: #2f6fe0;
   --merge-branch-ink: #2459c4;
   --merge-mod: #8b4fd6;

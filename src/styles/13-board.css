@@ -91,6 +91,7 @@
   cursor: pointer;
 }
 .board-title { margin: 0; font-size: var(--fs-lg); font-weight: 700; white-space: nowrap; }
+.board-back { white-space: nowrap; min-width: var(--h-control); justify-content: center; } /* 휴대폰에서 '노 / 트'로 세로로 꺾이던 것 */
 .board-preset-chip {
   display: inline-flex;
   align-items: center;
@@ -143,6 +144,7 @@
   font: inherit;
   font-size: var(--fs-sm);
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 .bet-btn:active { background: color-mix(in srgb, var(--on-ink) 16%, transparent); }
@@ -535,8 +537,9 @@
   cursor: pointer;
   text-align: left;
 }
-.board-drawer-sub { font-size: var(--fs-xs); color: var(--muted); }
-.board-drawer-hint { margin-left: auto; font-size: var(--fs-xs); color: var(--accent-ink); }
+.board-drawer-head b { white-space: nowrap; }
+.board-drawer-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--muted); }
+.board-drawer-hint { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--accent-ink); }
 .board-drawer-body { padding: 0 16px 12px; }
 
 /* ── 오른쪽 카드 서랍 패널 (넓은 화면) ── */
@@ -570,7 +573,7 @@
 /* 서랍 공통 도구·목록 */
 .tray-tools { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 8px; }
 .board-tray-seg { flex: 0 0 auto; background: var(--surface-2); }
-.board-tray-search { max-width: none; width: 100%; }
+.board-tray-search { flex: none; max-width: none; width: 100%; } /* .search-box의 flex: 1이 세로 서랍 도구에서 높이를 19px로 쪼그라뜨렸다 */
 .tray-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 8px; display: flex; flex-direction: column; gap: 2px; }
 .board-drawer .tray-list { flex: 0 0 auto; max-height: 46vh; }
 .tray-none { font-size: var(--fs-xs); color: var(--muted-2); padding: 12px 6px; }
@@ -591,7 +594,8 @@
   padding: 2px 2px 6px;
 }
 .board-drawer .tray-row { flex: 0 0 auto; flex-direction: column; gap: 4px; min-height: 0; width: 72px; padding: 2px; text-align: center; }
-.board-drawer .tray-row-main { align-items: center; }
+.board-drawer .tray-row-main { align-self: stretch; align-items: stretch; } /* 이름이 72px 칸보다 길면 가운데 정렬로 양옆이 잘렸다 — 칸 폭에 맞춰 말줄임 */
+.board-drawer .tray-row-name { text-align: center; }
 .board-drawer .tray-row-time { display: none; }
 .tray-thumb {
   width: 32px;
@@ -870,9 +874,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0;
-  width: 30px;
-  height: 30px;
-  padding: 0 0 0 7.5px;
+  width: 32px;
+  height: 32px; /* 누름 대상 32px 이상 */
+  padding: 0 0 0 8.5px;
   border-radius: var(--r-pill);
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
@@ -892,7 +896,7 @@
 .tray-cat-add:focus-visible {
   width: 104px;
   gap: 6px;
-  padding: 0 12px 0 7.5px;
+  padding: 0 12px 0 8.5px;
   background: var(--accent-soft-2);
   border-color: var(--accent-line-2);
 }
@@ -901,7 +905,7 @@
 .tray-cat-add:active { transform: scale(.97); }
 /* 터치 기기에는 호버가 없으니 라벨을 늘 펼쳐 둔다 */
 @media (hover: none) {
-  .tray-cat-add { width: auto; gap: 6px; padding: 0 11px 0 7.5px; }
+  .tray-cat-add { width: auto; gap: 6px; padding: 0 12px 0 8.5px; }
   .tray-cat-add-lab { opacity: 1; }
 }
 /* 모두 놓은 카테고리 — 같은 자리에서 완료로 바뀌어 반복 클릭을 막는다 */
@@ -1052,4 +1056,13 @@
 }
 @media (max-width: 600px) {
   .gb-name { max-width: 96px; }
+  /* 휴대폰: 상단 바 왼쪽 칸이 좁다 — 제목은 탭 바가 말해 주니 빼고, 프리셋 칩은 말줄임 */
+  .board-title { display: none; }
+  .board-back-label { display: none; } /* '‹'만 — 프리셋 칩 이름이 '● 니'로 잘리지 않게 자리를 준다 */
+  .board-topbar-left { overflow: hidden; }
+  .board-preset-chip { min-width: 0; }
+  /* 편집 도구 막대: 글자가 한 자씩 세로로 꺾이며 화면 밖으로 넘치던 것 — 아이콘만(이름은 aria-label) */
+  .bet-btn > span { display: none; }
+  .bet-btn { padding: 0 10px; }
+  .board-drawer-hint { display: none; }
 }

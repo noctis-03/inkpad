@@ -4,6 +4,7 @@
  * 실행:  npm run shots                  → shots/<이름>/ 에 화면 × 크기 × 테마 PNG
  *        npm run shots -- before        (폴더 이름, 기본 'now')
  *        npm run shots -- after library editor   (화면 이름으로 골라 찍기)
+ *        npm run shots -- now --audit   (찍으면서 화면마다 점검 — 32px보다 작은 누름 대상, 대비 4.5:1 미만 글자 → audit.json)
  *
  * 개발 서버를 띄우고, 기기마다 같은 예시 데이터(카테고리·노트·문서)를 DB에 넣고 가짜 Drive(e2e/fake-drive.ts)에 올린 뒤 찍는다.
  * shots/ 는 저장소에 올리지 않는다(.gitignore).
@@ -11,7 +12,7 @@
 import { createServer } from 'vite'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import type { Page } from 'playwright'
 import { launch, sleep, addStroke, openEditor } from './e2e/lib.ts'
 import { createFakeDrive } from './e2e/fake-drive.ts'
@@ -65,6 +66,81 @@ async function diverge(p: Page, other: Page, s: Seed) {
   await addStroke(p, s.paged, 's-pc')
   await push(p)
   for (const id of s.all.slice(0, 2)) await addStroke(p, id, `s-${id}-after`)
+}
+
+/** 화면 점검(4단계) — 페이지 안에서 돈다. 같은 모양(태그·클래스·이름)은 한 번만 */
+function auditPage() {
+  const vis = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return false
+    for (let n: Element | null = e; n; n = n.parentElement) {
+      const cs = getComputedStyle(n)
+      if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.05) return false
+    }
+    return true
+  }
+  const sig = (e: Element) => {
+    const cls = [...e.classList].filter((c) => !/^is-|^on$|^hot$/.test(c)).slice(0, 3).join('.')
+    const name = (e.getAttribute('aria-label') || (e as HTMLElement).innerText || (e as HTMLInputElement).placeholder || '').trim().replace(/\s+/g, ' ').slice(0, 24)
+    return `${e.tagName.toLowerCase()}${cls ? '.' + cls : ''}${name ? ` "${name}"` : ''}`
+  }
+  const small: Record<string, string> = {}
+  for (const e of document.querySelectorAll('button, a[href], [role=button], [role=menuitem], [role=menuitemradio], [role=radio], [role=tab], input:not([type=hidden]), select, summary')) {
+    if (!vis(e) || (e as HTMLButtonElement).disabled) continue
+    const r = e.getBoundingClientRect()
+    // ::after로 넓힌 누름 영역(inset 음수)까지 — 보이는 크기는 작아도 손가락이 닿는 영역
+    const a = getComputedStyle(e, '::after')
+    const out = (v: string) => (a.content !== 'none' && a.position === 'absolute' ? Math.max(0, -parseFloat(v) || 0) : 0)
+    const w = r.width + out(a.left) + out(a.right)
+    const h = r.height + out(a.top) + out(a.bottom)
+    // 입력칸은 둘레 상자(검색창 등)가 누름 대상이다 — 상자 높이로 잰다
+    const box = e.tagName === 'INPUT' && e.parentElement ? e.parentElement.getBoundingClientRect() : null
+    const hh = box ? Math.max(h, box.height) : h
+    if (w < 32 || hh < 32) small[sig(e)] = `${Math.round(w)}×${Math.round(hh)}`
+  }
+  // 대비 — 글자를 직접 품은 요소의 글자색 vs 위로 올라가며 처음 만나는 불투명 바탕(그림·그라데이션 바탕이면 건너뛴다)
+  // rgb(…)는 0–255, color-mix 결과인 color(srgb …)는 0–1
+  const rgb = (s: string) => {
+    const v = (s.match(/[\d.]+/g) ?? []).map(Number)
+    return s.startsWith('color(srgb') ? [...v.slice(0, 3).map((x) => x * 255), ...v.slice(3)] : v
+  }
+  const lum = ([r, g, b]: number[]) => {
+    const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+  }
+  const low: Record<string, string> = {}
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+  const seen = new Set<Element>()
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement
+    // 비활성 컨트롤의 글자는 대비 기준(WCAG 1.4.3)의 예외라 건너뛴다
+    if (!el || seen.has(el) || !n.textContent?.trim() || el.closest('svg, canvas, iframe, .doc-thumb, .board-item, .merge-canvas, button:disabled, [aria-disabled="true"]')) continue
+    seen.add(el)
+    if (!vis(el)) continue
+    const cs = getComputedStyle(el)
+    let fg = rgb(cs.color)
+    if (fg.length < 3) continue
+    let bg: number[] | null = null
+    let alpha = (fg[3] ?? 1) * Number(cs.opacity)
+    for (let a: Element | null = el; a; a = a.parentElement) {
+      const s = getComputedStyle(a)
+      if (a !== el) alpha *= Number(s.opacity)
+      if (s.backgroundImage !== 'none') break
+      const c = rgb(s.backgroundColor)
+      if (c.length >= 3 && (c[3] ?? 1) > 0.5) { // 반투명 판(서랍·떠 있는 막대)도 바탕으로 — 그 위 조상까지 올라가면 엉뚱한 색과 비교한다
+        bg = c
+        break
+      }
+    }
+    if (!bg) continue
+    fg = fg.slice(0, 3).map((v, i) => v * alpha + bg![i] * (1 - alpha)) // 반투명 글자는 바탕과 섞는다
+    const [l1, l2] = [lum(fg), lum(bg)].sort((a, b) => b - a)
+    const ratio = (l1 + 0.05) / (l2 + 0.05)
+    const size = parseFloat(cs.fontSize)
+    const big = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700)
+    if (ratio < (big ? 3 : 4.5)) low[sig(el)] = `${ratio.toFixed(2)}:1 · ${size}px`
+  }
+  return { small, low }
 }
 
 async function settle(p: Page, ms = 700) {
@@ -177,6 +253,8 @@ const args = process.argv.slice(2).filter((a) => !a.startsWith('-'))
 const outName = args[0] && !SCREENS[args[0]] ? args.shift()! : 'now'
 const pick = args.length ? args : Object.keys(SCREENS)
 for (const n of pick) if (!SCREENS[n]) throw new Error(`모르는 화면: ${n} (있는 것: ${Object.keys(SCREENS).join(', ')})`)
+const doAudit = process.argv.includes('--audit')
+const report: Record<string, ReturnType<typeof auditPage>> = {}
 const outDir = join(root, 'shots', outName)
 mkdirSync(outDir, { recursive: true })
 
@@ -213,6 +291,7 @@ try {
           await SCREENS[name](p, base, s)
           await settle(p)
           await p.screenshot({ path: join(outDir, `${name}.${vpName}.${theme}.png`) })
+          if (doAudit) report[`${name}.${vpName}.${theme}`] = await p.evaluate(auditPage)
           n++
         } catch (e) {
           console.error(`✗ ${name} ${vpName} ${theme}: ${(e as Error).message.split('\n')[0]}`)
@@ -226,3 +305,13 @@ try {
   await server.close()
 }
 console.log(`${n}장 → ${outDir}`)
+if (doAudit) {
+  writeFileSync(join(outDir, 'audit.json'), JSON.stringify(report, null, 1))
+  // 화면을 가로질러 모은 요약 — 같은 문제는 한 줄, 나온 화면 수와 함께
+  for (const kind of ['small', 'low'] as const) {
+    const all = new Map<string, Set<string>>()
+    for (const [shot, r] of Object.entries(report)) for (const [k, v] of Object.entries(r[kind])) all.set(`${k} — ${v.split(' · ')[0]}`, (all.get(`${k} — ${v.split(' · ')[0]}`) ?? new Set()).add(shot.split('.')[0]))
+    console.log(`\n${kind === 'small' ? '32px보다 작은 누름 대상' : '대비 부족 글자'}: ${all.size}종`)
+    for (const [k, s] of [...all].sort()) console.log(`  ${k}  [${[...s].join(', ')}]`)
+  }
+}

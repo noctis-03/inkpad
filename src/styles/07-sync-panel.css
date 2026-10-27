@@ -253,7 +253,7 @@
   padding: 0 6px;
   border-radius: var(--r-md);
   background: var(--t);
-  color: var(--on-ink);
+  color: var(--btn-fg); /* 다크에서 --t가 밝은 색이라 흰 글자는 1.4:1 — 잉크 버튼 글자색(테마마다 반대)으로 */
   font-size: var(--fs-sm);
   font-weight: 700;
   display: grid;
@@ -391,7 +391,8 @@
   color: var(--btn-fg);
 }
 .cloud-chip.on span {
-  color: var(--muted-2);
+  color: inherit;
+  opacity: .7; /* --muted-2는 다크의 밝은 칩 위에서 3.9:1 */
 }
 .cloud-chip:disabled {
   opacity: 0.4;
@@ -1631,7 +1632,7 @@
   height: 18px;
   padding: 0 5px;
   border-radius: var(--r-pill);
-  background: var(--danger);
+  background: var(--mark-x); /* 다크의 --danger(밝은 빨강) 위 흰 글자는 2.8:1 — 테마 공통 진한 빨강 */
   color: var(--on-ink);
   font-size: var(--fs-xs);
   font-weight: 700;

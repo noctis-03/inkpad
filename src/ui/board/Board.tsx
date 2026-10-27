@@ -1521,7 +1521,7 @@ export function Board() {
       <header className="board-topbar">
         <div className="board-topbar-left">
           <button className="board-back" onClick={() => navigate({ name: 'library' })} aria-label="노트 목록으로">
-            <Icon name="back" size={18} /> 노트
+            <Icon name="back" size={18} /> <span className="board-back-label">노트</span>
           </button>
           <h1 className="board-title">작업보드</h1>
           <button className="board-preset-chip" onClick={() => setShowPresets(true)} aria-label="프리셋 열기">
