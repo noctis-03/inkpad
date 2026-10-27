@@ -629,15 +629,25 @@
   display: none;
 }
 /* 꼬리표가 붙은 카드(올리기·이 기기만·새 버전·갈라짐 — 손댈 것이 남은 카드)는 먹색 빗금(45°).
-   미리보기 위에 곱하기로 얹어 흰 종이 자리에만 보이고 필기는 가리지 않는다. 마킹 빗금(-45°, 마킹 색)과 방향·색을 달리한다 */
+   미리보기 위에 곱하기로 얹어 흰 종이 자리에만 보이고 필기는 가리지 않는다. 마킹 빗금(-45°, 마킹 색)과 방향·색을 달리한다.
+   빗금은 천천히 아래로 흐른다 — 45° 빗금의 세로 주기(간격 × √2)만큼 위로 더 길게 깔고 그만큼 내리며 되풀이해 이음매가 없다 */
 .doc-grid .doc-card:has(.sync-tag.is-overlay) .doc-thumb::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: calc(var(--sync-hatch-gap) * -1.41421356) 0 0 0;
   z-index: 1;
   pointer-events: none;
   background-image: repeating-linear-gradient(45deg, var(--sync-hatch) 0 var(--sync-hatch-w), transparent var(--sync-hatch-w) var(--sync-hatch-gap));
   mix-blend-mode: multiply;
+  animation: sync-hatch-fall 1.8s linear infinite;
+}
+@keyframes sync-hatch-fall {
+  to {
+    transform: translateY(calc(var(--sync-hatch-gap) * 1.41421356));
+  }
+}
+:root[data-motion='off'] .doc-grid .doc-card:has(.sync-tag.is-overlay) .doc-thumb::before {
+  animation: none;
 }
 .doc-more {
   position: absolute;
