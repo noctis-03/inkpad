@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
+import { errorText, startActivity, type ActivityHandle, type ActivityKind } from '../../shared/activity'
 import { askPdfPassword, confirmDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { pickFiles, saveFile } from '../../io/download'
@@ -34,7 +35,6 @@ const SAVE_NOTE: Record<FileRoute, string> = {
 export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot }) {
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const frame = useRef<HTMLIFrameElement>(null)
   const [app, setApp] = useState<HtmlApp | null | undefined>(undefined)
   const [srcDoc, setSrcDoc] = useState('')
@@ -109,16 +109,18 @@ export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot
     )
   }
 
-  /** 저장 창을 닫고 일을 한 뒤 앱에 저장 여부를 알린다 */
-  const finish = async (req: SaveReq, work: () => Promise<boolean>) => {
+  /** 저장 창을 닫고 일을 한 뒤 앱에 저장 여부를 알린다 — 그동안은 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다 */
+  const finish = async (req: SaveReq, kind: ActivityKind, work: (a: ActivityHandle) => Promise<boolean>) => {
     setSaves((q) => q.slice(1))
+    const act = startActivity(kind, req.file.name)
     let ok = false
     try {
-      ok = await work()
+      ok = await work(act)
+      if (ok) act.done()
+      else act.drop()
     } catch (e) {
+      act.fail(errorText(e, '파일을 저장하지 못했습니다.'))
       toast(e instanceof Error ? e.message : '파일을 저장하지 못했습니다.', 'error')
-    } finally {
-      setBusy(null)
     }
     saved(req, ok)
   }
@@ -130,13 +132,12 @@ export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot
    * PDF를 기타 파일로 고르면 그때 따로 묻는다(upload='ask')
    */
   const asFile = (req: SaveReq, upload: boolean | 'ask') =>
-    finish(req, async () => {
+    finish(req, 'import', async () => {
       if (upload === 'ask') {
         const choice = await uploadChoice(req.file.size)
         if (choice === 'cancel') return false
         upload = choice === 'upload'
       }
-      setBusy({ text: `${req.file.name} 저장하는 중` })
       const r = await addFile(req.file, category, { upload })
       const open = { label: '열기', run: () => navigate({ name: 'file', fileId: r.file.id }) }
       if (!upload) toast('이 기기의 기타 파일에 저장했습니다. 업로드하려면 목록에서 재업로드를 눌러 주세요.', 'info', open)
@@ -146,8 +147,7 @@ export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot
     })
 
   const asApp = (req: SaveReq) =>
-    finish(req, async () => {
-      setBusy({ text: `${req.file.name} 추가하는 중` })
+    finish(req, 'import', async () => {
       const r = await addApp(req.file, category)
       const run = { label: '실행', run: () => navigate({ name: 'app', appId: r.app.id }) }
       toast(r.uploaded ? '앱으로 추가하고 클라우드에 저장했습니다.' : '앱으로 추가했습니다. 클라우드에는 다음 올리기 때 저장됩니다.', 'success', run)
@@ -155,10 +155,8 @@ export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot
     })
 
   const asInkpad = (req: SaveReq) =>
-    finish(req, async () => {
-      const text = `${req.file.name} 가져오는 중`
-      setBusy({ text })
-      const r = await importInkpad(req.file, null, (d, t) => setBusy({ text, progress: d / t }))
+    finish(req, 'import', async (a) => {
+      const r = await importInkpad(req.file, null, (d, t) => a.update({ progress: d / t }))
       const one = r.documents.length === 1 ? r.documents[0] : null
       toast(
         `문서 ${r.documents.length}개를 가져왔습니다${r.skipped ? ` (${r.skipped}개 건너뜀)` : ''}${r.skippedBlocks ? ` — 새 버전에서 만든 블록 ${r.skippedBlocks}개를 가져오지 못했습니다` : ''}.`,
@@ -170,19 +168,17 @@ export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot
 
   /** PDF → 노트 (라이브러리의 PDF 가져오기와 같다). 앱과 같은 카테고리, 폴더 없이 */
   const asNote = (req: SaveReq) =>
-    finish(req, async () => {
+    finish(req, 'import', async (a) => {
       const name = req.file.name
-      setBusy({ text: `${name} 가져오는 중`, progress: 0 })
-      const info = await readPdf(req.file, name, askPdfPassword, (p) => setBusy({ text: `${name} 읽는 중`, progress: p }))
+      a.update({ detail: '읽는 중', progress: 0 })
+      const info = await readPdf(req.file, name, askPdfPassword, (p) => a.update({ progress: p }))
       if (!info.pages.length) throw new ImportError('읽을 수 있는 페이지가 없습니다.')
       if (info.failedPages.length) {
-        setBusy(null)
         const ok = await confirmDialog('일부 페이지를 읽을 수 없습니다', {
           message: `${info.failedPages.length}개 페이지가 손상되었습니다. 읽을 수 있는 ${info.pages.length}개 페이지만 가져올까요?`,
           ok: '가져오기'
         })
         if (!ok) return false
-        setBusy({ text: `${name} 가져오는 중` })
       }
       const doc = await createDocumentFromPdf(info, null)
       if (category) await updateDocument(doc.id, { category })

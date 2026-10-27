@@ -1,10 +1,12 @@
 // 동기화 공통 기반: Drive 위치 기록(syncState)과 Drive 폴더(root·docs·assets) 확보.
 // sync.ts(동기화 엔진)와 assets.ts(원본 지연 로딩)가 함께 쓴다.
 // 순환 import를 피하려고 여기로 분리했다.
+import { errorText, startActivity } from '../shared/activity'
 import type { ID } from '../shared/model'
 import { db } from '../storage/db'
 import { enqueue } from '../storage/repo'
 import * as drive from './drive'
+import { AuthRequiredError, SyncNotConfiguredError } from './token'
 
 export const ROOT_NAME = 'Inkpad'
 
@@ -138,12 +140,17 @@ export const ensureBranchesFolder = () =>
  * 항목 하나를 지금 클라우드에 반영해 본다 (앱·기타 파일·보드 프리셋을 추가·수정한 직후).
  * 오프라인이거나 실패하면 false — 항목의 pending 표식이 남아 시트의 '모두 올리기'로 다시 올린다.
  */
-export async function tryUpload(tag: string, run: () => Promise<void>): Promise<boolean> {
+export async function tryUpload(tag: string, run: () => Promise<void>, title?: () => Promise<string | undefined>): Promise<boolean> {
   if (!navigator.onLine) return false
+  // 탭 바 상태 칸(전송)에 보인다 — 로그인하지 않았거나 클라우드가 없는 기기에서는 올라가는 게 없으므로 남기지 않는다
+  const act = startActivity('upload', (await title?.().catch(() => undefined)) || '올리기', { detail: '올리는 중' })
   try {
     await run()
+    act.done()
     return true
   } catch (e) {
+    if (e instanceof SyncNotConfiguredError || e instanceof AuthRequiredError) act.drop()
+    else act.fail(`${errorText(e, '올리지 못했습니다.')} — 올리기 대기로 남겼습니다`)
     console.warn(`[${tag}] 클라우드 반영 실패 — 올리기 대기로 남는다`, e)
     return false
   }

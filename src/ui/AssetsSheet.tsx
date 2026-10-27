@@ -3,6 +3,7 @@ import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { formatBytes, formatDate } from '../shared/util'
 import type { ID } from '../shared/model'
+import { errorText, startActivity, trackActivity } from '../shared/activity'
 import { db, type AssetRow } from '../storage/db'
 import { collectAssetUsage } from '../storage/repo'
 import { confirmTransfer } from '../sync/transfer'
@@ -57,7 +58,6 @@ const titleOf = (a: AssetInfo) => a.name?.trim() || `${a.kind === 'pdf' ? 'PDF' 
 
 export function AssetsSheet({ onClose }: { onClose: () => void }) {
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const online = useOnline()
   const [items, setItems] = useState<AssetInfo[] | null>(null)
   const [cloudKnown, setCloudKnown] = useState(false) // 클라우드 목록을 읽었는가 (오프라인·미로그인이면 false)
@@ -342,9 +342,8 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     }
     const total = missing.reduce((n, a) => n + a.size, 0)
     if (!(await confirmTransfer('down', total, missing.length))) return
-    setBusy({ text: `원본 받는 중 (0/${missing.length})`, progress: 0 })
     try {
-      const r = await downloadAllMissing((done, tot) => setBusy({ text: `원본 받는 중 (${done}/${tot})`, progress: done / tot }))
+      const r = await downloadAllMissing() // 받는 동안은 탭 바 상태 칸(전송)에 보인다
       if (r.authFailed) {
         setCloudAuth(true)
         toast('Google 로그인이 만료되었습니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
@@ -356,7 +355,6 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
       // 방금 확보한 원본으로 미리보기가 비어 있던 노트를 채운다
       void refreshMissingThumbnailsWithToast()
     } finally {
-      setBusy(null)
       await load()
     }
   }
@@ -373,8 +371,10 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     }
     if (!(await confirmTransfer('up', a.size))) return
     try {
-      const ok = await uploadAssetLocal(a.assetId)
-      if (!ok) throw new Error('이 기기에 원본이 없어 업로드할 수 없습니다.')
+      const id = a.assetId
+      await trackActivity('upload', titleOf(a), async () => {
+        if (!(await uploadAssetLocal(id))) throw new Error('이 기기에 원본이 없어 업로드할 수 없습니다.')
+      })
       toast(`"${titleOf(a)}"을(를) 클라우드에 업로드했습니다.`, 'success')
     } catch (e) {
       if (e instanceof AuthRequiredError) {
@@ -394,19 +394,23 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
     const total = targets.reduce((n, a) => n + a.size, 0)
     if (!(await confirmTransfer('up', total, targets.length))) return
     let n = 0
-    setBusy({ text: `원본 올리는 중 (0/${targets.length})`, progress: 0 })
+    // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+    const act = startActivity('upload', `원본 ${targets.length}개 올리기`, { progress: 0 })
     try {
       for (let i = 0; i < targets.length; i++) {
+        act.update({ detail: `${i + 1}/${targets.length} 올리는 중`, progress: i / targets.length })
         try {
           if (await uploadAssetLocal(targets[i].assetId!)) n++
         } catch (e) {
           console.warn('[assets] 재업로드 실패', targets[i].sha256, e)
         }
-        setBusy({ text: `원본 올리는 중 (${i + 1}/${targets.length})`, progress: (i + 1) / targets.length })
       }
+      act.done(n < targets.length ? `${n}개 올림 · ${targets.length - n}개 실패` : `${n}개 올림`)
       toast(n ? `${n}개를 업로드했습니다.` : '업로드할 원본이 없습니다.', n ? 'success' : 'info')
+    } catch (e) {
+      act.fail(errorText(e, '올리지 못했습니다.'))
+      throw e
     } finally {
-      setBusy(null)
       await load()
     }
   }

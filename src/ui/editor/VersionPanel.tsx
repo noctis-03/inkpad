@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useUI } from '../../app/store'
+import { trackActivity } from '../../shared/activity'
 import { confirmDialog } from '../../app/dialogs'
 import { formatBytesShort, formatDate } from '../../shared/util'
 import type { ID } from '../../shared/model'
@@ -49,7 +50,6 @@ const errText = (e: unknown, fallback: string) =>
 export function VersionPanel({ docId }: { docId: ID }) {
   const close = useUI((s) => s.setPanel)
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const [revs, setRevs] = useState<DocRevision[] | null>(null)
   const [branches, setBranches] = useState<DocBranch[]>([])
   const [snaps, setSnaps] = useState<SnapshotInfo[]>([])
@@ -139,9 +139,12 @@ export function VersionPanel({ docId }: { docId: ID }) {
     )
       return
     setBusyId(key)
-    setBusy({ text: '버전 불러오는 중' })
     try {
-      await restoreVersion(docId, ref)
+      // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+      await trackActivity('work', '버전 되돌리기', async (a) => {
+        a.update({ detail: '버전 불러오는 중' })
+        await restoreVersion(docId, ref)
+      }, () => '되돌림')
       toast('되돌렸습니다. 동기화를 누르면 다른 기기에도 반영됩니다.', 'success', {
         label: '동기화',
         run: () => void syncNow()
@@ -151,7 +154,6 @@ export function VersionPanel({ docId }: { docId: ID }) {
     } catch (e) {
       toast(errText(e, '되돌리지 못했습니다.'), 'error')
     } finally {
-      setBusy(null)
       setBusyId(null)
     }
   }

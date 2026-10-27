@@ -1,4 +1,4 @@
-// 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일.
+// 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일. 오른쪽 끝은 상태 칸(dock/StatusDock).
 // 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없어도 바(홈 탭)는 늘 그린다.
 // 탭은 끌어서 순서를 바꾼다 — 마우스·펜은 바로 끌고, 손가락은 길게 눌러 집는다(그냥 밀면 탭 바가 옆으로 넘어간다).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -8,6 +8,7 @@ import { APPS_EVENT, getApp } from '../sync/apps'
 import { FILES_EVENT, getFile } from '../sync/files'
 import { Icon } from './Icon'
 import { Menu, MenuItem } from './Menu'
+import { StatusDock } from './dock/StatusDock'
 
 const ICON: Record<TabRoute['name'], string> = { editor: 'notebook', app: 'app', file: 'file' }
 
@@ -302,6 +303,7 @@ export function TabBar() {
           )
         })}
       </div>
+      <StatusDock />
 
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>

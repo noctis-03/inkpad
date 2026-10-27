@@ -19,3 +19,4 @@
 @import './styles/13-board.css'; /* 작업보드 */
 @import './styles/14-late.css'; /* 라이브러리 상단 바 — 좁은 화면에서 줄이기 */
 @import './styles/15-textdoc.css'; /* 문서(text 모드) — 노션형 블록 편집 */
+@import './styles/16-dock.css'; /* 탭 바 오른쪽 상태 칸(전송·동기화·저장 공간)과 펼친 창 */

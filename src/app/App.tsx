@@ -72,7 +72,6 @@ export function App() {
       <Panes />
       <InstallHint />
       <Toasts />
-      <Busy />
       <MergeHost />
       <ArchiveHost />
       <ChangesHost />
@@ -235,24 +234,6 @@ function Toasts() {
           </button>
         </div>
       ))}
-    </div>
-  )
-}
-
-function Busy() {
-  const busy = useUI((s) => s.busy)
-  if (!busy) return null
-  return (
-    <div className="busy-backdrop">
-      <div className="busy">
-        <div className="spinner" />
-        <div>{busy.text}</div>
-        {busy.progress !== undefined && (
-          <div className="progress">
-            <span style={{ width: `${Math.round(busy.progress * 100)}%` }} />
-          </div>
-        )}
-      </div>
     </div>
   )
 }

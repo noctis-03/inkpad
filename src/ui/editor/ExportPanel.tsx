@@ -8,12 +8,12 @@ import { Icon } from '../Icon'
 import { exportDocumentPdf } from '../../io/pdfExport'
 import { exportInkpad } from '../../io/inkpadFormat'
 import { saveFile } from '../../io/download'
+import { trackActivity } from '../../shared/activity'
 
 export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }) {
   const close = useUI((s) => s.setPanel)
   const view = useUI((s) => s.view)
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const [range, setRange] = useState<'all' | 'current' | 'custom'>('all')
   const [custom, setCustom] = useState('')
   const [pattern, setPattern] = useState(true)
@@ -36,36 +36,30 @@ export function ExportPanel({ engine, doc }: { engine: Engine; doc: DocumentMeta
     }
     try {
       await engine.flush()
-      setBusy({ text: 'PDF 만드는 중', progress: 0 })
-      const blob = await exportDocumentPdf(doc.id, {
-        pageIndices,
-        includePattern: pattern,
-        includeSheets: withSheets,
-        askPassword: askPdfPassword,
-        onProgress: (d, t, phase) => setBusy({ text: phase, progress: t ? d / t : undefined })
-      })
-      setBusy(null)
+      // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+      const blob = await trackActivity('export', `${doc.title}.pdf`, (a) =>
+        exportDocumentPdf(doc.id, {
+          pageIndices,
+          includePattern: pattern,
+          includeSheets: withSheets,
+          askPassword: askPdfPassword,
+          onProgress: (d, t, phase) => a.update({ detail: phase, progress: t ? d / t : undefined })
+        }))
       await saveFile(blob, `${doc.title}.pdf`)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       const oom = /memory|allocation|RangeError/i.test(msg)
       toast(oom ? '메모리가 부족합니다. 페이지 범위를 나눠서 내보내 보세요.' : `PDF 내보내기 실패: ${msg}`, 'error')
-    } finally {
-      setBusy(null)
     }
   }
 
   const exportOwn = async () => {
     try {
       await engine.flush()
-      setBusy({ text: '내보내는 중' })
-      const blob = await exportInkpad([doc.id], 'document')
-      setBusy(null)
+      const blob = await trackActivity('export', `${doc.title}.inkpad`, () => exportInkpad([doc.id], 'document'))
       await saveFile(blob, `${doc.title}.inkpad`)
     } catch (e) {
       toast(e instanceof Error ? e.message : '내보내기 실패', 'error')
-    } finally {
-      setBusy(null)
     }
   }
 

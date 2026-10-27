@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Engine } from '../../engine/engine'
 import { useUI } from '../../app/store'
+import { errorText, startActivity } from '../../shared/activity'
 import { askPdfPassword, confirmDialog } from '../../app/dialogs'
 import { BACKGROUND_LABELS, PAGE_SIZES, makeBackground, type BackgroundType, type DocumentMeta } from '../../shared/model'
 import { Icon } from '../Icon'
@@ -15,7 +16,6 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
   const close = useUI((s) => s.setPanel)
   const view = useUI((s) => s.view)
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const [scope, setScope] = useState<'current' | 'all'>('current')
   const paged = doc.mode === 'paged'
   const page = engine.pages[paged ? view.currentPage : 0]
@@ -46,18 +46,19 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
   const insertPdf = async () => {
     const [f] = await pickFiles('application/pdf,.pdf')
     if (!f) return
+    // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+    const act = startActivity('import', f.name, { detail: '읽는 중', progress: 0 })
     try {
-      setBusy({ text: `${f.name} 읽는 중`, progress: 0 })
-      const info = await readPdf(f, f.name, askPdfPassword, (p) => setBusy({ text: `${f.name} 읽는 중`, progress: p }))
-      if (info.failedPages.length && !(await confirmDialog('일부 페이지를 읽을 수 없습니다', { message: `${info.pages.length}개 페이지만 삽입할까요?` }))) return
+      const info = await readPdf(f, f.name, askPdfPassword, (p) => act.update({ progress: p }))
+      if (info.failedPages.length && !(await confirmDialog('일부 페이지를 읽을 수 없습니다', { message: `${info.pages.length}개 페이지만 삽입할까요?` }))) return act.drop()
       const pages = pdfPagesFor(doc.id, info)
       await closePdf(info.pdf)
       engine.insertPages(view.currentPage, pages)
+      act.done(`${pages.length}쪽 삽입`)
       toast(`${pages.length}개 페이지를 삽입했습니다.`, 'success')
     } catch (e) {
+      act.fail(errorText(e, 'PDF를 삽입하지 못했습니다.'))
       toast(e instanceof Error ? e.message : 'PDF를 삽입하지 못했습니다.', 'error')
-    } finally {
-      setBusy(null)
     }
   }
 
