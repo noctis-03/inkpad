@@ -3,6 +3,7 @@ import { useUI } from '../../app/store'
 import { confirmDialog, promptDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { SettingsSections } from '../SettingsPanel'
+import { useEscClose } from '../sheetParts'
 import { formatBytes, isStandalone } from '../../shared/util'
 import { MAX_CATEGORY_CHARS, normalizeCategory, type DocumentMeta, type Folder, type ID } from '../../shared/model'
 import {
@@ -130,6 +131,8 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
       location.reload() // DB를 닫았으니 새로 열어 빈 상태로 시작한다
     }
   }
+
+  useEscClose(onClose)
 
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>

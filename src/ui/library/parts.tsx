@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { SPRING, dur } from '../motion/motion'
 import { Icon } from '../Icon'
+import { useEscClose } from '../sheetParts'
 import { refreshAllThumbnailsWithToast } from '../../io/docThumb'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
@@ -183,6 +184,7 @@ export function CategoryPicker({
     if (!c) return
     onPick(c)
   }
+  useEscClose(onClose)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">

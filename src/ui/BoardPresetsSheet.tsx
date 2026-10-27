@@ -25,7 +25,7 @@ import {
   type CloudPresetState
 } from '../sync/board'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline } from './sheetParts'
 
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
 type Primary = 'apply' | 'upload' | 'reupload' | 'receive'
@@ -237,6 +237,8 @@ export function BoardPresetsSheet({
       </>
     )
   }
+
+  useEscClose(onClose)
 
   return (
     <SheetErrorBoundary onClose={onClose}>

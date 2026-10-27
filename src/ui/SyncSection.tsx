@@ -36,6 +36,7 @@ import { mergeDraftKeys } from '../sync/mergeDraft'
 import { openArchive } from './ArchiveSheet'
 import { openChanges } from './ChangesView'
 import { Segmented } from './Segmented'
+import { useEscClose } from './sheetParts'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -902,7 +903,10 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
               aria-label="기기 이름"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void save()
-                else if (e.key === 'Escape') setEditing(false)
+                else if (e.key === 'Escape') {
+                  e.preventDefault() // 이름 고치기만 취소 — 시트는 닫지 않는다
+                  setEditing(false)
+                }
               }}
             />
             <button className="sync-link" disabled={!name.trim()} onClick={() => void save()}>
@@ -948,6 +952,7 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
   const total = plan.docs.length + plan.assets.count
   // 이번 올리기 전체 예상 용량 — 노트(gzip 청크 기준) + 새로 올릴 원본
   const totalBytes = plan.docs.reduce((n, d) => n + d.bytes, 0) + plan.assets.bytes
+  useEscClose(onClose, !busy)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="올리기 미리보기">
@@ -1072,6 +1077,7 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
           ? '바꾼 것 없음 · 올려 둔 이 기기 브랜치가 머지 대기에서 빠짐'
           : '바꾼 것 없음'
         : `이 기기에서 쓴 것 획 +${d.changes.added}` + (d.changes.removed ? ` · 지운 것 −${d.changes.removed}` : '') + (d.changes.modified ? ` · 고친 것 ${d.changes.modified}` : '') + (d.changes.other ? ` · 그 밖 ${d.changes.other}` : '')
+  useEscClose(onClose, !busy)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="받기 미리보기">
@@ -1173,6 +1179,7 @@ export function SyncPanel() {
 
 /** 라이브러리용 동기화 시트 — 설정 버튼 옆 초록 동기화 버튼으로 연다 */
 export function SyncSheet({ onClose }: { onClose: () => void }) {
+  useEscClose(onClose)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" role="dialog" aria-label="동기화">

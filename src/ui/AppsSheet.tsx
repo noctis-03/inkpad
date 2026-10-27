@@ -21,7 +21,7 @@ import {
   type CloudAppState
 } from '../sync/apps'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline } from './sheetParts'
 
 // 앱 시트. 모든 항목에 ⋯ 메뉴가 있고, 상태에 맞는 대표 버튼 하나를 바로 보여 준다.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
@@ -315,6 +315,8 @@ export function AppsSheet({ onClose }: { onClose: () => void }) {
         )
     }
   }
+
+  useEscClose(onClose)
 
   return (
     <SheetErrorBoundary onClose={onClose}>

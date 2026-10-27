@@ -1712,7 +1712,7 @@
 }
 .changes-pages {
   padding: 12px 16px;
-  background: var(--paper);
+  --scroll-bg: var(--paper); /* 스크롤 그림자 바탕(05-menus) */
 }
 .changes-foot {
   display: flex;

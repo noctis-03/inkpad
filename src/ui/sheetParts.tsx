@@ -34,6 +34,35 @@ export class SheetErrorBoundary extends Component<{ children: ReactNode; onClose
   }
 }
 
+/** 열린 모달·시트 — 나중에 열린 것이 맨 뒤 */
+const dismissStack: symbol[] = []
+
+/**
+ * Esc로 닫기 — 모든 모달·시트가 같은 규칙으로 닫힌다.
+ * 여러 겹이면 맨 위 하나만 닫고, 그 위에 확인창(.dialog-host)·⋯ 메뉴가 떠 있으면 그쪽이 먼저 닫히게 둔다.
+ * 입력칸이 Esc를 따로 쓰면(이름 고치기 취소 등) preventDefault로 알린다.
+ */
+export function useEscClose(onClose: () => void, enabled = true) {
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    if (!enabled) return
+    const me = Symbol()
+    dismissStack.push(me)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || dismissStack[dismissStack.length - 1] !== me) return
+      if (document.querySelector('.dialog-host, .menu, .store-pop')) return
+      e.preventDefault()
+      close.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      dismissStack.splice(dismissStack.indexOf(me), 1)
+    }
+  }, [enabled])
+}
+
 /** 온라인/오프라인 상태 (online·offline 이벤트 구독) */
 export function useOnline() {
   const [online, setOnline] = useState(() => navigator.onLine)
@@ -49,7 +78,7 @@ export function useOnline() {
   return online
 }
 
-/** 시트 헤더 — 40px 아이콘, 제목, 부제(● Google Drive · 경로 / ● 오프라인), 오른쪽 동작·닫기 */
+/** 시트 헤더 — 32px 아이콘, 제목, 부제(● Google Drive · 경로 / ● 오프라인), 오른쪽 동작·닫기 */
 export function SheetHeader({
   icon,
   title,
@@ -68,7 +97,7 @@ export function SheetHeader({
   return (
     <header className="store-head">
       <span className="store-head-icon">
-        <Icon name={icon} size={22} />
+        <Icon name={icon} size={18} />
       </span>
       <div className="store-head-text">
         <h2>{title}</h2>

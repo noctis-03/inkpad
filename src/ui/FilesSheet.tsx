@@ -19,7 +19,7 @@ import {
   type CloudFileState
 } from '../sync/files'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline } from './sheetParts'
 
 // 기타 파일 시트. 그룹 없이 리스트 하나, 정렬 탭과 저장 공간 카드.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
@@ -249,6 +249,8 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
         return null
     }
   }
+
+  useEscClose(onClose)
 
   return (
     <SheetErrorBoundary onClose={onClose}>

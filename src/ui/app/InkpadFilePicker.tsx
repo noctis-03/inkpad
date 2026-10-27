@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../Icon'
 import { listInkpadFiles, readInkpadFile, type InkpadFile } from '../../sync/inkpadFiles'
 import { formatBytesShort } from '../../shared/util'
+import { useEscClose } from '../sheetParts'
 
 /** 앱이 요청한 accept 문자열에 맞는 파일인지 ('.pdf', 'image/*', 'text/html' 등) */
 function matchesAccept(accept: string, mime: string, name: string): boolean {
@@ -94,6 +95,7 @@ export function InkpadFilePicker({
   }
 
   const chosen = items.filter((f) => picked.has(f.key))
+  useEscClose(onBack, !busy)
 
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onBack()}>
