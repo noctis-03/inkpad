@@ -22,7 +22,6 @@ import { trackRecentDoc } from '../../shared/recentDocs'
 import { plainText } from '../../shared/richText'
 import { ulid } from '../../shared/ulid'
 import { keyBetween } from '../../shared/fracIndex'
-import { dur } from '../motion/motion'
 import type { DocumentMeta, ID, TextBlock, TextBlockType } from '../../shared/model'
 import { TextDocModel, numberLabels, visibleBlocks, type Caret } from '../../textdoc/model'
 import { caretOffset, caretOnFirstLine, caretOnLastLine, deleteRange, setCaret, splitAtCaret, textLength } from '../../textdoc/caret'
@@ -100,29 +99,13 @@ export function TextEditor({ docId }: { docId: ID }) {
 
   useEffect(() => trackRecentDoc(docId), [docId])
 
-  // 여는 애니메이션 — 노트 편집 화면과 같게 (라이브러리 카드에서 펼친 고스트가 자리 잡은 뒤 드러난다)
+  // 여는 애니메이션 — 노트 편집 화면과 같게 (카드에서 열면 App Panes의 원형 리빌, 아니면 페이드업)
   useEffect(() => {
     const el = rootRef.current
     if (!el || document.documentElement.dataset.motion === 'off') return
     const rect = useUI.getState().docCardRect
     useUI.setState({ docCardRect: null })
-    if (!rect) {
-      el.classList.add('doc-enter')
-      return
-    }
-    el.style.opacity = '0'
-    const showT = window.setTimeout(() => {
-      el.style.transition = `opacity ${dur(240)}ms ease`
-      el.style.opacity = '1'
-    }, dur(400))
-    const cleanT = window.setTimeout(() => {
-      el.style.transition = ''
-      el.style.opacity = ''
-    }, dur(800))
-    return () => {
-      window.clearTimeout(showT)
-      window.clearTimeout(cleanT)
-    }
+    if (!rect) el.classList.add('doc-enter')
   }, [])
 
   // 편집 잠금 — 같은 문서를 두 탭에서 고치지 않게 (노트와 같은 잠금)

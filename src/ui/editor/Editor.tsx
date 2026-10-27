@@ -30,7 +30,6 @@ import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
-import { dur } from '../motion/motion'
 import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
 import { Menu, MenuItem } from '../Menu'
@@ -83,31 +82,14 @@ export function Editor({ docId }: { docId: ID }) {
   // 최근 열람 기록 — 라이브러리 '전체'를 다시 누를 때 최근 열람한 노트를 보여 주는 데 쓴다
   useEffect(() => trackRecentDoc(docId), [docId])
 
-  // 노트 열림 애니메이션 — 라이브러리가 만든 열기 고스트(.doc-open-ghost)가 카드에서
-  // 편집 화면으로 펼쳐지는 동안은 가리고 있다가, 고스트가 자리 잡은 뒤 드러난다.
-  // (모션 최소화 설정이면 생략 — 카드 없이 열 때는 조용히 페이드업)
+  // 노트 열림 애니메이션 — 라이브러리 카드에서 열면 편집 화면이 그 카드에서 원으로 퍼진다(App Panes가 칸째로 한다).
+  // 카드 없이 열 때(딥링크·새 문서 만들기·탭)는 조용히 페이드업. 모션 끄기면 둘 다 생략
   useEffect(() => {
     const el = rootRef.current
     if (!el || document.documentElement.dataset.motion === 'off') return
     const rect = useUI.getState().docCardRect
     useUI.setState({ docCardRect: null })
-    if (!rect) {
-      el.classList.add('doc-enter') // 카드 없이 열 때(딥링크·새 문서 만들기)는 조용히 페이드업
-      return
-    }
-    el.style.opacity = '0'
-    const showT = window.setTimeout(() => {
-      el.style.transition = `opacity ${dur(240)}ms ease`
-      el.style.opacity = '1'
-    }, dur(400))
-    const cleanT = window.setTimeout(() => {
-      el.style.transition = ''
-      el.style.opacity = ''
-    }, dur(800))
-    return () => {
-      window.clearTimeout(showT)
-      window.clearTimeout(cleanT)
-    }
+    if (!rect) el.classList.add('doc-enter') // 카드에서 열었으면 원형 리빌이 이미 보여 준다
   }, [])
 
   // 편집 잠금 — 노트를 연 동안 쥐고 있는다. 엔진을 다시 만들어도(동기화 뒤 다시 열기) 놓지 않는다.

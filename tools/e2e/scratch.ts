@@ -4,7 +4,8 @@ import { addStroke, createDoc, device, drawStroke, logsOf, openEditor, sameSet, 
 
 const sceneSize = (p: Page) => p.evaluate(() => (window as unknown as { inkpad?: { scene: { size: number } } }).inkpad?.scene.size ?? -1)
 const pendingOf = (p: Page, docId: string) => p.evaluate(async (D) => (await (await import('/src/sync/unchanged.ts')).pendingSeqsFor(D)).length, docId)
-const waitEngine = (p: Page) => p.waitForFunction(() => !!(window as unknown as { inkpad?: unknown }).inkpad && !document.querySelector('.doc-skeleton'), null, { timeout: 15000 })
+// 카드에서 열면 편집 화면이 원으로 퍼지는 동안(.pane-leaving)은 아직 드러나지 않은 자리를 누를 수 없다 — 다 퍼진 뒤에 쓴다
+const waitEngine = (p: Page) => p.waitForFunction(() => !!(window as unknown as { inkpad?: unknown }).inkpad && !document.querySelector('.doc-skeleton, .pane-leaving'), null, { timeout: 15000 })
 
 export default async function scratch(ctx: Ctx) {
   const { base, check } = ctx

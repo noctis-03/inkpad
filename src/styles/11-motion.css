@@ -340,28 +340,18 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   from { transform: translateX(-130%); }
   to { transform: translateX(130%); }
 }
-/* 복귀 고스트 — 편집 화면을 닫으면 카드로 줄어든다 */
-.doc-return-ghost {
-  position: fixed;
-  z-index: 45;
-  border-radius: var(--r-card);
-  background-color: var(--paper);
-  background-size: cover;
-  background-position: top center;
-  box-shadow: var(--e2);
+/* 노트 열기·닫기 원형 리빌(App Panes) — 바뀌기 전 화면을 잠깐 남겨 둔 칸은 누를 수 없다.
+   원 안에 아래 칸이 비쳐 보이지 않게 그동안은 칸마다 바탕을 깐다 (편집 화면이 아직 불러오는 중이어도) */
+.pane-leaving {
   pointer-events: none;
 }
-/* 열기 고스트 — 카드 썸네일이 편집 화면으로 펼쳐진다 */
-.doc-open-ghost {
-  position: fixed;
-  z-index: 45;
-  border-radius: var(--r-card);
-  background-color: var(--thumb-paper);
-  background-size: cover;
-  background-position: top center;
-  box-shadow: var(--e2);
-  pointer-events: none;
-  will-change: transform;
+.panes:has(.pane-leaving) > .pane-main {
+  background: var(--paper);
+  isolation: isolate; /* 칸마다 쌓임을 따로 — 아래 칸의 z-index 높은 머리·버튼이 위 칸을 뚫고 보이지 않게(나중 칸이 위) */
+}
+/* 편집 화면 아래에서 마운트되는 라이브러리는 등장 효과 없이 — 원이 줄어들며 드러낸다 */
+.panes:has(.pane-leaving) .library {
+  animation: none;
 }
 
 /* 5.4 · 섹션 제목 모핑 — 애니메이션은 TitleText 컴포넌트가 Web Animations API로

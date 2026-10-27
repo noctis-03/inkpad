@@ -4,7 +4,7 @@ import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
 import { CountUp } from '../motion/CountUp'
-import { SPRING, dur, motionLevel } from '../motion/motion'
+import { dur, motionLevel } from '../motion/motion'
 import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
 import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
@@ -68,6 +68,8 @@ type Section =
 
 /** 카드를 이만큼 누르고 있으면 선택 모드 */
 const LONG_PRESS_MS = 500
+/** 편집 화면이 카드로 줄어드는 시간(App Panes의 닫기 원형 리빌) — 다 줄어든 뒤 카드에 settle */
+const RETURN_SETTLE_MS = 440
 /** 사이드바에서 펼친 카테고리 묶음 — 하나만. 앱이 떠 있는 동안만 기억한다(편집 화면에 다녀와도 그대로, 새로고침·다시 켜면 모두 접힘) */
 let openGroupMem: string | null = null
 /** 카드의 [태그] (묶음 화면의 소제목) */
@@ -804,7 +806,6 @@ export function Library() {
 
   // ───────── 인터랙티브 모션 (MOTION_SPEC) ─────────
   const gridRef = useRef<HTMLElement>(null)
-  const thumbsRef = useRef<Map<ID, string>>(thumbs)
   const seenReveal = useRef<Set<string>>(new Set())
   const enteredRef = useRef(false)
   const tiltLast = useRef<HTMLElement | null>(null)
@@ -819,20 +820,18 @@ export function Library() {
     []
   )
 
-  useEffect(() => {
-    thumbsRef.current = thumbs
-  }, [thumbs])
-
   // 검색어 120ms 디바운스
   useEffect(() => {
     const t = setTimeout(() => setDq(query), 120)
     return () => clearTimeout(t)
   }, [query])
 
-  // 최초 마운트 시 1회 카드 등장 — rich에서만 지연을 준다
+  // 최초 마운트 시 1회 카드 등장 — rich에서만 지연을 준다.
+  // 편집 화면에서 돌아올 때는 하지 않는다: 원형 리빌이 라이브러리를 드러내고, 카드가 움직이는 중이면 원이 줄어들 자리가 어긋난다
   useEffect(() => {
     if (!ready || enteredRef.current) return
     enteredRef.current = true
+    if (useUI.getState().returnDocId) return
     setEnter(true)
     const t = setTimeout(() => setEnter(false), 900)
     return () => clearTimeout(t)
@@ -882,37 +881,22 @@ export function Library() {
     prevSync.current = new Map(syncStates)
   }, [syncStates, settleDoc])
 
-  // 편집 화면에서 복귀: 고스트를 카드로 축소하고 settle
+  // 편집 화면에서 복귀: 원형 리빌(App Panes)이 줄어들 카드 자리를 알리고, 다 줄어든 뒤 카드에 settle
   useEffect(() => {
     if (!ready) return
     const rid = useUI.getState().returnDocId
     if (!rid) return
     useUI.setState({ returnDocId: null })
     requestAnimationFrame(() => {
-      const card = document.querySelector<HTMLElement>(`[data-doc-id="${CSS.escape(rid)}"]`)
-      if (!card) return
-      if (document.documentElement.dataset.motion === 'off') return settle(card)
-      const r = card.getBoundingClientRect()
-      if (r.bottom < 0 || r.top > window.innerHeight) return settle(card) // 화면 밖이면 강제 스크롤 없이 settle만
-      const ghost = document.createElement('div')
-      ghost.className = 'doc-return-ghost'
-      const url = thumbsRef.current.get(rid)
-      if (url) ghost.style.backgroundImage = `url(${url})`
-      Object.assign(ghost.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
-      document.body.appendChild(ghost)
-      const anim = ghost.animate(
-        [
-          { transform: `scale(${Math.max(1, window.innerWidth / r.width)})`, opacity: 0.4 },
-          { transform: 'none', opacity: 1 }
-        ],
-        { duration: dur(480), easing: SPRING, fill: 'both' }
-      )
-      const done = () => {
-        ghost.remove()
-        settle(card)
-      }
-      anim.addEventListener('finish', done, { once: true })
-      anim.addEventListener('cancel', () => ghost.remove(), { once: true })
+      // 편집 화면에 가려 보이지 않는 카드 등장(useFlip)은 끝까지 돌려 둔다 — 움직이는 중에 재면 원이 어긋난 자리로 줄어든다
+      gridRef.current?.querySelectorAll<HTMLElement>('[data-flip-key]').forEach((c) => c.getAnimations().forEach((an) => an.finish()))
+      const card = document.querySelector<HTMLElement>(`.pane-main:not(.pane-leaving) [data-doc-id="${CSS.escape(rid)}"]`)
+      const thumb = card?.querySelector<HTMLElement>('.doc-thumb') ?? card
+      const r = thumb?.getBoundingClientRect()
+      // 카드가 없거나 화면 밖이면 강제 스크롤 없이 편집 화면만 흐려지게 한다
+      const visible = !!r && r.bottom > 0 && r.top < window.innerHeight
+      if (motionLevel() !== 'off') useUI.setState({ returnTarget: visible ? r : 'none' })
+      if (card) window.setTimeout(() => settle(card), visible ? dur(RETURN_SETTLE_MS) : 0)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
@@ -962,44 +946,10 @@ export function Library() {
 
   // ───────── 작업 ─────────
 
-  /** 노트 열기 — 카드 썸네일 고스트가 편집 화면으로 펼쳐지는 모핑 */
+  /** 노트 열기 — 편집 화면이 이 카드 미리보기 한가운데서 원으로 퍼진다 (원형 리빌은 App의 Panes가 한다) */
   const open = (d: DocumentMeta, card?: HTMLElement | null) => {
-    const rect = card?.getBoundingClientRect() ?? null
-    useUI.setState({ docCardRect: rect })
-    if (rect && document.documentElement.dataset.motion !== 'off') {
-      const ghost = document.createElement('div')
-      ghost.className = 'doc-open-ghost'
-      const url = thumbsRef.current.get(d.id)
-      if (url) ghost.style.backgroundImage = `url(${url})`
-      Object.assign(ghost.style, {
-        left: `${rect.left}px`,
-        top: `${rect.top}px`,
-        width: `${rect.width}px`,
-        height: `${rect.height}px`
-      })
-      document.body.appendChild(ghost)
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      // 종이 비율을 유지한 채 화면을 가득 덮는 배율 (cover)
-      const cover = Math.max(vw / rect.width, vh / rect.height)
-      const dx = vw / 2 - (rect.left + rect.width / 2)
-      const dy = vh / 2 - (rect.top + rect.height / 2)
-      const anim = ghost.animate(
-        [
-          { transform: 'none', borderRadius: 'var(--r-card)' },
-          { transform: `translate(${dx}px, ${dy}px) scale(${cover})`, borderRadius: '0px' }
-        ],
-        { duration: dur(480), easing: SPRING, fill: 'forwards' }
-      )
-      // 편집 화면이 이미 아래에서 드러나는 타이밍과 맞춰 고스트를 스치듯 지운다
-      const drop = () => {
-        const out = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur(160), easing: 'ease' })
-        out.addEventListener('finish', () => ghost.remove(), { once: true })
-        out.addEventListener('cancel', () => ghost.remove(), { once: true })
-      }
-      anim.addEventListener('finish', drop, { once: true })
-      window.setTimeout(() => ghost.remove(), dur(900)) // 안전망 — 어떤 경로로도 고스트가 남지 않게
-    }
+    const thumb = card?.querySelector<HTMLElement>('.doc-thumb') ?? card
+    useUI.setState({ docCardRect: thumb?.getBoundingClientRect() ?? null })
     navigate({ name: 'editor', docId: d.id })
   }
 

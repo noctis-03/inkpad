@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { isTabRoute, routeKey, useUI, type Toast } from './store'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { isTabRoute, routeKey, useUI, type Route, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { MergeHost } from '../ui/merge/MergeView'
 import { ArchiveHost } from '../ui/ArchiveSheet'
@@ -17,6 +17,7 @@ import type { ID } from '../shared/model'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
 import { installPress } from '../ui/motion/press'
+import { dur } from '../ui/motion/motion'
 
 export function App() {
   useEffect(() => {
@@ -115,6 +116,63 @@ function Panes() {
   const sideKey = split ? routeKey(split) : null
   const slot = (key: string): PaneSlot => (key === mainKey ? 'main' : sideOn && key === sideKey ? 'side' : 'hidden')
 
+  // ── 노트 열기·닫기 원형 리빌 ──
+  // 화면이 바뀌어도 바뀌기 전 화면을 잠깐 남긴다: 열 때는 라이브러리를 아래에 두고 편집 화면이 누른 카드에서 원으로 퍼지고,
+  // 닫을 때는 편집 화면을 위에 두고 그 카드로 원이 줄어든다. 같은 렌더에서 남겨야 바뀌기 전 화면이 다시 마운트되지 않으므로
+  // 렌더 중에 판정한다(React의 '이전 값에서 상태 고치기' 방식)
+  const [prevMain, setPrevMain] = useState({ key: mainKey, route })
+  const [leaving, setLeaving] = useState<Leaving | null>(null)
+  if (prevMain.key !== mainKey) {
+    setPrevMain({ key: mainKey, route })
+    setLeaving(revealFor(prevMain, route))
+  }
+  const mainRef = useRef<HTMLElement>(null)
+  const leaveRef = useRef<HTMLElement>(null)
+  const returnTarget = useUI((s) => s.returnTarget)
+  // 열기: 새 편집 화면이 카드 한가운데서 원으로 퍼진다 (라이브러리는 그 아래 그대로)
+  useLayoutEffect(() => {
+    const el = mainRef.current
+    const from = useUI.getState().docCardRect
+    if (leaving?.dir !== 'open' || !el || !from) return
+    const a = el.animate(circle(el, from, 'grow'), { duration: dur(REVEAL_MS), easing: REVEAL_EASE })
+    const end = () => setLeaving((l) => (l === leaving ? null : l))
+    a.finished.then(end, end)
+    return () => a.cancel()
+  }, [leaving])
+  // 닫기: 라이브러리가 카드를 찾을 때까지 편집 화면을 그대로 두었다가 그 카드로 원이 줄어든다.
+  // 카드가 화면에 없거나(returnTarget 'none') 홈이 작업보드라 찾을 카드가 없으면 그냥 흐려진다
+  const closing = useRef<Leaving | null>(null)
+  useLayoutEffect(() => {
+    const el = leaveRef.current
+    if (leaving?.dir !== 'close' || !el) return
+    // 지난번 복귀에서 쓰이지 않고 남은 자리는 버린다 — 이번 라이브러리가 카드를 새로 찾는다
+    if (closing.current !== leaving) {
+      closing.current = leaving
+      if (returnTarget) return useUI.setState({ returnTarget: null })
+    }
+    const end = () => {
+      useUI.setState({ returnTarget: null })
+      setLeaving((l) => (l === leaving ? null : l))
+    }
+    const fade = () => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur(180), easing: 'ease', fill: 'forwards' })
+    let a: Animation | null = null
+    let wait = 0
+    if (returnTarget && returnTarget !== 'none') a = el.animate(circle(el, returnTarget, 'shrink'), { duration: dur(CONCEAL_MS), easing: REVEAL_EASE, fill: 'forwards' })
+    else if (returnTarget === 'none' || route.name !== 'library') a = fade()
+    else wait = window.setTimeout(() => (a = fade()).finished.then(end, end), RETURN_WAIT_MS) // 라이브러리가 카드를 찾는 중
+    a?.finished.then(end, end)
+    return () => {
+      window.clearTimeout(wait)
+      a?.cancel()
+    }
+  }, [leaving, returnTarget]) // eslint-disable-line react-hooks/exhaustive-deps
+  const leavingPane = (dir: Leaving['dir']) =>
+    leaving?.dir === dir && (
+      <section key={`main:${leaving.key}`} ref={dir === 'close' ? leaveRef : undefined} className="pane pane-main pane-leaving" inert aria-hidden>
+        {mainView(leaving.route)}
+      </section>
+    )
+
   return (
     <div ref={box} className={'panes' + (sideOn ? ' is-split' + (side === 'left' ? ' side-left' : '') : '')} style={sideOn ? ({ '--split-main': `${ratio * 100}%` } as React.CSSProperties) : undefined}>
       {alive.map((id) => {
@@ -125,19 +183,13 @@ function Panes() {
           </section>
         )
       })}
+      {leavingPane('open')}
       {route.name !== 'app' && (
-        <section key={`main:${mainKey}`} className="pane pane-main">
-          {route.name === 'editor' ? (
-            <DocEditor docId={route.docId} />
-          ) : route.name === 'file' ? (
-            <FileRunner fileId={route.fileId} pane="main" />
-          ) : route.name === 'board' ? (
-            <Board />
-          ) : (
-            <Library />
-          )}
+        <section key={`main:${mainKey}`} ref={mainRef} className="pane pane-main">
+          {mainView(route)}
         </section>
       )}
+      {leavingPane('close')}
       {sideOn && split.name === 'file' && (
         <section key={`side:${sideKey}`} className="pane pane-side">
           <FileRunner fileId={split.fileId} pane="side" />
@@ -146,6 +198,50 @@ function Panes() {
       {sideOn && <SplitDivider box={box} />}
     </div>
   )
+}
+
+/** 가운데 칸에 그릴 화면 (앱은 따로 — 위에서 늘 켜 둔 칸으로 그린다) */
+function mainView(route: Route) {
+  return route.name === 'editor' ? (
+    <DocEditor docId={route.docId} />
+  ) : route.name === 'file' ? (
+    <FileRunner fileId={route.fileId} pane="main" />
+  ) : route.name === 'board' ? (
+    <Board />
+  ) : (
+    <Library />
+  )
+}
+
+/** 원형 리빌로 남겨 둔 바뀌기 전 화면 — open: 아래(라이브러리), close: 위(편집 화면) */
+interface Leaving {
+  key: string
+  route: Route
+  dir: 'open' | 'close'
+}
+const REVEAL_MS = 520
+const CONCEAL_MS = 440
+const REVEAL_EASE = 'cubic-bezier(.4,0,.2,1)'
+/** 닫을 때 라이브러리가 카드를 찾기를 기다리는 시간 — 넘으면 그냥 흐려진다 */
+const RETURN_WAIT_MS = 500
+
+/** 이 화면 바뀜에 원형 리빌을 쓸지 — 라이브러리 카드에서 연 노트(docCardRect)와, 노트에서 홈으로 돌아갈 때만 */
+function revealFor(prev: { key: string; route: Route }, next: Route): Leaving | null {
+  if (document.documentElement.dataset.motion === 'off') return null
+  if (prev.route.name === 'library' && next.name === 'editor' && useUI.getState().docCardRect) return { ...prev, dir: 'open' }
+  if (prev.route.name === 'editor' && (next.name === 'library' || next.name === 'board')) return { ...prev, dir: 'close' }
+  return null
+}
+
+/** 카드 한가운데를 중심으로, 칸을 다 덮는 원 ↔ 점 */
+function circle(el: HTMLElement, card: DOMRect, way: 'grow' | 'shrink'): Keyframe[] {
+  const box = el.getBoundingClientRect()
+  const x = card.left + card.width / 2 - box.left
+  const y = card.top + card.height / 2 - box.top
+  const r = Math.hypot(Math.max(x, box.width - x), Math.max(y, box.height - y))
+  const small = { clipPath: `circle(0px at ${x}px ${y}px)` }
+  const big = { clipPath: `circle(${r}px at ${x}px ${y}px)` }
+  return way === 'grow' ? [small, big] : [big, small]
 }
 
 /** 가운데·옆 칸 사이 막대 — 끌어 폭을 바꾼다 (화살표 키로도). 끄는 동안 앱(iframe)이 포인터를 가져가지 않게 막는다 */
