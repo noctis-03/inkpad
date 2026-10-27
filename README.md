@@ -185,6 +185,7 @@ npm run typecheck
 npm test                         # 빠른 검사 모음(수 초, 브라우저 없음): 아래 test:merge·sync·branch·css·flip·motion
 npm run test:e2e                 # 브라우저 시나리오(약 1분) — 처음 한 번 `npx playwright install chromium`
 npm run shots -- before          # 화면 스크린샷(화면 × iPad 가로·세로·휴대폰 × 라이트·다크) → shots/before — UI 손볼 때 전후 비교 (docs/ui-plan.md)
+npm run shots -- now --audit     # 찍으면서 점검 — 32px보다 작은 누름 대상, 대비 4.5:1 미만 글자 → shots/now/audit.json
 npm run health                   # preview 서버의 /api/health 확인
 ```
 

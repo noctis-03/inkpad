@@ -78,7 +78,7 @@
 .store-search input{flex:1;border:0;outline:0;background:transparent;font-size: var(--fs-md);color:var(--ink);min-width:0;}
 .store-clear{border:0;background:var(--tint);border-radius:50%;width:20px;height:20px;display:grid;place-items:center;color:var(--muted);cursor:pointer;}
 .store-tabs{display:flex;gap:6px;flex-wrap:wrap;}
-.store-tab{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--chip);border-radius:var(--r-pill);padding:6px 12px;font-size:var(--fs-base);color:var(--muted);cursor:pointer;}
+.store-tab{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--chip);border-radius:var(--r-pill);padding:6px 12px;font-size:var(--fs-base);color:var(--ink-2);cursor:pointer;} /* --muted는 다크의 --chip 위 4.3:1 */
 .store-tab b{font-size: var(--fs-xs);font-weight:700;background:var(--tint);border-radius:var(--r-pill);padding:0 6px;line-height:16px;color:inherit;}
 .store-tab.is-active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);}
 .store-tab.warn b{background:var(--warn);color:var(--on-ink);}

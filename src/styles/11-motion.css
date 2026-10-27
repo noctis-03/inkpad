@@ -39,6 +39,30 @@
 .sync-mini {
   transition: scale .5s var(--spring-pop), background-color .2s, box-shadow .3s var(--ft-ease);
 }
+/* 누름 영역 넓히기 — 보이는 크기는 촘촘하게 두고 손가락이 닿는 영역은 32px 이상 (docs/ui-plan.md 4단계).
+   .cloud-act-main::after와 같은 방식. 이미 위치가 잡힌 요소(.doc-more 등 absolute)는 그대로 기준이 된다 */
+.seg button,
+.text-btn.small,
+.merge-layer > .text-btn,
+.grid-subhead button,
+.cloud-chip,
+.cloud-bulk,
+.icon-mini,
+.tab-close,
+.tb-check {
+  position: relative;
+}
+.seg button::after,
+.text-btn.small::after,
+.merge-layer > .text-btn::after,
+.grid-subhead button::after,
+.cloud-chip::after,
+.cloud-bulk::after { content: ''; position: absolute; inset: -3px -1px; }
+.doc-more::after,
+.icon-mini::after,
+.tab-close::after,
+.cloud-more::after { content: ''; position: absolute; inset: -4px; }
+.tb-check::after { content: ''; position: absolute; inset: -7px; }
 [data-press].is-pressed,
 .tb-btn.is-pressed,
 .primary-btn.is-pressed,
