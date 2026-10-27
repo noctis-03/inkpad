@@ -1,6 +1,7 @@
 // HTML 앱: 앱 1개 = Drive 파일 1개 (Inkpad/apps/<id>.html).
 // 노트와 달리 머지가 없다 — 추가·업데이트·삭제가 곧바로 Drive에 반영되고(sync.ts 규칙 12),
 // 오프라인·실패면 pending으로 남아 앱 메뉴의 '모두 업로드'(항목마다 reuploadApp)로 다시 올린다.
+import { trackActivity } from '../shared/activity'
 import { MAX_APP_BYTES, MAX_APP_TITLE_CHARS, type HtmlApp, type ID } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
@@ -152,10 +153,14 @@ async function flushOne(id: ID, folderId: string) {
 const tryFlush = (id: ID): Promise<boolean> =>
   trackUpload(
     id,
-    tryUpload('apps', async () => {
-      await flushOne(id, await appsFolder())
-      emit()
-    })
+    tryUpload(
+      'apps',
+      async () => {
+        await flushOne(id, await appsFolder())
+        emit()
+      },
+      async () => (await db.apps.get(id))?.title
+    )
   )
 
 // ───────── 앱 전용 클라우드 관리 (앱 메뉴) ─────────
@@ -261,13 +266,21 @@ export async function listCloudApps(): Promise<CloudAppInfo[]> {
   return out.sort((a, b) => (b.remoteUpdatedAt ?? b.localUpdatedAt ?? 0) - (a.remoteUpdatedAt ?? a.localUpdatedAt ?? 0))
 }
 
-/** 클라우드 앱 하나를 이 기기로 내려받는다 (기존 pullApps의 단건 다운로드 로직) */
+/** 클라우드 앱 하나를 이 기기로 내려받는다 (기존 pullApps의 단건 다운로드 로직) — 탭 바 상태 칸(전송)에 보인다 */
 async function downloadAppFromCloud(appId: ID): Promise<void> {
   const local = await db.apps.get(appId)
   if (local?.pending) throw new Error('이 기기의 변경을 먼저 업로드해 주세요.')
+  return trackActivity('download', local?.title || 'HTML 앱', (a) => {
+    a.update({ detail: '받는 중' })
+    return downloadAppLocked(appId, local, (title) => a.update({ title }))
+  })
+}
+
+async function downloadAppLocked(appId: ID, local: HtmlApp | undefined, named: (title: string) => void): Promise<void> {
   const folder = await appsFolder()
   const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.appId === appId)
   if (!r) throw new Error('클라우드에서 앱을 찾지 못했습니다.')
+  if (r.appProperties?.title) named(r.appProperties.title)
   const html = await (await drive.downloadBlob(r.id)).text()
   const remoteAt = Number(r.appProperties?.updatedAt) || Date.parse(r.modifiedTime) || Date.now()
   await db.apps.put({
@@ -332,7 +345,10 @@ export async function reuploadApp(appId: ID): Promise<boolean> {
  * available 앱(이 기기에 설치되지 않음)의 새 버전 업로드 — 클라우드 사본만 바꾼다.
  * 로컬 db는 건드리지 않는다(자동 설치 금지). 원격 title·category는 유지하고 updatedAt만 갱신한다.
  */
-export async function uploadAppVersionToCloud(appId: ID, file: File): Promise<void> {
+export function uploadAppVersionToCloud(appId: ID, file: File): Promise<void> {
+  return trackActivity('upload', file.name.replace(/\.html?$/i, ''), () => uploadAppVersionLocked(appId, file), () => '새 버전')
+}
+async function uploadAppVersionLocked(appId: ID, file: File): Promise<void> {
   const html = await readHtml(file)
   const folder = await appsFolder()
   const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.appId === appId)

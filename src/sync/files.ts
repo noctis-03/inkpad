@@ -12,6 +12,8 @@ import {
   type ID,
   type StoredFile
 } from '../shared/model'
+import { trackActivity } from '../shared/activity'
+import { formatBytes } from '../shared/util'
 import { ulid } from '../shared/ulid'
 import { db, type FileRow } from '../storage/db'
 import * as drive from './drive'
@@ -110,9 +112,19 @@ export async function ensureFileLocal(id: ID): Promise<FileRow> {
   if (row.text !== undefined || row.blob) return row
   if (!row.fileId) throw new Error('이 파일은 아직 클라우드에 없습니다. 원본이 있는 기기에서 "업로드"를 먼저 실행해 주세요.')
   if (!navigator.onLine) throw new Error('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 열어 주세요.')
-  const blob = await drive.downloadBlob(row.fileId)
-  await db.files.update(id, row.kind === 'text' ? { text: await blob.text() } : { blob })
-  return (await db.files.get(id))!
+  const fileId = row.fileId
+  // 탭 바 상태 칸(전송)에 보인다
+  return trackActivity(
+    'download',
+    row.title,
+    async (a) => {
+      a.update({ detail: '받는 중' })
+      const blob = await drive.downloadBlob(fileId)
+      await db.files.update(id, row.kind === 'text' ? { text: await blob.text() } : { blob })
+      a.update({ detail: formatBytes(blob.size) })
+      return (await db.files.get(id))!
+    }
+  )
 }
 
 /** 내보내기용 Blob (없으면 받아온다) */
@@ -190,10 +202,14 @@ async function flushOne(id: ID, folderId: string) {
 const tryFlush = (id: ID): Promise<boolean> =>
   trackUpload(
     id,
-    tryUpload('files', async () => {
-      await flushOne(id, await filesFolder())
-      emit()
-    })
+    tryUpload(
+      'files',
+      async () => {
+        await flushOne(id, await filesFolder())
+        emit()
+      },
+      async () => (await db.files.get(id))?.title
+    )
   )
 
 // ───────── 파일 전용 클라우드 관리 (기타 파일 메뉴) ─────────

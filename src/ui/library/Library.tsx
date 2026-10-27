@@ -20,6 +20,7 @@ import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { assignCategoryColors, categoryColor, formatDate, splitCategory } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
+import { errorText, startActivity, trackActivity } from '../../shared/activity'
 import {
   createFolder,
   deleteFolder,
@@ -105,7 +106,6 @@ export function Library() {
   const prefs = useUI((s) => s.library)
   const setPrefs = useUI((s) => s.setLibrary)
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const [section, setSection] = useState<Section>(() => {
     const saved = sessionStorage.getItem('inkpad.section')
     return saved ? (JSON.parse(saved) as Section) : { kind: 'all' }
@@ -1006,22 +1006,26 @@ export function Library() {
   const importPdfFiles = async (files: File[], folderId: ID | null) => {
     let last: DocumentMeta | null = null
     for (const f of files) {
+      // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+      const act = startActivity('import', f.name, { detail: '읽는 중', progress: 0 })
       try {
-        setBusy({ text: `${f.name} 가져오는 중`, progress: 0 })
-        const info = await readPdf(f, f.name, askPdfPassword, (p) => setBusy({ text: `${f.name} 읽는 중`, progress: p }))
+        const info = await readPdf(f, f.name, askPdfPassword, (p) => act.update({ progress: p }))
         if (!info.pages.length) throw new ImportError('읽을 수 있는 페이지가 없습니다.')
         if (info.failedPages.length) {
           const ok = await confirmDialog('일부 페이지를 읽을 수 없습니다', {
             message: `${info.failedPages.length}개 페이지가 손상되었습니다. 읽을 수 있는 ${info.pages.length}개 페이지만 가져올까요?`,
             ok: '가져오기'
           })
-          if (!ok) continue
+          if (!ok) {
+            act.drop()
+            continue
+          }
         }
         last = await createDocumentFromPdf(info, folderId)
+        act.done(`${info.pages.length}쪽 가져옴`)
       } catch (e) {
+        act.fail(errorText(e, 'PDF를 가져오지 못했습니다.'))
         toast(e instanceof Error ? e.message : 'PDF를 가져오지 못했습니다.', 'error')
-      } finally {
-        setBusy(null)
       }
     }
     await refresh()
@@ -1041,16 +1045,13 @@ export function Library() {
   const importInkpadFiles = async (files: File[]) => {
     for (const f of files) {
       try {
-        setBusy({ text: `${f.name} 가져오는 중` })
-        const r = await importInkpad(f, currentFolderId, (d, t) => setBusy({ text: `${f.name} 가져오는 중`, progress: d / t }))
+        const r = await trackActivity('import', f.name, (a) => importInkpad(f, currentFolderId, (d, t) => a.update({ progress: d / t })), (r) => `문서 ${r.documents.length}개 가져옴`)
         toast(
           `문서 ${r.documents.length}개를 가져왔습니다${r.skipped ? ` (${r.skipped}개 건너뜀)` : ''}${r.skippedBlocks ? ` — 새 버전에서 만든 블록 ${r.skippedBlocks}개를 가져오지 못했습니다` : ''}.`,
           'success'
         )
       } catch (e) {
         toast(e instanceof Error ? e.message : '가져오기에 실패했습니다.', 'error')
-      } finally {
-        setBusy(null)
       }
     }
     await refresh()
@@ -1118,14 +1119,11 @@ export function Library() {
     let offline = false
     for (const f of files) {
       try {
-        setBusy({ text: `${f.name} 추가하는 중` })
-        const r = await addApp(f, defaultCategory())
+        const r = await addApp(f, defaultCategory()) // 클라우드로 올라가는 동안은 상태 칸(전송)에 보인다
         last = r.app
         if (!r.uploaded) offline = true
       } catch (e) {
         toast(e instanceof Error ? e.message : '앱을 추가하지 못했습니다.', 'error')
-      } finally {
-        setBusy(null)
       }
     }
     await refresh()
@@ -1157,14 +1155,11 @@ export function Library() {
       case 'update': {
         const [f] = await pickFiles('.html,.htm,text/html')
         if (!f) return
-        setBusy({ text: `"${a.title}" 업데이트하는 중` })
         try {
-          const up = await updateAppHtml(a.id, f)
+          const up = await updateAppHtml(a.id, f) // 클라우드로 올라가는 동안은 상태 칸(전송)에 보인다
           toast(up ? `"${a.title}"을(를) 업데이트했습니다.` : '업데이트했습니다. 클라우드에는 다음 올리기 때 저장됩니다.', 'success')
         } catch (e) {
           toast(e instanceof Error ? e.message : '업데이트 실패', 'error')
-        } finally {
-          setBusy(null)
         }
         break
       }
@@ -1200,14 +1195,12 @@ export function Library() {
     let offline = false
     for (const f of list) {
       try {
-        setBusy({ text: `${f.name} 추가하는 중` })
-        const r = await addFile(f, defaultCategory(), { upload })
+        // 이 기기에 넣는 동안은 '가져오기', 클라우드로 올라가는 동안은 '올리기'로 상태 칸(전송)에 보인다
+        const r = await trackActivity('import', f.name, () => addFile(f, defaultCategory(), { upload }))
         last = (await getFile(r.file.id)) ?? null
         if (upload && !r.uploaded) offline = true
       } catch (e) {
         toast(e instanceof Error ? e.message : '파일을 추가하지 못했습니다.', 'error')
-      } finally {
-        setBusy(null)
       }
     }
     await refresh()
@@ -1280,38 +1273,30 @@ export function Library() {
         break
       }
       case 'duplicate':
-        setBusy({ text: '복제하는 중' })
-        try {
+        await trackActivity('work', d.title, async (a) => {
+          a.update({ detail: '복제하는 중' })
           await duplicateDocument(d.id)
-        } finally {
-          setBusy(null)
-        }
+        }, () => '복제함')
         break
       case 'category':
         setCategorizing(d)
         return
       case 'export':
         try {
-          setBusy({ text: '내보내는 중' })
-          const blob = await exportInkpad([d.id], 'document')
+          const blob = await trackActivity('export', `${d.title}.inkpad`, () => exportInkpad([d.id], 'document'))
           await saveFile(blob, `${d.title}.inkpad`)
         } catch (e) {
           toast(e instanceof Error ? e.message : '내보내기 실패', 'error')
-        } finally {
-          setBusy(null)
         }
         break
       case 'cloudPush':
-        setBusy({ text: `"${d.title}" 올리는 중` })
         try {
-          const r = await pushOneNote(d.id)
+          const r = await pushOneNote(d.id) // 올라가는 동안은 탭 바 상태 칸(전송)에 보인다
           void refresh() // 올리기가 끝나면 카드의 동기화 상태 점을 다시 계산한다
           if (r === 'diverged') toast(`"${d.title}"은(는) 다른 기기에서도 바뀌어 이 기기 브랜치에만 올렸습니다(갈라짐).`, 'info')
           else toast(`"${d.title}"을(를) 클라우드에 올렸습니다.`, 'success')
         } catch (e) {
           toast(e instanceof Error ? e.message : '올리지 못했습니다.', 'error')
-        } finally {
-          setBusy(null)
         }
         break
       case 'cloudPull':

@@ -4,6 +4,7 @@ import { confirmDialog, promptDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
 import { SettingsSections } from '../SettingsPanel'
 import { useEscClose } from '../sheetParts'
+import { startActivity, trackActivity } from '../../shared/activity'
 import { formatBytes, isStandalone } from '../../shared/util'
 import { MAX_CATEGORY_CHARS, normalizeCategory, type DocumentMeta, type Folder, type ID } from '../../shared/model'
 import {
@@ -25,7 +26,6 @@ type Stats = Awaited<ReturnType<typeof storageStats>>
 
 export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const reset = useUI((s) => s.resetSettings)
   const [stats, setStats] = useState<Stats | null>(null)
   const [tab, setTab] = useState<'pen' | 'data' | 'folders'>('pen')
@@ -37,18 +37,13 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
     try {
       const docs = await listDocuments()
       if (!docs.length) return toast('백업할 문서가 없습니다.')
-      setBusy({ text: '전체 백업 만드는 중', progress: 0 })
-      const blob = await exportInkpad(
-        docs.map((d) => d.id),
-        'backup',
-        (d, t) => setBusy({ text: '전체 백업 만드는 중', progress: d / t })
-      )
       const date = new Date().toISOString().slice(0, 10)
-      await saveFile(blob, `inkpad_backup_${date}.inkpad`)
+      const name = `inkpad_backup_${date}.inkpad`
+      // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+      const blob = await trackActivity('export', name, (a) => exportInkpad(docs.map((d) => d.id), 'backup', (d, t) => a.update({ progress: d / t })), () => `문서 ${docs.length}개`)
+      await saveFile(blob, name)
     } catch (e) {
       toast(e instanceof Error ? e.message : '백업 실패', 'error')
-    } finally {
-      setBusy(null)
     }
   }
 
@@ -61,15 +56,12 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
     })
     if (!ok) return
     try {
-      setBusy({ text: '백업 가져오는 중' })
-      const r = await importInkpad(f, null, (d, t) => setBusy({ text: '백업 가져오는 중', progress: d / t }))
+      const r = await trackActivity('import', f.name, (a) => importInkpad(f, null, (d, t) => a.update({ progress: d / t })), (r) => `문서 ${r.documents.length}개 가져옴`)
       toast(`문서 ${r.documents.length}개를 가져왔습니다.${r.skippedBlocks ? ` 새 버전에서 만든 블록 ${r.skippedBlocks}개를 가져오지 못했습니다.` : ''}`, 'success')
       onChanged()
       load()
     } catch (e) {
       toast(e instanceof Error ? e.message : '가져오기 실패', 'error')
-    } finally {
-      setBusy(null)
     }
   }
 
@@ -94,9 +86,8 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
       ok: '캐시 삭제'
     })
     if (!ok) return
-    setBusy({ text: '캐시를 지우는 중' })
     try {
-      const r = await clearAppCaches()
+      const r = await trackActivity('work', '캐시 삭제', () => clearAppCaches())
       const parts: string[] = []
       if (r.thumbnails) parts.push(`미리보기 ${r.thumbnails}개(${formatBytes(r.thumbBytes)})`)
       if (r.swCaches) parts.push(`오프라인 캐시 ${r.swCaches}개`)
@@ -104,8 +95,6 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
       load()
     } catch (e) {
       toast(e instanceof Error ? e.message : '캐시 삭제 실패', 'error')
-    } finally {
-      setBusy(null)
     }
   }
 
@@ -124,7 +113,7 @@ export function LibrarySettings({ onClose, onChanged }: { onClose: () => void; o
       danger: true
     })
     if (!ok2) return
-    setBusy({ text: '로컬 데이터를 지우는 중' })
+    startActivity('work', '앱 초기화', { detail: '로컬 데이터를 지우는 중' }) // 끝나면 새로고침한다
     try {
       await wipeLocalData()
     } finally {

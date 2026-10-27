@@ -31,6 +31,7 @@
 //     앱·기타 파일·보드 프리셋(sync/apps·files·board): 추가·교체·이름/카테고리 변경 자체가 클라우드 스토어에
 //     올리는 동작이라 그 항목만 바로 올린다. 오프라인·실패면 대기로 남고, 각 메뉴의 업로드 버튼으로 다시 올린다.
 //     노트의 "올리기"는 이 대기를 올리지 않는다.
+import { errorText, startActivity, trackActivity, type ActivityHandle } from '../shared/activity'
 import type { DocumentMeta, ID } from '../shared/model'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
@@ -125,8 +126,12 @@ export const onSyncProgress = (fn: (p: SyncProgress) => void) => {
     progressListeners.delete(fn)
   }
 }
+/** 지금 도는 받기·올리기의 상태 칸(전송) 항목 — 노트 단위 진행을 함께 옮긴다 */
+let syncActivity: ActivityHandle | null = null
 const emitProgress = (phase: SyncProgress['phase'], done: number, total: number) => {
-  if (total <= 0 || progressListeners.size === 0) return
+  if (total <= 0) return
+  syncActivity?.update({ detail: `노트 ${done}/${total} ${phase === 'push' ? '올리는' : '받는'} 중`, progress: (done - 1) / total })
+  if (progressListeners.size === 0) return
   const p: SyncProgress = { phase, done, total }
   progressListeners.forEach((f) => f(p))
 }
@@ -330,6 +335,7 @@ export async function pushNow(): Promise<void> {
       return
     }
     setStatus('syncing')
+    const act = (syncActivity = startActivity('upload', '올리기'))
     try {
       // 최초 동기화: 기존 로컬 데이터를 모두 업로드 큐에 올린다
       if (!(await db.syncState.get('rootFolderId'))) await enqueueEverything()
@@ -338,6 +344,7 @@ export async function pushNow(): Promise<void> {
       const pulled = await pull(f)
       await db.syncState.put({ key: 'lastPushAt', value: Date.now() })
       setStatus('idle')
+      act.done(syncDoneText(uploaded + diverged, pulled.docs))
       if (uploaded > 0) {
         // 동기화 창을 닫고 나서 끝났어도 알 수 있게 한다 — 토스트는 전역으로 뜨고,
         // 라이브러리 카드의 동기화 표시는 DB만 다시 읽어 최신으로 칠한다 (다른 탭에도 브로드캐스트)
@@ -351,9 +358,18 @@ export async function pushNow(): Promise<void> {
       const skipped = busy + pulled.busy
       if (skipped > 0) notifyToast(`다른 탭에서 편집 중인 노트 ${skipped}개는 건너뛰었습니다. 그 탭을 닫은 뒤 다시 올려 주세요.`, 'info')
     } catch (e) {
+      act.fail(errorText(e, '올리지 못했습니다.'))
       handleSyncError(e)
+    } finally {
+      if (syncActivity === act) syncActivity = null
     }
   })
+}
+
+/** 받기·올리기가 끝난 뒤 상태 칸 문구 */
+function syncDoneText(up: number, down: number): string {
+  const parts = [up > 0 && `${up}개 올림`, down > 0 && `${down}개 받음`].filter(Boolean)
+  return parts.length ? `노트 ${parts.join(' · ')}` : '바뀐 노트 없음'
 }
 
 /** 실제로 Drive에 올라가는 노트만 돌려 실행한다. 삭제(묘비)·클라우드 삭제 제외 노트는 올라가는 게 없어
@@ -687,6 +703,7 @@ export async function pullNow(choices: PullChoices = {}): Promise<PullResult | n
       return null
     }
     setStatus('syncing')
+    const act = (syncActivity = startActivity('download', '받기'))
     try {
       const f = await ensureFolders()
       let pushed = 0
@@ -711,11 +728,15 @@ export async function pullNow(choices: PullChoices = {}): Promise<PullResult | n
       const r = await pull(f)
       await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
       setStatus('idle')
+      act.done(syncDoneText(pushed, r.docs + overwritten))
       notifySyncChanged()
       return { ...r, busy: r.busy + busy, pushed, overwritten }
     } catch (e) {
+      act.fail(errorText(e, '받지 못했습니다.'))
       handleSyncError(e)
       return null
+    } finally {
+      if (syncActivity === act) syncActivity = null
     }
   }) as Promise<PullResult | null>
 }
@@ -993,9 +1014,24 @@ export async function planPull(): Promise<PullPlan> {
  * 클라우드 노트 한 개를 이 기기로 내려받는다(main으로 맞춘다). 삭제 대기 중이던 노트면 대기를 지우고 되살린다.
  * 다른 탭에서 편집 중인 노트면 DocBusyError(메시지는 그대로 화면에 보여도 된다).
  */
-export function downloadCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'>): Promise<'applied' | 'skipped' | 'notfound'> {
-  return withSyncLock(() => takeMain(info, 'pull'))
+export function downloadCloudNote(info: Pick<CloudNoteInfo, 'docId' | 'fileId' | 'version' | 'enc'> & { title?: string }): Promise<'applied' | 'skipped' | 'notfound'> {
+  return noteActivity('download', info.docId, () => withSyncLock(() => takeMain(info, 'pull')), TAKE_TEXT, info.title)
 }
+
+/** 노트 하나를 주고받는 일 — 탭 바 상태 칸(전송)에 노트 제목으로 보인다. doneText는 결과별 끝 문구 */
+async function noteActivity<T extends string>(kind: 'upload' | 'download', docId: ID, fn: () => Promise<T>, doneText: Partial<Record<T, string>>, title?: string): Promise<T> {
+  const name = (await db.documents.get(docId))?.title || title || '노트'
+  return trackActivity(
+    kind,
+    name,
+    (a) => {
+      a.update({ detail: kind === 'upload' ? '올리는 중' : '받는 중' })
+      return fn()
+    },
+    (r) => doneText[r]
+  )
+}
+const TAKE_TEXT = { skipped: '바뀐 내용 없음', notfound: '클라우드에 없음' } as const
 
 /**
  * main을 받아 이 기기 노트를 덮는다 (동기화 잠금 안에서). 덮기 직전 이 기기 내용은 스냅샷으로만 남긴다 —
@@ -1042,12 +1078,14 @@ async function resolveMyBranch(docId: ID, merged?: Record<string, number>): Prom
  * 보드 카드의 "받기"를 사용자가 눌렀을 때만 호출된다 — 자동 네트워크 사용은 없다.
  */
 export function downloadMissingDoc(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
-  return withSyncLock(async () => {
-    const f = await ensureFolders()
-    const remote = await drive.findByName(mainFileName(docId), f.docs)
-    if (!remote) return 'notfound'
-    return takeMain({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc }, 'pull')
-  })
+  const run = () =>
+    withSyncLock(async () => {
+      const f = await ensureFolders()
+      const remote = await drive.findByName(mainFileName(docId), f.docs)
+      if (!remote) return 'notfound' as const
+      return takeMain({ docId, fileId: remote.id, version: remote.version, enc: remote.appProperties?.enc }, 'pull')
+    })
+  return noteActivity('download', docId, run, TAKE_TEXT)
 }
 
 /**
@@ -1055,11 +1093,13 @@ export function downloadMissingDoc(docId: ID): Promise<'applied' | 'skipped' | '
  * 받기 미리보기의 '덮기'와 같다: 이 기기 변경은 스냅샷으로만 남고, main이 그대로면 내려받지 않는다.
  */
 export function alignWithCloud(docId: ID): Promise<'applied' | 'skipped' | 'notfound'> {
-  return withSyncLock(async () => {
-    const r = await overwriteWithCloud(docId, (await ensureFolders()).docs)
-    notifySyncChanged()
-    return r
-  })
+  const run = () =>
+    withSyncLock(async () => {
+      const r = await overwriteWithCloud(docId, (await ensureFolders()).docs)
+      notifySyncChanged()
+      return r
+    })
+  return noteActivity('download', docId, run, { ...TAKE_TEXT, applied: '클라우드에 맞춤' })
 }
 
 /**
@@ -1142,16 +1182,18 @@ export async function planPush(): Promise<PushPlan> {
  * 'diverged'면 main이 이 기기 출발점 이후 바뀌어 내 브랜치에만 올렸다 — 머지 관리에서 합친다.
  */
 export function pushOneNote(docId: ID): Promise<'ff' | 'diverged' | 'skipped'> {
-  return withSyncLock(async () => {
-    const doc = await db.documents.get(docId)
-    if (!doc || doc.deletedAt) throw new Error('이 기기에서 삭제된 노트입니다.')
-    const f = await ensureFolders()
-    await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 싣는다
-    const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
-    const r = await pushDoc(docId, info, f)
-    notifySyncChanged() // 라이브러리 점·배지·편집 화면 칩이 다시 계산한다 (알림의 '올리기'처럼 화면 밖에서 불러도)
-    return r
-  })
+  const run = () =>
+    withSyncLock(async () => {
+      const doc = await db.documents.get(docId)
+      if (!doc || doc.deletedAt) throw new Error('이 기기에서 삭제된 노트입니다.')
+      const f = await ensureFolders()
+      await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 싣는다
+      const info = (await pendingDocs()).get(docId) ?? { seqs: [] }
+      const r = await pushDoc(docId, info, f)
+      notifySyncChanged() // 라이브러리 점·배지·편집 화면 칩이 다시 계산한다 (알림의 '올리기'처럼 화면 밖에서 불러도)
+      return r
+    })
+  return noteActivity('upload', docId, run, { diverged: '갈라짐 — 이 기기 브랜치에만 올림', skipped: '바뀐 내용 없음' })
 }
 
 // ───────────────── 머지 관리 (docs/branch-merge.md §3.4·§5.4) ─────────────────
@@ -1281,6 +1323,12 @@ export interface MergeCommitResult {
  * (덮으면 화면에서 그 변경이 사라지고, 다음 올리기가 결과를 '이 기기 변경'으로 올려 그 브랜치를 묻어 버린다).
  */
 export function commitMerge(session: MergeSession, draft: MergeDraft): Promise<MergeCommitResult> {
+  return trackActivity('upload', '머지 올리기', (a) => {
+    void db.documents.get(session.entry.docId).then((d) => d?.title && a.update({ title: `${d.title} 머지` }))
+    return commitMergeLocked(session, draft)
+  })
+}
+function commitMergeLocked(session: MergeSession, draft: MergeDraft): Promise<MergeCommitResult> {
   return withSyncLock(async () => {
     const { entry } = session
     const docId = entry.docId
@@ -1423,6 +1471,14 @@ export type PullOneResult = 'applied' | 'same' | 'pending' | 'diverged' | 'notfo
  * 갈라졌으면 'diverged'(머지 관리) 로 돌려주고 덮지 않는다. 받을 것이면 main으로 따라간다(덮기 직전 스냅샷).
  */
 export function pullOneNote(docId: ID): Promise<PullOneResult> {
+  return noteActivity('download', docId, () => pullOneLocked(docId), {
+    same: '이미 최신',
+    pending: '올리지 않은 변경이 있어 받지 않음',
+    diverged: '갈라짐 — 머지가 필요',
+    notfound: '클라우드에 없음'
+  })
+}
+function pullOneLocked(docId: ID): Promise<PullOneResult> {
   return withSyncLock(async () => {
     const f = await ensureFolders()
     await flushOpenDocs() // 열린 편집 화면의 저장 대기 중인 변경도 판정에 넣는다

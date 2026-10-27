@@ -1,0 +1,397 @@
+/* ───────── 상태 칸 (ui/dock/StatusDock) — 탭 바 오른쪽 ─────────
+   한 줄짜리 칸을 좌우로 넘겨 전송·동기화·저장 공간을 본다. 누르면 그 자리에서 커져 자세히 보는 창(.dock-panel)이 된다 */
+.dock {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+  width: clamp(132px, 24vw, 248px);
+  height: 26px;
+  margin-left: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  overflow: hidden;
+  cursor: pointer;
+  transition: opacity .16s var(--ft-ease), box-shadow .2s var(--ft-ease);
+}
+.dock:hover {
+  box-shadow: 0 0 0 1px var(--muted-2);
+}
+.dock:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+/* 펼친 창이 칸 자리에서 자라 나오므로 칸은 그동안 숨긴다 */
+.dock.is-open {
+  opacity: 0;
+}
+.dock-pager {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.dock-pager::-webkit-scrollbar {
+  display: none;
+}
+.dock-pager.is-dragging {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+.dock-page {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+.dock-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 34px 0 9px;
+}
+.dock-ic {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.dock-ic.is-running {
+  color: var(--accent);
+  animation: dock-pulse 1.2s ease-in-out infinite;
+}
+.dock-line.is-ok .dock-ic {
+  color: var(--success);
+}
+.dock-line.is-bad .dock-ic {
+  color: var(--danger);
+}
+.dock-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+.dock-line.is-idle .dock-text {
+  color: var(--muted);
+}
+.dock-meta {
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.dock-line > .dock-bar {
+  position: absolute;
+  left: 10px;
+  right: 34px;
+  bottom: 2px;
+  height: 2px;
+}
+.dock-dots {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  display: flex;
+  gap: 3px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.dock-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--line-2);
+  transition: background .2s, transform .2s var(--spring-pop);
+}
+.dock-dots i.is-on {
+  background: var(--muted);
+  transform: scale(1.25);
+}
+/* 실패한 일을 아직 열어 보지 않았다 */
+.dock-alert {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* 진행 막대 — 진행률을 모르면 흐르는 줄 */
+.dock-bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.dock-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .25s var(--ft-ease);
+}
+.dock-bar.is-bad i {
+  background: var(--danger);
+}
+.dock-bar.is-flowing i {
+  width: 35%;
+  animation: dock-flow 1.1s ease-in-out infinite;
+}
+@keyframes dock-flow {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@keyframes dock-pulse {
+  50% {
+    opacity: .45;
+  }
+}
+
+/* ───────── 펼친 창 ───────── */
+.dock-panel {
+  position: fixed;
+  z-index: 58; /* 시트(50~57) 위, 알림(60) 아래 */
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--e3), 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+/* 안의 내용은 처음부터 창 크기로 놓고 오른쪽 위에 붙인다 — 창이 칸(오른쪽 위)에서 자라므로 거기서부터 드러난다 */
+.dock-panel-inner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.dock-panel-head .seg {
+  flex: 1;
+}
+.dock-panel-pager {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.dock-panel-pager::-webkit-scrollbar {
+  display: none;
+}
+.dock-panel-page {
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow-y: auto;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+.dock-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 12px 16px;
+}
+.dock-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+.dock-h-btn {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--r-2xs);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.dock-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dock-row {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  animation: dock-row-in .4s var(--ft-spring) both;
+}
+.dock-row:hover {
+  background: var(--hover);
+}
+@keyframes dock-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.dock-row-ic {
+  flex: 0 0 auto;
+  padding-top: 1px;
+  color: var(--success);
+}
+.dock-row.is-running .dock-row-ic {
+  color: var(--accent);
+}
+.dock-row.is-bad .dock-row-ic {
+  color: var(--danger);
+}
+.dock-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dock-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dock-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-base);
+  color: var(--ink);
+}
+.dock-row-when {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.dock-row-sub {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.dock-row-kind {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.dock-row-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dock-row.is-bad .dock-row-detail {
+  color: var(--danger-ink);
+  white-space: normal;
+}
+.dock-row .dock-bar {
+  margin-top: 4px;
+}
+.dock-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 24px;
+  color: var(--muted-2);
+  text-align: center;
+}
+.dock-empty p {
+  margin: 12px 0 4px;
+  font-size: var(--fs-md);
+  color: var(--ink);
+}
+.dock-empty small {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.dock-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.dock-hero.is-bad {
+  color: var(--danger);
+}
+.dock-hero strong {
+  display: block;
+  font-size: var(--fs-md);
+  color: var(--ink);
+}
+.dock-hero small {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.dock-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: var(--fs-sm);
+}
+.dock-facts dt {
+  color: var(--muted);
+}
+.dock-facts dd {
+  margin: 0;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dock-note {
+  margin: 0;
+  padding: 0 4px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* 좁은 화면 — 칸을 줄이고 덧붙인 숫자는 뺀다 */
+@media (max-width: 520px) {
+  .dock {
+    width: 104px;
+  }
+  .dock-meta {
+    display: none;
+  }
+}

@@ -1,6 +1,7 @@
 // 문서(text 모드) 내보내기 — Markdown(.md) · PDF(인쇄) · .inkpad
 import { useUI } from '../../app/store'
 import { saveFile } from '../../io/download'
+import { trackActivity } from '../../shared/activity'
 import { exportInkpad } from '../../io/inkpadFormat'
 import type { DocumentMeta } from '../../shared/model'
 import { blocksToMarkdown } from '../../textdoc/markdown'
@@ -11,7 +12,6 @@ import { Icon } from '../Icon'
 export function TextExportPanel({ model, doc }: { model: TextDocModel; doc: DocumentMeta }) {
   const close = useUI((s) => s.setPanel)
   const toast = useUI((s) => s.toast)
-  const setBusy = useUI((s) => s.setBusy)
   const title = doc.title || '제목 없음'
 
   const exportMd = async () => {
@@ -32,14 +32,11 @@ export function TextExportPanel({ model, doc }: { model: TextDocModel; doc: Docu
   const exportOwn = async () => {
     try {
       await model.flush()
-      setBusy({ text: '내보내는 중' })
-      const blob = await exportInkpad([doc.id], 'document')
-      setBusy(null)
+      // 화면을 막지 않고 탭 바 상태 칸(전송)에 보인다
+      const blob = await trackActivity('export', `${title}.inkpad`, () => exportInkpad([doc.id], 'document'))
       await saveFile(blob, `${title}.inkpad`)
     } catch (e) {
       toast(e instanceof Error ? e.message : '내보내기 실패', 'error')
-    } finally {
-      setBusy(null)
     }
   }
 

@@ -4,6 +4,7 @@
 // 노트·앱·파일 내용은 각자의 동기화 경로로 오간다.
 import { BOARD_PRESET_NAME_MAX, normalizeBoard, type Board, type BoardPreset } from '../shared/board'
 import type { ID } from '../shared/model'
+import { trackActivity } from '../shared/activity'
 import { ulid } from '../shared/ulid'
 import { db } from '../storage/db'
 import * as drive from './drive'
@@ -105,10 +106,14 @@ async function flushOne(id: ID, folderId: string) {
 /** 클라우드까지 저장됐으면 true */
 /** 지금 클라우드에 반영해 본다 — 실패하면 pending이 남는다 (folders.tryUpload) */
 const tryFlush = (id: ID): Promise<boolean> =>
-  tryUpload('boards', async () => {
-    await flushOne(id, await boardsFolder())
-    emit()
-  })
+  tryUpload(
+    'boards',
+    async () => {
+      await flushOne(id, await boardsFolder())
+      emit()
+    },
+    async () => (await db.boardPresets.get(id))?.name
+  )
 
 /** 프리셋 저장 직후 호출 — 실패해도 로컬에는 남는다 */
 export const uploadPreset = (id: ID) => tryFlush(id)
@@ -201,6 +206,10 @@ export async function listCloudPresets(): Promise<CloudPresetInfo[]> {
 export async function downloadPreset(presetId: ID): Promise<BoardPreset> {
   const local = await db.boardPresets.get(presetId)
   if (local?.pending) throw new Error('이 기기의 변경을 먼저 업로드해 주세요.')
+  // 탭 바 상태 칸(전송)에 보인다
+  return trackActivity('download', local?.name || '작업보드 프리셋', () => downloadPresetLocked(presetId, local))
+}
+async function downloadPresetLocked(presetId: ID, local: BoardPreset | undefined): Promise<BoardPreset> {
   const folder = await boardsFolder()
   const r = (await drive.listFiles(folder)).find((x) => x.appProperties?.presetId === presetId)
   if (!r) throw new Error('클라우드에서 프리셋을 찾지 못했습니다.')

@@ -5,7 +5,9 @@
 //   - 원본 바이트는 "받기"에서 받지 않는다. 그 원본을 쓰는 문서를 실제로 열 때 받는다.
 //   - 받은 원본은 IndexedDB에 저장하고, 다음부터는 다시 받지 않는다.
 //   - 같은 에셋을 여러 곳에서 동시에 요청해도 다운로드는 한 번만 나간다.
+import { errorText, startActivity, trackActivity } from '../shared/activity'
 import type { ID } from '../shared/model'
+import { formatBytes } from '../shared/util'
 import { db, type AssetRow } from '../storage/db'
 import * as drive from './drive'
 import { ensureFolders, getSync, putSync, type FileRecord } from './folders'
@@ -111,7 +113,7 @@ const inflight = new Map<ID, Promise<Blob>>()
  * 원본을 이 기기에 확보한다. 이미 있으면 그대로 돌려준다.
  * 실패하면 AssetUnavailableError(사용자에게 보여줄 한국어 메시지)를 던진다.
  */
-export async function ensureAssetLocal(assetId: ID, opts?: { skipGate?: boolean }): Promise<Blob> {
+export async function ensureAssetLocal(assetId: ID, opts?: { skipGate?: boolean; quiet?: boolean }): Promise<Blob> {
   const row = await db.assets.get(assetId)
   if (!row) throw new AssetUnavailableError('이 문서가 참조하는 원본 정보가 없습니다.')
   if (row.blob) return row.blob
@@ -130,11 +132,24 @@ export async function ensureAssetLocal(assetId: ID, opts?: { skipGate?: boolean 
       const ok = await downloadGate({ assetId: row_.id, kind: row_.kind, name: row_.name, bytes: row_.size })
       if (!ok) throw new AssetDownloadCancelledError()
     }
-    emit({ assetId: row_.id, loaded: 0, total: null, done: false })
-    const blob = await downloadAsset(row_)
-    await db.assets.update(row_.id, { blob })
-    emit({ assetId: row_.id, loaded: blob.size, total: blob.size, done: true })
-    return blob
+    // 탭 바 상태 칸(전송)에 보인다 — 여러 개를 한꺼번에 받을 때(quiet)는 부른 쪽이 한 줄로 보인다
+    const act = opts?.quiet ? null : startActivity('download', row_.name || (row_.kind === 'pdf' ? 'PDF 원본' : '이미지 원본'), { detail: '받는 중' })
+    const off = act && onAssetProgress((e) => {
+      if (e.assetId === row_.id && e.total) act.update({ progress: e.loaded / e.total, detail: `${formatBytes(e.loaded)} / ${formatBytes(e.total)}` })
+    })
+    try {
+      emit({ assetId: row_.id, loaded: 0, total: null, done: false })
+      const blob = await downloadAsset(row_)
+      await db.assets.update(row_.id, { blob })
+      emit({ assetId: row_.id, loaded: blob.size, total: blob.size, done: true })
+      act?.done(formatBytes(blob.size))
+      return blob
+    } catch (e) {
+      act?.fail(errorText(e, '원본을 받지 못했습니다.'))
+      throw e
+    } finally {
+      off?.()
+    }
   })()
   inflight.set(assetId, p)
   try {
@@ -164,22 +179,31 @@ export async function downloadMissing(
   missing: AssetRow[],
   onProgress?: (done: number, total: number) => void
 ): Promise<{ ok: number; failed: number; authFailed: boolean }> {
-  let ok = 0
-  let failed = 0
-  let authFailed = false
-  for (let i = 0; i < missing.length; i++) {
-    try {
-      // 호출한 쪽(원본 관리 시트 등)에서 이미 확인했으므로 여기서는 다시 묻지 않는다
-      await ensureAssetLocal(missing[i].id, { skipGate: true })
-      ok++
-    } catch (e) {
-      failed++
-      // 로그인이 만료된 케이스는 알려야 한다 — 실패 숫자만으로는 사용자가 대처할 수 없다
-      if (e instanceof AuthRequiredError) authFailed = true
-    }
-    onProgress?.(i + 1, missing.length)
-  }
-  return { ok, failed, authFailed }
+  // 탭 바 상태 칸(전송)에는 한 줄로 — 원본마다 따로 쌓지 않는다
+  return trackActivity(
+    'download',
+    `원본 ${missing.length}개 받기`,
+    async (a) => {
+      let ok = 0
+      let failed = 0
+      let authFailed = false
+      for (let i = 0; i < missing.length; i++) {
+        a.update({ detail: `${i + 1}/${missing.length} 받는 중`, progress: i / missing.length })
+        try {
+          // 호출한 쪽(원본 관리 시트 등)에서 이미 확인했으므로 여기서는 다시 묻지 않는다
+          await ensureAssetLocal(missing[i].id, { skipGate: true, quiet: true })
+          ok++
+        } catch (e) {
+          failed++
+          // 로그인이 만료된 케이스는 알려야 한다 — 실패 숫자만으로는 사용자가 대처할 수 없다
+          if (e instanceof AuthRequiredError) authFailed = true
+        }
+        onProgress?.(i + 1, missing.length)
+      }
+      return { ok, failed, authFailed }
+    },
+    (r) => (r.failed ? `${r.ok}개 받음 · ${r.failed}개 실패` : `${r.ok}개 받음`)
+  )
 }
 
 async function downloadAsset(row: AssetRow): Promise<Blob> {

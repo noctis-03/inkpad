@@ -245,7 +245,7 @@ let assetFetchBusy = false
 export async function downloadNoteAssets() {
   if (assetFetchBusy) return
   assetFetchBusy = true
-  const { toast, setBusy } = useUI.getState()
+  const { toast } = useUI.getState()
   try {
     const [usage, missing, docs] = await Promise.all([collectAssetUsage(), listMissingAssets(), listDocuments()])
     const live = new Set(docs.map((d) => d.id))
@@ -255,13 +255,7 @@ export async function downloadNoteAssets() {
     if (!navigator.onLine) return toast('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.', 'error')
     const bytes = targets.reduce((sum, a) => sum + (a.size || 0), 0)
     if (!(await confirmTransfer('down', bytes, targets.length, '노트 원본'))) return
-    setBusy({ text: `노트 원본 받는 중 (0/${targets.length})`, progress: 0 })
-    let r: Awaited<ReturnType<typeof downloadMissing>>
-    try {
-      r = await downloadMissing(targets, (done, total) => setBusy({ text: `노트 원본 받는 중 (${done}/${total})`, progress: done / total }))
-    } finally {
-      setBusy(null)
-    }
+    const r = await downloadMissing(targets) // 받는 동안은 탭 바 상태 칸(전송)에 보인다
     if (r.authFailed) toast('Google 로그인이 만료되었습니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
     else if (r.failed) toast(`노트 원본 ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
     else toast(`노트 원본 ${r.ok}개를 모두 받았습니다.`, 'success')

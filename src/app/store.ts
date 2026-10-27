@@ -191,7 +191,6 @@ interface UIState {
   panel: 'none' | 'settings' | 'sync' | 'page' | 'export' | 'debug' | 'history'
   sidebar: boolean
   toasts: Toast[]
-  busy: { text: string; progress?: number } | null
   toolbarPos: ToolbarPos
   toolbarCollapsed: boolean
   blocksVisible: boolean
@@ -229,7 +228,6 @@ interface UIState {
   setSidebar: (v: boolean) => void
   toast: (text: string, kind?: Toast['kind'], action?: Toast['action'], opts?: { sticky?: boolean }) => number
   dismissToast: (id: number) => void
-  setBusy: (b: UIState['busy']) => void
   setToolbarPos: (p: ToolbarPos) => void
   setToolbarCollapsed: (v: boolean) => void
   setBlocksVisible: (v: boolean) => void
@@ -288,7 +286,6 @@ export const useUI = create<UIState>((set, get) => ({
   panel: 'none',
   sidebar: window.innerWidth >= 900,
   toasts: [],
-  busy: null,
   toolbarPos: tb.pos,
   toolbarCollapsed: tb.collapsed,
   blocksVisible: blocksLs.visible,
@@ -422,7 +419,6 @@ export const useUI = create<UIState>((set, get) => ({
     return id
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
-  setBusy: (busy) => set({ busy }),
   setToolbarPos: (toolbarPos) => {
     save(LS_TOOLBAR, { pos: toolbarPos, collapsed: get().toolbarCollapsed })
     set({ toolbarPos })
