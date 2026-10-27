@@ -2,7 +2,7 @@
 // (라이브러리는 그동안 아래에 그대로), 뒤로 가면 편집 화면이 그 카드로 원을 그리며 줄어든다.
 // 예전에는 작은 썸네일을 화면 전체로 키운 고스트가 흐릿하게 덮었다가 겹쳐 사라졌다.
 import type { Page } from 'playwright'
-import { createDoc, device, logsOf, sleep, type Ctx } from './lib.ts'
+import { addStroke, createDoc, device, logsOf, sleep, type Ctx } from './lib.ts'
 
 /** 지금 칸(남겨 둔 칸 말고)의 clip-path 원 — 반지름·중심 */
 const clipOf = (p: Page, sel: string) =>
@@ -99,5 +99,98 @@ export default async function reveal(ctx: Ctx) {
   await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setSettings({ motion: 'auto' }))
 
   check('원형 리빌: 콘솔 오류 없음', !logsOf(p).some((l) => /error/i.test(l) && !/favicon|401|Failed to load resource/.test(l)), logsOf(p).join('\n'))
+  await p.context().close()
+  await cardMode(ctx)
+}
+
+type Box = { left: number; top: number; width: number; height: number }
+const near = (a: Box | null, b: Box | null, px = 2) =>
+  !!a && !!b && Math.abs(a.left - b.left) < px && Math.abs(a.top - b.top) < px && Math.abs(a.width - b.width) < px
+
+/** 설정 > 노트 열기 > 카드 이동 — 카드 미리보기가 첫 페이지 자리로 날아가 그 페이지가 되고, 닫으면 카드로 돌아간다 */
+async function cardMode(ctx: Ctx) {
+  const { base, check } = ctx
+  const p = await device(ctx)
+  const shot = process.env.REVEAL_SHOTS
+  const snap = async (name: string) => shot && (await p.screenshot({ path: `${shot}/${name}.png` }))
+  const D = await createDoc(p, '날 노트', 2)
+  await addStroke(p, D, 's1')
+  await p.evaluate(async (id) => (await import('/src/io/docThumb.ts')).regenerateThumbnail(id), D)
+  const T = await p.evaluate(async () => (await (await import('/src/storage/repo.ts')).createDocument({ title: '글 문서', mode: 'text', folderId: null, pages: [] })).id)
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setSettings({ openMotion: 'card' }))
+  await p.goto(base + '/')
+  const card = p.locator('.doc-card', { hasText: '날 노트' })
+  await card.locator('.doc-thumb img').waitFor()
+  const openFrom = async (title: string) => {
+    const c = p.locator('.doc-card', { hasText: title })
+    await c.locator('.doc-thumb').click()
+    await p.locator('.doc-card.is-revealed').getByRole('button', { name: '편집모드' }).waitFor()
+    await sleep(450)
+    const box = await c.locator('.doc-thumb').evaluate((e) => e.getBoundingClientRect().toJSON() as Box)
+    await p.locator('.doc-card.is-revealed').getByRole('button', { name: '편집모드' }).click()
+    return box
+  }
+  const ghost = () =>
+    p.evaluate(() => {
+      const g = document.querySelector<HTMLElement>('.doc-fly')
+      if (!g) return null
+      const a = g.getAnimations()[0]
+      const k = a ? ((a.effect as KeyframeEffect).getKeyframes() as { transform?: string }[]) : []
+      return { placed: { left: parseFloat(g.style.left), top: parseFloat(g.style.top), width: parseFloat(g.style.width), height: parseFloat(g.style.height) }, now: g.getBoundingClientRect().toJSON() as Box, img: g.style.backgroundImage, frames: k.map((f) => f.transform ?? '') }
+    })
+  const pageRect = () => p.evaluate(() => (window as unknown as { inkpad?: { pageScreenRect: (i?: number) => DOMRect | null } }).inkpad?.pageScreenRect(0)?.toJSON() as Box | null)
+
+  // ── 열기 ──
+  const thumb = await openFrom('날 노트')
+  let first: Awaited<ReturnType<typeof ghost>> = null
+  let flying = null as Awaited<ReturnType<typeof ghost>>
+  for (let i = 0; i < 20 && !flying?.frames.length; i++) {
+    const g = await ghost()
+    if (g && !first) first = g
+    if (g?.frames.length) flying = g
+    await sleep(25)
+  }
+  await snap('4-card-open-mid')
+  check('카드 이동(열기): 카드 미리보기 그림으로 고스트가 뜬다', !!first && first.img.includes('blob:'), JSON.stringify(first))
+  check('…카드 자리에서 출발한다', !!first && near(first.now, thumb), JSON.stringify({ first: first?.now, thumb }))
+  check('…원래 카드 미리보기는 비워 둔다', (await p.locator('.pane-leaving .doc-card.is-flying').count()) === 1)
+  await sleep(900)
+  const page = await pageRect()
+  check('…첫 페이지 자리에 내려앉는다', !!flying && near(flying.placed, page), JSON.stringify({ placed: flying?.placed, page }))
+  const opened = await p.evaluate(() => ({ ghost: document.querySelectorAll('.doc-fly').length, leaving: document.querySelectorAll('.pane-leaving').length, op: getComputedStyle(document.querySelector('.pane-main')!).opacity }))
+  check('…끝나면 고스트·남겨 둔 라이브러리를 치우고 편집 화면이 다 보인다', opened.ghost === 0 && opened.leaving === 0 && opened.op === '1', JSON.stringify(opened))
+
+  // ── 닫기 ──
+  const pageBefore = await pageRect()
+  await p.click('.pane-main:not(.pane-leaving) [aria-label="문서 목록"]')
+  let back = null as Awaited<ReturnType<typeof ghost>>
+  for (let i = 0; i < 30 && !back?.frames.length; i++) {
+    back = await ghost()
+    await sleep(20)
+  }
+  await snap('5-card-close-mid')
+  check('카드 이동(닫기): 보던 페이지 자리에서 고스트가 출발한다', !!back && near(back.placed, pageBefore), JSON.stringify({ placed: back?.placed, pageBefore }))
+  check('…돌아갈 카드 미리보기는 비워 둔다', (await p.locator('.pane-main:not(.pane-leaving) .doc-card.is-flying').count()) === 1)
+  await sleep(1300)
+  const home = await card.locator('.doc-thumb').evaluate((e) => e.getBoundingClientRect().toJSON() as Box)
+  const m = back?.frames.at(-1)?.match(/translate\(([-\d.e+]+)px, ([-\d.e+]+)px\) scale\(([\d.e+-]+)\)/)
+  const land = m && back ? { left: back.placed.left + +m[1], top: back.placed.top + +m[2], width: back.placed.width * +m[3], height: 0 } : null
+  check('…그 카드 자리에 내려앉는다', near(land, home), JSON.stringify({ land, home, frames: back?.frames }))
+  const closed = await p.evaluate(() => ({ ghost: document.querySelectorAll('.doc-fly').length, leaving: document.querySelectorAll('.pane-leaving').length, flying: document.querySelectorAll('.is-flying').length }))
+  check('…끝나면 고스트를 치우고 카드를 다시 보인다', closed.ghost === 0 && closed.leaving === 0 && closed.flying === 0, JSON.stringify(closed))
+
+  // ── 페이지가 없는 문서는 원형 리빌로 ──
+  await openFrom('글 문서')
+  let circled = false
+  for (let i = 0; i < 30 && !circled; i++) {
+    circled = await p.evaluate(() => /circle/.test(getComputedStyle(document.querySelector('.pane-main:not(.pane-leaving)')!).clipPath))
+    await sleep(30)
+  }
+  check('카드 이동: 페이지가 없는 문서는 원형 리빌로', circled)
+  await sleep(900)
+  check('…끝나면 고스트가 남지 않는다', (await p.locator('.doc-fly, .pane-leaving').count()) === 0)
+  void T
+
+  check('카드 이동: 콘솔 오류 없음', !logsOf(p).some((l) => /error/i.test(l) && !/favicon|401|Failed to load resource/.test(l)), logsOf(p).join('\n'))
   await p.context().close()
 }
