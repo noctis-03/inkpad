@@ -16,7 +16,7 @@
 .tb-gutter { position: absolute; top: 3px; left: calc(var(--ind, 0) * 24px - 50px); display: flex; opacity: 0; transition: opacity .12s; }
 .tb-row:hover .tb-gutter, .tb-row:focus-within .tb-gutter { opacity: 1; }
 @media (hover: none) { .tb-row:hover:not(:focus-within) .tb-gutter { opacity: 0; } }
-.tb-add, .tb-grip { width: 24px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.tb-add, .tb-grip { width: 24px; height: 26px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
 .tb-grip { cursor: grab; touch-action: none; }
 .tb-add:hover, .tb-grip:hover { background: var(--hover); }
 .t-h1 .tb-gutter { top: 22px; } .t-h2 .tb-gutter { top: 16px; } .t-h3 .tb-gutter { top: 12px; }
@@ -38,10 +38,10 @@
 /* 글머리·번호·체크·토글 */
 .tb-marker { flex: none; min-width: 24px; padding-top: 3px; text-align: center; color: var(--ink); font-size: 16px; line-height: 1.65; user-select: none; -webkit-user-select: none; }
 .tb-number { padding-right: 4px; text-align: right; font-variant-numeric: tabular-nums; }
-.tb-check { min-width: 0; width: 18px; height: 18px; margin: 7px 6px 0 3px; padding: 0; border: 1.5px solid var(--muted); border-radius: 5px; background: var(--surface); color: transparent; display: grid; place-items: center; cursor: pointer; }
+.tb-check { min-width: 0; width: 18px; height: 18px; margin: 7px 6px 0 3px; padding: 0; border: 1.5px solid var(--muted); border-radius: var(--r-2xs); background: var(--surface); color: transparent; display: grid; place-items: center; cursor: pointer; }
 .tb-check.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-ink); }
 .tb-row[data-checked] .tb-text { color: var(--muted); text-decoration: line-through; }
-.tb-toggle { height: 28px; margin-top: 1px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer; }
+.tb-toggle { height: 28px; margin-top: 1px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer; }
 .tb-toggle svg { transition: transform .15s; }
 .tb-toggle.is-open svg { transform: rotate(90deg); }
 .tb-toggle:hover { background: var(--hover); }
@@ -53,24 +53,24 @@
 .tdoc-drop { position: absolute; left: 0; right: 0; height: 3px; margin-top: -1px; border-radius: 2px; background: var(--accent); pointer-events: none; }
 
 /* 슬래시(/) 메뉴 */
-.tdoc-slash { position: fixed; z-index: 60; width: 270px; max-height: 340px; overflow: auto; padding: 6px; border-radius: 14px; background: var(--surface); box-shadow: var(--e2); }
-.tdoc-slash-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.tdoc-slash { position: fixed; z-index: 60; width: 270px; max-height: 340px; overflow: auto; padding: 6px; border-radius: var(--r-xl); background: var(--surface); box-shadow: var(--e2); }
+.tdoc-slash-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .tdoc-slash-item.is-current { background: var(--hover); }
-.tdoc-slash-glyph { flex: none; width: 36px; height: 36px; border-radius: 9px; background: var(--surface-2); display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.tdoc-slash-glyph { flex: none; width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--surface-2); display: grid; place-items: center; font-size: var(--fs-base); font-weight: 700; color: var(--ink-2); }
 .tdoc-slash-text { display: flex; flex-direction: column; min-width: 0; }
 .tdoc-slash-text b { font-size: var(--fs-md); font-weight: 600; }
 .tdoc-slash-text small { font-size: var(--fs-xs); color: var(--muted); }
 .tdoc-slash-empty { margin: 0; padding: 10px 12px; color: var(--muted); font-size: var(--fs-sm); }
 
 /* 글자를 고르면 뜨는 서식 막대 */
-.tdoc-fmt { position: fixed; z-index: 55; display: flex; gap: 2px; padding: 4px; border-radius: 11px; background: var(--ink); box-shadow: var(--e2); transform: translate(-50%, calc(-100% - 8px)); }
-.tdoc-fmt-btn { width: 32px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--on-ink); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.tdoc-fmt { position: fixed; z-index: 55; display: flex; gap: 2px; padding: 4px; border-radius: var(--r-md); background: var(--ink); box-shadow: var(--e2); transform: translate(-50%, calc(-100% - 8px)); }
+.tdoc-fmt-btn { width: 32px; height: 30px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--on-ink); font-size: var(--fs-md); display: grid; place-items: center; cursor: pointer; }
 .tdoc-fmt-btn:hover { background: #ffffff22; }
-.tdoc-fmt-btn code { font-size: 11px; background: none; color: inherit; }
+.tdoc-fmt-btn code { font-size: var(--fs-xs); background: none; color: inherit; }
 
 /* ═══════ 문서 머지·비교 — 블록 목록 (출처 색은 왼쪽 줄 --src) ═══════ */
 .tm-list { max-width: 760px; margin: 0 auto; padding: 16px 20px 40px; }
-.tm-row { position: relative; display: flex; align-items: flex-start; gap: 10px; margin: 2px 0; padding: 4px 8px 4px calc(14px + var(--ind, 0) * 24px); border-radius: 8px; }
+.tm-row { position: relative; display: flex; align-items: flex-start; gap: 10px; margin: 2px 0; padding: 4px 8px 4px calc(14px + var(--ind, 0) * 24px); border-radius: var(--r-sm); }
 .tm-row::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--src, transparent); }
 .tm-row:not(.l-common) { background: color-mix(in srgb, var(--src) 7%, transparent); }
 .tm-row.dim { opacity: .35; }
@@ -79,8 +79,8 @@
 .tm-text { display: flex; gap: 6px; color: var(--ink); font-size: 15px; line-height: 1.6; }
 .tm-marker { flex: none; min-width: 18px; text-align: center; }
 .tm-html { min-width: 0; white-space: pre-wrap; word-break: break-word; }
-.tm-html.is-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-.tm-html code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; padding: 0 4px; border-radius: 4px; background: var(--surface-2); }
+.tm-html.is-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-base); }
+.tm-html code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; padding: 0 4px; border-radius: var(--r-2xs); background: var(--surface-2); }
 .tm-html a { color: var(--accent); }
 .tm-empty { color: var(--muted); font-style: italic; }
 .t-h1 .tm-text { font-size: 24px; font-weight: 700; } .t-h2 .tm-text { font-size: 20px; font-weight: 700; } .t-h3 .tm-text { font-size: 17px; font-weight: 650; }
@@ -89,7 +89,7 @@
 .tm-other { margin-top: 2px; font-size: var(--fs-sm); color: var(--muted); }
 .tm-other-label { margin-right: 6px; font-weight: 600; }
 .tm-side { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 46%; }
-.tm-chip { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--src) 14%, transparent); color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.tm-chip { padding: 2px 8px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--src) 14%, transparent); color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
 
 /* ═══════ 문서 인쇄(PDF) — 인쇄하는 동안 body 끝의 .tdoc-print만 보인다 (textdoc/print.ts) ═══════ */
 .tdoc-print { display: none; }

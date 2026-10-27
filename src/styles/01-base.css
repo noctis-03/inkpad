@@ -69,19 +69,25 @@
   --e2: 0 8px 24px #0000001f;
   --e3: 0 24px 60px #0000004d;
 
-  /* ── 곡률 (기존 값과 동일 — 픽셀 변화 없음) ── */
+  /* ── 곡률 — 눈금 밖 값을 쓰지 않는다 (1–3px 잔 장식·50% 원은 예외, docs/ui-plan.md) ── */
+  --r-2xs: 4px;
+  --r-xs: 6px;
   --r-sm: 8px;
   --r-md: 10px;
   --r-lg: 12px;
   --r-xl: 14px;
   --r-2xl: 18px;
   --r-card: 6px;           /* 라이브러리 노트 카드(미리보기) 모서리 */
+  --r-pill: 999px;
 
-  /* ── 타이포 스케일 (기존 값과 동일) ── */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 14px;
-  --fs-lg: 16px;
+  /* ── 타이포 스케일 — UI 글자는 이 눈금만 쓴다 (텍스트 문서 본문·인쇄 pt·표시용 큰 글자는 예외, docs/ui-plan.md) ── */
+  --fs-2xs: 10px;          /* 배지·꼬리표 */
+  --fs-xs: 11px;           /* 보조 캡션 */
+  --fs-sm: 12px;           /* 설명·메타 */
+  --fs-base: 13px;         /* UI 기본 글자 */
+  --fs-md: 14px;           /* 강조 항목·입력 */
+  --fs-lg: 16px;           /* 시트 소제목 */
+  --fs-title: 18px;        /* 시트·패널 제목 */
   --fs-xl: 20px;
   --fs-2xl: 24px;
 
@@ -253,10 +259,10 @@ button {
   height: 100%;
   padding: 0 4px 0 10px;
   border: 0;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
   cursor: pointer;
 }
 .tab:hover {
@@ -287,7 +293,7 @@ button {
   color: var(--ink);
   box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0, 0, 0, 0.14);
   clip-path: none; /* 보는 탭도 들어 올린 듯 그림자를 다 보인다 */
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   cursor: grabbing;
 }
 .tab.is-dragging::before,
@@ -318,7 +324,7 @@ button {
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: inherit;
   opacity: 0.6;

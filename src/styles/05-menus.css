@@ -37,7 +37,7 @@
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  font-size: 14px;
+  font-size: var(--fs-md);
   text-align: left;
   cursor: pointer;
 }
@@ -75,13 +75,13 @@
 .modal {
   width: min(420px, 100%);
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   background: var(--surface);
   box-shadow: var(--e3);
 }
 .modal-title {
   margin: 0 0 8px;
-  font-size: 18px;
+  font-size: var(--fs-title);
 }
 .modal-message {
   margin: 0 0 12px;
@@ -131,7 +131,7 @@
 }
 .sheet-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-title);
 }
 .sheet-scroll {
   flex: 1;
@@ -187,7 +187,7 @@
 .field > span {
   font-weight: 600;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .field input {
   height: 42px;
@@ -235,7 +235,7 @@
 }
 .seg.small button {
   min-height: 32px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .paper-picker {
   display: flex;
@@ -261,7 +261,7 @@
 .paper-preview {
   width: 48px;
   height: 62px;
-  border-radius: 4px;
+  border-radius: var(--r-2xs);
   background-color: var(--thumb-paper);
   box-shadow: 0 0 0 1px #0000001f;
 }
@@ -328,7 +328,7 @@
   margin-bottom: 6px;
   border-radius: var(--r-md);
   background: var(--surface-2);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .pressure-tester {
   margin-top: 10px;
@@ -357,11 +357,11 @@
 }
 .tester-result b {
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .usage-bar {
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--r-2xs);
   background: var(--line-2);
   overflow: hidden;
   margin: 4px 0 10px;

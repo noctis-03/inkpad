@@ -32,16 +32,16 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .cat-chip-x {
   border: 0;
   background: none;
   color: inherit;
-  font-size: 15px;
+  font-size: var(--fs-md);
   line-height: 1;
   padding: 0 2px;
   cursor: pointer;
@@ -70,10 +70,10 @@
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--surface);
-  font-size: 13px;
+  font-size: var(--fs-base);
   cursor: pointer;
 }
 .hidden-cat-chip small {
@@ -99,7 +99,7 @@
 
 /* ───────── 디버그: 네트워크 사용량 ───────── */
 .net-usage-total {
-  font-size: 22px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -121,7 +121,7 @@
   gap: 8px;
 }
 .net-log-head-title {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
 }
 .net-log-title {

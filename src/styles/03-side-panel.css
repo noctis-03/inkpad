@@ -170,7 +170,7 @@
 .rev-preview img {
   display: block;
   max-width: 100%;
-  border-radius: 4px;
+  border-radius: var(--r-2xs);
   box-shadow: var(--e1);
   background: #fff;
 }
@@ -186,7 +186,7 @@
 }
 .rev-section-title {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 .rev-section-title small {
   margin-left: 4px;
@@ -204,7 +204,7 @@
   gap: 8px;
 }
 .rev-time {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--ink);
 }
@@ -217,7 +217,7 @@
 .rev-tag {
   font-size: var(--fs-xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   color: var(--muted);
 }
@@ -273,7 +273,7 @@
 .log {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.7;
 }
 .log {
@@ -324,7 +324,7 @@ textarea {
 .text-btn.small {
   min-height: 32px;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .text-btn.primary {
   background: var(--accent);
