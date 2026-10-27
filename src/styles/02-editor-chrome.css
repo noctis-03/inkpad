@@ -163,7 +163,7 @@
   padding: 8px 10px;
   border-radius: var(--r-md);
   background: var(--toast-bg);
-  color: var(--line-2);
+  color: var(--toast-fg); /* --line-2는 다크에서 어둡게 뒤집혀 판에 묻혔다 */
   font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
   z-index: 5;
   cursor: pointer;

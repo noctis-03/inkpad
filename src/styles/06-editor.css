@@ -304,7 +304,8 @@
   padding: 10px 8px 10px 14px;
   border-radius: var(--r-lg);
   background: var(--btn-bg);
-  color: var(--surface-2);
+  color: var(--toast-fg); /* 전에는 --surface-2 — 다크에서 어두운 색으로 뒤집혀 글자가 판에 묻혔다(1.2:1) */
+  border: 1px solid var(--toast-line);
   font-size: var(--fs-md);
   box-shadow: var(--e2);
 }
@@ -320,13 +321,13 @@
 .toast button {
   border: 0;
   background: transparent;
-  color: var(--accent-line-2);
+  color: var(--toast-action);
   font-weight: 600;
   padding: 6px 8px;
   cursor: pointer;
 }
 .toast .toast-close {
-  color: var(--muted-2);
+  color: var(--toast-dim);
 }
 .busy-backdrop {
   position: fixed;

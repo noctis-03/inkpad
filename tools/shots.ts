@@ -246,6 +246,15 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
     await p.evaluate(async (id) => (await import('/src/app/store.ts')).useUI.getState().navigate({ name: 'app', appId: id }), s.app)
     await p.waitForSelector('.app-runner-bar', { timeout: 15000 })
   },
+  toast: async (p) => {
+    // 일반(동작 버튼) · 성공 · 오류 — 사라지지 않게 sticky
+    await p.evaluate(async () => {
+      const ui = (await import('/src/app/store.ts')).useUI.getState()
+      ui.toast('노트 2개를 휴지통으로 옮겼습니다.', 'info', { label: '되돌리기', run: () => {} }, { sticky: true })
+      ui.toast('올리기를 마쳤습니다.', 'success', undefined, { sticky: true })
+      ui.toast('Drive 응답을 받지 못했습니다.', 'error', undefined, { sticky: true })
+    })
+  },
   // ── 빈 상태·결과 없음 (4b) ──
   'search-empty': async (p) => {
     if (!(await p.locator('.search-box input:visible').count())) await p.click('.search-toggle')
