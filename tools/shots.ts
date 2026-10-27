@@ -5,7 +5,7 @@
  *        npm run shots -- before        (폴더 이름, 기본 'now')
  *        npm run shots -- after library editor   (화면 이름으로 골라 찍기)
  *
- * 개발 서버를 띄우고, 기기마다 같은 예시 데이터(카테고리·노트·문서)를 DB에 넣은 뒤 찍는다.
+ * 개발 서버를 띄우고, 기기마다 같은 예시 데이터(카테고리·노트·문서)를 DB에 넣고 가짜 Drive(e2e/fake-drive.ts)에 올린 뒤 찍는다.
  * shots/ 는 저장소에 올리지 않는다(.gitignore).
  */
 import { createServer } from 'vite'
@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import type { Page } from 'playwright'
 import { launch, sleep, addStroke, openEditor } from './e2e/lib.ts'
+import { createFakeDrive } from './e2e/fake-drive.ts'
 
 const VIEWPORTS = {
   pad: { width: 1180, height: 820, touch: true }, // iPad Air 가로
@@ -47,6 +48,9 @@ async function seed(p: Page): Promise<Seed> {
     return { paged: docs[0].id, infinite: inf.id, text: text.id, all: docs.map((d) => d.id) }
   })
   for (const id of ids.all) for (let i = 0; i < 6; i++) await addStroke(p, id, `s-${id}-${i}`)
+  // 가짜 Drive에 올려 둔다 — 동기화 화면에 클라우드 노트가 보이게. 앞 두 노트는 올린 뒤 더 고쳐 '올릴 것'이 남는다
+  await p.evaluate(async () => (await import('/src/sync/sync.ts')).pushNow())
+  for (const id of ids.all.slice(0, 2)) await addStroke(p, id, `s-${id}-after`)
   return ids
 }
 
@@ -80,7 +84,21 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
     await p.click('#new-doc-btn')
   },
   settings: async (p) => {
-    await p.click('[aria-label="설정"]')
+    // 휴대폰 폭에서는 설정이 ⋯(보기·정렬) 메뉴 안에 있다
+    if (await p.locator('[aria-label="설정"]:visible').count()) await p.click('[aria-label="설정"]:visible')
+    else {
+      await p.click('[aria-label="보기·정렬"]')
+      await p.getByRole('menuitem', { name: /설정/ }).click()
+    }
+  },
+  'settings-storage': async (p) => {
+    await SCREENS.settings(p, '', {} as Seed)
+    await p.locator('.sheet-header button', { hasText: '저장소' }).click()
+  },
+  history: async (p, base, s) => {
+    await openEditor(p, base, s.paged)
+    await p.click('.toolbar-doc [aria-label="더보기"]')
+    await p.getByRole('menuitem', { name: /버전 기록/ }).click()
   },
   sync: async (p) => {
     await p.click('.sync-btn')
@@ -134,6 +152,7 @@ try {
   for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     for (const theme of THEMES) {
       const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2, hasTouch: vp.touch, colorScheme: theme })
+      await createFakeDrive().attach(context) // 네트워크·계정 없이 동기화 화면을 채운다
       const p = await context.newPage()
       await p.goto(base + '/')
       await p.waitForSelector('#root *')
