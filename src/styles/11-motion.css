@@ -96,7 +96,7 @@
   left: 0;
   top: 0;
   z-index: 0;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--chip);
   box-shadow: var(--raise);
   pointer-events: none;
@@ -121,7 +121,7 @@
 }
 .folder-tree .motion-ind {
   background: var(--chip);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: var(--raise), 0 6px 14px -8px #1f293726;
 }
 .ft-tools .motion-ind,
@@ -287,7 +287,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   mix-blend-mode: overlay;
   transition: opacity .2s;
 }
-.doc-list .doc-gloss { border-radius: 6px; }
+.doc-list .doc-gloss { border-radius: var(--r-xs); }
 .doc-card.is-tilt .doc-gloss { opacity: .9; }
 /* 썸네일 리빌 (위 → 아래로 쓸어내리듯) */
 .doc-thumb img[data-reveal] { clip-path: inset(0 0 100% 0); }
@@ -360,7 +360,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 .doc-state.s-new .doc-state-dot { background: var(--muted-2); }
 .doc-state.s-same .doc-state-dot { background: var(--success); }
 .doc-state.s-pending .doc-state-dot { background: var(--warn); animation: dot-pulse 1.6s ease-in-out infinite; }
-.doc-state.s-remote-new .doc-state-dot { background: var(--accent); box-shadow: 0 0 0 3px #2563eb1f; }
+.doc-state.s-remote-new .doc-state-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .doc-state.s-diverged .doc-state-dot { background: var(--danger); }
 @keyframes dot-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }

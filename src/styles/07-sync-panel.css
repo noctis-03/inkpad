@@ -18,7 +18,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 38px;
+  height: var(--h-control);
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -160,7 +160,7 @@
   flex-direction: column;
 }
 .sync-status-txt b {
-  font-size: 15px;
+  font-size: var(--fs-md);
   color: var(--t);
 }
 .sync-status-txt small {
@@ -170,12 +170,12 @@
 .sync-mini {
   height: 32px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--tb);
   background: var(--surface);
   color: var(--t);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -223,10 +223,10 @@
   min-width: 0;
 }
 .sync-big-txt b {
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 .sync-big-txt small {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -250,7 +250,7 @@
   min-width: 22px;
   height: 22px;
   padding: 0 6px;
-  border-radius: 11px;
+  border-radius: var(--r-md);
   background: var(--t);
   color: var(--on-ink);
   font-size: var(--fs-sm);
@@ -315,7 +315,7 @@
   margin: 18px 0 8px;
 }
 .cloud-lhead .tt {
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 700;
 }
 .cloud-lhead .tt span {
@@ -326,12 +326,12 @@
 }
 .cloud-lhead small {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 .cloud-icon-btn {
   width: 36px;
-  height: 36px;
+  height: var(--h-control);
   border-radius: var(--r-md);
   border: 1px solid var(--line);
   background: var(--surface);
@@ -364,13 +364,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
+  height: var(--h-control);
   padding: 0 12px;
-  border-radius: 17px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-base);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -422,7 +422,7 @@
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 700;
   color: var(--t);
   text-align: left;
@@ -434,7 +434,7 @@
   padding: 0 6px;
   border-radius: var(--r-md);
   background: var(--ts);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   display: grid;
   place-items: center;
@@ -446,12 +446,12 @@
 .cloud-bulk {
   height: 30px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--tb);
   background: var(--ts);
   color: var(--t);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -510,7 +510,7 @@
   min-width: 0;
 }
 .cloud-name {
-  font-size: 14.5px;
+  font-size: var(--fs-md);
   font-weight: 600;
   line-height: 1.35;
   color: var(--ink);
@@ -528,7 +528,7 @@
   flex-wrap: wrap;
   gap: 0 6px;
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 .cloud-meta > * + *::before {
@@ -556,7 +556,7 @@
   background: var(--ts);
   color: var(--t);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -588,7 +588,7 @@
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--muted-2);
   cursor: pointer;
@@ -663,7 +663,7 @@
 }
 .cloud-skel .bar {
   height: 11px;
-  border-radius: 5px;
+  border-radius: var(--r-2xs);
   background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-3) 37%, var(--surface-3) 63%);
   background-size: 400% 100%;
   animation: cloud-shimmer 1.3s ease-in-out infinite;
@@ -679,7 +679,7 @@
 .cloud-skel .bar.s {
   width: 54px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   flex: 0 0 auto;
 }
 @keyframes cloud-shimmer {
@@ -697,7 +697,7 @@
   border: 1px dashed var(--line);
   border-radius: var(--r-md);
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.6;
   color: var(--muted);
 }
@@ -730,7 +730,7 @@
   align-items: center;
   gap: 10px;
   min-height: 46px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .sync-foot-row + .sync-foot-row {
   border-top: 1px solid var(--line);
@@ -757,14 +757,14 @@
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .sync-link {
   border: 0;
   background: none;
   color: var(--accent);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
   padding: 8px 4px;
   cursor: pointer;
@@ -800,7 +800,7 @@
   border-radius: var(--r-lg);
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 800;
   display: flex;
   align-items: center;
@@ -808,7 +808,7 @@
 }
 .push-modal .modal-title {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--fs-lg);
 }
 .push-sub {
   margin: 2px 0 0;
@@ -914,7 +914,7 @@
 .push-total {
   margin-right: auto;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-variant-numeric: tabular-nums;
 }
 
@@ -966,7 +966,7 @@
 .merge-queue-draft {
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent-ink);
   font-size: var(--fs-xs);
@@ -1015,7 +1015,7 @@
 }
 .merge-title h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-lg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1026,11 +1026,11 @@
   color: var(--muted);
 }
 .merge-side.main {
-  color: #b9690a;
+  color: var(--merge-main-ink);
   font-weight: 600;
 }
 .merge-side.branch {
-  color: #2459c4;
+  color: var(--merge-branch-ink);
   font-weight: 600;
 }
 .merge-panel-toggle {
@@ -1043,7 +1043,7 @@
   min-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--surface);
   color: var(--ink-2);
   font-size: var(--fs-sm);
@@ -1207,7 +1207,7 @@
   height: 32px;
   margin: 6px 2px;
   border: 2px solid var(--surface);
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   box-shadow: 0 0 0 1px var(--line);
   cursor: pointer;
 }
@@ -1230,29 +1230,29 @@
 }
 .merge-page-changes {
   padding: 1px 7px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--surface-3);
   color: var(--ink-2);
 }
 .merge-chip {
   padding: 1px 7px;
-  border-radius: 99px;
-  color: #fff;
+  border-radius: var(--r-pill);
+  color: var(--on-ink);
 }
 .merge-chip.l-mainOnly {
-  background: #e8890c;
+  background: var(--merge-main);
 }
 .merge-chip.l-branchOnly {
-  background: #2f6fe0;
+  background: var(--merge-branch);
 }
 .merge-chip.l-modified {
-  background: #8b4fd6;
+  background: var(--merge-mod);
 }
 .merge-canvas {
   display: block;
-  border-radius: 4px;
+  border-radius: var(--r-2xs);
   box-shadow: var(--e1);
-  background: #fff;
+  background: var(--thumb-paper);
 }
 .merge-page.discarded .merge-canvas {
   opacity: 0.35;
@@ -1339,7 +1339,7 @@
   align-self: center;
   width: 10px;
   height: 10px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .merge-layer-name {
@@ -1518,7 +1518,7 @@
 }
 .archive-section h3 {
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 .archive-section .hint {
   margin: 0 0 8px;
@@ -1549,7 +1549,7 @@
   color: var(--muted);
 }
 .archive-main b {
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: var(--ink);
 }
 .archive-main em {
@@ -1559,7 +1559,7 @@
 .archive-tag {
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent-ink);
   font-size: var(--fs-xs);
@@ -1570,7 +1570,7 @@
   margin-left: 6px;
   padding: 1px 7px;
   border: 1px solid var(--line);
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   font-size: var(--fs-xs);
   font-weight: 500;
   vertical-align: 2px;
@@ -1593,7 +1593,7 @@
   padding: 0 10px;
   margin-right: 4px;
   border: 1px solid var(--line);
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--surface);
   cursor: pointer;
 }
@@ -1626,10 +1626,10 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--danger);
-  color: #fff;
-  font-size: 11px;
+  color: var(--on-ink);
+  font-size: var(--fs-xs);
   font-weight: 700;
   line-height: 18px;
   text-align: center;
@@ -1652,23 +1652,23 @@
 }
 .changes-chip {
   padding: 3px 9px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--surface-2);
   color: var(--ink-2);
   font-size: var(--fs-sm);
   font-weight: 600;
 }
 .changes-chip.add {
-  background: #2f6fe01a;
-  color: #2459c4;
+  background: color-mix(in srgb, var(--merge-branch) 10%, transparent);
+  color: var(--merge-branch-ink);
 }
 .changes-chip.del {
-  background: #e5484d1a;
-  color: #c4282d;
+  background: color-mix(in srgb, var(--merge-del) 10%, transparent);
+  color: var(--merge-del-ink);
 }
 .changes-chip.mod {
-  background: #8b4fd61a;
-  color: #6b35b0;
+  background: color-mix(in srgb, var(--merge-mod) 10%, transparent);
+  color: var(--merge-mod-ink);
 }
 .changes-all {
   margin-left: auto;
@@ -1693,9 +1693,9 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   margin-right: -2px;
-  background: #fff;
+  background: var(--thumb-paper);
   box-shadow:
     0 0 0 2px var(--c),
     0 0 6px 2px var(--c);

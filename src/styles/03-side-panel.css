@@ -51,7 +51,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 44px;
+  min-height: 40px;
 }
 .setting-label {
   display: flex;
@@ -85,7 +85,7 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--surface);
-  min-height: 36px;
+  min-height: var(--h-control);
 }
 .switch {
   appearance: none;
@@ -123,7 +123,7 @@
   gap: 8px;
 }
 .text-btn {
-  min-height: 40px;
+  min-height: var(--h-control);
   padding: 0 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--line);
@@ -170,9 +170,9 @@
 .rev-preview img {
   display: block;
   max-width: 100%;
-  border-radius: 4px;
+  border-radius: var(--r-2xs);
   box-shadow: var(--e1);
-  background: #fff;
+  background: var(--thumb-paper);
 }
 .rev-diff {
   font-size: var(--fs-sm);
@@ -186,7 +186,7 @@
 }
 .rev-section-title {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 .rev-section-title small {
   margin-left: 4px;
@@ -204,7 +204,7 @@
   gap: 8px;
 }
 .rev-time {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--ink);
 }
@@ -217,7 +217,7 @@
 .rev-tag {
   font-size: var(--fs-xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   color: var(--muted);
 }
@@ -273,7 +273,7 @@
 .log {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.7;
 }
 .log {
@@ -295,7 +295,7 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 40px;
+  min-height: var(--h-control);
   padding: 0 16px;
   border: 0;
   border-radius: var(--r-md);
@@ -322,9 +322,9 @@ textarea {
   white-space: nowrap;
 }
 .text-btn.small {
-  min-height: 32px;
+  min-height: var(--h-control-sm);
   padding: 0 10px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .text-btn.primary {
   background: var(--accent);

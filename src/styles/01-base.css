@@ -1,4 +1,9 @@
-:root {
+/* 밝은 팔레트 — :root와, 테마와 상관없이 늘 밝게 두는 '종이 쪽' UI(편집 도구창·그 팝오버).
+   도구창은 흰 종이 위에 떠서 펜 색·굵기를 종이에 그릴 그대로 보여 주므로 다크에서도 밝다.
+   안쪽 칩·선·글자도 이 팔레트를 받아야 다크 값이 섞이지 않는다 */
+:root,
+:root[data-theme='dark'] .ft-bar,
+:root[data-theme='dark'] .ft-pop {
   color-scheme: light;
 
   /* ── 표면 (종이 · 카드 · 채움) ── */
@@ -69,19 +74,25 @@
   --e2: 0 8px 24px #0000001f;
   --e3: 0 24px 60px #0000004d;
 
-  /* ── 곡률 (기존 값과 동일 — 픽셀 변화 없음) ── */
+  /* ── 곡률 — 눈금 밖 값을 쓰지 않는다 (1–3px 잔 장식·50% 원은 예외, docs/ui-plan.md) ── */
+  --r-2xs: 4px;
+  --r-xs: 6px;
   --r-sm: 8px;
   --r-md: 10px;
   --r-lg: 12px;
   --r-xl: 14px;
   --r-2xl: 18px;
   --r-card: 6px;           /* 라이브러리 노트 카드(미리보기) 모서리 */
+  --r-pill: 999px;
 
-  /* ── 타이포 스케일 (기존 값과 동일) ── */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 14px;
-  --fs-lg: 16px;
+  /* ── 타이포 스케일 — UI 글자는 이 눈금만 쓴다 (텍스트 문서 본문·인쇄 pt·표시용 큰 글자는 예외, docs/ui-plan.md) ── */
+  --fs-2xs: 10px;          /* 배지·꼬리표 */
+  --fs-xs: 11px;           /* 보조 캡션 */
+  --fs-sm: 12px;           /* 설명·메타 */
+  --fs-base: 13px;         /* UI 기본 글자 */
+  --fs-md: 14px;           /* 강조 항목·입력 */
+  --fs-lg: 16px;           /* 시트 소제목 */
+  --fs-title: 18px;        /* 시트·패널 제목 */
   --fs-xl: 20px;
   --fs-2xl: 24px;
 
@@ -104,10 +115,38 @@
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
   --tag-ink: #2b2a26;       /* 카드 동기화 꼬리표(.sync-tag) 먹색 — 미색 카드 위라 테마와 상관없이 */
   --tag-alert: #b3261e;     /* 꼬리표 '갈라짐' 빨강 */
+  --mark-o: #059669;        /* 카드 마킹 ○ ✕ ! — 카드 미리보기(늘 밝음) 위라 테마와 상관없이 */
+  --mark-x: #dc2626;
+  --mark-ex: #d97706;
+  --paper-line: #d3d9e2;    /* 속지 미리보기 줄·모눈 */
+  --paper-dot: #a9b1bc;     /* 속지 미리보기 점 */
+  --paper-margin: #9fb0c8;  /* 코넬 여백선 */
+
+  /* ── 덮개·옅은 채움 — 잉크 색을 섞어 테마를 따른다 ── */
+  --scrim: #0000004d;       /* 모달·진행 뒤 어둡게 */
+  --tint: color-mix(in srgb, var(--ink) 6%, transparent);   /* 옅은 채움·머리카락 선 */
+  --tint-2: color-mix(in srgb, var(--ink) 13%, transparent); /* 한 단계 진하게 */
+
+  /* ── 머지·변경 표시 — main(이 기기 밖 기준) · 브랜치 · 고침 · 지움 ── */
+  --merge-main: #e8890c;
+  --merge-main-ink: #b9690a;
+  --merge-branch: #2f6fe0;
+  --merge-branch-ink: #2459c4;
+  --merge-mod: #8b4fd6;
+  --merge-mod-ink: #6b35b0;
+  --merge-del: #e5484d;
+  --merge-del-ink: #c4282d;
+  --code-ink: #c2410c;      /* 문서 인라인 코드 */
   --sync-hatch: color-mix(in srgb, var(--tag-ink) 9%, transparent); /* 꼬리표 붙은 카드 빗금 색 */
   --sync-hatch-w: 12px;     /* 빗금 굵기 */
   --sync-hatch-gap: 18px;   /* 빗금 간격(굵기 포함) — 빗금 사이 빈 폭 6px */
 
+  /* ── 크기 — 밀도 (docs/ui-plan.md 1b) — 값만 바꾸면 앱 전체 밀도가 따라간다 ── */
+  --h-bar: 52px;           /* 상단 바 */
+  --h-control: 34px;       /* 검색·세그먼트·버튼·입력 */
+  --h-control-sm: 28px;    /* 작은 버튼 */
+  --h-row: 32px;           /* 목록 행(왼쪽 메뉴·⋯ 메뉴) */
+  --h-tap: 40px;           /* 펜·손가락이 자주 누르는 곳(편집 도구창 등) — 이보다 줄이지 않는다 */
   --toolbar-h: 52px;
   --safe-top: env(safe-area-inset-top, 0px);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
@@ -182,6 +221,12 @@
     --e3: 0 24px 60px #000000b3;
 
     --tray: #2a2824;
+
+    --merge-main-ink: #f5a855;
+    --merge-branch-ink: #8fb0ff;
+    --merge-mod-ink: #c4a5f5;
+    --merge-del-ink: #ff8a8d;
+    --code-ink: #fb923c;
 }
 
 * {
@@ -253,10 +298,10 @@ button {
   height: 100%;
   padding: 0 4px 0 10px;
   border: 0;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
   cursor: pointer;
 }
 .tab:hover {
@@ -287,7 +332,7 @@ button {
   color: var(--ink);
   box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0, 0, 0, 0.14);
   clip-path: none; /* 보는 탭도 들어 올린 듯 그림자를 다 보인다 */
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   cursor: grabbing;
 }
 .tab.is-dragging::before,
@@ -318,7 +363,7 @@ button {
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: inherit;
   opacity: 0.6;

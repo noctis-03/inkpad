@@ -9,6 +9,9 @@
  *  1. 중괄호·주석·문자열이 모두 닫혔는가
  *  2. 일반 규칙(선택자 { … }) 안에 또 다른 블록이 없는가 — @media·@supports·@container·@layer 안의 규칙과
  *     @keyframes의 단계(from·50% 등)만 블록을 품을 수 있다
+ *  3. UI 글자 크기·모서리를 토큰(--fs-*·--r-*, styles/01-base.css)으로만 쓰는가 — docs/ui-plan.md의 눈금.
+ *     예외: 토큰 정의 줄, 텍스트 문서 본문(15-textdoc의 .tb-text·.tb-marker·.tm-text·.t-h*), 30px 이상 표시용 글자,
+ *     1–3px 잔 장식 모서리, pt·em·%
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -74,6 +77,21 @@ export function checkCss(text: string): string[] {
   return problems
 }
 
+/** 토큰 대신 직접 쓴 글자 크기·모서리를 찾는다 */
+export function checkTokens(text: string, file = ''): string[] {
+  const problems: string[] = []
+  const content = /^\s*\.(tb-text|tb-marker|tm-text|t-h[123])\b/
+  text.split('\n').forEach((l, i) => {
+    if (/^\s*--/.test(l) || (file.endsWith('15-textdoc.css') && content.test(l))) return
+    for (const m of l.matchAll(/font-size:\s*([0-9.]+)px/g))
+      if (Number(m[1]) < 30) problems.push(`${i + 1}행: font-size ${m[1]}px — --fs-* 토큰을 쓴다`)
+    for (const m of l.matchAll(/border-radius:\s*([^;}]+)/g))
+      for (const n of m[1].matchAll(/\b([0-9.]+)px\b/g))
+        if (Number(n[1]) > 3) problems.push(`${i + 1}행: border-radius ${n[1]}px — --r-* 토큰을 쓴다`)
+  })
+  return problems
+}
+
 function cssFiles(dir: string): string[] {
   const out: string[] = []
   for (const f of readdirSync(dir)) {
@@ -97,9 +115,14 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.log('  ✗ 검사기 자체 시험 실패 — 올바른 CSS를 문제로 봤다')
     bad++
   }
+  if (checkTokens('.a { font-size: 13px; border-radius: 8px 8px 0 0; }').length !== 3 || checkTokens('.a { font-size: var(--fs-sm); border-radius: 2px; }\n  --r-sm: 8px;').length) {
+    console.log('  ✗ 검사기 자체 시험 실패 — 토큰 검사')
+    bad++
+  }
   const files = cssFiles(join(ROOT, 'src'))
   for (const f of files) {
-    const problems = checkCss(readFileSync(f, 'utf8'))
+    const text = readFileSync(f, 'utf8')
+    const problems = [...checkCss(text), ...checkTokens(text, f)]
     for (const p of problems) console.log(`  ✗ ${relative(ROOT, f)}: ${p}`)
     bad += problems.length
   }

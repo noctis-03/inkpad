@@ -19,7 +19,8 @@
     "test:sync": "node --experimental-strip-types --no-warnings tools/verify/sync-judge-test.ts",
     "test:branch": "node --experimental-strip-types --no-warnings tools/verify/branch-test.ts",
     "test:css": "node --experimental-strip-types --no-warnings tools/verify/css-check.ts",
-    "test:e2e": "node --experimental-strip-types --no-warnings tools/e2e/run.ts"
+    "test:e2e": "node --experimental-strip-types --no-warnings tools/e2e/run.ts",
+    "shots": "node --experimental-strip-types --no-warnings tools/shots.ts"
   },
   "dependencies": {
     "dexie": "^4.4.6",

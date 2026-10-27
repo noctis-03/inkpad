@@ -23,7 +23,7 @@
 @media (max-width: 700px) {
   .library-header {
     gap: 6px;
-    padding: 10px;
+    padding: 0 10px;
   }
   /* 제목은 줄어들 수 있게 — 긴 섹션 이름은 말줄임 */
   .library-header .library-title {
@@ -38,7 +38,7 @@
     margin-left: auto;
   }
   .library-header #new-doc-btn {
-    width: 40px;
+    width: var(--h-control);
     padding: 0;
   }
   .library-header .new-doc-label {
