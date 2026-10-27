@@ -24,7 +24,7 @@ export default async function tabs(ctx: Ctx) {
   const appFrame = async () => (await p.$('.pane:not(.pane-hidden) iframe.app-runner-frame'))?.contentFrame()
 
   // ── 탭 ──
-  const noBar = (await p.locator('.tabbar').count()) === 0
+  const emptyBar = (await p.locator('.tabbar .tab-home').count()) === 1 && (await p.locator('.tabbar .tab[data-tab]').count()) === 0
   await go({ name: 'editor', docId: A })
   await p.waitForSelector('.pane-main .editor')
   await go({ name: 'library' })
@@ -34,7 +34,7 @@ export default async function tabs(ctx: Ctx) {
   await go({ name: 'app', appId: ids.app }) // A 바로 뒤에
   await p.waitForSelector('.pane-main iframe.app-runner-frame')
   await sleep(300)
-  check('탭: 연 것이 없으면 탭 바를 그리지 않는다', noBar)
+  check('탭: 연 것이 없어도 탭 바(홈 탭)는 있다', emptyBar)
   check('탭: 연 노트·앱이 탭으로 — 새 탭은 지금 탭 바로 뒤에', JSON.stringify(await tabKeys()) === JSON.stringify([`doc:${A}`, `app:${ids.app}`, `doc:${B}`]), JSON.stringify(await tabKeys()))
   await p.waitForFunction(() => document.querySelector('.tabbar .tab.is-active .tab-title')?.textContent === '계산기')
   check('탭: 제목을 보여 주고 지금 탭을 표시', (await active()) === `app:${ids.app}`)
@@ -273,7 +273,7 @@ export default async function tabs(ctx: Ctx) {
   check('탭 닫기: 보던 탭을 닫으면 오른쪽 이웃으로', !after.includes(`doc:${A}`) && (await active()) === (before[at + 1] ?? before[at - 1] ?? null), JSON.stringify({ before, after, active: await active() }))
   for (const k of await tabKeys()) await p.click(`.tabbar .tab[data-tab="${k}"] .tab-close`)
   await sleep(300)
-  check('탭 닫기: 다 닫으면 탭 바가 사라지고 라이브러리', (await p.locator('.tabbar').count()) === 0 && (await p.locator('.pane-main .library').count()) === 1)
+  check('탭 닫기: 다 닫아도 탭 바(홈 탭)는 남고 라이브러리', (await p.locator('.tabbar .tab-home').count()) === 1 && (await p.locator('.tabbar .tab[data-tab]').count()) === 0 && (await p.locator('.pane-main .library').count()) === 1)
 
   // ── 머리의 뒤로 = 지금 탭을 닫고 홈으로 (다른 탭으로 옮겨 가지 않는다) ──
   const T = await p.evaluate(async () => (await (await import('/src/storage/repo.ts')).createDocument({ title: '문서 다', mode: 'text', folderId: null, pages: [] })).id)
@@ -309,7 +309,7 @@ export default async function tabs(ctx: Ctx) {
   await p.waitForSelector('.pane-main .file-runner')
   await p.click('.pane-main [aria-label="뒤로"]')
   await sleep(300)
-  check('뒤로(파일): 마지막 탭을 닫으면 탭 바가 사라진다', (await p.locator('.tabbar').count()) === 0)
+  check('뒤로(파일): 마지막 탭을 닫아도 탭 바(홈 탭)는 남는다', (await p.locator('.tabbar .tab-home').count()) === 1 && (await p.locator('.tabbar .tab[data-tab]').count()) === 0)
   await go({ name: 'library' })
 
   // 지워진 노트의 탭은 닫힌다
