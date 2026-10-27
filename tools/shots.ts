@@ -23,7 +23,7 @@ const VIEWPORTS = {
 } as const
 const THEMES = ['light', 'dark'] as const
 
-type Seed = { paged: string; infinite: string; text: string }
+type Seed = { paged: string; infinite: string; text: string; app: string; all: string[] }
 
 /** 예시 데이터 — 카테고리 묶음·여러 노트·문서 */
 async function seed(p: Page): Promise<Seed> {
@@ -45,13 +45,26 @@ async function seed(p: Page): Promise<Seed> {
     ]
     const inf = await r.createDocument({ title: '무한 캔버스 마인드맵', mode: 'infinite', folderId: null, category: '개인', pages: [{ size: null, background: m.makeBackground('dot') }] })
     const text = await r.createDocument({ title: '회의 메모', mode: 'text', folderId: null, category: '개인', pages: [] })
-    return { paged: docs[0].id, infinite: inf.id, text: text.id, all: docs.map((d) => d.id) }
+    const app = (await (await import('/src/sync/apps.ts')).addApp(new File(['<title>단어 카드</title><body style="font:16px system-ui;padding:24px">단어 카드 앱</body>'], '단어 카드.html', { type: 'text/html' }), '어학')).app.id
+    return { paged: docs[0].id, infinite: inf.id, text: text.id, app, all: docs.map((d) => d.id) }
   })
   for (const id of ids.all) for (let i = 0; i < 6; i++) await addStroke(p, id, `s-${id}-${i}`)
   // 가짜 Drive에 올려 둔다 — 동기화 화면에 클라우드 노트가 보이게. 앞 두 노트는 올린 뒤 더 고쳐 '올릴 것'이 남는다
   await p.evaluate(async () => (await import('/src/sync/sync.ts')).pushNow())
-  for (const id of ids.all.slice(0, 2)) await addStroke(p, id, `s-${id}-after`)
   return ids
+}
+
+const push = (p: Page) => p.evaluate(async () => (await import('/src/sync/sync.ts')).pushNow())
+
+/** 다른 기기(같은 가짜 Drive)가 첫 노트를 고쳐 올린 뒤 이 기기도 고쳐 올린다 — 갈라짐 → 머지 관리에 한 줄.
+ *  그다음 앞 두 노트를 더 고쳐 '올릴 것'이 남게 한다 */
+async function diverge(p: Page, other: Page, s: Seed) {
+  await other.evaluate(async () => (await import('/src/sync/sync.ts')).pullNow())
+  await addStroke(other, s.paged, 's-pad')
+  await push(other)
+  await addStroke(p, s.paged, 's-pc')
+  await push(p)
+  for (const id of s.all.slice(0, 2)) await addStroke(p, id, `s-${id}-after`)
 }
 
 async function settle(p: Page, ms = 700) {
@@ -128,9 +141,34 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
   textdoc: async (p, base, s) => {
     await p.goto(`${base}/#/doc/${s.text}`)
     await p.waitForSelector('.tdoc-title', { timeout: 15000 })
+    // 처음 한 번만 내용을 적는다 (같은 기기에서 다시 찍으면 그대로 보인다)
+    if ((await p.locator('.tdoc-blocks .tb-text').first().innerText()).trim() === '') {
+      await p.click('.tdoc-blocks .tb-text')
+      for (const line of ['# 안건', '- 디자인 토큰 정리', '밀도 한 단계', '', '[] 다음 회의 전에 스크린샷 비교', '', '> 메모: 펜 대상은 40px 밑으로 줄이지 않는다']) {
+        if (line) await p.keyboard.type(line)
+        await p.keyboard.press('Enter')
+      }
+      await p.locator('.tdoc-title').click()
+    }
   },
   board: async (p, base) => {
     await p.goto(`${base}/#/board`)
+  },
+  'board-edit': async (p, base) => {
+    await p.goto(`${base}/#/board`)
+    await p.locator('.board-topbar-center button', { hasText: '편집' }).click()
+  },
+  merge: async (p, _base, s) => {
+    await p.evaluate(async (docId) => {
+      const entry = (await (await import('/src/sync/sync.ts')).listMergeQueue()).find((e) => e.docId === docId && e.mine)
+      if (!entry) throw new Error('머지할 것이 없다')
+      ;(await import('/src/ui/merge/MergeView.tsx')).openMergeView(entry)
+    }, s.paged)
+    await p.waitForSelector('.merge-view .merge-canvas', { timeout: 15000 })
+  },
+  app: async (p, _base, s) => {
+    await p.evaluate(async (id) => (await import('/src/app/store.ts')).useUI.getState().navigate({ name: 'app', appId: id }), s.app)
+    await p.waitForSelector('.app-runner-bar', { timeout: 15000 })
   }
 }
 
@@ -152,12 +190,21 @@ try {
   for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     for (const theme of THEMES) {
       const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2, hasTouch: vp.touch, colorScheme: theme })
-      await createFakeDrive().attach(context) // 네트워크·계정 없이 동기화 화면을 채운다
+      const drive = createFakeDrive()
+      await drive.attach(context) // 네트워크·계정 없이 동기화 화면을 채운다
       const p = await context.newPage()
       await p.goto(base + '/')
       await p.waitForSelector('#root *')
       await p.evaluate(() => localStorage.setItem('inkpad.installHint', '1'))
       const s = await seed(p)
+      // 갈라짐을 만들 다른 기기 — 저장소가 따로인 컨텍스트, 같은 가짜 Drive
+      const otherCtx = await browser.newContext({ viewport: { width: 800, height: 600 } })
+      await drive.attach(otherCtx)
+      const other = await otherCtx.newPage()
+      await other.goto(base + '/')
+      await other.waitForSelector('#root *')
+      await diverge(p, other, s)
+      await otherCtx.close()
       for (const name of pick) {
         try {
           await p.goto(base + '/')

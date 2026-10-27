@@ -526,7 +526,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--h-tap);
   padding: 8px 16px 6px;
   border: 0;
   background: none;
@@ -578,7 +578,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 52px;
+  min-height: 44px; /* 끌기 손잡이(40px)가 들어가는 높이 */
   padding: 4px 6px;
   border-radius: var(--r-md);
 }
@@ -594,8 +594,8 @@
 .board-drawer .tray-row-main { align-items: center; }
 .board-drawer .tray-row-time { display: none; }
 .tray-thumb {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--r-sm);
   background-color: var(--thumb-paper);
   background-size: cover;
@@ -608,7 +608,7 @@
 .tray-row.kind-app .tray-thumb.is-icon,
 .tray-row.kind-file .tray-thumb.is-icon { border-radius: var(--r-md); }
 .tray-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.tray-row-name { font-size: var(--fs-sm); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-row-name { font-size: var(--fs-base); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tray-row-time { font-size: var(--fs-xs); color: var(--muted); }
 .tray-row-placed {
   flex: none;
@@ -623,8 +623,8 @@
 .tray-row-add {
   position: relative; /* ::before(누름 영역 확장)가 이 버튼 기준으로만 잡히게 한다 */
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: var(--h-control);
+  height: var(--h-control);
   display: grid;
   place-items: center;
   border: 1px solid var(--accent-line);
@@ -831,7 +831,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: var(--h-row);
   padding: 6px 6px 4px;
   background: var(--panel);
   backdrop-filter: blur(8px);
