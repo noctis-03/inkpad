@@ -1627,7 +1627,10 @@ export function Board() {
 
         {shortcuts.length === 0 ? (
           <div className="board-empty">
-            <Icon name="board" size={52} />
+            {/* 아이콘은 공용 빈 상태와 같은 칸 (.store-empty-icon) */}
+            <span className="store-empty-icon">
+              <Icon name="board" size={26} />
+            </span>
             <h2>작업보드가 비어 있습니다</h2>
             <p>
               위쪽 <b>편집</b>을 켜면 카드 서랍이 열립니다. 카드를 보드로 끌어다 놓으면 그 자리에 바로가기가 생기고, 놓인 카드도 편집

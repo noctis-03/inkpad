@@ -231,7 +231,7 @@ export function refreshThumbnails() {
   thumbRefreshBusy = true
   void refreshAllThumbnailsWithToast()
     .then((n) => {
-      if (!n) useUI.getState().toast('새로 만들 미리보기가 없습니다. 원본이 없는 PDF 노트는 원본을 받은 뒤 만들 수 있어요.', 'info')
+      if (!n) useUI.getState().toast('새로 만들 미리보기가 없습니다. 원본이 없는 PDF 노트는 원본을 받은 뒤 만들 수 있습니다.', 'info')
     })
     .finally(() => (thumbRefreshBusy = false))
 }

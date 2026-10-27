@@ -245,14 +245,47 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
   app: async (p, _base, s) => {
     await p.evaluate(async (id) => (await import('/src/app/store.ts')).useUI.getState().navigate({ name: 'app', appId: id }), s.app)
     await p.waitForSelector('.app-runner-bar', { timeout: 15000 })
+  },
+  // ── 빈 상태·결과 없음 (4b) ──
+  'search-empty': async (p) => {
+    if (!(await p.locator('.search-box input:visible').count())) await p.click('.search-toggle')
+    await p.fill('.search-box input', '없는 제목 xyz')
+  },
+  trash: async (p) => {
+    if (!(await p.locator('.folder-tree:visible').count())) await p.click('[aria-label="폴더 목록"], [aria-label="카테고리"]')
+    await p.locator('.tree-item.trash').click()
+  }
+}
+
+/** 아무것도 없는 새 기기에서 찍는 화면 — 처음 연 사람이 보는 빈 상태 */
+const EMPTY: Record<string, (p: Page, base: string) => Promise<void>> = {
+  'empty-library': async () => {},
+  'empty-sync': async (p) => {
+    await p.click('.sync-btn')
+    await p.getByRole('menuitem', { name: /동기화 관리/ }).click()
+    await p.waitForSelector('.cloud-empty, .cloud-skeleton', { timeout: 10000 }).catch(() => {})
+    await sleep(800)
+  },
+  'empty-apps': async (p) => {
+    await p.click('.sync-btn')
+    await p.getByRole('menuitem', { name: /앱 관리/ }).click()
+  },
+  'empty-files': async (p) => {
+    await p.click('.sync-btn')
+    await p.getByRole('menuitem', { name: /기타 파일/ }).click()
+  },
+  'empty-board': async (p, base) => {
+    await p.goto(`${base}/#/board`)
   }
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2).filter((a) => !a.startsWith('-'))
-const outName = args[0] && !SCREENS[args[0]] ? args.shift()! : 'now'
-const pick = args.length ? args : Object.keys(SCREENS)
-for (const n of pick) if (!SCREENS[n]) throw new Error(`모르는 화면: ${n} (있는 것: ${Object.keys(SCREENS).join(', ')})`)
+const outName = args[0] && !SCREENS[args[0]] && !EMPTY[args[0]] ? args.shift()! : 'now'
+const picked = args.length ? args : [...Object.keys(SCREENS), ...Object.keys(EMPTY)]
+for (const n of picked) if (!SCREENS[n] && !EMPTY[n]) throw new Error(`모르는 화면: ${n} (있는 것: ${[...Object.keys(SCREENS), ...Object.keys(EMPTY)].join(', ')})`)
+const pick = picked.filter((n) => SCREENS[n])
+const pickEmpty = picked.filter((n) => EMPTY[n])
 const doAudit = process.argv.includes('--audit')
 const report: Record<string, ReturnType<typeof auditPage>> = {}
 const outDir = join(root, 'shots', outName)
@@ -267,6 +300,32 @@ let n = 0
 try {
   for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     for (const theme of THEMES) {
+      const shoot = async (p: Page, name: string) => {
+        await p.screenshot({ path: join(outDir, `${name}.${vpName}.${theme}.png`) })
+        if (doAudit) report[`${name}.${vpName}.${theme}`] = await p.evaluate(auditPage)
+        n++
+      }
+      // 빈 기기 — 예시 데이터 없이
+      if (pickEmpty.length) {
+        const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2, hasTouch: vp.touch, colorScheme: theme })
+        await createFakeDrive().attach(ctx)
+        const p = await ctx.newPage()
+        for (const name of pickEmpty) {
+          try {
+            await p.goto(base + '/')
+            await p.waitForSelector('#root *')
+            await p.evaluate(() => localStorage.setItem('inkpad.installHint', '1'))
+            await settle(p, 400)
+            await EMPTY[name](p, base)
+            await settle(p)
+            await shoot(p, name)
+          } catch (e) {
+            console.error(`✗ ${name} ${vpName} ${theme}: ${(e as Error).message.split('\n')[0]}`)
+          }
+        }
+        await ctx.close()
+      }
+      if (!pick.length) continue
       const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2, hasTouch: vp.touch, colorScheme: theme })
       const drive = createFakeDrive()
       await drive.attach(context) // 네트워크·계정 없이 동기화 화면을 채운다
@@ -290,9 +349,7 @@ try {
           await settle(p, 400)
           await SCREENS[name](p, base, s)
           await settle(p)
-          await p.screenshot({ path: join(outDir, `${name}.${vpName}.${theme}.png`) })
-          if (doAudit) report[`${name}.${vpName}.${theme}`] = await p.evaluate(auditPage)
-          n++
+          await shoot(p, name)
         } catch (e) {
           console.error(`✗ ${name} ${vpName} ${theme}: ${(e as Error).message.split('\n')[0]}`)
         }
