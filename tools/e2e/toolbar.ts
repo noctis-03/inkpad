@@ -35,5 +35,17 @@ export default async function toolbar(ctx: Ctx) {
     const b = (await A.locator('#quick-switch').boundingBox())!
     check(`전환 버튼: ${w}×${h}에서 화면 안`, b.y + b.height <= h && b.x >= 0, JSON.stringify(b))
   }
+
+  // 휴대폰 폭에서 페이지 목록을 열면 필기 영역이 좁아 가로 바는 가장 작은 단계(tiny, 30px)로만 들어간다 —
+  // 그때는 세로(왼쪽)로 옮겨 펜 버튼을 40px로 둔다. 목록을 닫으면 원래 가로 위쪽으로
+  const toolSize = async () => (await bar.getByRole('button', { name: '펜', exact: true }).boundingBox())!
+  await A.setViewportSize({ width: 390, height: 844 })
+  if (!(await A.locator('[aria-label="페이지 목록"][aria-pressed="true"]').count())) await A.click('[aria-label="페이지 목록"]')
+  await sleep(500)
+  const tb = await toolSize()
+  check('좁은 필기 영역: 바가 세로(왼쪽)로 옮겨 펜 버튼 40px', (await bar.getAttribute('data-orient')) === 'v' && (await bar.getAttribute('data-pos')) === 'left' && tb.width >= 40 && tb.height >= 40, JSON.stringify({ orient: await bar.getAttribute('data-orient'), density: await bar.getAttribute('data-density'), tb }))
+  await A.click('[aria-label="페이지 목록"]')
+  await sleep(500)
+  check('페이지 목록을 닫으면 다시 가로', (await bar.getAttribute('data-orient')) === 'h', String(await bar.getAttribute('data-orient')))
   await A.context().close()
 }
