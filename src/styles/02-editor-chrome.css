@@ -22,6 +22,20 @@
 .toolbar-spacer {
   flex: 1;
 }
+/* 편집 문서 바 — 높이는 다른 상단 바와 같은 --h-bar, 버튼은 펜·손가락 대상 하한 --h-tap.
+   묶음 사이 세로선은 두지 않는다(제목 옆에 떠 보였다) */
+.toolbar-doc {
+  min-height: var(--h-bar);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.toolbar-doc .tb-btn {
+  min-width: var(--h-tap);
+  height: var(--h-tap);
+}
+.toolbar-doc .toolbar-group {
+  border-right: 0;
+}
 
 .tb-btn {
   display: inline-flex;
