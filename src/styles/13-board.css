@@ -63,9 +63,9 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  min-height: var(--toolbar-h);
-  padding: 4px 12px;
-  padding-top: calc(4px + var(--safe-top));
+  min-height: calc(var(--toolbar-h) + var(--safe-top));
+  padding: 0 12px;
+  padding-top: var(--safe-top);
   background: var(--panel);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -74,16 +74,17 @@
 .board-topbar-left,
 .board-topbar-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .board-topbar-right { justify-content: flex-end; }
+.board-topbar .tb-btn { min-width: var(--h-tap); height: var(--h-tap); } /* 편집 문서 바와 같은 버튼 */
 .board-topbar-center { display: flex; align-items: center; justify-content: center; }
 .board-back {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
+  min-height: var(--h-tap);
   padding: 0 6px;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--ink); /* 다른 상단 바(편집 문서 바 ‹)처럼 먹색 — 파란 링크로 따로 놀지 않게 */
   font: inherit;
   font-weight: 600;
   font-size: var(--fs-md);

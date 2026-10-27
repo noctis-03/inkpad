@@ -68,7 +68,7 @@
 }
 .doc-title-btn {
   max-width: 200px;
-  height: 44px;
+  height: var(--h-control);
   padding: 0 8px;
   border: 0;
   background: transparent;
@@ -81,7 +81,7 @@
 }
 .title-input {
   width: 200px;
-  height: 36px;
+  height: var(--h-control);
   padding: 0 8px;
   border: 1px solid var(--accent);
   border-radius: var(--r-sm);
