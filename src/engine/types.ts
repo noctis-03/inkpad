@@ -46,6 +46,8 @@ export interface Settings {
   cloudCheckOnOpen: boolean // 앱을 열 때 클라우드 목록 확인 (목록만, 30분에 한 번)
   // 인터랙티브 모션 (MOTION_SPEC 4장). auto = 기기의 '동작 줄이기' 설정을 따름
   motion: 'auto' | 'off' | 'normal' | 'rich'
+  // 라이브러리 카드에서 노트를 열고 닫을 때 — 원형 리빌 / 카드가 페이지 자리로 날아간다 (App Panes)
+  openMotion: 'circle' | 'card'
   // 테마 (다크 모드). auto = 기기의 외관 설정을 따름
   theme: 'auto' | 'light' | 'dark'
   // 올가미 모양 — 자유(손으로 그린 모양) / 사각(끌어서 네모)
@@ -77,6 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
   appBadge: true,
   cloudCheckOnOpen: false,
   motion: 'auto',
+  openMotion: 'circle',
   theme: 'auto',
   lassoShape: 'free'
 }

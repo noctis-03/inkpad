@@ -18,6 +18,8 @@ import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
 import { installPress } from '../ui/motion/press'
 import { dur } from '../ui/motion/motion'
+import { flyClose, flyOpen } from '../ui/motion/cardFlight'
+import { pageRectNow } from '../ui/motion/docPage'
 
 export function App() {
   useEffect(() => {
@@ -116,10 +118,10 @@ function Panes() {
   const sideKey = split ? routeKey(split) : null
   const slot = (key: string): PaneSlot => (key === mainKey ? 'main' : sideOn && key === sideKey ? 'side' : 'hidden')
 
-  // ── 노트 열기·닫기 원형 리빌 ──
-  // 화면이 바뀌어도 바뀌기 전 화면을 잠깐 남긴다: 열 때는 라이브러리를 아래에 두고 편집 화면이 누른 카드에서 원으로 퍼지고,
-  // 닫을 때는 편집 화면을 위에 두고 그 카드로 원이 줄어든다. 같은 렌더에서 남겨야 바뀌기 전 화면이 다시 마운트되지 않으므로
-  // 렌더 중에 판정한다(React의 '이전 값에서 상태 고치기' 방식)
+  // ── 노트 열기·닫기 모션 (설정 > 노트 열기: 원형 / 카드 이동) ──
+  // 화면이 바뀌어도 바뀌기 전 화면을 잠깐 남긴다: 열 때는 라이브러리를 아래에 두고 편집 화면이 누른 카드에서 원으로 퍼지거나
+  // 카드가 페이지 자리로 날아가고(ui/motion/cardFlight), 닫을 때는 편집 화면을 위에 두고 거꾸로 그 카드로 돌아간다.
+  // 같은 렌더에서 남겨야 바뀌기 전 화면이 다시 마운트되지 않으므로 렌더 중에 판정한다(React의 '이전 값에서 상태 고치기' 방식)
   const [prevMain, setPrevMain] = useState({ key: mainKey, route })
   const [leaving, setLeaving] = useState<Leaving | null>(null)
   if (prevMain.key !== mainKey) {
@@ -129,25 +131,30 @@ function Panes() {
   const mainRef = useRef<HTMLElement>(null)
   const leaveRef = useRef<HTMLElement>(null)
   const returnTarget = useUI((s) => s.returnTarget)
-  // 열기: 새 편집 화면이 카드 한가운데서 원으로 퍼진다 (라이브러리는 그 아래 그대로)
+  // 열기: 새 편집 화면이 카드 한가운데서 원으로 퍼지거나, 카드가 페이지 자리로 날아간다 (라이브러리는 그 아래 그대로)
   useLayoutEffect(() => {
     const el = mainRef.current
     const from = useUI.getState().docCardRect
     if (leaving?.dir !== 'open' || !el || !from) return
-    const a = el.animate(circle(el, from, 'grow'), { duration: dur(REVEAL_MS), easing: REVEAL_EASE })
     const end = () => setLeaving((l) => (l === leaving ? null : l))
+    const grow = () => el.animate(circle(el, from, 'grow'), { duration: dur(REVEAL_MS), easing: REVEAL_EASE })
+    if (leaving.mode === 'card') return flyOpen(el, from, cardOf(route, true), end, grow) // 페이지가 없는 노트면 원으로
+    const a = grow()
     a.finished.then(end, end)
     return () => a.cancel()
   }, [leaving])
   // 닫기: 라이브러리가 카드를 찾을 때까지 편집 화면을 그대로 두었다가 그 카드로 원이 줄어든다.
   // 카드가 화면에 없거나(returnTarget 'none') 홈이 작업보드라 찾을 카드가 없으면 그냥 흐려진다
   const closing = useRef<Leaving | null>(null)
+  /** 카드 이동: 닫기 시작 때 보던 페이지 자리 (편집 화면이 남아 있는 동안 잰다) */
+  const closeFrom = useRef<DOMRect | null>(null)
   useLayoutEffect(() => {
     const el = leaveRef.current
     if (leaving?.dir !== 'close' || !el) return
     // 지난번 복귀에서 쓰이지 않고 남은 자리는 버린다 — 이번 라이브러리가 카드를 새로 찾는다
     if (closing.current !== leaving) {
       closing.current = leaving
+      closeFrom.current = leaving.mode === 'card' ? pageRectNow() : null
       if (returnTarget) return useUI.setState({ returnTarget: null })
     }
     const end = () => {
@@ -157,6 +164,8 @@ function Panes() {
     const fade = () => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur(180), easing: 'ease', fill: 'forwards' })
     let a: Animation | null = null
     let wait = 0
+    // 카드 이동은 페이지가 있는 노트만 — 문서·무한 캔버스는 아래 원으로
+    if (returnTarget && returnTarget !== 'none' && closeFrom.current) return flyClose(el, closeFrom.current, returnTarget, cardOf(leaving.route, false), end)
     if (returnTarget && returnTarget !== 'none') a = el.animate(circle(el, returnTarget, 'shrink'), { duration: dur(CONCEAL_MS), easing: REVEAL_EASE, fill: 'forwards' })
     else if (returnTarget === 'none' || route.name !== 'library') a = fade()
     else wait = window.setTimeout(() => (a = fade()).finished.then(end, end), RETURN_WAIT_MS) // 라이브러리가 카드를 찾는 중
@@ -213,11 +222,12 @@ function mainView(route: Route) {
   )
 }
 
-/** 원형 리빌로 남겨 둔 바뀌기 전 화면 — open: 아래(라이브러리), close: 위(편집 화면) */
+/** 열기·닫기 모션으로 남겨 둔 바뀌기 전 화면 — open: 아래(라이브러리), close: 위(편집 화면). mode는 그때의 설정 */
 interface Leaving {
   key: string
   route: Route
   dir: 'open' | 'close'
+  mode: 'circle' | 'card'
 }
 const REVEAL_MS = 520
 const CONCEAL_MS = 440
@@ -228,9 +238,16 @@ const RETURN_WAIT_MS = 500
 /** 이 화면 바뀜에 원형 리빌을 쓸지 — 라이브러리 카드에서 연 노트(docCardRect)와, 노트에서 홈으로 돌아갈 때만 */
 function revealFor(prev: { key: string; route: Route }, next: Route): Leaving | null {
   if (document.documentElement.dataset.motion === 'off') return null
-  if (prev.route.name === 'library' && next.name === 'editor' && useUI.getState().docCardRect) return { ...prev, dir: 'open' }
-  if (prev.route.name === 'editor' && (next.name === 'library' || next.name === 'board')) return { ...prev, dir: 'close' }
+  const mode = useUI.getState().settings.openMotion ?? 'circle'
+  if (prev.route.name === 'library' && next.name === 'editor' && useUI.getState().docCardRect) return { ...prev, dir: 'open', mode }
+  if (prev.route.name === 'editor' && (next.name === 'library' || next.name === 'board')) return { ...prev, dir: 'close', mode }
   return null
+}
+
+/** 그 노트의 라이브러리 카드 — 열 때는 남겨 둔 라이브러리에서(leaving), 닫을 때는 새 라이브러리에서 */
+function cardOf(editor: Route, leaving: boolean): HTMLElement | null {
+  if (editor.name !== 'editor') return null
+  return document.querySelector<HTMLElement>(`.pane-main${leaving ? '.pane-leaving' : ':not(.pane-leaving)'} [data-doc-id="${CSS.escape(editor.docId)}"]`)
 }
 
 /** 카드 한가운데를 중심으로, 칸을 다 덮는 원 ↔ 점 */

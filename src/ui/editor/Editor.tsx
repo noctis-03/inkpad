@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
+import { providePageRect } from '../motion/docPage'
 import { askPdfPassword } from '../../app/dialogs'
 import { Engine } from '../../engine/engine'
 import { PdfCache } from '../../engine/pdf/pdfCache'
@@ -91,6 +92,17 @@ export function Editor({ docId }: { docId: ID }) {
     useUI.setState({ docCardRect: null })
     if (!rect) el.classList.add('doc-enter') // 카드에서 열었으면 원형 리빌이 이미 보여 준다
   }, [])
+
+  // '카드 이동' 모션(App Panes)이 카드를 보낼 페이지 자리 — 카드 미리보기가 첫 페이지라 첫 페이지가 보이면 그리로,
+  // 아니면(다시 열어 보던 자리가 뒤쪽) 지금 보는 페이지로
+  useEffect(() => {
+    if (!engine) return
+    return providePageRect(() => {
+      const first = engine.pageScreenRect(0)
+      const box = engine.root.getBoundingClientRect()
+      return first && first.bottom > box.top + 40 && first.top < box.bottom ? first : engine.pageScreenRect()
+    })
+  }, [engine])
 
   // 편집 잠금 — 노트를 연 동안 쥐고 있는다. 엔진을 다시 만들어도(동기화 뒤 다시 열기) 놓지 않는다.
   useEffect(() => {

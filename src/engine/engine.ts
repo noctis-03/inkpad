@@ -462,6 +462,16 @@ export class Engine {
     return this.layout.currentIndex(v.minY, v.maxY)
   }
 
+  /** 페이지(기본: 지금 보는 페이지)의 화면 위치 — 노트 열기·닫기 모션이 카드를 이 자리로 보낸다. 무한 캔버스·없는 페이지면 null */
+  pageScreenRect(i = this.currentPage()): DOMRect | null {
+    const p = this.layout.paged ? this.layout.pages[i] : undefined
+    const r = p && this.layout.rects.get(p.id)
+    if (!r) return null
+    const box = this.root.getBoundingClientRect()
+    const a = this.cam.worldToScreen(r.x, r.y)
+    return new DOMRect(box.left + a.x, box.top + a.y, r.w * this.cam.zoom, r.h * this.cam.zoom)
+  }
+
   jumpTo(wx: number, wy: number) {
     this.cam.zoom = 1
     this.cam.x = wx - this.renderer.cssW / 2
