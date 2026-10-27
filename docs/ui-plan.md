@@ -223,7 +223,7 @@
 
 `npm run shots`에 빈 기기 화면(`empty-library`·`empty-sync`·`empty-apps`·`empty-files`·`empty-board`)과 `search-empty`·`trash`를 더했다.
 
-## 따로 다룰 것
+## 따로 다룬 것
 
-- 편집 도구창 `tiny` 밀도(30px) — 자리가 모자랄 때 펜 도구가 40px 원칙 밑으로 내려간다. 도구창 배치 계산(`FloatingToolbar`·`floatingLayout.ts`)에서 tiny 대신 세로 배치·더 많이 접기를 먼저 고르게 할지.
-- e2e `blockgesture` '블록 본문 한 손가락 드래그 → 화면 이동'이 가끔 실패한다(main에서도) — 앞 단계 확대가 끝나기 전에 재는 것으로 보인다.
+- ✅ 편집 도구창 `tiny` 밀도(30px) — 자리가 모자랄 때 펜 도구가 40px 원칙 밑으로 내려가던 것. 가로로 tiny까지 줄여야 하면 왼쪽 세로 배치로 옮긴다(#143, `FloatingToolbar` relayout).
+- ✅ e2e `blockgesture` 간헐 실패 — 테스트가 아니라 앱 버그였다. 메모 textarea가 글꼴이 늦게 들어오면 몇 px 모자라 스크롤 상자가 되어 손가락 끌기를 브라우저가 가져갔다(pointercancel). textarea `overflow: hidden`·`touch-action: none`, 글꼴 뒤 높이 다시 재기(#142).
