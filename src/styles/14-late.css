@@ -55,6 +55,20 @@
     max-width: none;
     margin-left: 0;
   }
+  /* 선택 모드: 제목은 줄이지 않는다(안쪽에 말줄임 상자가 없어 옆 버튼 위로 넘쳤다) — 대신 여백·글자를 줄이고 '마킹 지우기'는 '지우기'로 */
+  .library-header .sel-title {
+    flex-shrink: 0;
+    font-size: var(--fs-md);
+  }
+  .library-header .sel-btn {
+    padding: 0 8px;
+  }
+  .library-header .mark-bar {
+    gap: 4px;
+  }
+  .mark-clear-long {
+    display: none;
+  }
   .library-header.is-searching > .search-cancel {
     display: inline-flex;
     border: 0;

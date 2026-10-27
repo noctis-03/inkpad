@@ -263,7 +263,7 @@
   width: 100%;
   height: var(--h-row);
   border-radius: var(--r-md);
-  font-size: var(--fs-base);
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--muted);
   transition: color .15s;
@@ -287,8 +287,9 @@
 .tree-group-toggle {
   flex: 0 0 auto;
   justify-content: center;
-  width: 34px;
-  padding: 0 0 0 4px;
+  /* 다른 줄의 아이콘 칸(.tree-item: 왼쪽 10 + 아이콘 20 + 사이 10)과 같은 폭 — 이름이 같은 세로줄에서 시작한다 */
+  width: 40px;
+  padding: 0 10px;
 }
 .tree-group-toggle svg {
   transition: transform .22s var(--spring-pop);
@@ -662,15 +663,15 @@
 .doc-list .doc-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 8px;
+  gap: 12px;
+  padding: 6px 8px;
   border-radius: var(--r-md);
   background: var(--surface);
 }
 .doc-list .doc-thumb {
   position: relative;
-  width: 48px;
-  height: 64px;
+  width: 36px;
+  height: 48px;
   flex: 0 0 auto;
   border-radius: var(--r-xs);
   overflow: hidden;
@@ -910,7 +911,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
+  width: var(--h-control);
   height: var(--h-control);
   border: 1px solid var(--line);
   border-radius: 50%;

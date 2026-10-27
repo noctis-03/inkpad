@@ -61,6 +61,21 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
   'library-menu': async (p) => {
     await p.click('[aria-label="카테고리"], [aria-label="폴더 목록"]', { timeout: 3000 }).catch(() => {})
   },
+  'library-list': async (p) => {
+    await p.getByRole('radio', { name: '목록' }).click({ timeout: 3000 })
+  },
+  'library-group': async (p) => {
+    // 카테고리 묶음 머리글 이름 → 묶음 화면(태그별 소제목)
+    await p.locator('.tree-group-main').first().click({ timeout: 3000 })
+  },
+  'library-select': async (p) => {
+    // 카드를 꾹 누르면 선택 모드
+    const b = (await p.locator('.doc-card .doc-thumb').first().boundingBox())!
+    await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+    await p.mouse.down()
+    await sleep(700)
+    await p.mouse.up()
+  },
   'new-doc': async (p) => {
     await p.click('#new-doc-btn')
   },
