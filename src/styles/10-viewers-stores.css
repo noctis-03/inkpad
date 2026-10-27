@@ -34,16 +34,23 @@
 .file-card .doc-thumb { color: var(--file); }
 
 /* ═══════ Store sheets (앱 · 기타 파일) ═══════ */
-.store-sheet{position:relative;width:min(760px,100%);max-height:min(88vh,920px);display:flex;flex-direction:column;background:var(--paper);color:var(--ink);border-radius: var(--r-2xl);overflow:hidden;box-shadow:0 24px 60px #0000004d;}
-.store-head{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border-bottom:1px solid var(--line);flex:0 0 auto;}
-.store-head-icon{width:40px;height:40px;border-radius:var(--r-md);background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:0 0 auto;}
+.store-sheet{position:relative;width:min(760px,100%);max-height:min(88vh,920px);display:flex;flex-direction:column;background:var(--paper);color:var(--ink);border-radius: var(--r-xl);overflow:hidden;box-shadow:var(--e3);}
+.store-head{display:flex;align-items:center;gap:10px;min-height:var(--h-bar);padding:8px 9px 8px 16px;background:var(--surface);border-bottom:1px solid var(--line);flex:0 0 auto;}
+.store-head-icon{width:32px;height:32px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:0 0 auto;}
 .store-head-text{min-width:0;flex:1;}
 .store-head-text h2{margin:0;font-size:var(--fs-lg);font-weight:700;}
 .store-sub{margin:2px 0 0;font-size: var(--fs-sm);color:var(--muted);display:flex;align-items:center;gap:6px;}
 .store-sub .dot{width:7px;height:7px;border-radius:50%;background:var(--success);flex:0 0 auto;}
 .store-sub.off .dot{background:var(--muted-2);}
 .store-head-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
-.store-body{flex:1;min-height:0;overflow:auto;padding:0 16px 20px;-webkit-overflow-scrolling:touch;}
+.store-body{flex:1;min-height:0;overflow:auto;padding:0 16px 20px;-webkit-overflow-scrolling:touch;
+  /* 스크롤 그림자 — .sheet-scroll과 같은 방식(05-menus), 바탕은 종이색 */
+  background:
+    linear-gradient(var(--paper) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--paper) 70%) bottom / 100% 28px no-repeat local,
+    linear-gradient(var(--tint-2), transparent) top / 100% 10px no-repeat scroll,
+    linear-gradient(transparent, var(--tint-2)) bottom / 100% 10px no-repeat scroll;
+  background-color:var(--paper);}
 .store-banner{display:flex;gap:10px;align-items:flex-start;margin:14px 0 0;padding:12px 14px;border-radius: var(--r-lg);font-size:var(--fs-base);line-height:1.45;}
 .store-banner.offline{background:var(--surface-3);color:var(--ink-2);}
 .store-banner.warn{background:var(--warn-soft);color:var(--warn-ink);}
@@ -128,18 +135,19 @@
 .store-empty h3{margin:0;font-size:var(--fs-md);color:var(--ink);}
 .store-empty p{margin:0;font-size:var(--fs-base);max-width:340px;line-height:1.5;}
 .store-hint{color:var(--muted);font-size:var(--fs-base);padding:30px 0;text-align:center;}
-.store-pop{position:fixed;z-index:60;min-width:230px;max-width:min(320px,90vw);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 16px 40px #00000033;padding:6px;animation:store-pop-in .12s var(--ft-spring);}
-.store-pop-title{padding:7px 10px 5px;font-size:var(--fs-xs);color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.store-pop-item{display:flex;align-items:flex-start;gap:10px;width:100%;border:0;background:transparent;text-align:left;padding:9px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--ink);}
+/* ⋯ 팝오버 — 공용 .menu(05-menus)와 같은 그릇·항목 높이. 설명 줄이 붙으면 그만큼 높아진다 */
+.store-pop{position:fixed;z-index:60;min-width:230px;max-width:min(320px,90vw);background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--e2), 0 0 0 1px var(--tag-border);padding:4px;animation:store-pop-in .12s var(--ft-spring);}
+.store-pop-title{padding:6px 10px 2px;font-size:var(--fs-xs);color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.store-pop-item{display:flex;align-items:flex-start;gap:8px;width:100%;min-height:var(--h-row);border:0;background:transparent;text-align:left;padding:7px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--ink);}
 .store-pop-item:hover{background:var(--hover);}
 .store-pop-item.danger{color:var(--danger);}
 .store-pop-item.danger .store-pop-text small{color:var(--danger);}
 .store-pop-item svg{flex:0 0 auto;margin-top:2px;}
 .store-pop-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
-.store-pop-text b{font-size:var(--fs-base);font-weight:600;}
+.store-pop-text b{font-size:var(--fs-md);font-weight:400;}
 .store-pop-text small{font-size:var(--fs-xs);color:var(--muted);line-height:1.35;}
 .store-pop-item:disabled{opacity:.4;cursor:default;}
-.store-pop-sep{height:1px;background:var(--line);margin:5px 6px;}
+.store-pop-sep{height:1px;background:var(--line);margin:4px;}
 @keyframes store-pop-in{from{opacity:0;transform:translateY(-3px) scale(.98);}to{opacity:1;transform:none;}}
 .modal-note{margin:8px 0 0;font-size: var(--fs-sm);color:var(--muted);}
 .modal-actions.equal{display:flex;gap:8px;}

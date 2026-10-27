@@ -14,7 +14,7 @@ import { AssetUnavailableError, ensureAssetLocal, downloadAllMissing, onAssetPro
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 import { saveFile } from '../io/download'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpty, SheetErrorBoundary, SheetHeader, SheetBanner, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpty, SheetErrorBoundary, SheetHeader, SheetBanner, useEscClose, useOnline } from './sheetParts'
 
 // 에셋 원본(PDF·이미지) 관리 시트. 동기화의 지연 로딩(asset.ts)과 같은 규칙을 따른다:
 //   - 이 기기(IndexedDB assets 테이블)의 원본과 클라우드(Drive · Inkpad/assets)의 원본을 합쳐서 보여준다.
@@ -533,6 +533,8 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
         return { tone: 'gray' }
     }
   }
+
+  useEscClose(onClose)
 
   return (
     <SheetErrorBoundary onClose={onClose}>

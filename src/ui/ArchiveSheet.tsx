@@ -8,6 +8,7 @@ import { formatBytesShort, formatDate } from '../shared/util'
 import { cleanObjects, loadArchive, releaseAutoPins, scanObjects, trashBranches, trashFiles, type ArchiveReport, type ObjectScan } from '../sync/archive'
 import { clearSnapshots, pruneSnapshots } from '../sync/snapshots'
 import { Icon } from './Icon'
+import { useEscClose } from './sheetParts'
 
 const useArchive = create<{ open: boolean }>(() => ({ open: false }))
 export const openArchive = () => useArchive.setState({ open: true })
@@ -84,6 +85,7 @@ function ArchiveSheet() {
   const mergedBytes = merged.reduce((n, b) => n + b.size, 0)
   const orphanCount = (report?.branches.filter((b) => b.orphan).length ?? 0) + (report?.backups.filter((b) => b.orphan).length ?? 0)
   const backupBytes = report?.backups.reduce((n, b) => n + b.size, 0) ?? 0
+  useEscClose(closeArchive)
 
   return (
     <div className="modal-backdrop archive-host" onPointerDown={(e) => e.target === e.currentTarget && closeArchive()}>

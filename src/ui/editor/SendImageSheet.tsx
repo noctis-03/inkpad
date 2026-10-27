@@ -7,6 +7,7 @@ import { useUI, type SendImageTarget } from '../../app/store'
 import type { Engine } from '../../engine/engine'
 import { saveFile } from '../../io/download'
 import { Icon } from '../Icon'
+import { useEscClose } from '../sheetParts'
 
 type ShareNav = Navigator & { canShare?: (d: ShareData) => boolean }
 
@@ -139,11 +140,7 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
     }
   }, [engine, target, bg, caption])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  useEscClose(close)
 
   const file = useMemo(() => (blob ? new File([blob], name, { type: 'image/png' }) : null), [blob, name])
   const canShare = !!file && !!(navigator as ShareNav).canShare?.({ files: [file] })

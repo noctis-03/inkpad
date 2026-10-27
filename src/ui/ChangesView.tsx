@@ -14,6 +14,7 @@ import { localChanges, type LocalChanges } from '../sync/localChanges'
 import { alignWithCloud, discardLocalChanges, pushOneNote } from '../sync/sync'
 import { closePdf, type PDFDocumentProxy } from '../engine/pdf/pdfjs'
 import { Icon } from './Icon'
+import { useEscClose } from './sheetParts'
 import { PageCanvas, buildPages, type ViewPage } from './merge/MergeCanvas'
 import { TextDiffList, buildTextRows, type TextChange } from './merge/TextMerge'
 
@@ -79,11 +80,7 @@ function ChangesView({ docId, title, actions }: Opened) {
       map.clear()
     }
   }, [])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && !document.querySelector('.dialog-host') && close()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy])
+  useEscClose(close, !busy)
 
   const isText = lc?.local.doc.mode === 'text'
   const pages: ViewPage[] = useMemo(() => {

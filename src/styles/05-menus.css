@@ -72,6 +72,9 @@
     display: flex;
   }
 }
+/* ── 떠 있는 그릇 세 가지 — 모양은 한 벌 (docs/ui-plan.md 2단계) ──
+   .modal(확인·작은 창, 420px) · .sheet(설정·새로 만들기·동기화, 640px) · .store-sheet(앱·파일·에셋, 760px, 10-viewers-stores)
+   모서리 --r-xl, 그림자 --e3, 제목 --fs-lg 굵게, 머리 높이 --h-bar, 닫기 버튼 --h-control */
 .modal {
   width: min(420px, 100%);
   padding: 20px;
@@ -81,7 +84,7 @@
 }
 .modal-title {
   margin: 0 0 8px;
-  font-size: var(--fs-title);
+  font-size: var(--fs-lg);
 }
 .modal-message {
   margin: 0 0 12px;
@@ -113,7 +116,7 @@
   flex-direction: column;
   width: min(640px, 100%);
   max-height: 92%;
-  border-radius: var(--r-2xl);
+  border-radius: var(--r-xl);
   background: var(--surface);
   box-shadow: var(--e3);
   overflow: hidden;
@@ -122,16 +125,25 @@
   height: 92%;
 }
 .sheet-header {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 8px 8px 20px;
+  min-height: var(--h-bar);
+  padding: 0 9px 0 20px;
   border-bottom: 1px solid var(--line);
 }
 .sheet-header h2 {
   margin: 0;
-  font-size: var(--fs-title);
+  font-size: var(--fs-lg);
+}
+/* 그릇 머리의 아이콘 버튼(닫기 등) — 편집 화면 크롬의 44px 대신 컨트롤 높이 */
+.sheet-header .tb-btn,
+.store-head .tb-btn {
+  min-width: var(--h-control);
+  height: var(--h-control);
+  padding: 0 6px;
 }
 .sheet-scroll {
   flex: 1;
@@ -141,6 +153,18 @@
 .sheet-section {
   padding: 8px 20px 16px;
   overflow-y: auto;
+}
+/* 스크롤 그림자 — 위·아래로 더 있으면 가장자리가 옅게 어두워진다(잘린 것이 아니라 이어진다는 표시).
+   local 배경이 내용과 함께 움직이며 끝에 닿으면 그림자를 덮는다 */
+.sheet-scroll,
+.sheet-section {
+  --scroll-bg: var(--surface);
+  background:
+    linear-gradient(var(--scroll-bg) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--scroll-bg) 70%) bottom / 100% 28px no-repeat local,
+    linear-gradient(var(--tint-2), transparent) top / 100% 10px no-repeat scroll,
+    linear-gradient(transparent, var(--tint-2)) bottom / 100% 10px no-repeat scroll;
+  background-color: var(--scroll-bg);
 }
 .sheet-footer {
   display: flex;

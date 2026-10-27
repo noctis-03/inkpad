@@ -70,6 +70,14 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
   sync: async (p) => {
     await p.click('.sync-btn')
   },
+  'sync-sheet': async (p) => {
+    await p.click('.sync-btn')
+    await p.getByRole('menuitem', { name: /동기화 관리/ }).click()
+  },
+  assets: async (p) => {
+    await p.click('.sync-btn')
+    await p.getByRole('menuitem', { name: /에셋 원본/ }).click()
+  },
   editor: async (p, base, s) => {
     await openEditor(p, base, s.paged)
   },

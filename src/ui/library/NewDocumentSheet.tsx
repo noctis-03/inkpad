@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
+import { useEscClose } from '../sheetParts'
 import { createDocument } from '../../storage/repo'
 import {
   BACKGROUND_LABELS,
@@ -49,11 +50,7 @@ export function NewDocumentSheet(props: {
   const stepPage = (d: number) => setPageCountText(String(Math.max(1, Math.min(200, pageCountNum() + d))))
 
   // Esc로도 닫는다. 제목을 적는 중에는 바깥을 눌러도 닫히지 않는다
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [props.onClose])
+  useEscClose(props.onClose)
 
   const size = () => {
     const mm = customMm()
