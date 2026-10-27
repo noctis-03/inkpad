@@ -27,7 +27,7 @@
 .t-p .tb-text:empty:not(:focus)::before { content: ''; }
 .tb-text b { font-weight: 700; }
 .tb-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.tb-text code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; padding: 1px 5px; border-radius: 5px; background: var(--surface-2); color: #c2410c; }
+.tb-text code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; padding: 1px 5px; border-radius: 5px; background: var(--surface-2); color: var(--code-ink); }
 
 .t-h1 .tb-text { font-size: 30px; font-weight: 700; line-height: 1.3; margin-top: 22px; }
 .t-h2 .tb-text { font-size: 23px; font-weight: 700; line-height: 1.35; margin-top: 16px; }

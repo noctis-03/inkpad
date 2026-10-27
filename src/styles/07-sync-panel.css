@@ -1026,11 +1026,11 @@
   color: var(--muted);
 }
 .merge-side.main {
-  color: #b9690a;
+  color: var(--merge-main-ink);
   font-weight: 600;
 }
 .merge-side.branch {
-  color: #2459c4;
+  color: var(--merge-branch-ink);
   font-weight: 600;
 }
 .merge-panel-toggle {
@@ -1237,22 +1237,22 @@
 .merge-chip {
   padding: 1px 7px;
   border-radius: var(--r-pill);
-  color: #fff;
+  color: var(--on-ink);
 }
 .merge-chip.l-mainOnly {
-  background: #e8890c;
+  background: var(--merge-main);
 }
 .merge-chip.l-branchOnly {
-  background: #2f6fe0;
+  background: var(--merge-branch);
 }
 .merge-chip.l-modified {
-  background: #8b4fd6;
+  background: var(--merge-mod);
 }
 .merge-canvas {
   display: block;
   border-radius: var(--r-2xs);
   box-shadow: var(--e1);
-  background: #fff;
+  background: var(--thumb-paper);
 }
 .merge-page.discarded .merge-canvas {
   opacity: 0.35;
@@ -1628,7 +1628,7 @@
   padding: 0 5px;
   border-radius: var(--r-pill);
   background: var(--danger);
-  color: #fff;
+  color: var(--on-ink);
   font-size: var(--fs-xs);
   font-weight: 700;
   line-height: 18px;
@@ -1659,16 +1659,16 @@
   font-weight: 600;
 }
 .changes-chip.add {
-  background: #2f6fe01a;
-  color: #2459c4;
+  background: color-mix(in srgb, var(--merge-branch) 10%, transparent);
+  color: var(--merge-branch-ink);
 }
 .changes-chip.del {
-  background: #e5484d1a;
-  color: #c4282d;
+  background: color-mix(in srgb, var(--merge-del) 10%, transparent);
+  color: var(--merge-del-ink);
 }
 .changes-chip.mod {
-  background: #8b4fd61a;
-  color: #6b35b0;
+  background: color-mix(in srgb, var(--merge-mod) 10%, transparent);
+  color: var(--merge-mod-ink);
 }
 .changes-all {
   margin-left: auto;
@@ -1695,7 +1695,7 @@
   height: 10px;
   border-radius: var(--r-pill);
   margin-right: -2px;
-  background: #fff;
+  background: var(--thumb-paper);
   box-shadow:
     0 0 0 2px var(--c),
     0 0 6px 2px var(--c);

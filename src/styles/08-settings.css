@@ -157,7 +157,7 @@
   border-top: 0;
 }
 .net-entry-list > li:nth-child(even) {
-  background: rgb(0 0 0 / 2%);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
 }
 .net-dest-label,
 .net-entry-label {

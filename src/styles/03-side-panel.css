@@ -172,7 +172,7 @@
   max-width: 100%;
   border-radius: var(--r-2xs);
   box-shadow: var(--e1);
-  background: #fff;
+  background: var(--thumb-paper);
 }
 .rev-diff {
   font-size: var(--fs-sm);
