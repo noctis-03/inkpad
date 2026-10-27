@@ -1471,8 +1471,9 @@ export function Library() {
                   <MarkGlyph mark={m.mark} size={22} />
                 </button>
               ))}
-              <button className="sel-btn mark-clear" disabled={![...selected].some((k) => marks[k])} onClick={() => void applyMark(null)}>
-                마킹 지우기
+              <button className="sel-btn mark-clear" aria-label="마킹 지우기" disabled={![...selected].some((k) => marks[k])} onClick={() => void applyMark(null)}>
+                {/* 휴대폰 폭에서는 '지우기'만 — 선택 바가 한 줄에 들어가게 */}
+                <span className="mark-clear-long">마킹 </span>지우기
               </button>
             </div>
           </>
