@@ -313,14 +313,6 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
 }
 .doc-list .doc-gloss { border-radius: var(--r-xs); }
 .doc-card.is-tilt .doc-gloss { opacity: .9; }
-/* 썸네일 리빌 (위 → 아래로 쓸어내리듯) */
-.doc-thumb img[data-reveal] { clip-path: inset(0 0 100% 0); }
-.doc-thumb img[data-reveal].is-revealed { animation: thumb-reveal .6s var(--ft-ease) both; }
-.doc-thumb img[data-reveal].is-revealed.no-anim { animation: none; clip-path: inset(0); }
-@keyframes thumb-reveal {
-  from { clip-path: inset(0 0 100% 0); }
-  to { clip-path: inset(0); }
-}
 /* settle: 흰 광택 띠 + 5px 들렸다 내려앉기 */
 .doc-card.is-settling .doc-thumb { animation: settle-lift .7s var(--spring-pop); }
 .doc-card.is-settling .doc-thumb::after {
