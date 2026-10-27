@@ -1,5 +1,5 @@
 // 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일.
-// 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없으면 바를 그리지 않는다.
+// 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없어도 바(홈 탭)는 늘 그린다.
 // 탭은 끌어서 순서를 바꾼다 — 마우스·펜은 바로 끌고, 손가락은 길게 눌러 집는다(그냥 밀면 탭 바가 옆으로 넘어간다).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isTabRoute, routeKey, useUI, type TabRoute } from '../app/store'
@@ -229,7 +229,7 @@ export function TabBar() {
     const block = (e: TouchEvent) => drag.current?.on && e.preventDefault()
     el.addEventListener('touchmove', block, { passive: false })
     return () => el.removeEventListener('touchmove', block)
-  }, [tabs.length > 0])
+  }, [])
   /** 단축키 — 탭에서 ⌘/Ctrl+Shift+←/→ */
   const moveByKey = (e: React.KeyboardEvent, t: TabRoute) => {
     if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return false
@@ -240,7 +240,6 @@ export function TabBar() {
     return true
   }
 
-  if (!tabs.length) return null
   const activeKey = isTabRoute(route) ? routeKey(route) : null
   const splitKey = split ? routeKey(split) : null
   const homeActive = route.name === 'library' || route.name === 'board'
