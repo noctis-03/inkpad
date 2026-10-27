@@ -547,7 +547,7 @@ export function Library() {
         onClick={() => selectClick(o.key) || cardTap(o.key, o.onPlay)}
       >
         <div className="doc-thumb">
-          {thumb ? <img src={thumb} alt="" draggable={false} data-reveal={o.key} /> : <Icon name={o.kind} size={36} />}
+          {thumb ? <img src={thumb} alt="" draggable={false} /> : <Icon name={o.kind} size={36} />}
           <span className="doc-gloss" aria-hidden="true" />
           {selectCheck(o.key)}
           {markBadge(o.key)}
@@ -806,7 +806,6 @@ export function Library() {
 
   // ───────── 인터랙티브 모션 (MOTION_SPEC) ─────────
   const gridRef = useRef<HTMLElement>(null)
-  const seenReveal = useRef<Set<string>>(new Set())
   const enteredRef = useRef(false)
   const tiltLast = useRef<HTMLElement | null>(null)
   const tiltRaf = useRef(0)
@@ -836,38 +835,6 @@ export function Library() {
     const t = setTimeout(() => setEnter(false), 900)
     return () => clearTimeout(t)
   }, [ready])
-
-  // 썸네일 리빌 — 처음 보일 때 1회, 이번 세션에 본 문서는 다시 재생하지 않는다
-  useEffect(() => {
-    const root = gridRef.current
-    if (!root) return
-    const imgs = [...root.querySelectorAll<HTMLImageElement>('img[data-reveal]')]
-    if (!imgs.length) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) {
-          if (!en.isIntersecting) continue
-          const holder = en.target as HTMLElement
-          io.unobserve(holder)
-          const img = holder.querySelector<HTMLImageElement>('img[data-reveal]')
-          if (!img) continue
-          const id = img.dataset.reveal!
-          if (seenReveal.current.has(id)) img.classList.add('no-anim')
-          seenReveal.current.add(id)
-          img.classList.add('is-revealed')
-        }
-      },
-      { threshold: 0.1 }
-    )
-    // 미리보기 <img>를 직접 관찰하지 않는다 — 리빌 대기 클립(clip-path: 완전 가림)이
-    // 교차 판정에까지 반영되는 엔진(크로뮴)에서는 가려진 <img>의 isIntersecting이
-    // 영원히 false다(리빌을 못 해 클립도 못 벗는 교착). 클립 없는 카드 썸네일
-    // 컨테이너를 관찰해 그 안의 img에 리빌을 붙인다.
-    imgs.forEach((im) => io.observe(im.closest('.doc-thumb') ?? im))
-    return () => io.disconnect()
-    // thumbs도 의존성에 넣는다 — 미리보기가 나중에 채워지면 새 <img>가 DOM에
-    // 들어오므로, 다시 관찰해 is-revealed(리빌 애니메이션)를 붙여야 보인다.
-  }, [items, thumbs, prefs.view])
 
   // 동기화 버튼 회전
   useEffect(() => onSyncStatus((s) => { setSyncing(s === 'syncing'); setCloudOff(s === 'disabled') }), [])
@@ -1768,7 +1735,7 @@ export function Library() {
                   >
                     <div className="doc-thumb">
                       {thumbs.get(i.d.id) ? (
-                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} data-reveal={i.d.id} />
+                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
                       ) : (
                         <Icon name={i.d.mode === 'infinite' ? 'infinite' : i.d.mode === 'text' ? 'textDoc' : 'page'} size={36} />
                       )}
