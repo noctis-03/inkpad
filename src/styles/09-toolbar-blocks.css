@@ -346,6 +346,17 @@
 .ft-lasso-label { font-size: var(--fs-sm); font-weight: 600; }
 .ft-bar[data-orient='v'] .ft-lasso-label { display: none; }
 
+/* ═══════ 페이지 칩 (PageChipLayer) — 페이지 바깥 왼쪽 위 '번호 ⋯', 누르면 페이지 메뉴 ═══════ */
+.page-chip-layer { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:2; }
+.page-chip { position:absolute; left:0; top:0; display:flex; align-items:center; gap:2px; height:32px; padding:0 4px 0 8px;
+  border:0; border-radius: var(--r-pill); background:transparent; color:var(--muted); pointer-events:auto;
+  font-size: var(--fs-sm); font-weight:600; font-variant-numeric:tabular-nums; cursor:pointer; white-space:nowrap;
+  transition: background .15s, color .15s; }
+.page-chip:hover, .page-chip.is-open { background:var(--surface); color:var(--ink); box-shadow:0 0 0 1px var(--line); }
+.page-chip.is-current { color:var(--ink-2); }
+.page-chip:focus-visible { outline:2px solid var(--focus-outline); outline-offset:1px; }
+.page-chip svg { opacity:.7; }
+
 /* ═══════ 보조 용지 ═══════ */
 /* 종이와 획은 캔버스에 그려지고, 여기엔 제목 줄·크기 조절 손잡이만 (블록 레이어 아래) */
 .sheet-layer { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:2; }

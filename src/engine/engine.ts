@@ -411,16 +411,22 @@ export class Engine {
     this.onCameraMoved()
   }
 
+  /** 마지막 폭 맞춤 직후의 카메라 — 그 뒤로 움직이지 않았으면 칸 크기가 바뀔 때(사이드바가 뒤늦게 뜰 때 등) 다시 맞춘다 */
+  private fitCam: { x: number; y: number; zoom: number } | null = null
+
   fitWidth(keepPage = true) {
     const idx = keepPage ? this.currentPage() : 0
     const b = this.layout.bounds
     const W = this.renderer.cssW
-    const zoom = clampZoom(Math.min((W - 32) / Math.max(1, b.w), 2.5))
+    // 넓은 화면은 양옆에 페이지 칩(번호 ⋯)이 들어갈 여백을 남긴다 — 휴대폰 폭은 페이지를 크게
+    const side = W >= 640 ? 64 : 16
+    const zoom = clampZoom(Math.min((W - side * 2) / Math.max(1, b.w), 2.5))
     this.cam.zoom = zoom
     this.cam.x = b.x - (W / zoom - b.w) / 2
     const p = this.layout.pages[idx]
     const r = p && this.layout.rects.get(p.id)
     this.cam.y = (r ? r.y : 0) - 16 / zoom
+    this.fitCam = { x: this.cam.x, y: this.cam.y, zoom }
     this.onCameraMoved()
   }
 
@@ -1897,6 +1903,8 @@ export class Engine {
     const h = this.root.clientHeight
     const r = this.renderer
     if (!force && w === r.cssW && h === r.cssH) return
+    const f = this.fitCam
+    const refit = !!f && this.layout.paged && f.x === this.cam.x && f.y === this.cam.y && f.zoom === this.cam.zoom
     if (r.cssW > 1 && r.cssH > 1) {
       const c = this.cam.screenToWorld(r.cssW / 2, r.cssH / 2)
       this.cam.x = c.x - w / 2 / this.cam.zoom
@@ -1904,6 +1912,7 @@ export class Engine {
     }
     r.resize(w, h, window.devicePixelRatio || 1, this.settings.resolution)
     r.renderedCam.zoom = NaN
+    if (refit && w > 1) return this.fitWidth()
     this.onCameraMoved()
   }
 

@@ -3,7 +3,7 @@
 //  - 올가미: 감싼 모양 그대로 자른다(고른 획 기준이 아니다). 담을 것: 기본 글씨만, '글씨 + PDF'는 밑의 PDF까지, 'PDF만'은 필기 없이 PDF만
 //  - 자유 / 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 바로), 획 없이 감싸도 '영역'으로 보낼 수 있다
 //  - 문구는 이미지 위쪽 띠에 글자로 — 끄면 띠 없이 ('이미지에 문구 넣기')
-//  - AI로 보내기(선택 도구 모음·⋯ 메뉴): 추천 문구를 골라 이미지를 복사하고 claude.ai 새 대화를 그 문구와 함께 연다
+//  - AI로 보내기(선택 도구 모음·페이지 메뉴): 추천 문구를 골라 이미지를 복사하고 claude.ai 새 대화를 그 문구와 함께 연다
 //  - 복사하면 클립보드에 PNG — 네트워크는 쓰지 않는다
 import { device, drawStroke, openEditor, sleep, type Ctx } from './lib.ts'
 
@@ -85,9 +85,9 @@ export default async function sendimage(ctx: Ctx) {
     await p.mouse.up()
   }
 
-  // ── 페이지 전체 (⋯ 메뉴) — 기본 PDF 포함 + 문구 띠 ──
-  await p.click('.toolbar-doc [aria-label="더보기"]')
-  await p.locator('.menu').getByRole('menuitem', { name: '이 페이지를 이미지로 보내기' }).click()
+  // ── 페이지 전체 (페이지 칩 메뉴) — 기본 PDF 포함 + 문구 띠 ──
+  await p.click('.page-chip[data-index="0"]')
+  await p.locator('.menu').getByRole('menuitem', { name: '이미지로 보내기' }).click()
   await sheet.waitFor()
   const pageBgOn = await layersOn('글씨 + PDF')
   const pageCaption = await sheet.getByLabel('이미지에 넣을 문구', { exact: true }).inputValue()
