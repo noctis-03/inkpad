@@ -69,7 +69,7 @@ type Section =
 /** 카드를 이만큼 누르고 있으면 선택 모드 */
 const LONG_PRESS_MS = 500
 /** 편집 화면이 흐려지는 시간(App Panes의 크로스페이드) — 다 사라진 뒤 돌아온 카드에 settle */
-const RETURN_SETTLE_MS = 380
+const RETURN_SETTLE_MS = 450
 /** 사이드바에서 펼친 카테고리 묶음 — 하나만. 앱이 떠 있는 동안만 기억한다(편집 화면에 다녀와도 그대로, 새로고침·다시 켜면 모두 접힘) */
 let openGroupMem: string | null = null
 /** 카드의 [태그] (묶음 화면의 소제목) */
