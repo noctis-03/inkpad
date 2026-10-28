@@ -134,7 +134,7 @@ function Panes() {
     const el = open ? mainRef.current : leaveRef.current
     if (!el) return
     const a = el.animate(open ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }], {
-      duration: dur(open ? FADE_IN_MS : FADE_OUT_MS),
+      duration: dur(FADE_MS),
       easing: 'ease',
       fill: open ? 'none' : 'forwards'
     })
@@ -195,8 +195,8 @@ interface Leaving {
   route: Route
   dir: 'open' | 'close'
 }
-const FADE_IN_MS = 280
-const FADE_OUT_MS = 240
+/** 열기·닫기 같은 시간 */
+const FADE_MS = 450
 const isHome = (r: Route) => r.name === 'library' || r.name === 'board'
 
 /** 이 화면 바뀜을 겹쳐 바꿀지 — 홈에서 노트를 열 때와 노트에서 홈으로 돌아갈 때만 (모션 끄기면 바로) */
