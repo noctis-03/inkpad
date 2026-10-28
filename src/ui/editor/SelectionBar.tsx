@@ -31,9 +31,14 @@ export function SelectionBar({ engine }: { engine: Engine }) {
 
   if (!sel || sel.moving) return sel?.moving ? <SelectionShape poly={sel.poly} /> : null
   const send = (
-    <button className="tb-btn" onClick={() => useUI.setState({ sendImage: 'selection' })} aria-label="이미지로 보내기" title="이미지로 보내기 — 복사·공유해 AI 앱에 붙여넣기">
-      <Icon name="share" size={20} />
-    </button>
+    <>
+      <button className="tb-btn" onClick={() => useUI.setState({ sendImage: 'selection' })} aria-label="이미지로 보내기" title="이미지로 보내기 — 복사·공유·저장">
+        <Icon name="share" size={20} />
+      </button>
+      <button className="tb-btn" onClick={() => useUI.setState({ aiSend: 'selection' })} aria-label="AI로 보내기" title="AI로 보내기 — 추천 문구를 골라 Claude로">
+        <Icon name="sparkle" size={20} />
+      </button>
+    </>
   )
   // 획 없이 영역만 고른 경우(인쇄된 PDF 문제만 감쌌을 때 등) — 보내기만 할 수 있다
   if (!sel.count)

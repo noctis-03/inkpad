@@ -2,7 +2,8 @@
 //  - 페이지 전체: 기본 PDF 포함, 화면 줌과 관계없이 같은 크기(긴 변 2000px, 1pt에 4px까지)
 //  - 올가미: 감싼 모양 그대로 자른다(고른 획 기준이 아니다). 담을 것: 기본 글씨만, '글씨 + PDF'는 밑의 PDF까지, 'PDF만'은 필기 없이 PDF만
 //  - 자유 / 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 바로), 획 없이 감싸도 '영역'으로 보낼 수 있다
-//  - 요청 문구는 이미지 위쪽 띠에 글자로 — 끄면 띠 없이
+//  - 문구는 이미지 위쪽 띠에 글자로 — 끄면 띠 없이 ('이미지에 문구 넣기')
+//  - AI로 보내기(선택 도구 모음·⋯ 메뉴): 추천 문구를 골라 이미지를 복사하고 claude.ai 새 대화를 그 문구와 함께 연다
 //  - 복사하면 클립보드에 PNG — 네트워크는 쓰지 않는다
 import { device, drawStroke, openEditor, sleep, type Ctx } from './lib.ts'
 
@@ -89,7 +90,7 @@ export default async function sendimage(ctx: Ctx) {
   await p.locator('.menu').getByRole('menuitem', { name: '이 페이지를 이미지로 보내기' }).click()
   await sheet.waitFor()
   const pageBgOn = await layersOn('글씨 + PDF')
-  const pageCaption = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
+  const pageCaption = await sheet.getByLabel('이미지에 넣을 문구', { exact: true }).inputValue()
   const page1 = await copyFromSheet()
   const pageRaw = await raw({ page: 0 }, true)
   check('이미지로 보내기: 페이지는 기본 PDF 포함, 요청 문구는 쉽게 풀이', pageBgOn && pageCaption === '사진 속 내용을 쉽게 풀이해줘.', JSON.stringify({ pageBgOn, pageCaption }))
@@ -123,7 +124,7 @@ export default async function sendimage(ctx: Ctx) {
   await p.click('.selection-bar [aria-label="이미지로 보내기"]')
   await sheet.waitFor()
   const selBgOn = !(await layersOn('글씨만'))
-  const selCaption = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
+  const selCaption = await sheet.getByLabel('이미지에 넣을 문구', { exact: true }).inputValue()
   const inkOnly = await copyFromSheet()
   check('올가미: 기본은 글씨만 (PDF 없이), 요청 문구는 손글씨 받아쓰기', !selBgOn && selCaption.includes('손글씨를 그대로') && !!inkOnly && inkOnly.pink < 0.01 && inkOnly.ink > 20 && inkOnly.bandInk > 50, JSON.stringify({ selBgOn, selCaption, inkOnly }))
   check('올가미: 글씨만도 감싼 모양·크기 그대로', !!diaInk && diaInk.w === diaBg?.w && diaInk.h === diaBg?.h && diaInk.pink < 0.01, JSON.stringify(diaInk))
@@ -139,7 +140,7 @@ export default async function sendimage(ctx: Ctx) {
   await p.click('.selection-bar [aria-label="이미지로 보내기"]')
   await sheet.waitFor()
   const remembered = await layersOn('글씨 + PDF')
-  await sheet.getByLabel('이미지에 요청 문구 넣기').uncheck()
+  await sheet.getByLabel('이미지에 문구 넣기').uncheck()
   await sleep(300)
   const noCap = await copyFromSheet()
   check('올가미: PDF 포함은 기억하고, 요청 문구를 끄면 띠 없이', remembered && !!noCap && noCap.w === diaBg?.w && noCap.h === diaBg?.h, JSON.stringify({ remembered, noCap }))
@@ -158,24 +159,48 @@ export default async function sendimage(ctx: Ctx) {
   await sheet.getByRole('button', { name: '닫기' }).click()
   await sheet.waitFor({ state: 'detached' })
 
-  // Claude에서 열기 — 이미지를 복사하고 claude.ai 새 대화를 요청 문구와 함께 연다 (새 창은 가로채 주소만 본다)
+  // 이미지로 보내기에는 Claude 버튼이 없다 — 따로 'AI로 보내기'
+  await p.click('.selection-bar [aria-label="이미지로 보내기"]')
+  await sheet.waitFor()
+  check('이미지로 보내기: Claude 버튼은 따로 (AI로 보내기)', (await sheet.getByRole('button', { name: 'Claude에서 열기' }).count()) === 0)
+  await sheet.getByRole('button', { name: '닫기' }).click()
+  await sheet.waitFor({ state: 'detached' })
+
+  // AI로 보내기 — 추천 문구를 골라 이미지를 복사하고 claude.ai 새 대화를 그 문구와 함께 연다 (새 창은 가로채 주소만 본다)
   await p.evaluate(() => {
     const w = window as unknown as { __opened: string[]; open: (u?: string | URL) => Window | null }
     w.__opened = []
     w.open = (u) => (w.__opened.push(String(u)), null)
   })
-  await p.click('.selection-bar [aria-label="이미지로 보내기"]')
-  await sheet.waitFor()
-  await sheet.getByLabel('이미지에 요청 문구 넣기').check()
-  const ask = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
-  await sheet.locator('.send-image-preview img').waitFor({ timeout: 15000 })
-  await sleep(500) // 문구를 넣은 미리보기가 다시 그려질 때까지
-  await sheet.getByRole('button', { name: 'Claude에서 열기' }).click()
-  await sheet.waitFor({ state: 'detached', timeout: 5000 })
+  const ai = p.locator('.modal.ai-send')
+  await p.click('.selection-bar [aria-label="AI로 보내기"]')
+  await ai.waitFor()
+  if (process.env.SHOT) await p.locator('.selection-bar').screenshot({ path: process.env.SHOT.replace(/\.png$/, '-selbar.png') }).catch(() => {})
+  const picks = await ai.getByRole('radio').allInnerTexts()
+  const firstPick = await ai.getByLabel('보낼 문구', { exact: true }).inputValue()
+  check('AI로 보내기: 추천 문구 여러 개, 기본은 쉽게 풀이', picks.length >= 5 && firstPick === '사진 속 내용을 쉽게 풀이해줘.', JSON.stringify({ picks, firstPick }))
+  await ai.getByRole('radio', { name: '단계별 풀이' }).click()
+  const ask = await ai.getByLabel('보낼 문구', { exact: true }).inputValue()
+  check('AI로 보내기: 추천 문구를 고르면 입력창에 채워진다', ask.startsWith('이 문제를 단계별로'), ask)
+  await ai.locator('.send-image-preview img').waitFor({ timeout: 15000 })
+  if (process.env.SHOT) await p.screenshot({ path: process.env.SHOT.replace(/\.png$/, '-ai.png') })
+  await ai.getByRole('button', { name: 'Claude에서 열기' }).click()
+  await ai.waitFor({ state: 'detached', timeout: 5000 })
   const opened = await p.evaluate(() => (window as unknown as { __opened: string[] }).__opened)
   const toClaude = await readClip()
-  check('Claude에서 열기: claude.ai 새 대화를 요청 문구와 함께 연다', opened.length === 1 && opened[0] === 'https://claude.ai/new?q=' + encodeURIComponent(ask), JSON.stringify({ opened, ask }))
-  check('Claude에서 열기: 이미지는 클립보드에 (붙여넣기용)', !!toClaude && toClaude.pink > 0.1 && toClaude.bandInk > 50, JSON.stringify(toClaude))
+  check('AI로 보내기: claude.ai 새 대화를 고른 문구와 함께 연다', opened.length === 1 && opened[0] === 'https://claude.ai/new?q=' + encodeURIComponent(ask), JSON.stringify({ opened, ask }))
+  check('AI로 보내기: 이미지는 클립보드에 — 문구 띠 없이 (문구는 입력창으로)', !!toClaude && toClaude.pink > 0.1 && toClaude.ink > 20 && toClaude.w === diaBg?.w && toClaude.h === diaBg?.h, JSON.stringify(toClaude))
+  // 고친 문구 그대로, 고른 문구는 기억한다
+  await p.evaluate(() => ((window as unknown as { __opened: string[] }).__opened = []))
+  await p.click('.selection-bar [aria-label="AI로 보내기"]')
+  await ai.waitFor()
+  const again = await ai.getByLabel('보낼 문구', { exact: true }).inputValue()
+  await ai.getByLabel('보낼 문구', { exact: true }).fill('이 그래프의 의미를 설명해줘.')
+  await ai.locator('.send-image-preview img').waitFor({ timeout: 15000 })
+  await ai.getByRole('button', { name: 'Claude에서 열기' }).click()
+  await ai.waitFor({ state: 'detached', timeout: 5000 })
+  const opened2 = await p.evaluate(() => (window as unknown as { __opened: string[] }).__opened)
+  check('AI로 보내기: 고른 문구를 기억하고, 고쳐 쓴 문구 그대로 보낸다', again === ask && opened2[0] === 'https://claude.ai/new?q=' + encodeURIComponent('이 그래프의 의미를 설명해줘.'), JSON.stringify({ again, opened2 }))
 
   // ── 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 자유/사각) ──
   const freeOnBar = (await p.locator('.ft-lasso [aria-label="자유 올가미"]').getAttribute('aria-checked')) === 'true'
@@ -224,12 +249,12 @@ export default async function sendimage(ctx: Ctx) {
   const regionLabel = await p.locator('.selection-bar .sel-count').textContent()
   const regionBtns = await p.locator('.selection-bar button').count()
   const region = await raw('selection', true)
-  check('영역만: 획 없이 감싸도 보내기 도구 모음이 뜨고(보내기·해제만), PDF를 담는다', regionLabel === '영역' && regionBtns === 2 && !!region && region.pink > 0.5 && region.ink === 0, JSON.stringify({ regionLabel, regionBtns, region }))
+  check('영역만: 획 없이 감싸도 보내기 도구 모음이 뜨고(이미지로·AI로 보내기·해제만), PDF를 담는다', regionLabel === '영역' && regionBtns === 3 && !!region && region.pink > 0.5 && region.ink === 0, JSON.stringify({ regionLabel, regionBtns, region }))
 
   check('이미지로 보내기: 네트워크를 쓰지 않는다', outside.length === 0, outside.join(' '))
   if (process.env.SHOT) {
     await p.click('.selection-bar [aria-label="이미지로 보내기"]')
-    await sheet.getByLabel('이미지에 요청 문구 넣기').check()
+    await sheet.getByLabel('이미지에 문구 넣기').check()
     await sheet.locator('.send-image-preview img').waitFor()
     await sleep(500)
     await p.screenshot({ path: process.env.SHOT })
