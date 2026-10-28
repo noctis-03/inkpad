@@ -402,6 +402,26 @@ export class Engine {
     this.onCameraMoved()
   }
 
+  /**
+   * 이 페이지를 배율 zoom(기본 100%)으로. 가로는 페이지 가운데(화면보다 넓으면 왼쪽 끝을 칩 자리만큼 띄워서),
+   * 세로는 페이지 위 끝이 화면에 보이면 그 자리 그대로, 아니면 화면 가운데 높이를 그대로 둔다
+   */
+  zoomPage(index: number, zoom = 1) {
+    const p = this.layout.pages[index]
+    const r = p && this.layout.rects.get(p.id)
+    if (!r) return
+    const W = this.renderer.cssW
+    const H = this.renderer.cssH
+    const z = clampZoom(zoom)
+    const top = (r.y - this.cam.y) * this.cam.zoom
+    const sy = top >= 0 && top <= H ? top : H / 2
+    const wy = this.cam.y + sy / this.cam.zoom
+    this.cam.zoom = z
+    this.cam.y = wy - sy / z
+    this.cam.x = r.w * z <= W - 128 ? r.x + r.w / 2 - W / 2 / z : r.x - 64 / z
+    this.onCameraMoved()
+  }
+
   /** infinite: 원점 100% / paged: 폭 맞춤 */
   resetView() {
     if (this.layout.paged) return this.fitWidth()
@@ -414,8 +434,9 @@ export class Engine {
   /** 마지막 폭 맞춤 직후의 카메라 — 그 뒤로 움직이지 않았으면 칸 크기가 바뀔 때(사이드바가 뒤늦게 뜰 때 등) 다시 맞춘다 */
   private fitCam: { x: number; y: number; zoom: number } | null = null
 
-  fitWidth(keepPage = true) {
-    const idx = keepPage ? this.currentPage() : 0
+  /** 폭 맞춤. page: true면 지금 페이지, false면 첫 페이지, 숫자면 그 페이지 위 끝으로 */
+  fitWidth(page: boolean | number = true) {
+    const idx = typeof page === 'number' ? page : page ? this.currentPage() : 0
     const b = this.layout.bounds
     const W = this.renderer.cssW
     // 넓은 화면은 양옆에 페이지 칩(번호 ⋯)이 들어갈 여백을 남긴다 — 휴대폰 폭은 페이지를 크게

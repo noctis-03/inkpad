@@ -1,5 +1,5 @@
-// 페이지 칩 — 페이지마다 바깥 왼쪽 위(회색 여백)에 '번호 ⋯'를 띄우고, 누르면 그 페이지 메뉴(PageMenu)를 연다.
-// 페이지 위에는 절대 얹지 않는다: 왼쪽 여백에 자리가 없으면 페이지 위쪽 틈으로, 거기도 모자라면 숨긴다.
+// 페이지 칩 — 페이지마다 바깥 왼쪽 위(회색 여백)에 '페이지 n'과 그 아래 버튼(⋯ 페이지 메뉴 · 100% · 화면에 맞춤)을 세로로 띄운다.
+// 페이지 위에는 절대 얹지 않는다: 왼쪽 여백에 자리가 없으면 페이지 위쪽 틈에 가로 한 줄로, 거기도 모자라면 숨긴다.
 // 긴 페이지를 내려 읽는 동안에는 화면 위에 붙어 따라 내려온다(페이지 아래 끝까지). 칩은 배율과 관계없이 같은 크기다.
 // 카메라가 움직이면 React를 거치지 않고 style만 고친다 (SheetLayer와 같게).
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -26,6 +26,7 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
     const H = layer.clientHeight
     const sx = (wx: number) => (wx - cx) * zoom
     const sy = (wy: number) => (wy - cy) * zoom
+    layer.toggleAttribute('data-z100', Math.abs(zoom - 1) < 0.005) // 100% 버튼을 켜진 모양으로
     // 화면 좌표의 보조 용지 사각형 — 칩이 이것들과도 겹치지 않게
     const sheets: { l: number; t: number; r: number; b: number }[] = []
     for (const s of engine.sheets) {
@@ -46,9 +47,10 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
         continue
       }
       el.style.display = ''
-      const w = el.offsetWidth
-      const h = el.offsetHeight
-      // ① 왼쪽 여백 — 페이지 위 끝에 맞추고, 내려 읽는 동안에는 화면 위에 붙어 따라온다
+      // ① 왼쪽 여백에 세로로 — 페이지 위 끝에 맞추고, 내려 읽는 동안에는 화면 위에 붙어 따라온다
+      if (el.classList.contains('is-row')) el.classList.remove('is-row')
+      let w = el.offsetWidth
+      let h = el.offsetHeight
       let y = Math.min(Math.max(top, EDGE), bottom - h)
       let right = sx(r.x) - GAP
       for (let moved = true; moved; ) {
@@ -61,12 +63,15 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
       }
       let x = right - w
       if (x < EDGE) {
-        // ② 페이지 위쪽 틈 — 왼쪽 끝에 맞춰 페이지 바로 위에
+        // ② 페이지 위쪽 틈에 가로 한 줄로 — 왼쪽 끝에 맞춰 페이지 바로 위에
+        el.classList.add('is-row')
+        w = el.offsetWidth
+        h = el.offsetHeight
         if (gapAbove < h + 2) {
           el.style.display = 'none'
           continue
         }
-        x = Math.max(EDGE, sx(r.x))
+        x = Math.max(EDGE, Math.min(sx(r.x), layer.clientWidth - w - EDGE))
         y = top - h - 2
       }
       el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
@@ -92,7 +97,7 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
   return (
     <div className="page-chip-layer" ref={layerRef}>
       {pages.map((p, i) => (
-        <button
+        <div
           key={p.id}
           ref={(el) => {
             if (el) chips.current.set(p.id, el)
@@ -100,16 +105,29 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
           }}
           className={'page-chip' + (i === current ? ' is-current' : '') + (menu?.index === i ? ' is-open' : '')}
           data-index={i}
-          aria-label={`${i + 1}페이지 메뉴`}
-          aria-haspopup="menu"
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect()
-            setMenu({ index: i, x: r.left + 184, y: r.bottom }) // 메뉴 최소 폭(184) — 칩 왼쪽 끝에 맞춰 아래로
-          }}
+          role="group"
+          aria-label={`${i + 1}페이지`}
         >
-          <span className="page-chip-num">{i + 1}</span>
-          <Icon name="more" size={14} />
-        </button>
+          <span className="page-chip-label">페이지 {i + 1}</span>
+          <button
+            className="page-chip-btn page-chip-menu"
+            aria-label={`${i + 1}페이지 메뉴`}
+            aria-haspopup="menu"
+            title="페이지 메뉴"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              setMenu({ index: i, x: r.left + 184, y: r.bottom }) // 메뉴 최소 폭(184) — 버튼 왼쪽 끝에 맞춰 아래로
+            }}
+          >
+            <Icon name="more" size={16} />
+          </button>
+          <button className="page-chip-btn page-chip-z100" aria-label="배율 100%" title="배율 100%" onClick={() => engine.zoomPage(i, 1)}>
+            100
+          </button>
+          <button className="page-chip-btn" aria-label="화면에 맞춤" title="화면에 맞춤" onClick={() => engine.fitWidth(i)}>
+            <Icon name="fit" size={16} />
+          </button>
+        </div>
       ))}
       {menu && <PageMenu engine={engine} index={menu.index} x={menu.x} y={menu.y} readOnly={readOnly} onClose={() => setMenu(null)} />}
     </div>
