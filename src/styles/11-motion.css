@@ -221,31 +221,6 @@
   from { opacity: 0; transform: translateY(-10px); }
 }
 
-/* 빠른 전환: 지우개 상태 = 잉크 배경 + 흰 아이콘, 전환 시 rotateY flip */
-.quick-switch {
-  transition: left .45s var(--ft-spring), top .45s var(--ft-spring), background .25s var(--ft-ease), color .25s var(--ft-ease), scale .5s var(--spring-pop);
-}
-.quick-switch.is-dragging {
-  transition: background .25s var(--ft-ease), color .25s var(--ft-ease);
-}
-.quick-switch.is-eraser {
-  background: var(--btn-bg);
-  color: var(--btn-fg);
-  border-color: transparent;
-}
-.quick-switch.is-eraser .quick-switch-badge {
-  background: var(--chip);
-  color: var(--btn-bg);
-}
-.quick-switch .qs-flip {
-  display: inline-flex;
-  animation: qs-flip .5s var(--ft-spring);
-}
-@keyframes qs-flip {
-  from { transform: rotateY(90deg); }
-  to { transform: rotateY(0deg); }
-}
-
 /* ═══════════════ 5.8 · 올가미 선택 · 페이지 번호 ═══════════════ */
 .selection-shape polygon {
   fill: var(--hover);

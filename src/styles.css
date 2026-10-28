@@ -5,7 +5,7 @@
  * 빌드 때 하나의 CSS로 합쳐진다.
  */
 @import './styles/01-base.css'; /* 디자인 토큰·다크 팔레트·전역 기본값 */
-@import './styles/02-editor-chrome.css'; /* 편집 화면 툴바·캔버스·HUD·빠른 전환 */
+@import './styles/02-editor-chrome.css'; /* 편집 화면 툴바·캔버스·HUD */
 @import './styles/03-side-panel.css'; /* 사이드 패널·설정 행·스위치·공용 버튼·버전 목록 */
 @import './styles/04-library.css'; /* 문서 목록·책등 노트 카드·카드 누름 오버레이 */
 @import './styles/05-menus.css'; /* 메뉴·모달·시트, 필압 설정 */
