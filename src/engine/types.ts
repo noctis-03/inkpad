@@ -48,6 +48,8 @@ export interface Settings {
   motion: 'auto' | 'off' | 'normal' | 'rich'
   // 테마 (다크 모드). auto = 기기의 외관 설정을 따름
   theme: 'auto' | 'light' | 'dark'
+  // 밀도 — 넉넉하게(손가락으로 누르기 편하게 줄·컨트롤·글자를 한 단계 키움) / 촘촘하게. <html data-density>
+  density: 'comfortable' | 'compact'
   // 올가미 모양 — 자유(손으로 그린 모양) / 사각(끌어서 네모)
   lassoShape: 'free' | 'rect'
 }
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cloudCheckOnOpen: false,
   motion: 'auto',
   theme: 'auto',
+  density: 'comfortable',
   lassoShape: 'free'
 }
 
