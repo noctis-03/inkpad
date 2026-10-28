@@ -358,6 +358,13 @@
 .page-chip-btn:hover, .page-chip.is-open .page-chip-menu { background:var(--surface); color:var(--ink); box-shadow:0 0 0 1px var(--line); }
 .page-chip-btn:focus-visible { outline:2px solid var(--focus-outline); outline-offset:1px; }
 .page-chip-layer[data-z100] .page-chip-z100 { color:var(--accent); }
+.page-chip-btns { display:flex; }
+/* 많이 축소하면 칩도 한 단계씩 작게 (PageChipLayer의 SIZES) */
+.page-chip-layer[data-size='s'] .page-chip-btn { width:28px; height:28px; }
+.page-chip-layer[data-size='s'] .page-chip-btn svg { width:14px; height:14px; }
+.page-chip-layer[data-size='xs'] .page-chip-btn { width:22px; height:22px; font-size: var(--fs-2xs); letter-spacing:-.04em; }
+.page-chip-layer[data-size='xs'] .page-chip-btn svg { width:12px; height:12px; }
+.page-chip-layer[data-size] .page-chip-label { font-size: var(--fs-2xs); }
 
 /* ═══════ 보조 용지 ═══════ */
 /* 종이와 획은 캔버스에 그려지고, 여기엔 제목 줄·크기 조절 손잡이만 (블록 레이어 아래) */

@@ -402,23 +402,49 @@ export class Engine {
     this.onCameraMoved()
   }
 
+  /** 폭 맞춤의 양옆 여백 — 넓은 화면은 페이지 칩('페이지 n' + 버튼 한 줄)이 들어갈 자리를 남긴다. 휴대폰 폭은 페이지를 크게 */
+  private fitSide(W = this.renderer.cssW) {
+    return W >= 640 ? 108 : 16
+  }
+
+  /** 폭 맞춤 배율 — 페이지 노트는 이것을 100%로 보여 준다 */
+  fitWidthZoom() {
+    const W = this.renderer.cssW
+    return clampZoom(Math.min((W - this.fitSide(W) * 2) / Math.max(1, this.layout.bounds.w), 2.5))
+  }
+
   /**
-   * 이 페이지를 배율 zoom(기본 100%)으로. 가로는 페이지 가운데(화면보다 넓으면 왼쪽 끝을 칩 자리만큼 띄워서),
+   * 이 페이지를 배율 zoom으로. 가로는 페이지 가운데(화면보다 넓으면 왼쪽 끝을 칩 자리만큼 띄워서),
    * 세로는 페이지 위 끝이 화면에 보이면 그 자리 그대로, 아니면 화면 가운데 높이를 그대로 둔다
    */
-  zoomPage(index: number, zoom = 1) {
+  zoomPage(index: number, zoom: number) {
     const p = this.layout.pages[index]
     const r = p && this.layout.rects.get(p.id)
     if (!r) return
     const W = this.renderer.cssW
     const H = this.renderer.cssH
+    const side = this.fitSide(W)
     const z = clampZoom(zoom)
     const top = (r.y - this.cam.y) * this.cam.zoom
     const sy = top >= 0 && top <= H ? top : H / 2
     const wy = this.cam.y + sy / this.cam.zoom
     this.cam.zoom = z
     this.cam.y = wy - sy / z
-    this.cam.x = r.w * z <= W - 128 ? r.x + r.w / 2 - W / 2 / z : r.x - 64 / z
+    this.cam.x = r.w * z <= W - side * 2 ? r.x + r.w / 2 - W / 2 / z : r.x - side / z
+    this.onCameraMoved()
+  }
+
+  /** 이 페이지 한 장이 화면에 다 들어오게 — 가로·세로 가운데 */
+  fitPage(index: number) {
+    const p = this.layout.pages[index]
+    const r = p && this.layout.rects.get(p.id)
+    if (!r) return
+    const W = this.renderer.cssW
+    const H = this.renderer.cssH
+    const z = clampZoom(Math.min((W - this.fitSide(W) * 2) / r.w, (H - 32) / r.h))
+    this.cam.zoom = z
+    this.cam.x = r.x + r.w / 2 - W / 2 / z
+    this.cam.y = r.y + r.h / 2 - H / 2 / z
     this.onCameraMoved()
   }
 
@@ -439,9 +465,7 @@ export class Engine {
     const idx = typeof page === 'number' ? page : page ? this.currentPage() : 0
     const b = this.layout.bounds
     const W = this.renderer.cssW
-    // 넓은 화면은 양옆에 페이지 칩(번호 ⋯)이 들어갈 여백을 남긴다 — 휴대폰 폭은 페이지를 크게
-    const side = W >= 640 ? 64 : 16
-    const zoom = clampZoom(Math.min((W - side * 2) / Math.max(1, b.w), 2.5))
+    const zoom = this.fitWidthZoom()
     this.cam.zoom = zoom
     this.cam.x = b.x - (W / zoom - b.w) / 2
     const p = this.layout.pages[idx]

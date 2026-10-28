@@ -2,7 +2,8 @@
 //  - 페이지 위에는 얹지 않는다 (왼쪽 여백 → 모자라면 페이지 위쪽 틈 → 그래도 모자라면 숨김)
 //  - 폭 맞춤은 넓은 화면에서 칩 자리만큼 양옆을 비운다
 //  - 긴 페이지를 내려 읽는 동안 화면 위에 붙어 따라온다
-//  - '페이지 n' 아래에 버튼: ⋯ 페이지 메뉴 · 100% · 화면에 맞춤
+//  - '페이지 n' 아래에 버튼 한 줄: ⋯ 페이지 메뉴 · 100(폭 맞춤 배율 = 페이지 노트의 100%) · 화면에 맞춤(페이지 전체)
+//  - 칩은 배율과 관계없이 같은 크기, 많이 축소하면 단계별로 작게
 //  - 메뉴: 이미지로·AI로 보내기(상단 ⋯에서 옮겨 옴) + 페이지 더하기·복제·보조 용지·순서·삭제
 import type { Page } from 'playwright'
 import { createDoc, device, logsOf, openEditor, sleep, type Ctx } from './lib.ts'
@@ -82,20 +83,44 @@ export default async function pagechip(ctx: Ctx) {
   await p.keyboard.press('Escape')
   await sleep(200)
 
-  // ── 100% · 화면에 맞춤 ──
-  const cam = () => p.evaluate(() => ({ ...(window as unknown as { inkpad: { cam: { x: number; y: number; zoom: number } } }).inkpad.cam }))
-  const fitZoom = (await cam()).zoom
-  await p.click('.page-chip[data-index="1"] [aria-label="배율 100%"]')
+  // ── 100(폭 맞춤 배율) · 화면에 맞춤(페이지 전체) ──
+  type E = { cam: { x: number; y: number; zoom: number }; fitWidthZoom: () => number; zoomBy: (f: number) => void }
+  const cam = () => p.evaluate(() => { const e = (window as unknown as { inkpad: E }).inkpad; return { ...e.cam, fit: e.fitWidthZoom() } })
+  const btnTops = await p.locator('.page-chip[data-index="1"] .page-chip-btn').evaluateAll((bs) => bs.map((b) => Math.round(b.getBoundingClientRect().top)))
+  check("버튼 셋은 '페이지 n' 아래 한 줄로", btnTops.length === 3 && new Set(btnTops).size === 1, JSON.stringify(btnTops))
+  check('배율 표시: 폭 맞춤이 100%', (await p.locator('.page-indicator [aria-label="보기 옵션"]').textContent())?.trim() === '100%')
+  await p.evaluate(() => (window as unknown as { inkpad: E }).inkpad.zoomBy(0.8))
+  await sleep(100)
+  await p.click('.page-chip[data-index="1"] [aria-label="배율 100% (폭 맞춤)"]')
   await sleep(150)
+  let c = await cam()
   L = await layout(p)
   const pc = (L.pages[1].l + L.pages[1].r) / 2 - (L.host.l + L.host.r) / 2
-  check('100%: 배율 100%, 페이지는 가로 가운데', Math.abs((await cam()).zoom - 1) < 1e-6 && Math.abs(pc) < 2, JSON.stringify({ zoom: L.zoom, pc }))
-  check('…100% 버튼이 켜진 모양', (await p.locator('.page-chip-layer[data-z100]').count()) === 1)
+  check('100: 폭 맞춤 배율로, 페이지는 가로 가운데', Math.abs(c.zoom - c.fit) < 1e-6 && Math.abs(pc) < 2, JSON.stringify({ c, pc }))
+  check('…100 버튼이 켜진 모양, 배율 표시 100%', (await p.locator('.page-chip-layer[data-z100]').count()) === 1 && (await p.locator('.page-indicator [aria-label="보기 옵션"]').textContent())?.trim() === '100%')
   await p.click('.page-chip[data-index="1"] [aria-label="화면에 맞춤"]')
   await sleep(150)
+  c = await cam()
   L = await layout(p)
-  check('화면에 맞춤: 폭 맞춤 배율로, 그 페이지 위 끝으로', Math.abs((await cam()).zoom - fitZoom) < 1e-6 && Math.abs(L.pages[1].t - L.host.t - 16) < 2, JSON.stringify({ zoom: L.zoom, fitZoom, page: L.pages[1], host: L.host }))
-  check('…100% 버튼은 꺼진 모양', (await p.locator('.page-chip-layer[data-z100]').count()) === 0)
+  const pg = L.pages[1]
+  check('화면에 맞춤: 페이지 한 장이 화면에 다 들어온다', c.zoom < c.fit && pg.t >= L.host.t - 1 && pg.b <= L.host.b + 1 && pg.l >= L.host.l && pg.r <= L.host.r, JSON.stringify({ c, pg, host: L.host }))
+  check('…100 버튼은 꺼진 모양', (await p.locator('.page-chip-layer[data-z100]').count()) === 0)
+
+  // ── 배율에 따라 칩 크기는 그대로, 많이 축소하면 단계별로 작게 ──
+  const sizeAt = async (rel: number) => {
+    await p.evaluate((rel) => { const e = (window as unknown as { inkpad: E }).inkpad; e.zoomBy((e.fitWidthZoom() * rel) / e.cam.zoom) }, rel)
+    await sleep(100)
+    const L2 = await layout(p)
+    const b = await p.locator('.page-chip-layer .page-chip[data-index="1"] .page-chip-menu').boundingBox()
+    return { size: await p.locator('.page-chip-layer').getAttribute('data-size'), w: b?.width, clean: L2.chips.every((ch) => L2.pages.every((pg) => !overlaps(ch.chip, pg))) }
+  }
+  const s100 = await sizeAt(1)
+  const s60 = await sizeAt(0.6)
+  const s30 = await sizeAt(0.3)
+  check('칩 크기: 100%에서 32px, 축소하면 28 → 22px', s100.size === null && s100.w === 32 && s60.size === 's' && s60.w === 28 && s30.size === 'xs' && s30.w === 22, JSON.stringify({ s100, s60, s30 }))
+  check('…어느 크기에서도 페이지 위에 얹히지 않는다', s100.clean && s60.clean && s30.clean)
+  await p.evaluate(() => (window as unknown as { inkpad: { fitWidth: (p: number) => void } }).inkpad.fitWidth(0))
+  await sleep(100)
 
   // ── 내려 읽는 동안: 위가 화면 밖으로 나간 페이지의 칩은 화면 위에 붙어 따라온다 ──
   await p.evaluate(() => {
