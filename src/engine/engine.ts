@@ -2119,9 +2119,10 @@ export class Engine {
    * background면 종이·속지·PDF까지, 아니면 필기(형광펜 포함)만. 블록(메모·할 일 등)은 PDF 내보내기처럼 담지 않는다.
    * PDF 원본이 이 기기에 없으면 화면에 그릴 때처럼 받아 온다.
    */
-  async exportImage(target: { page: number } | 'selection', opts: { background?: boolean; longSide?: number } = {}): Promise<Blob | null> {
+  async exportImage(target: { page: number } | 'selection', opts: { background?: boolean; ink?: boolean; longSide?: number } = {}): Promise<Blob | null> {
     const longSide = opts.longSide ?? 2000
     const background = opts.background ?? true
+    const ink = opts.ink ?? true // false = PDF·속지만 (필기 없이)
     let box: Box | null
     let clip: number[] | null = null
     if (target === 'selection') {
@@ -2176,7 +2177,7 @@ export class Engine {
         ctx.restore()
       }
     }
-    const recs = this.scene.query(box.minX, box.minY, box.maxX, box.maxY)
+    const recs = ink ? this.scene.query(box.minX, box.minY, box.maxX, box.maxY) : []
     for (const pass of ['under', 'main'] as const) {
       for (const rec of recs) {
         if (rec.stroke.layer !== pass) continue
