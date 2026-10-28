@@ -30,8 +30,8 @@ const TARGETS = [
   '.sync-mini'
 ].join(',')
 
-// 필기 캔버스와 그 하위, 블록 레이어, 플로팅 도구바/팝오버, 빠른 전환은 제외한다.
-const EXCLUDE = '#canvas-root, .block-layer, .blk, .ft-bar, .ft-pop, .ft-probe, .quick-switch'
+// 필기 캔버스와 그 하위, 블록 레이어, 플로팅 도구바/팝오버는 제외한다.
+const EXCLUDE = '#canvas-root, .block-layer, .blk, .ft-bar, .ft-pop, .ft-probe'
 
 let installed = false
 

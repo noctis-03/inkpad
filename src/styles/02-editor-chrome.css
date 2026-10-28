@@ -187,36 +187,3 @@
   color: var(--muted);
 }
 
-/* ───────── 빠른 전환 ───────── */
-.quick-switch {
-  position: absolute; /* 필기 영역 기준 좌표 (ui/QuickSwitch.tsx) */
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--chip);
-  box-shadow: var(--e2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 6;
-  touch-action: none;
-  cursor: pointer;
-}
-.quick-switch.is-eraser {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.quick-switch-badge {
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--btn-bg);
-  color: var(--btn-fg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}

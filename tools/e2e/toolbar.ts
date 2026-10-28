@@ -28,13 +28,10 @@ export default async function toolbar(ctx: Ctx) {
   await sleep(200)
   check('바: 고른 굵기가 바에 없으면 가까운 자리에 넣어 보인다', (await bar.locator('.ft-wbtn.is-active').count()) === 1 && (await bar.locator('.ft-wbtn:visible').count()) === 3)
 
-  // 펜↔지우개 전환 버튼은 화면 안
-  for (const [w, h] of [[1366, 1024], [820, 1180], [390, 844]]) {
-    await A.setViewportSize({ width: w, height: h })
-    await sleep(300)
-    const b = (await A.locator('#quick-switch').boundingBox())!
-    check(`전환 버튼: ${w}×${h}에서 화면 안`, b.y + b.height <= h && b.x >= 0, JSON.stringify(b))
-  }
+  // 펜↔지우개 전환 버튼(동그란 떠 있는 버튼)은 없앴다 — 도구창에서 바꾼다
+  check('전환 버튼: 없다', (await A.locator('#quick-switch, .quick-switch').count()) === 0)
+  await A.setViewportSize({ width: 390, height: 844 })
+  await sleep(300)
 
   // 휴대폰 폭에서 페이지 목록을 열면 필기 영역이 좁아 가로 바는 가장 작은 단계(tiny, 30px)로만 들어간다 —
   // 그때는 세로(왼쪽)로 옮겨 펜 버튼을 40px로 둔다. 목록을 닫으면 원래 가로 위쪽으로

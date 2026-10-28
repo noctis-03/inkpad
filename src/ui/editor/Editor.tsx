@@ -32,7 +32,6 @@ import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { SyncPanel } from '../SyncSection'
 import { Hud } from '../Hud'
-import { QuickSwitch } from '../QuickSwitch'
 import { DebugPanel } from './DebugPanel'
 import { Menu, MenuItem } from '../Menu'
 import { Icon } from '../Icon'
@@ -410,7 +409,6 @@ export function Editor({ docId }: { docId: ID }) {
           )}
           <Hud />
           {!readOnly && <FloatingToolbar engine={engine} />}
-          {!readOnly && <QuickSwitch />}
           {engine && <SelectionBar engine={engine} />}
           {engine && <PageIndicator engine={engine} paged={paged} />}
           {panel === 'settings' && <SettingsPanel />}
