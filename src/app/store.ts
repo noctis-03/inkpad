@@ -212,6 +212,8 @@ interface UIState {
   splitSide: 'left' | 'right'
   /** 이미지로 보내기 창 (편집 화면이 그린다) — 페이지 하나, 또는 올가미로 고른 영역 */
   sendImage: SendImageTarget | null
+  /** AI로 보내기 — 추천 문구를 골라 이미지와 함께 Claude로 (ui/editor/AiSendSheet) */
+  aiSend: SendImageTarget | null
   /** 마지막으로 본 홈 화면 (라이브러리 / 작업보드) — 홈 탭을 누르면 여기로 */
   home: Extract<Route, { name: 'library' | 'board' }>
 
@@ -298,6 +300,7 @@ export const useUI = create<UIState>((set, get) => ({
   splitRatio: firstTabs.splitRatio,
   splitSide: firstTabs.splitSide,
   sendImage: null,
+  aiSend: null,
   home: firstRoute.name === 'board' ? { name: 'board' } : { name: 'library' },
 
   navigate: (route) => {
@@ -320,6 +323,7 @@ export const useUI = create<UIState>((set, get) => ({
       panel: 'none',
       selection: null,
       sendImage: null,
+      aiSend: null,
       // 노트·앱·파일을 열 때는 열기 전 화면을 기억해 뒤로가기 때 돌아간다 (작업보드 → 노트 → 뒤로 = 작업보드)
       returnRoute: opens ? prev : null,
       tabs: withTab(tabs, route, prev),

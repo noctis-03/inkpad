@@ -26,6 +26,7 @@ import { SheetLayer } from './SheetLayer'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
 import { SendImageSheet } from './SendImageSheet'
+import { AiSendSheet } from './AiSendSheet'
 import { PagePanel } from './PagePanel'
 import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
@@ -42,6 +43,7 @@ export function Editor({ docId }: { docId: ID }) {
   const engineRef = useRef<Engine | null>(null)
   const [engine, setEngine] = useState<Engine | null>(null)
   const sendImage = useUI((s) => s.sendImage)
+  const aiSend = useUI((s) => s.aiSend)
   const [doc, setDoc] = useState<DocumentMeta | null>(null)
   const [pages, setPages] = useState<Page[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -420,6 +422,7 @@ export function Editor({ docId }: { docId: ID }) {
         </div>
       </div>
       {sendImage && engine && <SendImageSheet engine={engine} title={doc?.title ?? ''} target={sendImage} paged={paged} />}
+      {aiSend && engine && <AiSendSheet engine={engine} target={aiSend} paged={paged} />}
     </div>
   )
 }

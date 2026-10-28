@@ -582,6 +582,40 @@
 .send-layers .seg {
   flex: 1;
 }
+/* AI로 보내기 — 고를 것이 많아 미리보기는 작게(무엇을 보내는지만 보이면 된다), 버튼이 화면 안에 남게 */
+.ai-send .send-image-preview {
+  min-height: 120px;
+  max-height: min(34vh, 300px);
+}
+.ai-send .send-image-preview img {
+  max-height: calc(min(34vh, 300px) - 16px);
+}
+/* AI로 보내기 — 추천 문구 (고르면 아래 입력창에 채워지고, 고쳐 쓸 수 있다) */
+.ai-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+.ai-pick {
+  min-height: var(--h-control);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.ai-pick:hover {
+  background: var(--hover);
+}
+.ai-pick.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
 .send-caption {
   width: 100%;
   box-sizing: border-box;

@@ -150,6 +150,11 @@ export function EditorToolbar(props: {
             label={doc?.mode === 'infinite' ? '지금 화면을 이미지로 보내기' : '이 페이지를 이미지로 보내기'}
             onClick={run(() => useUI.setState({ sendImage: { page: useUI.getState().view.currentPage } }))}
           />
+          <MenuItem
+            icon="sparkle"
+            label={doc?.mode === 'infinite' ? '지금 화면을 AI로 보내기' : '이 페이지를 AI로 보내기'}
+            onClick={run(() => useUI.setState({ aiSend: { page: useUI.getState().view.currentPage } }))}
+          />
           <MenuItem icon="gear" label="설정" onClick={run(() => setPanel('settings'))} />
           <MenuItem icon="cloud" label="동기화" onClick={run(() => setPanel('sync'))} />
         </Menu>
