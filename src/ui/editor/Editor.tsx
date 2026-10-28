@@ -23,6 +23,7 @@ import { EditorToolbar } from './EditorToolbar'
 import { FloatingToolbar } from './FloatingToolbar'
 import { BlockLayer } from './BlockLayer'
 import { SheetLayer } from './SheetLayer'
+import { PageChipLayer } from './PageChipLayer'
 import { PageSidebar } from './PageSidebar'
 import { SelectionBar } from './SelectionBar'
 import { SendImageSheet } from './SendImageSheet'
@@ -384,6 +385,7 @@ export function Editor({ docId }: { docId: ID }) {
         <div className="editor-area">
           <main id="canvas-root" className="canvas-root" ref={hostRef} data-mode={doc?.mode} />
           {engine && paged && <SheetLayer engine={engine} readOnly={readOnly} />}
+          {engine && paged && <PageChipLayer engine={engine} pages={pages} readOnly={readOnly} />}
           {engine && <BlockLayer engine={engine} readOnly={readOnly} />}
           {!engine && (
             <div className="doc-skeleton" role="status" aria-label={suspended ? '동기화로 노트를 맞추는 중' : '문서 여는 중'}>

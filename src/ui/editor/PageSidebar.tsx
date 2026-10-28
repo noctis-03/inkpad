@@ -2,9 +2,8 @@ import { memo, useEffect, useRef, useState } from 'react'
 import type { Engine } from '../../engine/engine'
 import type { Page } from '../../shared/model'
 import { useUI } from '../../app/store'
-import { confirmDialog } from '../../app/dialogs'
 import { Icon } from '../Icon'
-import { Menu, MenuItem } from '../Menu'
+import { PageMenu } from './PageMenu'
 
 const THUMB_W = 120
 
@@ -72,22 +71,6 @@ export function PageSidebar({ engine, pages, tick }: { engine: Engine; pages: Pa
     } else engine.scrollToPage(index)
   }
 
-  const act = async (action: string, i: number) => {
-    setMenu(null)
-    if (action === 'before') engine.addPage(i - 1)
-    else if (action === 'after') engine.addPage(i)
-    else if (action === 'dup') engine.duplicatePage(i)
-    else if (action === 'sheetL') engine.addSheet(i, 'left')
-    else if (action === 'sheetR') engine.addSheet(i, 'right')
-    else if (action === 'up' && i > 0) engine.movePage(i, i - 1)
-    else if (action === 'down' && i < pages.length - 1) engine.movePage(i, i + 1)
-    else if (action === 'delete') {
-      if (pages.length <= 1) return useUI.getState().toast('마지막 페이지는 삭제할 수 없습니다.')
-      const ok = await confirmDialog(`${i + 1}페이지 삭제`, { message: '실행 취소로 되돌릴 수 있습니다.', ok: '삭제', danger: true })
-      if (ok) engine.deletePage(i)
-    }
-  }
-
   return (
     <aside id="page-sidebar" className="page-sidebar" aria-label="페이지">
       <div className="thumb-list" ref={listRef}>
@@ -134,26 +117,7 @@ export function PageSidebar({ engine, pages, tick }: { engine: Engine; pages: Pa
           <Icon name="plus" size={18} /> 페이지 추가
         </button>
       </div>
-      {menu && (
-        <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
-          <MenuItem icon="plus" label="앞에 새 페이지" onClick={() => act('before', menu.index)} />
-          <MenuItem icon="plus" label="뒤에 새 페이지" onClick={() => act('after', menu.index)} />
-          <MenuItem icon="copy" label="복제" onClick={() => act('dup', menu.index)} />
-          <MenuItem icon="page" label="왼쪽에 보조 용지" onClick={() => act('sheetL', menu.index)} />
-          <MenuItem icon="page" label="오른쪽에 보조 용지" onClick={() => act('sheetR', menu.index)} />
-          <MenuItem
-            icon="share"
-            label="이미지로 보내기"
-            onClick={() => {
-              useUI.setState({ sendImage: { page: menu.index } })
-              setMenu(null)
-            }}
-          />
-          <MenuItem icon="arrowUp" label="위로" onClick={() => act('up', menu.index)} />
-          <MenuItem icon="arrowDown" label="아래로" onClick={() => act('down', menu.index)} />
-          <MenuItem icon="trash" label="삭제" danger onClick={() => act('delete', menu.index)} />
-        </Menu>
-      )}
+      {menu && <PageMenu engine={engine} index={menu.index} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
     </aside>
   )
 }
