@@ -1,6 +1,8 @@
-// 페이지 칩 — 페이지마다 바깥 왼쪽 위(회색 여백)에 '페이지 n'과 그 아래 버튼(⋯ 페이지 메뉴 · 100% · 화면에 맞춤)을 세로로 띄운다.
+// 페이지 칩 — 페이지마다 바깥 왼쪽 위(회색 여백)에 '페이지 n'과 그 아래 버튼 한 줄(⋯ 페이지 메뉴 · 100 · 화면에 맞춤)을 띄운다.
+// 100은 폭 맞춤 배율(페이지 노트의 100%), 화면에 맞춤은 페이지 한 장이 다 보이게.
 // 페이지 위에는 절대 얹지 않는다: 왼쪽 여백에 자리가 없으면 페이지 위쪽 틈에 가로 한 줄로, 거기도 모자라면 숨긴다.
-// 긴 페이지를 내려 읽는 동안에는 화면 위에 붙어 따라 내려온다(페이지 아래 끝까지). 칩은 배율과 관계없이 같은 크기다.
+// 긴 페이지를 내려 읽는 동안에는 화면 위에 붙어 따라 내려온다(페이지 아래 끝까지).
+// 칩은 배율을 따라 커지고 작아지지 않지만, 많이 축소하면 단계별로 작아진다(SIZES).
 // 카메라가 움직이면 React를 거치지 않고 style만 고친다 (SheetLayer와 같게).
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Engine } from '../../engine/engine'
@@ -11,6 +13,11 @@ import { PageMenu } from './PageMenu'
 
 const GAP = 6 // 칩과 페이지(또는 왼쪽에 붙은 보조 용지) 사이
 const EDGE = 4 // 화면 가장자리와의 최소 틈
+/** 폭 맞춤(100%)에 대한 배율이 이보다 작으면 칩을 한 단계 작게 */
+const SIZES: [number, string][] = [
+  [0.45, 'xs'],
+  [0.75, 's']
+]
 
 export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pages: Page[]; readOnly: boolean }) {
   useSyncExternalStore(engine.subscribeSheets, engine.sheetsVersion) // 왼쪽 보조 용지를 비켜 선다
@@ -26,7 +33,13 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
     const H = layer.clientHeight
     const sx = (wx: number) => (wx - cx) * zoom
     const sy = (wy: number) => (wy - cy) * zoom
-    layer.toggleAttribute('data-z100', Math.abs(zoom - 1) < 0.005) // 100% 버튼을 켜진 모양으로
+    const rel = zoom / engine.fitWidthZoom()
+    layer.toggleAttribute('data-z100', Math.abs(rel - 1) < 0.005) // 100 버튼을 켜진 모양으로
+    const size = SIZES.find(([max]) => rel < max)?.[1]
+    if (layer.dataset.size !== size) {
+      if (size) layer.dataset.size = size
+      else delete layer.dataset.size
+    }
     // 화면 좌표의 보조 용지 사각형 — 칩이 이것들과도 겹치지 않게
     const sheets: { l: number; t: number; r: number; b: number }[] = []
     for (const s of engine.sheets) {
@@ -109,24 +122,26 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
           aria-label={`${i + 1}페이지`}
         >
           <span className="page-chip-label">페이지 {i + 1}</span>
-          <button
-            className="page-chip-btn page-chip-menu"
-            aria-label={`${i + 1}페이지 메뉴`}
-            aria-haspopup="menu"
-            title="페이지 메뉴"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              setMenu({ index: i, x: r.left + 184, y: r.bottom }) // 메뉴 최소 폭(184) — 버튼 왼쪽 끝에 맞춰 아래로
-            }}
-          >
-            <Icon name="more" size={16} />
-          </button>
-          <button className="page-chip-btn page-chip-z100" aria-label="배율 100%" title="배율 100%" onClick={() => engine.zoomPage(i, 1)}>
-            100
-          </button>
-          <button className="page-chip-btn" aria-label="화면에 맞춤" title="화면에 맞춤" onClick={() => engine.fitWidth(i)}>
-            <Icon name="fit" size={16} />
-          </button>
+          <div className="page-chip-btns">
+            <button
+              className="page-chip-btn page-chip-menu"
+              aria-label={`${i + 1}페이지 메뉴`}
+              aria-haspopup="menu"
+              title="페이지 메뉴"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setMenu({ index: i, x: r.left + 184, y: r.bottom }) // 메뉴 최소 폭(184) — 버튼 왼쪽 끝에 맞춰 아래로
+              }}
+            >
+              <Icon name="more" size={16} />
+            </button>
+            <button className="page-chip-btn page-chip-z100" aria-label="배율 100% (폭 맞춤)" title="배율 100% (폭 맞춤)" onClick={() => engine.zoomPage(i, engine.fitWidthZoom())}>
+              100
+            </button>
+            <button className="page-chip-btn" aria-label="화면에 맞춤" title="화면에 맞춤 (페이지 전체)" onClick={() => engine.fitPage(i)}>
+              <Icon name="fit" size={16} />
+            </button>
+          </div>
         </div>
       ))}
       {menu && <PageMenu engine={engine} index={menu.index} x={menu.x} y={menu.y} readOnly={readOnly} onClose={() => setMenu(null)} />}

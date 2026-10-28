@@ -451,13 +451,14 @@ function PageIndicator({ engine, paged }: { engine: Engine; paged: boolean }) {
         aria-haspopup="menu"
         aria-expanded={!!menu}
       >
-        {Math.round(view.zoom * 100)}%
+        {/* 페이지 노트는 폭 맞춤을 100%로 */}
+        {Math.round((paged ? view.zoom / engine.fitWidthZoom() : view.zoom) * 100)}%
       </button>
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <MenuItem
             icon="fit"
-            label={paged ? '폭 맞춤' : '원점으로 (100%)'}
+            label={paged ? '폭 맞춤 (100%)' : '원점으로 (100%)'}
             onClick={() => {
               setMenu(null)
               engine.resetView()
