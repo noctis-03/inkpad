@@ -158,6 +158,25 @@ export default async function sendimage(ctx: Ctx) {
   await sheet.getByRole('button', { name: '닫기' }).click()
   await sheet.waitFor({ state: 'detached' })
 
+  // Claude에서 열기 — 이미지를 복사하고 claude.ai 새 대화를 요청 문구와 함께 연다 (새 창은 가로채 주소만 본다)
+  await p.evaluate(() => {
+    const w = window as unknown as { __opened: string[]; open: (u?: string | URL) => Window | null }
+    w.__opened = []
+    w.open = (u) => (w.__opened.push(String(u)), null)
+  })
+  await p.click('.selection-bar [aria-label="이미지로 보내기"]')
+  await sheet.waitFor()
+  await sheet.getByLabel('이미지에 요청 문구 넣기').check()
+  const ask = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
+  await sheet.locator('.send-image-preview img').waitFor({ timeout: 15000 })
+  await sleep(500) // 문구를 넣은 미리보기가 다시 그려질 때까지
+  await sheet.getByRole('button', { name: 'Claude에서 열기' }).click()
+  await sheet.waitFor({ state: 'detached', timeout: 5000 })
+  const opened = await p.evaluate(() => (window as unknown as { __opened: string[] }).__opened)
+  const toClaude = await readClip()
+  check('Claude에서 열기: claude.ai 새 대화를 요청 문구와 함께 연다', opened.length === 1 && opened[0] === 'https://claude.ai/new?q=' + encodeURIComponent(ask), JSON.stringify({ opened, ask }))
+  check('Claude에서 열기: 이미지는 클립보드에 (붙여넣기용)', !!toClaude && toClaude.pink > 0.1 && toClaude.bandInk > 50, JSON.stringify(toClaude))
+
   // ── 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 자유/사각) ──
   const freeOnBar = (await p.locator('.ft-lasso [aria-label="자유 올가미"]').getAttribute('aria-checked')) === 'true'
   const styleHidden = !(await p.locator('.ft-bar .ft-style').first().isVisible())

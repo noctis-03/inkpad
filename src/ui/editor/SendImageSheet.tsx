@@ -3,6 +3,8 @@
 //  - 담을 것: 글씨만 / 글씨 + PDF / PDF만(필기 없이 PDF·속지만). 올가미는 기본 글씨만, 페이지는 기본 글씨 + PDF —
 //    고른 값은 이 기기에 기억한다
 //  - 요청 문구는 이미지 위쪽 띠에 글자로 넣는다 (공유·붙여넣기로 문구가 따로 가는지는 받는 앱마다 달라서)
+//  - 'Claude에서 열기'는 이미지를 복사하고 claude.ai 새 대화를 요청 문구가 입력창에 들어간 채로 연다 — 이미지는 주소에
+//    실을 수 없어 사용자가 붙여넣는다(그 전에는 이미지가 어디에도 올라가지 않는다)
 import { useEffect, useMemo, useState } from 'react'
 import { useUI, type SendImageTarget } from '../../app/store'
 import type { Engine } from '../../engine/engine'
@@ -15,6 +17,10 @@ type ShareNav = Navigator & { canShare?: (d: ShareData) => boolean }
 
 /** 클립보드에 이미지를 쓸 수 있는가 (iPadOS Safari 13.4+, 크롬) */
 const canCopyImage = () => typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write
+
+/** claude.ai 새 대화 — ?q= 로 입력창에 문구를 채운다(Claude 앱이 있으면 기기 설정에 따라 앱으로 열린다) */
+const CLAUDE_NEW = 'https://claude.ai/new'
+export const claudeUrl = (q: string) => (q ? `${CLAUDE_NEW}?q=${encodeURIComponent(q)}` : CLAUDE_NEW)
 
 const LS = 'inkpad.sendImage.v1'
 /** 이미지에 담을 것 — 글씨만 / 글씨 + PDF·속지 / PDF·속지만 */
@@ -172,6 +178,19 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
       () => toast(canShare ? '복사하지 못했습니다. 공유로 보내 보세요.' : '복사하지 못했습니다. 저장해서 보내 보세요.', 'error')
     )
   }
+  // Claude에서 열기 — 복사와 새 창 열기를 둘 다 누른 처리기 안에서 곧바로 한다(하나를 기다리면 Safari가 다른 하나를 막는다)
+  const openInClaude = () => {
+    if (!blob) return
+    const wrote = navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    window.open(claudeUrl(caption), '_blank', 'noopener')
+    wrote.then(
+      () => {
+        toast('이미지를 복사했습니다 — Claude 입력창을 길게 눌러 붙여넣으세요.', 'success')
+        close()
+      },
+      () => toast('이미지를 복사하지 못했습니다. 저장한 뒤 Claude에 올려 주세요.', 'error')
+    )
+  }
   const share = () => {
     if (!file) return
     navigator.share({ files: [file], title: name }).then(close, (e) => {
@@ -213,7 +232,7 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
           )}
         </div>
         <p className="modal-note">
-          Claude 같은 AI 앱을 옆에 띄우고(화면 분할) 붙여넣으세요 — 요청 문구는 이미지 위쪽에 글자로 들어갑니다. 이 기기에서만 만들고 어디에도 올리지 않습니다. 메모·할 일 블록은 담기지 않습니다.
+          Claude 같은 AI 앱을 옆에 띄우고(화면 분할) 붙여넣으세요 — 요청 문구는 이미지 위쪽에 글자로 들어갑니다. 'Claude에서 열기'는 이미지를 복사하고 claude.ai 새 대화를 요청 문구와 함께 엽니다(이미지는 입력창에 붙여넣기). 이미지는 이 기기에서만 만들고, 붙여넣기 전에는 어디에도 올라가지 않습니다. 메모·할 일 블록은 담기지 않습니다.
         </p>
         <div className="modal-actions wrap">
           <button className="text-btn" onClick={close}>
@@ -226,6 +245,11 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
           ) : (
             <button className="text-btn" onClick={save} disabled={!ready}>
               <Icon name="download" size={18} /> 저장
+            </button>
+          )}
+          {canCopyImage() && (
+            <button className="text-btn" onClick={openInClaude} disabled={!ready}>
+              <Icon name="external" size={18} /> Claude에서 열기
             </button>
           )}
           {canCopyImage() && (
