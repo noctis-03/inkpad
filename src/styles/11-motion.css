@@ -332,8 +332,8 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   from { transform: translateX(-130%); }
   to { transform: translateX(130%); }
 }
-/* 노트 열기·닫기 원형 리빌(App Panes) — 바뀌기 전 화면을 잠깐 남겨 둔 칸은 누를 수 없다.
-   원 안에 아래 칸이 비쳐 보이지 않게 그동안은 칸마다 바탕을 깐다 (편집 화면이 아직 불러오는 중이어도) */
+/* 노트 열기·닫기 크로스페이드(App Panes) — 바뀌기 전 화면을 잠깐 남겨 둔 칸은 누를 수 없다.
+   겹쳐 바꾸는 동안 위 칸에 아래 칸이 비쳐 섞이지 않게 칸마다 바탕을 깐다 (편집 화면이 아직 불러오는 중이어도) */
 .pane-leaving {
   pointer-events: none;
 }
@@ -341,23 +341,7 @@ html[data-motion='rich'] .doc-list[data-enter] .doc-card {
   background: var(--paper);
   isolation: isolate; /* 칸마다 쌓임을 따로 — 아래 칸의 z-index 높은 머리·버튼이 위 칸을 뚫고 보이지 않게(나중 칸이 위) */
 }
-/* 카드 이동(ui/motion/cardFlight) — 카드 미리보기가 페이지 자리로 날아가는 고스트. 크기는 도착 자리, 움직임은 transform·clip-path.
-   바탕(카드 미색 → 페이지 흰색)은 고스트가 애니메이션으로 바꾸고 그림은 곱하기로 얹어 카드와 같게 보인다 */
-.doc-fly {
-  position: fixed;
-  z-index: 45;
-  pointer-events: none;
-  transform-origin: 0 0;
-  background: var(--thumb-paper) top left / 100% auto no-repeat;
-  background-blend-mode: multiply;
-  box-shadow: var(--e2);
-  will-change: transform;
-}
-/* 고스트가 나는 동안 원래 카드 미리보기는 비워 둔다 (같은 그림이 두 개로 보이지 않게) */
-.doc-card.is-flying .doc-thumb {
-  visibility: hidden;
-}
-/* 편집 화면 아래에서 마운트되는 라이브러리는 등장 효과 없이 — 원이 줄어들며 드러낸다 */
+/* 편집 화면 아래에서 마운트되는 라이브러리는 등장 효과 없이 — 편집 화면이 흐려지며 드러낸다 */
 .panes:has(.pane-leaving) .library {
   animation: none;
 }

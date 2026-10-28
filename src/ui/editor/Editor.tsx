@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
-import { providePageRect } from '../motion/docPage'
+import { crossfading } from '../motion/motion'
 import { askPdfPassword } from '../../app/dialogs'
 import { Engine } from '../../engine/engine'
 import { PdfCache } from '../../engine/pdf/pdfCache'
@@ -83,26 +83,13 @@ export function Editor({ docId }: { docId: ID }) {
   // 최근 열람 기록 — 라이브러리 '전체'를 다시 누를 때 최근 열람한 노트를 보여 주는 데 쓴다
   useEffect(() => trackRecentDoc(docId), [docId])
 
-  // 노트 열림 애니메이션 — 라이브러리 카드에서 열면 편집 화면이 그 카드에서 원으로 퍼진다(App Panes가 칸째로 한다).
-  // 카드 없이 열 때(딥링크·새 문서 만들기·탭)는 조용히 페이드업. 모션 끄기면 둘 다 생략
+  // 노트 열림 애니메이션 — 홈에서 열면 App Panes가 칸째로 크로스페이드하므로 그대로 두고,
+  // 그 밖(탭 전환·딥링크·불러오기가 끝난 뒤)에는 조용히 페이드업. 모션 끄기면 생략
   useEffect(() => {
     const el = rootRef.current
-    if (!el || document.documentElement.dataset.motion === 'off') return
-    const rect = useUI.getState().docCardRect
-    useUI.setState({ docCardRect: null })
-    if (!rect) el.classList.add('doc-enter') // 카드에서 열었으면 원형 리빌이 이미 보여 준다
+    if (!el || document.documentElement.dataset.motion === 'off' || crossfading(el)) return
+    el.classList.add('doc-enter')
   }, [])
-
-  // '카드 이동' 모션(App Panes)이 카드를 보낼 페이지 자리 — 카드 미리보기가 첫 페이지라 첫 페이지가 보이면 그리로,
-  // 아니면(다시 열어 보던 자리가 뒤쪽) 지금 보는 페이지로
-  useEffect(() => {
-    if (!engine) return
-    return providePageRect(() => {
-      const first = engine.pageScreenRect(0)
-      const box = engine.root.getBoundingClientRect()
-      return first && first.bottom > box.top + 40 && first.top < box.bottom ? first : engine.pageScreenRect()
-    })
-  }, [engine])
 
   // 편집 잠금 — 노트를 연 동안 쥐고 있는다. 엔진을 다시 만들어도(동기화 뒤 다시 열기) 놓지 않는다.
   useEffect(() => {

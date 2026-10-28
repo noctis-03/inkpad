@@ -113,23 +113,6 @@ function MotionSelect() {
   )
 }
 
-/** 노트 열기·닫기 움직임 — 원형 리빌 / 카드가 페이지 자리로 날아간다 (App Panes) */
-function OpenMotionSelect() {
-  const v = useUI((s) => s.settings.openMotion ?? 'circle')
-  const set = useUI((s) => s.setSettings)
-  return (
-    <Segmented
-      value={v}
-      label="노트 열기"
-      onChange={(openMotion) => set({ openMotion })}
-      options={[
-        ['circle', '원형'],
-        ['card', '카드 이동']
-      ]}
-    />
-  )
-}
-
 /** 테마 (다크 모드) */
 function ThemeSelect() {
   const v = useUI((s) => s.settings.theme ?? 'auto')
@@ -321,9 +304,6 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         </Row>
         <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다" asLabel={false}>
           <MotionSelect />
-        </Row>
-        <Row label="노트 열기" hint="라이브러리 카드에서 노트를 열고 닫을 때 — 카드에서 원으로 퍼지기, 또는 카드가 페이지 자리로 날아가기" asLabel={false}>
-          <OpenMotionSelect />
         </Row>
       </section>
 

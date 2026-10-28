@@ -17,3 +17,6 @@ export const dur = (ms: number) => (motionLevel() === 'off' ? 0 : ms)
 
 /** "풍부" 단계에서만 켜지는 장식의 지속시간 */
 export const durRich = (ms: number) => (motionLevel() === 'rich' ? ms : 0)
+
+/** 이 화면이 지금 App Panes의 크로스페이드로 나타나는 중인가 (홈 ↔ 노트) — 그때는 화면 자체 등장 효과를 겹치지 않는다 */
+export const crossfading = (el: Element) => !!el.closest('.panes')?.querySelector(':scope > .pane-leaving')
