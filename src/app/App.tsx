@@ -195,8 +195,8 @@ interface Leaving {
   route: Route
   dir: 'open' | 'close'
 }
-const FADE_IN_MS = 280
-const FADE_OUT_MS = 240
+const FADE_IN_MS = 450
+const FADE_OUT_MS = 380
 const isHome = (r: Route) => r.name === 'library' || r.name === 'board'
 
 /** 이 화면 바뀜을 겹쳐 바꿀지 — 홈에서 노트를 열 때와 노트에서 홈으로 돌아갈 때만 (모션 끄기면 바로) */
