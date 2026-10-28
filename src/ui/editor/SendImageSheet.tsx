@@ -1,12 +1,14 @@
 // 이미지로 보내기 — 페이지(또는 올가미로 고른 영역)를 읽기 좋은 해상도로 다시 그려 복사·공유한다.
 // 화면 분할로 옆에 띄운 Claude 같은 AI 앱에 붙여넣어 묻는 용도. 이 기기 안에서만 만들고 어디에도 올리지 않는다(네트워크 0).
-//  - 올가미는 기본 '글씨만'(PDF·속지 없이), 페이지는 기본 PDF 포함 — 고른 값은 이 기기에 기억한다
+//  - 담을 것: 글씨만 / 글씨 + PDF / PDF만(필기 없이 PDF·속지만). 올가미는 기본 글씨만, 페이지는 기본 글씨 + PDF —
+//    고른 값은 이 기기에 기억한다
 //  - 요청 문구는 이미지 위쪽 띠에 글자로 넣는다 (공유·붙여넣기로 문구가 따로 가는지는 받는 앱마다 달라서)
 import { useEffect, useMemo, useState } from 'react'
 import { useUI, type SendImageTarget } from '../../app/store'
 import type { Engine } from '../../engine/engine'
 import { saveFile } from '../../io/download'
 import { Icon } from '../Icon'
+import { Segmented } from '../Segmented'
 import { useEscClose } from '../sheetParts'
 
 type ShareNav = Navigator & { canShare?: (d: ShareData) => boolean }
@@ -15,17 +17,27 @@ type ShareNav = Navigator & { canShare?: (d: ShareData) => boolean }
 const canCopyImage = () => typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write
 
 const LS = 'inkpad.sendImage.v1'
+/** 이미지에 담을 것 — 글씨만 / 글씨 + PDF·속지 / PDF·속지만 */
+type Layers = 'ink' | 'both' | 'bg'
+const LAYERS: [Layers, string][] = [
+  ['ink', '글씨만'],
+  ['both', '글씨 + PDF'],
+  ['bg', 'PDF만']
+]
 interface Prefs {
-  /** 올가미·페이지 각각 PDF·속지 포함 */
-  selBg: boolean
-  pageBg: boolean
+  /** 올가미·페이지 각각 담을 것 */
+  sel: Layers
+  page: Layers
   /** 이미지에 요청 문구 넣기 */
   caption: boolean
 }
 function loadPrefs(): Prefs {
-  const def: Prefs = { selBg: false, pageBg: true, caption: true }
+  const def: Prefs = { sel: 'ink', page: 'both', caption: true }
   try {
-    return { ...def, ...JSON.parse(localStorage.getItem(LS) ?? '{}') }
+    const raw = JSON.parse(localStorage.getItem(LS) ?? '{}') as Partial<Prefs> & { selBg?: boolean; pageBg?: boolean }
+    // 예전 'PDF·속지 포함' 체크(selBg·pageBg)는 글씨 + PDF / 글씨만으로 옮긴다
+    const old = (v: boolean | undefined): Layers | undefined => (v === undefined ? undefined : v ? 'both' : 'ink')
+    return { sel: raw.sel ?? old(raw.selBg) ?? def.sel, page: raw.page ?? old(raw.pageBg) ?? def.page, caption: raw.caption ?? def.caption }
   } catch {
     return def
   }
@@ -91,7 +103,10 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
   const close = () => useUI.setState({ sendImage: null })
   const isSel = target === 'selection'
   const [prefs, setPrefs] = useState(loadPrefs)
-  const bg = paged && (isSel ? prefs.selBg : prefs.pageBg)
+  // 페이지가 없는 무한 캔버스는 PDF·속지가 없으므로 늘 글씨만
+  const layers: Layers = paged ? (isSel ? prefs.sel : prefs.page) : 'ink'
+  const bg = layers !== 'ink'
+  const ink = layers !== 'bg'
   // 고치지 않았으면 PDF 포함을 바꿀 때 기본 문구도 따라 바뀐다
   const [custom, setCustom] = useState<string | null>(null)
   const text = custom ?? defaultCaption(bg)
@@ -123,7 +138,7 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
     setFailed(false)
     void (async () => {
       try {
-        let b = await engine.exportImage(target, { background: bg })
+        let b = await engine.exportImage(target, { background: bg, ink })
         if (b && caption) b = await withCaption(b, caption)
         if (!alive) return
         if (!b) return setFailed(true)
@@ -138,7 +153,7 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
       alive = false
       if (u) URL.revokeObjectURL(u)
     }
-  }, [engine, target, bg, caption])
+  }, [engine, target, bg, ink, caption])
 
   useEscClose(close)
 
@@ -177,10 +192,10 @@ export function SendImageSheet({ engine, title, target, paged }: { engine: Engin
         </div>
         <div className="send-image-opts">
           {paged && (
-            <label className="send-opt">
-              <input type="checkbox" checked={bg} onChange={(e) => update(isSel ? { selBg: e.target.checked } : { pageBg: e.target.checked })} />
-              PDF·속지 포함 {!bg && <small>(지금은 글씨만)</small>}
-            </label>
+            <div className="send-layers">
+              <span>담을 것</span>
+              <Segmented value={layers} options={LAYERS} onChange={(v) => update(isSel ? { sel: v } : { page: v })} label="담을 것" />
+            </div>
           )}
           <label className="send-opt">
             <input type="checkbox" checked={prefs.caption} onChange={(e) => update({ caption: e.target.checked })} />

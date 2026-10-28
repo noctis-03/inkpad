@@ -572,8 +572,15 @@
   height: 18px;
   accent-color: var(--accent);
 }
-.send-opt small {
-  color: var(--muted);
+/* 담을 것 — 글씨만 / 글씨 + PDF / PDF만 */
+.send-layers {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-sm);
+}
+.send-layers .seg {
+  flex: 1;
 }
 .send-caption {
   width: 100%;

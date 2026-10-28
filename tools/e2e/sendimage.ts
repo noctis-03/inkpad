@@ -1,6 +1,6 @@
 // 이미지로 보내기 — 페이지·올가미 영역을 읽기 좋은 해상도로 다시 그려 복사한다 (AI 앱에 붙여넣기용)
 //  - 페이지 전체: 기본 PDF 포함, 화면 줌과 관계없이 같은 크기(긴 변 2000px, 1pt에 4px까지)
-//  - 올가미: 감싼 모양 그대로 자른다(고른 획 기준이 아니다). 기본 글씨만, 'PDF·속지 포함'을 켜면 밑의 PDF까지
+//  - 올가미: 감싼 모양 그대로 자른다(고른 획 기준이 아니다). 담을 것: 기본 글씨만, '글씨 + PDF'는 밑의 PDF까지, 'PDF만'은 필기 없이 PDF만
 //  - 자유 / 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 바로), 획 없이 감싸도 '영역'으로 보낼 수 있다
 //  - 요청 문구는 이미지 위쪽 띠에 글자로 — 끄면 띠 없이
 //  - 복사하면 클립보드에 PNG — 네트워크는 쓰지 않는다
@@ -69,6 +69,8 @@ export default async function sendimage(ctx: Ctx) {
       [target, background, measure] as const
     )
   const sheet = p.locator('.modal.send-image')
+  /** 담을 것(글씨만 / 글씨 + PDF / PDF만) 중 고른 것 */
+  const layersOn = (name: string) => sheet.getByRole('radio', { name, exact: true }).getAttribute('aria-checked').then((v) => v === 'true')
   const copyFromSheet = async () => {
     await sheet.locator('.send-image-preview img').waitFor({ timeout: 15000 })
     await sheet.getByRole('button', { name: '복사' }).click()
@@ -86,7 +88,7 @@ export default async function sendimage(ctx: Ctx) {
   await p.click('.toolbar-doc [aria-label="더보기"]')
   await p.locator('.menu').getByRole('menuitem', { name: '이 페이지를 이미지로 보내기' }).click()
   await sheet.waitFor()
-  const pageBgOn = await sheet.getByLabel(/PDF·속지 포함/).isChecked()
+  const pageBgOn = await layersOn('글씨 + PDF')
   const pageCaption = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
   const page1 = await copyFromSheet()
   const pageRaw = await raw({ page: 0 }, true)
@@ -120,28 +122,41 @@ export default async function sendimage(ctx: Ctx) {
   check('올가미: 감싼 모양대로 자른다 — 마름모 밖(모서리)은 흰 바탕, 안은 PDF', diaBg?.corner === '255,255,255' && /^25\d,2\d\d,2\d\d$/.test(diaBg?.inside ?? '') && Math.abs((diaBg?.w ?? 0) / (diaBg?.h ?? 1) - 1) < 0.1, JSON.stringify(diaBg))
   await p.click('.selection-bar [aria-label="이미지로 보내기"]')
   await sheet.waitFor()
-  const selBgOn = await sheet.getByLabel(/PDF·속지 포함/).isChecked()
+  const selBgOn = !(await layersOn('글씨만'))
   const selCaption = await sheet.getByLabel('요청 문구', { exact: true }).inputValue()
   const inkOnly = await copyFromSheet()
   check('올가미: 기본은 글씨만 (PDF 없이), 요청 문구는 손글씨 받아쓰기', !selBgOn && selCaption.includes('손글씨를 그대로') && !!inkOnly && inkOnly.pink < 0.01 && inkOnly.ink > 20 && inkOnly.bandInk > 50, JSON.stringify({ selBgOn, selCaption, inkOnly }))
   check('올가미: 글씨만도 감싼 모양·크기 그대로', !!diaInk && diaInk.w === diaBg?.w && diaInk.h === diaBg?.h && diaInk.pink < 0.01, JSON.stringify(diaInk))
 
-  // PDF·속지 포함을 켜면 밑의 PDF까지 — 고른 값은 기억한다
+  // 글씨 + PDF를 고르면 밑의 PDF까지 — 고른 값은 기억한다
   await p.click('.selection-bar [aria-label="이미지로 보내기"]')
   await sheet.waitFor()
-  await sheet.getByLabel(/PDF·속지 포함/).check()
+  await sheet.getByRole('radio', { name: '글씨 + PDF', exact: true }).click()
   await sleep(300)
   const withBg = await copyFromSheet()
-  check('올가미: PDF·속지 포함을 켜면 밑의 PDF까지', !!withBg && withBg.pink > 0.1 && withBg.ink > 20, JSON.stringify(withBg))
+  check('올가미: 글씨 + PDF를 고르면 밑의 PDF까지', !!withBg && withBg.pink > 0.1 && withBg.ink > 20, JSON.stringify(withBg))
   // 요청 문구를 끄면 띠 없이 영역 그대로
   await p.click('.selection-bar [aria-label="이미지로 보내기"]')
   await sheet.waitFor()
-  const remembered = await sheet.getByLabel(/PDF·속지 포함/).isChecked()
+  const remembered = await layersOn('글씨 + PDF')
   await sheet.getByLabel('이미지에 요청 문구 넣기').uncheck()
   await sleep(300)
   const noCap = await copyFromSheet()
   check('올가미: PDF 포함은 기억하고, 요청 문구를 끄면 띠 없이', remembered && !!noCap && noCap.w === diaBg?.w && noCap.h === diaBg?.h, JSON.stringify({ remembered, noCap }))
   check('올가미: 선택은 그대로 (보낸 뒤에도 이어서 옮기기·지우기)', (await p.locator('.selection-bar').count()) === 1)
+
+  // PDF만 — 필기는 빼고 밑의 PDF·속지만 (감싼 모양·크기는 그대로)
+  await p.click('.selection-bar [aria-label="이미지로 보내기"]')
+  await sheet.waitFor()
+  await sheet.getByRole('radio', { name: 'PDF만', exact: true }).click()
+  await sleep(300)
+  const bgOnly = await copyFromSheet()
+  check('올가미: PDF만을 고르면 필기 없이 PDF만', !!bgOnly && bgOnly.pink > 0.1 && bgOnly.ink === 0 && bgOnly.w === diaBg?.w && bgOnly.h === diaBg?.h, JSON.stringify(bgOnly))
+  await p.click('.selection-bar [aria-label="이미지로 보내기"]')
+  await sheet.waitFor()
+  check('올가미: PDF만도 기억한다', await layersOn('PDF만'))
+  await sheet.getByRole('button', { name: '닫기' }).click()
+  await sheet.waitFor({ state: 'detached' })
 
   // ── 사각 올가미 (올가미일 때 도구창의 색·굵기 자리에 자유/사각) ──
   const freeOnBar = (await p.locator('.ft-lasso [aria-label="자유 올가미"]').getAttribute('aria-checked')) === 'true'
