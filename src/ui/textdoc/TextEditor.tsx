@@ -3,6 +3,7 @@
 // contenteditable은 React가 내용을 다시 그리지 않는다: 블록 HTML이 DOM과 다를 때(되돌리기·나누기)만 innerHTML을 쓴다.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useUI } from '../../app/store'
+import { crossfading } from '../motion/motion'
 import { TAP_SLOP_PX } from '../../engine/constants'
 import { normalizeBlockUrl } from '../../engine/blocks'
 import { db } from '../../storage/db'
@@ -99,13 +100,11 @@ export function TextEditor({ docId }: { docId: ID }) {
 
   useEffect(() => trackRecentDoc(docId), [docId])
 
-  // 여는 애니메이션 — 노트 편집 화면과 같게 (카드에서 열면 App Panes의 원형 리빌, 아니면 페이드업)
+  // 여는 애니메이션 — 노트 편집 화면과 같게 (홈에서 열면 App Panes의 크로스페이드, 아니면 페이드업)
   useEffect(() => {
     const el = rootRef.current
-    if (!el || document.documentElement.dataset.motion === 'off') return
-    const rect = useUI.getState().docCardRect
-    useUI.setState({ docCardRect: null })
-    if (!rect) el.classList.add('doc-enter')
+    if (!el || document.documentElement.dataset.motion === 'off' || crossfading(el)) return
+    el.classList.add('doc-enter')
   }, [])
 
   // 편집 잠금 — 같은 문서를 두 탭에서 고치지 않게 (노트와 같은 잠금)

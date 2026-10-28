@@ -68,8 +68,8 @@ type Section =
 
 /** 카드를 이만큼 누르고 있으면 선택 모드 */
 const LONG_PRESS_MS = 500
-/** 편집 화면이 카드로 줄어드는 시간(App Panes의 닫기 원형 리빌) — 다 줄어든 뒤 카드에 settle */
-const RETURN_SETTLE_MS = 440
+/** 편집 화면이 흐려지는 시간(App Panes의 크로스페이드) — 다 사라진 뒤 돌아온 카드에 settle */
+const RETURN_SETTLE_MS = 240
 /** 사이드바에서 펼친 카테고리 묶음 — 하나만. 앱이 떠 있는 동안만 기억한다(편집 화면에 다녀와도 그대로, 새로고침·다시 켜면 모두 접힘) */
 let openGroupMem: string | null = null
 /** 카드의 [태그] (묶음 화면의 소제목) */
@@ -428,9 +428,9 @@ export function Library() {
     setRevealKey(key)
   }
   /** 노트 열기 — 편집모드(false) / 뷰어보드(true) / 낙서모드('scratch', 저장하지 않는다) */
-  const openIn = (d: DocumentMeta, card: HTMLElement | null | undefined, how: boolean | 'scratch') => {
+  const openIn = (d: DocumentMeta, how: boolean | 'scratch') => {
     useUI.setState({ viewOnly: how === true, scratch: how === 'scratch' })
-    open(d, card)
+    open(d)
   }
 
   /**
@@ -826,7 +826,7 @@ export function Library() {
   }, [query])
 
   // 최초 마운트 시 1회 카드 등장 — rich에서만 지연을 준다.
-  // 편집 화면에서 돌아올 때는 하지 않는다: 원형 리빌이 라이브러리를 드러내고, 카드가 움직이는 중이면 원이 줄어들 자리가 어긋난다
+  // 편집 화면에서 돌아올 때는 하지 않는다: 크로스페이드가 라이브러리를 드러내므로 카드까지 움직이면 어수선하다
   useEffect(() => {
     if (!ready || enteredRef.current) return
     enteredRef.current = true
@@ -848,22 +848,17 @@ export function Library() {
     prevSync.current = new Map(syncStates)
   }, [syncStates, settleDoc])
 
-  // 편집 화면에서 복귀: 원형 리빌(App Panes)이 줄어들 카드 자리를 알리고, 다 줄어든 뒤 카드에 settle
+  // 편집 화면에서 복귀: 편집 화면이 흐려지는(App Panes 크로스페이드) 뒤로 라이브러리가 조용히 놓여 있다가, 다 사라지면 그 카드에 settle
   useEffect(() => {
     if (!ready) return
     const rid = useUI.getState().returnDocId
     if (!rid) return
     useUI.setState({ returnDocId: null })
     requestAnimationFrame(() => {
-      // 편집 화면에 가려 보이지 않는 카드 등장(useFlip)은 끝까지 돌려 둔다 — 움직이는 중에 재면 원이 어긋난 자리로 줄어든다
+      // 흐려지는 편집 화면 너머로 카드가 튀어 들어오지 않게 등장(useFlip)은 끝까지 돌려 둔다
       gridRef.current?.querySelectorAll<HTMLElement>('[data-flip-key]').forEach((c) => c.getAnimations().forEach((an) => an.finish()))
       const card = document.querySelector<HTMLElement>(`.pane-main:not(.pane-leaving) [data-doc-id="${CSS.escape(rid)}"]`)
-      const thumb = card?.querySelector<HTMLElement>('.doc-thumb') ?? card
-      const r = thumb?.getBoundingClientRect()
-      // 카드가 없거나 화면 밖이면 강제 스크롤 없이 편집 화면만 흐려지게 한다
-      const visible = !!r && r.bottom > 0 && r.top < window.innerHeight
-      if (motionLevel() !== 'off') useUI.setState({ returnTarget: visible ? r : 'none' })
-      if (card) window.setTimeout(() => settle(card), visible ? dur(RETURN_SETTLE_MS) : 0)
+      if (card) window.setTimeout(() => settle(card), dur(RETURN_SETTLE_MS))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
@@ -913,12 +908,8 @@ export function Library() {
 
   // ───────── 작업 ─────────
 
-  /** 노트 열기 — 편집 화면이 이 카드 미리보기 한가운데서 원으로 퍼진다 (원형 리빌은 App의 Panes가 한다) */
-  const open = (d: DocumentMeta, card?: HTMLElement | null) => {
-    const thumb = card?.querySelector<HTMLElement>('.doc-thumb') ?? card
-    useUI.setState({ docCardRect: thumb?.getBoundingClientRect() ?? null })
-    navigate({ name: 'editor', docId: d.id })
-  }
+  /** 노트 열기 — 라이브러리 위로 편집 화면이 서서히 나타난다 (크로스페이드는 App의 Panes가 한다) */
+  const open = (d: DocumentMeta) => navigate({ name: 'editor', docId: d.id })
 
   const importPdfFiles = async (files: File[], folderId: ID | null) => {
     let last: DocumentMeta | null = null
@@ -1730,7 +1721,7 @@ export function Library() {
                     onClick={(e) => {
                       if (selectClick('doc:' + i.d.id)) return
                       if (section.kind === 'trash') return setMenu({ doc: i.d, x: 0, y: 0 })
-                      cardTap(i.d.id, () => openIn(i.d, e.currentTarget, false))
+                      cardTap(i.d.id, () => openIn(i.d, false))
                     }}
                   >
                     <div className="doc-thumb">
@@ -1746,13 +1737,13 @@ export function Library() {
                       {prefs.view === 'grid' &&
                         openPanel(
                           docMetaText(i.d),
-                          { icon: 'edit', label: '편집', aria: '편집 — 편집모드로 열기', run: (card) => openIn(i.d, card, false) },
+                          { icon: 'edit', label: '편집', aria: '편집 — 편집모드로 열기', run: () => openIn(i.d, false) },
                           [
-                            { icon: 'eye', label: '보기', aria: '보기 — 뷰어보드(읽기 전용)로 열기', run: (card) => openIn(i.d, card, true) },
+                            { icon: 'eye', label: '보기', aria: '보기 — 뷰어보드(읽기 전용)로 열기', run: () => openIn(i.d, true) },
                             // 낙서(저장 안 하는 필기)는 필기 노트에만
                             ...(i.d.mode === 'text'
                               ? []
-                              : [{ icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: (card: HTMLElement | null | undefined) => openIn(i.d, card, 'scratch') }])
+                              : [{ icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: () => openIn(i.d, 'scratch') }])
                           ]
                         )}
                     </div>
