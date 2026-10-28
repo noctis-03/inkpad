@@ -63,6 +63,15 @@ export function App() {
     }
   }, [])
 
+  // 밀도 — <html data-density>에 반영한다 (토큰은 styles/01-base.css). 설정에서 바꾸면 즉시
+  useEffect(() => {
+    const apply = () => {
+      document.documentElement.dataset.density = useUI.getState().settings.density ?? 'comfortable'
+    }
+    apply()
+    return useUI.subscribe(apply)
+  }, [])
+
   // 전역 누름 피드백 (ui/motion/press)
   useEffect(() => {
     installPress()

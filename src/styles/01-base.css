@@ -152,10 +152,19 @@
   --h-control-sm: 28px;    /* 작은 버튼 */
   --h-row: 32px;           /* 목록 행(왼쪽 메뉴·⋯ 메뉴) */
   --h-tap: 40px;           /* 펜·손가락이 자주 누르는 곳(편집 도구창 등) — 이보다 줄이지 않는다 */
+  /* 위 --h-control·--h-row·--fs-base는 '촘촘하게' 값 — 기본 '넉넉하게'는 아래 :root:not([data-density='compact'])가 키운다 */
   --toolbar-h: var(--h-bar);
   --safe-top: env(safe-area-inset-top, 0px);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
   color: var(--ink);
+}
+
+/* 밀도 (설정 > 밀도, <html data-density>) — 기본 '넉넉하게'는 손가락으로 누르기 편하게 목록 줄·컨트롤·기본 글자를 한 단계 키운다.
+   '촘촘하게'(data-density='compact')는 위 :root 값 그대로. 크기는 모두 이 토큰을 따르므로 여기만 바꾸면 화면 전체가 따라간다 */
+:root:not([data-density='compact']) {
+  --h-control: 38px;
+  --h-row: 40px;
+  --fs-base: 14px;
 }
 
 /* ── 다크 모드: 먹지(墨紙) — 화면은 어둡게, 종이는 그대로 흰색 ──

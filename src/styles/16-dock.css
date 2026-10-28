@@ -1,23 +1,33 @@
 /* ───────── 상태 칸 (ui/dock/StatusDock) — 탭 바 오른쪽 ─────────
    한 줄짜리 칸을 좌우로 넘겨 전송·동기화·저장 공간을 본다. 누르면 그 자리에서 커져 자세히 보는 창(.dock-panel)이 된다 */
+/* 누르는 자리(.dock)는 탭 바 높이를 다 쓰고(손가락 대상 32px 이상), 눈에 보이는 알약(.dock-pill)은 밀도를 따라 그 안에 */
 .dock {
-  position: relative;
   flex: 0 0 auto;
-  align-self: center;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
   width: clamp(132px, 24vw, 248px);
-  height: 26px;
   margin-left: 6px;
+  cursor: pointer;
+  transition: opacity .16s var(--ft-ease);
+}
+.dock-pill {
+  position: relative;
+  width: 100%;
+  height: calc(var(--h-control) - 8px); /* 넉넉하게 30px · 촘촘하게 26px */
   border-radius: var(--r-pill);
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
   overflow: hidden;
-  cursor: pointer;
-  transition: opacity .16s var(--ft-ease), box-shadow .2s var(--ft-ease);
+  transition: box-shadow .2s var(--ft-ease);
 }
-.dock:hover {
+.dock:hover .dock-pill {
   box-shadow: 0 0 0 1px var(--muted-2);
 }
 .dock:focus-visible {
+  outline: none;
+}
+.dock:focus-visible .dock-pill {
   outline: 2px solid var(--focus-outline);
   outline-offset: 2px;
 }

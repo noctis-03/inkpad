@@ -113,6 +113,23 @@ function MotionSelect() {
   )
 }
 
+/** 밀도 — 넉넉하게(기본) / 촘촘하게 */
+function DensitySelect() {
+  const v = useUI((s) => s.settings.density ?? 'comfortable')
+  const set = useUI((s) => s.setSettings)
+  return (
+    <Segmented
+      value={v}
+      label="밀도"
+      onChange={(density) => set({ density })}
+      options={[
+        ['comfortable', '넉넉하게'],
+        ['compact', '촘촘하게']
+      ]}
+    />
+  )
+}
+
 /** 테마 (다크 모드) */
 function ThemeSelect() {
   const v = useUI((s) => s.settings.theme ?? 'auto')
@@ -304,6 +321,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         </Row>
         <Row label="모션" hint="자동은 기기의 ‘동작 줄이기’ 설정을 따릅니다" asLabel={false}>
           <MotionSelect />
+        </Row>
+        <Row label="밀도" hint="넉넉하게는 손가락으로 누르기 편하게 목록·버튼·글자를 한 단계 키웁니다" asLabel={false}>
+          <DensitySelect />
         </Row>
       </section>
 

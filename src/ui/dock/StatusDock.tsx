@@ -45,6 +45,8 @@ export function StatusDock() {
   /** 닫는 중 — 줄어드는 동안 창을 남긴다 */
   const [closing, setClosing] = useState(false)
   const dock = useRef<HTMLDivElement>(null)
+  /** 눈에 보이는 알약 — 누르는 자리(.dock)는 탭 바 높이만큼 넉넉하고, 펼친 창은 이 알약에서 자란다 */
+  const pill = useRef<HTMLDivElement>(null)
   const pager = useRef<HTMLDivElement>(null)
   const activities = useActivities()
 
@@ -130,7 +132,7 @@ export function StatusDock() {
   // ── 펼치기 ──
   const panel = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState<Box | null>(null)
-  const anchor = () => dock.current!.getBoundingClientRect()
+  const anchor = () => pill.current!.getBoundingClientRect()
   const toggle = () => {
     if (swallow.current) {
       swallow.current = false
@@ -168,7 +170,7 @@ export function StatusDock() {
   const close = useCallback(() => {
     const el = panel.current
     if (!el || closing) return
-    const to = dock.current!.getBoundingClientRect()
+    const to = pill.current!.getBoundingClientRect()
     const t = dur(320)
     const done = () => {
       setOpen(false)
@@ -231,28 +233,30 @@ export function StatusDock() {
           }
         }}
       >
-        <div
-          ref={pager}
-          className="dock-pager"
-          onScroll={settle}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onWheel={onWheel}
-        >
-          {DOCK_PAGES.map((p, i) => (
-            <div key={p.id} className="dock-page" aria-hidden={i !== page}>
-              <p.Compact />
-            </div>
-          ))}
+        <div className="dock-pill" ref={pill}>
+          <div
+            ref={pager}
+            className="dock-pager"
+            onScroll={settle}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onWheel={onWheel}
+          >
+            {DOCK_PAGES.map((p, i) => (
+              <div key={p.id} className="dock-page" aria-hidden={i !== page}>
+                <p.Compact />
+              </div>
+            ))}
+          </div>
+          <div className="dock-dots" aria-hidden="true">
+            {DOCK_PAGES.map((p, i) => (
+              <i key={p.id} className={i === page ? 'is-on' : ''} />
+            ))}
+          </div>
+          {unseenError && <span className="dock-alert" aria-label="실패한 일이 있습니다" />}
         </div>
-        <div className="dock-dots" aria-hidden="true">
-          {DOCK_PAGES.map((p, i) => (
-            <i key={p.id} className={i === page ? 'is-on' : ''} />
-          ))}
-        </div>
-        {unseenError && <span className="dock-alert" aria-label="실패한 일이 있습니다" />}
       </div>
 
       {open &&
