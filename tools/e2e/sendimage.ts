@@ -86,7 +86,7 @@ export default async function sendimage(ctx: Ctx) {
   }
 
   // ── 페이지 전체 (페이지 칩 메뉴) — 기본 PDF 포함 + 문구 띠 ──
-  await p.click('.page-chip[data-index="0"]')
+  await p.click('.page-chip[data-index="0"] .page-chip-menu')
   await p.locator('.menu').getByRole('menuitem', { name: '이미지로 보내기' }).click()
   await sheet.waitFor()
   const pageBgOn = await layersOn('글씨 + PDF')

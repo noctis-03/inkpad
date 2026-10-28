@@ -2,6 +2,7 @@
 //  - 페이지 위에는 얹지 않는다 (왼쪽 여백 → 모자라면 페이지 위쪽 틈 → 그래도 모자라면 숨김)
 //  - 폭 맞춤은 넓은 화면에서 칩 자리만큼 양옆을 비운다
 //  - 긴 페이지를 내려 읽는 동안 화면 위에 붙어 따라온다
+//  - '페이지 n' 아래에 버튼: ⋯ 페이지 메뉴 · 100% · 화면에 맞춤
 //  - 메뉴: 이미지로·AI로 보내기(상단 ⋯에서 옮겨 옴) + 페이지 더하기·복제·보조 용지·순서·삭제
 import type { Page } from 'playwright'
 import { createDoc, device, logsOf, openEditor, sleep, type Ctx } from './lib.ts'
@@ -18,7 +19,8 @@ const layout = (p: Page) =>
       .filter((c) => c.style.display !== 'none')
       .map((c) => {
         const r = c.getBoundingClientRect()
-        return { i: Number(c.dataset.index), text: c.textContent, chip: { l: r.left, t: r.top, r: r.right, b: r.bottom } }
+        const m = c.querySelector('.page-chip-menu')!.getBoundingClientRect()
+        return { i: Number(c.dataset.index), text: c.querySelector('.page-chip-label')?.textContent, chip: { l: r.left, t: r.top, r: r.right, b: r.bottom }, menu: { l: m.left, t: m.top, r: m.right, b: m.bottom } }
       })
     return {
       zoom,
@@ -41,10 +43,10 @@ export default async function pagechip(ctx: Ctx) {
   let L = await layout(p)
   const c1 = L.chips.find((c) => c.i === 0)
   check('폭 맞춤: 넓은 화면은 칩 자리만큼 양옆을 비운다', L.pages[0].l - L.host.l >= 56, JSON.stringify({ host: L.host, page: L.pages[0] }))
-  check('칩: 번호와 ⋯', c1?.text === '1', JSON.stringify(L.chips))
+  check('칩: 페이지 번호, 그 아래 메뉴 버튼', c1?.text === '페이지 1' && c1.menu.t >= c1.chip.t + 10, JSON.stringify(L.chips))
   check('…첫 페이지 바깥 왼쪽, 위 끝에 맞춰', !!c1 && c1.chip.r <= L.pages[0].l && Math.abs(c1.chip.t - L.pages[0].t) <= 1 && c1.chip.l >= L.host.l, JSON.stringify({ c1, page: L.pages[0] }))
   check('…어느 칩도 페이지 위에 얹히지 않는다', L.chips.every((c) => L.pages.every((pg) => !overlaps(c.chip, pg))), JSON.stringify(L))
-  check('…누르기 쉬운 크기 (32px 이상)', !!c1 && c1.chip.b - c1.chip.t >= 32)
+  check('…누르기 쉬운 크기 (32px 이상)', !!c1 && c1.menu.b - c1.menu.t >= 32 && c1.menu.r - c1.menu.l >= 32)
 
   // ── 상단 ⋯에는 '이 페이지를 …'이 없다 (페이지 칩으로 옮김) ──
   await p.click('.toolbar-doc [aria-label="더보기"]')
@@ -53,13 +55,13 @@ export default async function pagechip(ctx: Ctx) {
   await p.keyboard.press('Escape')
 
   // ── 메뉴 ──
-  await p.click('.page-chip[data-index="0"]')
+  await p.click('.page-chip[data-index="0"] .page-chip-menu')
   const items = await p.locator('.menu .menu-item').allTextContents()
   const want = ['이미지로 보내기', 'AI로 보내기', '앞에 새 페이지', '뒤에 새 페이지', '복제', '왼쪽에 보조 용지', '오른쪽에 보조 용지', '아래로', '삭제']
   check('메뉴: 이 페이지 보내기 + 페이지 다루기', want.every((w) => items.some((t) => t.trim() === w)) && !items.some((t) => t.trim() === '위로'), JSON.stringify(items))
   check('…메뉴 제목은 페이지 번호', (await p.locator('.menu .menu-label').textContent()) === '1페이지')
   const mb = await p.locator('.menu').boundingBox()
-  check('…메뉴는 칩 아래에', !!mb && !!c1 && mb.y >= c1.chip.b - 1 && Math.abs(mb.x - c1.chip.l) < 12, JSON.stringify({ mb, c1 }))
+  check('…메뉴는 메뉴 버튼 아래에', !!mb && !!c1 && mb.y >= c1.menu.b - 1 && Math.abs(mb.x - c1.menu.l) < 12, JSON.stringify({ mb, c1 }))
   await p.locator('.menu').getByRole('menuitem', { name: '뒤에 새 페이지' }).click()
   await sleep(300)
   const n = await p.evaluate(() => (window as unknown as { inkpad: { pages: unknown[] } }).inkpad.pages.length)
@@ -68,17 +70,32 @@ export default async function pagechip(ctx: Ctx) {
   // 둘째 칩 → 이미지로 보내기는 그 페이지
   await p.evaluate(() => (window as unknown as { inkpad: { scrollToPage: (i: number) => void } }).inkpad.scrollToPage(1))
   await sleep(400)
-  await p.click('.page-chip[data-index="1"]')
+  await p.click('.page-chip[data-index="1"] .page-chip-menu')
   await p.locator('.menu').getByRole('menuitem', { name: '이미지로 보내기' }).click()
   await p.locator('.modal.send-image .send-image-preview img').waitFor({ timeout: 15000 })
   check('…이미지로 보내기는 칩의 페이지 (2쪽)', (await p.locator('.modal.send-image .send-image-preview img').getAttribute('alt')) === '2쪽')
   await p.keyboard.press('Escape')
-  await p.click('.page-chip[data-index="1"]')
+  await p.click('.page-chip[data-index="1"] .page-chip-menu')
   await p.locator('.menu').getByRole('menuitem', { name: 'AI로 보내기' }).click()
   await p.locator('.modal.ai-send .send-image-preview img').waitFor({ timeout: 15000 })
   check('…AI로 보내기도 칩의 페이지', (await p.locator('.modal.ai-send .send-image-preview img').getAttribute('alt')) === '2쪽')
   await p.keyboard.press('Escape')
   await sleep(200)
+
+  // ── 100% · 화면에 맞춤 ──
+  const cam = () => p.evaluate(() => ({ ...(window as unknown as { inkpad: { cam: { x: number; y: number; zoom: number } } }).inkpad.cam }))
+  const fitZoom = (await cam()).zoom
+  await p.click('.page-chip[data-index="1"] [aria-label="배율 100%"]')
+  await sleep(150)
+  L = await layout(p)
+  const pc = (L.pages[1].l + L.pages[1].r) / 2 - (L.host.l + L.host.r) / 2
+  check('100%: 배율 100%, 페이지는 가로 가운데', Math.abs((await cam()).zoom - 1) < 1e-6 && Math.abs(pc) < 2, JSON.stringify({ zoom: L.zoom, pc }))
+  check('…100% 버튼이 켜진 모양', (await p.locator('.page-chip-layer[data-z100]').count()) === 1)
+  await p.click('.page-chip[data-index="1"] [aria-label="화면에 맞춤"]')
+  await sleep(150)
+  L = await layout(p)
+  check('화면에 맞춤: 폭 맞춤 배율로, 그 페이지 위 끝으로', Math.abs((await cam()).zoom - fitZoom) < 1e-6 && Math.abs(L.pages[1].t - L.host.t - 16) < 2, JSON.stringify({ zoom: L.zoom, fitZoom, page: L.pages[1], host: L.host }))
+  check('…100% 버튼은 꺼진 모양', (await p.locator('.page-chip-layer[data-z100]').count()) === 0)
 
   // ── 내려 읽는 동안: 위가 화면 밖으로 나간 페이지의 칩은 화면 위에 붙어 따라온다 ──
   await p.evaluate(() => {
