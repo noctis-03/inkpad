@@ -13,8 +13,22 @@ export interface PatternGeom {
   accent?: { lines: [number, number, number, number][]; color: string; width: number }
 }
 
-export function patternGeometry(bg: Background, w: number, h: number): PatternGeom | null {
+/** scale: 페이지 내용 배율(Page.scale) — 무늬를 배율 1의 크기(w/scale × h/scale)로 짓고 scale배로 키운다(획과 함께 줄고 는다) */
+export function patternGeometry(bg: Background, w: number, h: number, scale = 1): PatternGeom | null {
   if (bg.type === 'blank') return null
+  if (scale !== 1) {
+    const g = patternGeometry(bg, w / scale, h / scale)
+    if (!g) return null
+    const sl = (ls: [number, number, number, number][]) => ls.map((l) => l.map((v) => v * scale) as [number, number, number, number])
+    return {
+      ...g,
+      lines: sl(g.lines),
+      dots: g.dots.map(([x, y]) => [x * scale, y * scale]),
+      lineWidth: g.lineWidth * scale,
+      dotRadius: g.dotRadius * scale,
+      accent: g.accent && { ...g.accent, lines: sl(g.accent.lines), width: g.accent.width * scale }
+    }
+  }
   const sp = bg.spacing
   // 예전 기본 색으로 저장된 페이지는 새 기본 색으로 바꿔 그린다.
   // 사용자가 지정한 색은 그대로 둔다. 캔버스와 PDF 내보내기가 같은 함수를 쓰므로 함께 바뀐다.
@@ -53,11 +67,11 @@ export function patternGeometry(bg: Background, w: number, h: number): PatternGe
   return out
 }
 
-export function drawPattern(ctx: CanvasRenderingContext2D, bg: Background, w: number, h: number, pxPerPt: number) {
-  const g = patternGeometry(bg, w, h)
-  if (!g) return
+export function drawPattern(ctx: CanvasRenderingContext2D, bg: Background, w: number, h: number, pxPerPt: number, scale = 1) {
   // 너무 축소하면 선이 뭉개지므로 생략 (LOD)
-  if (bg.type !== 'cornell' && 'spacing' in bg && bg.spacing * pxPerPt < 3) return
+  if (bg.type !== 'cornell' && 'spacing' in bg && bg.spacing * scale * pxPerPt < 3) return
+  const g = patternGeometry(bg, w, h, scale)
+  if (!g) return
   ctx.lineCap = 'butt'
   if (g.lines.length) {
     ctx.beginPath()

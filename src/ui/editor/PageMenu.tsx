@@ -1,12 +1,17 @@
 // 페이지 메뉴 — 페이지 사이드바 썸네일의 ⋯와 캔버스의 페이지 칩(PageChipLayer)이 함께 쓴다.
-// 페이지 더하기·복제·보조 용지·순서·삭제와, 이 페이지를 이미지로·AI로 보내기
+// 페이지 더하기·복제·보조 용지·크기 맞추기(A4 폭 · 원래 크기로)·순서·삭제와, 이 페이지를 이미지로·AI로 보내기
 import type { Engine } from '../../engine/engine'
 import { useUI } from '../../app/store'
 import { confirmDialog } from '../../app/dialogs'
 import { Menu, MenuItem } from '../Menu'
+import { a4FitFactor, pageScale } from '../../shared/model'
 
 export function PageMenu({ engine, index: i, x, y, readOnly, onClose }: { engine: Engine; index: number; x: number; y: number; readOnly?: boolean; onClose: () => void }) {
   const count = engine.pages.length
+  const page = engine.pages[i]
+  // 페이지 크기 맞추기 — A4 폭이 아닐 때 / 맞춰 둔(내용 배율이 있는) 페이지일 때만 보인다
+  const canFit = !!page?.size && Math.abs(a4FitFactor(page.size) - 1) >= 1e-3
+  const canRestore = pageScale(page) !== 1
   const act = (fn: () => void) => () => {
     onClose()
     fn()
@@ -29,6 +34,8 @@ export function PageMenu({ engine, index: i, x, y, readOnly, onClose }: { engine
           <MenuItem icon="copy" label="복제" onClick={act(() => engine.duplicatePage(i))} />
           <MenuItem icon="page" label="왼쪽에 보조 용지" onClick={act(() => engine.addSheet(i, 'left'))} />
           <MenuItem icon="page" label="오른쪽에 보조 용지" onClick={act(() => engine.addSheet(i, 'right'))} />
+          {canFit && <MenuItem icon="fit" label="A4 폭에 맞추기" onClick={act(() => engine.fitPages('a4', [i]))} />}
+          {canRestore && <MenuItem icon="restore" label="원래 크기로" onClick={act(() => engine.fitPages('original', [i]))} />}
           {i > 0 && <MenuItem icon="arrowUp" label="위로" onClick={act(() => engine.movePage(i, i - 1))} />}
           {i < count - 1 && <MenuItem icon="arrowDown" label="아래로" onClick={act(() => engine.movePage(i, i + 1))} />}
           <MenuItem icon="trash" label="삭제" danger onClick={act(() => void del())} />

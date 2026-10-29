@@ -33,6 +33,8 @@ export interface Command {
   blocks?: BlockChange[]
   /** 보조 용지 추가·변경·삭제 (용지 위 획은 removed/added로 함께 담는다) */
   sheets?: SheetChange[]
+  /** 적용·되돌리기 때 보던 자리(화면 가운데의 페이지 위 지점, 폭 맞춤 대비 배율)를 그대로 둔다 — 페이지 크기 맞추기 */
+  keepView?: boolean
   label?: string
 }
 

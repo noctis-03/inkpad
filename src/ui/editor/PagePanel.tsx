@@ -2,11 +2,11 @@ import { useState } from 'react'
 import type { Engine } from '../../engine/engine'
 import { useUI } from '../../app/store'
 import { errorText, startActivity } from '../../shared/activity'
-import { askPdfPassword, confirmDialog } from '../../app/dialogs'
+import { askPdfFit, askPdfPassword, confirmDialog } from '../../app/dialogs'
 import { BACKGROUND_LABELS, PAGE_SIZES, makeBackground, type BackgroundType, type DocumentMeta } from '../../shared/model'
 import { Icon } from '../Icon'
 import { pickFiles } from '../../io/download'
-import { pdfPagesFor, readPdf } from '../../io/pdfImport'
+import { pdfNeedsFit, pdfPagesFor, readPdf } from '../../io/pdfImport'
 import { closePdf } from '../../engine/pdf/pdfjs'
 
 const PAGED: BackgroundType[] = ['blank', 'lined', 'grid', 'dot', 'cornell']
@@ -33,6 +33,12 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
 
   const setSize = (w: number, h: number) => engine.setPageSize({ w, h }, indices())
 
+  /** A4 폭에 맞추기 · 원래 크기로 — PDF 페이지도 된다(필기와 함께 늘고 준다) */
+  const fit = (mode: 'a4' | 'original') => {
+    const n = engine.fitPages(mode, indices())
+    if (!n) toast(mode === 'a4' ? '이미 A4 폭입니다.' : '이미 원래 크기입니다.')
+  }
+
   const orient = (landscape: boolean) => {
     const targets = scope === 'all' ? engine.pages : [page]
     for (const p of targets) {
@@ -51,8 +57,10 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
     try {
       const info = await readPdf(f, f.name, askPdfPassword, (p) => act.update({ progress: p }))
       if (info.failedPages.length && !(await confirmDialog('일부 페이지를 읽을 수 없습니다', { message: `${info.pages.length}개 페이지만 삽입할까요?` }))) return act.drop()
-      const pages = pdfPagesFor(doc.id, info)
+      const fit = pdfNeedsFit(info) ? await askPdfFit(info.pages) : false
       await closePdf(info.pdf)
+      if (fit === null) return act.drop()
+      const pages = pdfPagesFor(doc.id, info, fit)
       engine.insertPages(view.currentPage, pages)
       act.done(`${pages.length}쪽 삽입`)
       toast(`${pages.length}개 페이지를 삽입했습니다.`, 'success')
@@ -83,7 +91,7 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
               모든 페이지
             </button>
           </div>
-          {isPdf && scope === 'current' && <p className="hint">PDF 페이지는 속지와 크기를 바꿀 수 없습니다.</p>}
+          {isPdf && scope === 'current' && <p className="hint">PDF 페이지는 속지와 용지 크기를 바꿀 수 없습니다(A4 폭에 맞추기는 됩니다).</p>}
         </section>
       )}
 
@@ -127,6 +135,15 @@ export function PagePanel({ engine, doc }: { engine: Engine; doc: DocumentMeta }
                 가로
               </button>
             </div>
+            <div className="btn-row" style={{ marginTop: 8 }}>
+              <button className="text-btn" onClick={() => fit('a4')}>
+                <Icon name="fit" size={16} /> A4 폭에 맞추기
+              </button>
+              <button className="text-btn" onClick={() => fit('original')}>
+                <Icon name="restore" size={16} /> 원래 크기로
+              </button>
+            </div>
+            <p className="hint">페이지와 필기를 함께 키우거나 줄입니다. PDF 페이지도 됩니다.</p>
           </section>
           <section className="panel-section">
             <h3>페이지</h3>

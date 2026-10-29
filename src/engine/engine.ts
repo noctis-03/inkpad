@@ -20,7 +20,7 @@ import type {
   ViewInfo
 } from './types'
 import type { Background, Block, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
-import { BLOCK_MAX_OUTSIDE, SCHEMA_VERSION, SHEET_MAX, SHEET_MIN, makeBackground, type SheetInfo } from '../shared/model'
+import { BLOCK_MAX_OUTSIDE, SCHEMA_VERSION, SHEET_MAX, SHEET_MIN, makeBackground, pageScale, a4FitFactor, type SheetInfo } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
 
@@ -54,6 +54,8 @@ interface ActiveStroke {
   key: string
   ox: number
   oy: number
+  /** 페이지 내용 배율 — 점·굵기는 청크 좌표(월드 ÷ os)로 모은다 */
+  os: number
   points: number[]
   raw: number[] // 원래 필압 값 (감지용)
   predicted: number[][]
@@ -1079,6 +1081,86 @@ export class Engine {
     this.exec({ removed: [], added: [], pagesBefore: before, pagesAfter: after, blocks: blockChanges, label: '페이지 크기' })
   }
 
+  /**
+   * 페이지 크기 맞추기 — 'a4': A4 폭(가로 페이지는 A4 가로 폭)에 맞춘다, 'original': 원래 크기(내용 배율 1)로 돌린다.
+   * 페이지 크기와 내용 배율(Page.scale)만 바꾸고 획 좌표는 건드리지 않는다 — 몇 번을 맞추고 되돌려도 획은 그대로다.
+   * 블록·떠 있는 보조 용지는 같은 비율로 자리를 옮기고(블록 크기는 그대로 — 글자가 작아지지 않게), 보던 자리는 그대로 둔다.
+   * 바꾼 페이지 수를 돌려준다
+   */
+  fitPages(mode: 'a4' | 'original', indices?: number[]): number {
+    if (this.readOnly || !this.layout.paged) return 0
+    const targets = (indices ? indices.map((i) => this.layout.pages[i]) : this.layout.pages).filter((p): p is Page => !!p?.size)
+    const changed: Page[] = []
+    const factor = new Map<ID, number>()
+    for (const p of targets) {
+      const s = pageScale(p)
+      if (mode === 'original' && s === 1) continue
+      const f = mode === 'a4' ? a4FitFactor(p.size!) : 1 / s
+      if (mode === 'a4' && Math.abs(f - 1) < 1e-3) continue // 이미 A4 폭
+      const next: Page = { ...p }
+      if (Math.abs(s * f - 1) < 1e-9) {
+        // 원래 크기 — 배율을 지우고 크기를 저장 단위(0.01pt)로 맞춘다 (원래 크기는 0.01pt 단위였다)
+        delete next.scale
+        next.size = { w: q2(p.size!.w * f), h: q2(p.size!.h * f) }
+      } else {
+        next.scale = s * f
+        next.size = { w: p.size!.w * f, h: p.size!.h * f } // 반올림하지 않는다 — 원래 크기로 정확히 돌아오게
+      }
+      changed.push(next)
+      factor.set(p.id, f)
+    }
+    if (!changed.length) return 0
+    const now = Date.now()
+    const blocks = this.blocks
+      .list()
+      .filter((b) => factor.has(b.pageId))
+      .map((b) => {
+        const f = factor.get(b.pageId)!
+        return { before: b, after: { ...b, x: b.x * f, y: b.y * f, updatedAt: now } as Block }
+      })
+    const sheets = changed.flatMap((p) =>
+      this.sheetsOf(p.id).map((sh) => {
+        const f = factor.get(p.id)!
+        const info = sh.sheet!
+        return { before: sh, after: { ...sh, sheet: { ...info, x: info.snap ? info.x : info.x * f, y: info.y * f } } }
+      })
+    )
+    this.clearSelection()
+    this.exec({
+      removed: [],
+      added: [],
+      pagesBefore: this.snapshot(changed.map((p) => this.allPages.get(p.id)!)),
+      pagesAfter: this.snapshot(changed),
+      blocks,
+      sheets,
+      keepView: true,
+      label: mode === 'a4' ? 'A4 폭에 맞추기' : '원래 크기로'
+    })
+    return changed.length
+  }
+
+  /** 화면 가운데가 어느 페이지의 어디(비율)인지와 폭 맞춤 대비 배율 — 페이지 배치가 바뀌어도 같은 자리를 보게 */
+  private viewAnchor() {
+    const W = this.renderer.cssW
+    const H = this.renderer.cssH
+    const c = this.cam.screenToWorld(W / 2, H / 2)
+    const p = this.layout.pageNear(c.x, c.y)
+    const r = p && this.layout.rects.get(p.id)
+    if (!r) return null
+    return { pageId: p.id, fx: (c.x - r.x) / r.w, fy: (c.y - r.y) / r.h, rel: this.cam.zoom / this.fitWidthZoom() }
+  }
+
+  private restoreViewAnchor(a: { pageId: ID; fx: number; fy: number; rel: number }) {
+    const r = this.layout.rects.get(a.pageId)
+    if (!r) return
+    const z = clampZoom(a.rel * this.fitWidthZoom())
+    this.momentum = null
+    this.cam.zoom = z
+    this.cam.x = r.x + a.fx * r.w - this.renderer.cssW / 2 / z
+    this.cam.y = r.y + a.fy * r.h - this.renderer.cssH / 2 / z
+    this.onCameraMoved()
+  }
+
   /** 다른 문서/PDF에서 가져온 페이지를 index 뒤에 삽입 */
   insertPages(afterIndex: number, pages: Page[]) {
     if (!this.layout.paged || this.readOnly || !pages.length) return
@@ -1130,6 +1212,7 @@ export class Engine {
     const toRemove = inverse ? cmd.added : cmd.removed
     const toAdd = inverse ? cmd.removed : cmd.added
     const snap = inverse ? cmd.pagesBefore : cmd.pagesAfter
+    const anchor = cmd.keepView ? this.viewAnchor() : null
     let box: Box | null = null
     const touched = new Set<ID>()
     for (const e of toRemove) {
@@ -1173,6 +1256,7 @@ export class Engine {
     } else {
       this.renderer.redrawRegion(this.scene, this.cam, box)
     }
+    if (anchor) this.restoreViewAnchor(anchor)
     for (const id of touched) this.bumpPage(id)
     this.scheduleSave()
     this.emitView(true)
@@ -1532,11 +1616,12 @@ export class Engine {
       key: target.key,
       ox: target.ox,
       oy: target.oy,
+      os: target.os,
       points: [],
       raw: [],
       predicted: [],
       lastT: e.timeStamp,
-      width: st.width,
+      width: q2(st.width / target.os), // 화면에서 고른 굵기 그대로 보이게
       color: st.color,
       opts: strokeOptsFor(pressure, this.settings, hl ? 'highlighter' : 'pen'),
       pressure,
@@ -1592,7 +1677,7 @@ export class Engine {
     const w = this.cam.screenToWorld(p.x, p.y)
     const m = this.mappedPressure(ev, a)
     const pr = m < 0 ? (a.smoothP >= 0 ? a.smoothP : 0.5) : m
-    return [w.x - a.ox, w.y - a.oy, a.pressure === 'pressure' ? pr : 0.5]
+    return [(w.x - a.ox) / a.os, (w.y - a.oy) / a.os, a.pressure === 'pressure' ? pr : 0.5]
   }
 
   private addPoint(a: ActiveStroke, ev: PointerEvent) {
@@ -1639,15 +1724,15 @@ export class Engine {
       pr = a.smoothP < 0 ? m : smoothPressure(a.smoothP, m, this.settings.pressureSmoothing)
       a.smoothP = pr
     }
-    const qx = q2(w.x - a.ox)
-    const qy = q2(w.y - a.oy)
+    const qx = q2((w.x - a.ox) / a.os)
+    const qy = q2((w.y - a.oy) / a.os)
     const n = a.points.length
     if (n >= 4) {
       // 화면에서 sub-pixel만큼 움직인 점은 떨림으로 보고 점을 만들지 않는다.
       // 선이 매끄러워지고 점 수가 줄어 프레임 비용(입력 지연)도 함께 줄어든다.
       const dx = qx - a.points[n - 4]
       const dy = qy - a.points[n - 3]
-      const minD = minPointDist(this.cam.zoom)
+      const minD = minPointDist(this.cam.zoom * a.os)
       if (dx * dx + dy * dy < minD * minD) {
         if (a.pressure === 'pressure') a.points[n - 2] = q2(Math.max(a.points[n - 2], pr))
         return
@@ -1668,7 +1753,7 @@ export class Engine {
       if (!this.layout.visibleIn(surf, rec.pageId)) continue
       const s = rec.stroke
       // 지우개는 획 단위만 — 획을 잘라 새 ID 조각을 만들면 기기 간 머지에서 원래 획과 조각이 함께 남는다
-      if (!hitStroke(s.points, wx - rec.ox, wy - rec.oy, r + s.width / 2)) continue
+      if (!hitStroke(s.points, (wx - rec.ox) / rec.os, (wy - rec.oy) / rec.os, r / rec.os + s.width / 2)) continue
       this.eraseRec(a, rec)
       box = unionBox(box, rec.item)
       this.markDirty(rec.pageId, rec.key)
@@ -1769,7 +1854,7 @@ export class Engine {
     const onSheet = surf.sheets.size > 0
     const sel = this.scene
       .query(minX, minY, maxX, maxY)
-      .filter((r) => (!onSheet || this.layout.visibleIn(surf, r.pageId)) && strokeInPolygon(r.stroke.points, r.ox, r.oy, poly))
+      .filter((r) => (!onSheet || this.layout.visibleIn(surf, r.pageId)) && strokeInPolygon(r.stroke.points, r.ox, r.oy, poly, r.os))
     // 너무 작은 영역(살짝 누른 것)은 획이 없으면 고르지 않는다
     const big = (maxX - minX) * this.cam.zoom > 8 && (maxY - minY) * this.cam.zoom > 8
     this.lassoPoly = sel.length || big ? poly.slice() : null
@@ -1784,18 +1869,19 @@ export class Engine {
   /** 획을 월드 좌표에서 p' = c + (p - c)·s + d로 옮긴 새 Entry (굵기도 s배). paged에서는 시작점이 들어간 페이지로 옮겨 간다 */
   private transformedEntry(rec: StrokeRec, x: SelXform, id: ID): Entry {
     const s = rec.stroke
-    const sx = xformX(x, s.points[0] + rec.ox)
-    const sy = xformY(x, s.points[1] + rec.oy)
-    const t = this.layout.targetAt(sx, sy) ?? { pageId: rec.pageId, key: rec.key, ox: rec.ox, oy: rec.oy }
-    // 청크 좌표 p → 새 청크 좌표: (c + (ox + p - c)·s + d) - t.o = p·s + off
-    const offX = xformX(x, rec.ox) - t.ox
-    const offY = xformY(x, rec.oy) - t.oy
+    const sx = xformX(x, s.points[0] * rec.os + rec.ox)
+    const sy = xformY(x, s.points[1] * rec.os + rec.oy)
+    const t = this.layout.targetAt(sx, sy) ?? { pageId: rec.pageId, key: rec.key, ox: rec.ox, oy: rec.oy, os: rec.os }
+    // 청크 좌표 p → 새 청크 좌표: (c + (o + p·os - c)·s + d - t.o) / t.os = p·k + off (k: 두 페이지 내용 배율이 다르면 그 비도 곱한다)
+    const k = (x.s * rec.os) / t.os
+    const offX = (xformX(x, rec.ox) - t.ox) / t.os
+    const offY = (xformY(x, rec.oy) - t.oy) / t.os
     const pts = s.points.slice()
     for (let i = 0; i < pts.length; i += 4) {
-      pts[i] = q2(pts[i] * x.s + offX)
-      pts[i + 1] = q2(pts[i + 1] * x.s + offY)
+      pts[i] = q2(pts[i] * k + offX)
+      pts[i + 1] = q2(pts[i + 1] * k + offY)
     }
-    const width = x.s === 1 ? s.width : q2(s.width * x.s)
+    const width = k === 1 ? s.width : q2(s.width * k)
     return { pageId: t.pageId, key: t.key, stroke: { ...s, id, width, points: pts, bbox: pointsBBox(pts, width) } }
   }
 
@@ -2078,7 +2164,7 @@ export class Engine {
       const a = this.active
       const live: LiveDraw | null =
         a && (a.tool === 'pen' || a.tool === 'highlighter')
-          ? { ox: a.ox, oy: a.oy, points: a.points, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts, clip: this.sheetClip(a.pageId) }
+          ? { ox: a.ox, oy: a.oy, os: a.os, points: a.points, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts, clip: this.sheetClip(a.pageId) }
           : null
       let overlay: Overlay | null = null
       const sa = a?.tool === 'lasso' ? a : null
@@ -2207,13 +2293,13 @@ export class Engine {
         drew = true
       }
     } else if (page.size) {
-      drawPattern(ctx, page.background, w, h, scale * 2)
+      drawPattern(ctx, page.background, w, h, scale * 2, pageScale(page))
       if (page.background.type !== 'blank') drew = true
     }
     for (const pass of ['under', 'main'] as const) {
       for (const rec of recs) {
         if (rec.stroke.layer !== pass) continue
-        ctx.setTransform(scale, 0, 0, scale, (rec.ox - ox) * scale, (rec.oy - oy) * scale)
+        ctx.setTransform(scale * rec.os, 0, 0, scale * rec.os, (rec.ox - ox) * scale, (rec.oy - oy) * scale)
         ctx.fillStyle = rec.stroke.color
         ctx.fill(getPath(rec))
         drew = true
@@ -2278,13 +2364,14 @@ export class Engine {
         ctx.clip()
         ctx.fillStyle = p.background.type === 'blank' ? p.background.color : '#ffffff'
         ctx.fillRect(0, 0, r.w, r.h)
+        const ps = pageScale(p)
         if (p.pdf) {
-          const bmp = await this.pdf.getExact(p.pdf, r.w, r.h, k)
+          const bmp = await this.pdf.getExact(p.pdf, r.w / ps, r.h / ps, k * ps)
           if (bmp) {
             ctx.imageSmoothingQuality = 'high'
             ctx.drawImage(bmp, 0, 0, r.w, r.h)
           }
-        } else drawPattern(ctx, p.background, r.w, r.h, k)
+        } else drawPattern(ctx, p.background, r.w, r.h, k, ps)
         ctx.restore()
       }
     }
@@ -2292,7 +2379,7 @@ export class Engine {
     for (const pass of ['under', 'main'] as const) {
       for (const rec of recs) {
         if (rec.stroke.layer !== pass) continue
-        ctx.setTransform(k, 0, 0, k, (rec.ox - box.minX) * k, (rec.oy - box.minY) * k)
+        ctx.setTransform(k * rec.os, 0, 0, k * rec.os, (rec.ox - box.minX) * k, (rec.oy - box.minY) * k)
         ctx.fillStyle = rec.stroke.color
         ctx.fill(getPath(rec))
       }
@@ -2304,7 +2391,8 @@ export class Engine {
     if (!page.pdf || !page.size) return null
     // 캐시에 있으면 그대로, 없으면 렌더링될 때까지 잠깐 기다린다
     for (let i = 0; i < 40; i++) {
-      const bmp = this.pdf.get(page.pdf, page.size.w, page.size.h, Math.max(0.25, scale), false)
+      const ps = pageScale(page)
+      const bmp = this.pdf.get(page.pdf, page.size.w / ps, page.size.h / ps, Math.max(0.25, scale * ps), false)
       if (bmp) return bmp
       if (this.pdf.isFailed(page.pdf)) return null
       await new Promise((r) => setTimeout(r, 100))
@@ -2337,7 +2425,7 @@ export class Engine {
       const pts: number[] = []
       let ang = Math.random() * Math.PI * 2
       for (let j = 0; j < n; j++) {
-        pts.push(q2(x - t.ox), q2(y - t.oy), q2(0.3 + Math.random() * 0.5), 8)
+        pts.push(q2((x - t.ox) / t.os), q2((y - t.oy) / t.os), q2(0.3 + Math.random() * 0.5), 8)
         ang += (Math.random() - 0.5) * 1.2
         x += Math.cos(ang) * 6
         y += Math.sin(ang) * 6

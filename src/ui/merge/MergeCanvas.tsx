@@ -11,7 +11,7 @@ import { parseChunkKey } from '../../engine/layout'
 import { hitStroke, strokeInPolygon } from '../../engine/geometry'
 import { openPdf, type PDFDocumentProxy } from '../../engine/pdf/pdfjs'
 import { db } from '../../storage/db'
-import type { Block, ID, MemoColor, Page, Stroke } from '../../shared/model'
+import { pageScale, type Block, type ID, type MemoColor, type Page, type Stroke } from '../../shared/model'
 import { mergePageOrder, resolveItem, resolveMeta, type ItemClass, type MergeDraft, type MergeItem, type MergePlan, type Placed, type Side } from '../../sync/merge'
 import type { DocFileV1 } from '../../sync/pack'
 import { BLOCK_NAME, blockSnippet } from './itemText'
@@ -234,13 +234,14 @@ interface Box {
   y1: number
 }
 
-function boxOf(els: ViewEl[], paged: boolean, blocks: ViewBlock[] = []): Box | null {
+/** ps: 페이지 내용 배율 — 획은 청크 좌표 그대로, 블록(페이지 크기 기준)은 ps로 나눠 같은 좌표로 모은다 */
+function boxOf(els: ViewEl[], paged: boolean, blocks: ViewBlock[] = [], ps = 1): Box | null {
   let b: Box | null = null
   for (const v of blocks) {
-    const x0 = v.block.x
-    const y0 = v.block.y
-    const x1 = x0 + v.block.w
-    const y1 = y0 + blockHeight(v.block)
+    const x0 = v.block.x / ps
+    const y0 = v.block.y / ps
+    const x1 = x0 + v.block.w / ps
+    const y1 = y0 + blockHeight(v.block) / ps
     b = b ? { x0: Math.min(b.x0, x0), y0: Math.min(b.y0, y0), x1: Math.max(b.x1, x1), y1: Math.max(b.y1, y1) } : { x0, y0, x1, y1 }
   }
   for (const v of els) {
@@ -266,6 +267,11 @@ function boxOf(els: ViewEl[], paged: boolean, blocks: ViewBlock[] = []): Box | n
 export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
   const { vp, width } = props
   const paged = !!vp.page.size
+  // 이 캔버스는 청크 좌표(획 좌표)로 그린다 — 페이지 크기 맞추기로 내용 배율이 있으면 종이 크기를 그만큼 나눠 쓴다.
+  // 획은 배율과 상관없이 같은 좌표라 두 쪽 페이지의 배율이 달라도 그대로 겹쳐 보인다
+  const ps = pageScale(vp.page)
+  const pw = vp.page.size ? vp.page.size.w / ps : 0
+  const ph = vp.page.size ? vp.page.size.h / ps : 0
   const base = useRef<HTMLCanvasElement>(null)
   const over = useRef<HTMLCanvasElement>(null)
   const glowEl = useRef<HTMLCanvasElement>(null)
@@ -280,10 +286,12 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
     const b = boxOf(
       vp.els.map((v) => ({ ...v, move: undefined })),
       !!vp.page.size,
-      vp.blocks
+      vp.blocks,
+      ps
     )
     if (vp.page.size) {
-      const { w, h } = vp.page.size
+      const w = pw
+      const h = ph
       const tol = 2
       if (!b || (b.x0 >= -tol && b.y0 >= -tol && b.x1 <= w + tol && b.y1 <= h + tol)) return { x: 0, y: 0, w, h }
       const pad = 24
@@ -299,7 +307,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
       w: b.x1 - b.x0 + pad * 2,
       h: Math.max(240, b.y1 - b.y0 + pad * 2)
     }
-  }, [vp.page.size, vp.els, vp.blocks])
+  }, [vp.page.size, vp.els, vp.blocks, ps, pw, ph])
   const height = Math.round((width * frame.h) / frame.w)
   // 캔버스 픽셀 상한 — 크게 확대해도 한 장이 너무 커지지 않게
   const dpr = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(12e6 / Math.max(1, width * height)))
@@ -331,9 +339,9 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       // 종이 자리(화면 픽셀) — 종이 밖까지 넓혔으면 바깥은 회색 바탕, 종이는 흰색 + 옅은 그림자
       const paper = paged
-        ? { x: -frame.x * scale, y: -frame.y * scale, w: vp.page.size!.w * scale, h: vp.page.size!.h * scale }
+        ? { x: -frame.x * scale, y: -frame.y * scale, w: pw * scale, h: ph * scale }
         : { x: 0, y: 0, w: el.width, h: el.height }
-      const overflow = paged && (frame.x < 0 || frame.y < 0 || frame.w > vp.page.size!.w || frame.h > vp.page.size!.h)
+      const overflow = paged && (frame.x < 0 || frame.y < 0 || frame.w > pw || frame.h > ph)
       if (overflow) {
         ctx.fillStyle = DESK_COLOR
         ctx.fillRect(0, 0, el.width, el.height)
@@ -352,7 +360,7 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
       if (vp.page.pdf && paged) drewPdf = await drawPdf(ctx, vp.page, paper, props.pdfs)
       if (cancelled) return
       ctx.setTransform(scale, 0, 0, scale, -frame.x * scale, -frame.y * scale)
-      if (!drewPdf && paged) drawPattern(ctx, vp.page.background, vp.page.size!.w, vp.page.size!.h, scale)
+      if (!drewPdf && paged) drawPattern(ctx, vp.page.background, pw, ph, scale)
       for (const v of [...vp.els].sort(byLayerZ)) {
         const s = v.placed.el
         if (s.type !== 'stroke' || !props.visible[v.item.cls]) continue
@@ -395,7 +403,10 @@ export function PageCanvas(props: CanvasProps & { vp: ViewPage }) {
         else if (glowing && v.item.cls === 'common' && props.focus !== 'common') alpha = DIM_ALPHA
         if (alpha <= 0) continue
         const outline = props.outline && v.item.cls !== 'common' && !props.resultOnly ? colorOf(v.item.cls) : null
-        drawBlock(ctx, v, { alpha, outline, px: dpr / scale })
+        ctx.save()
+        ctx.scale(1 / ps, 1 / ps) // 블록 좌표는 페이지 크기 기준
+        drawBlock(ctx, v, { alpha, outline, px: (dpr / scale) * ps })
+        ctx.restore()
       }
       drawOverlay()
       drawGlow()

@@ -18,15 +18,23 @@ export interface IndexItem {
   rec: StrokeRec
 }
 
-/** 런타임 획 레코드: 저장 데이터 + 청크 원점(월드) + 캐시 */
+/** 런타임 획 레코드: 저장 데이터 + 청크 원점(월드)·내용 배율 + 캐시. 월드 = 원점 + 청크 좌표 × os */
 export interface StrokeRec extends Entry {
   ox: number
   oy: number
+  os: number
   item: IndexItem
   path?: Path2D
 }
 
 export const groupKey = (pageId: ID, key: string) => `${pageId}|${key}`
+
+/** 청크 좌표 bbox → 월드 검색 상자 */
+function itemOf(rec: StrokeRec): IndexItem {
+  const [a, b, c, d] = rec.stroke.bbox
+  const { ox, oy, os } = rec
+  return { minX: a * os + ox, minY: b * os + oy, maxX: c * os + ox, maxY: d * os + oy, rec }
+}
 
 export function getPath(rec: { stroke: Stroke; path?: Path2D }): Path2D {
   if (!rec.path) {
@@ -59,10 +67,9 @@ export class Scene {
   }
 
   private makeRec(e: Entry): StrokeRec {
-    const { ox, oy } = this.layout.origin(e.pageId, e.key)
-    const [a, b, c, d] = e.stroke.bbox
-    const rec = { ...e, ox, oy } as StrokeRec
-    rec.item = { minX: a + ox, minY: b + oy, maxX: c + ox, maxY: d + oy, rec }
+    const { ox, oy, os } = this.layout.origin(e.pageId, e.key)
+    const rec = { ...e, ox, oy, os } as StrokeRec
+    rec.item = itemOf(rec)
     if (e.stroke.z > this.zCounter) this.zCounter = e.stroke.z
     return rec
   }
@@ -142,15 +149,15 @@ export class Scene {
     return { minX: root.minX, minY: root.minY, maxX: root.maxX, maxY: root.maxY }
   }
 
-  /** 페이지 배치가 바뀐 뒤 원점과 인덱스를 다시 계산 (Path2D는 상대좌표라 그대로 재사용) */
+  /** 페이지 배치·배율이 바뀐 뒤 원점과 인덱스를 다시 계산 (Path2D는 청크 좌표라 그대로 재사용 — 배율은 그릴 때 곱한다) */
   relayout() {
     const items: IndexItem[] = []
     for (const rec of this.recs.values()) {
-      const { ox, oy } = this.layout.origin(rec.pageId, rec.key)
+      const { ox, oy, os } = this.layout.origin(rec.pageId, rec.key)
       rec.ox = ox
       rec.oy = oy
-      const [a, b, c, d] = rec.stroke.bbox
-      rec.item = { minX: a + ox, minY: b + oy, maxX: c + ox, maxY: d + oy, rec }
+      rec.os = os
+      rec.item = itemOf(rec)
       items.push(rec.item)
     }
     this.tree.clear()
@@ -159,16 +166,16 @@ export class Scene {
 
   /** 한 페이지(보조 용지)의 원점만 바뀌었을 때 — 그 획만 다시 계산한다 (용지를 끄는 동안 매번 전체를 다시 짓지 않게) */
   relayoutPage(pageId: ID) {
-    const { ox, oy } = this.layout.origin(pageId, '')
+    const { ox, oy, os } = this.layout.origin(pageId, '')
     for (const [gk, g] of this.groups) {
       if (!gk.startsWith(pageId + '|')) continue
       for (const rec of g.values()) {
-        if (rec.ox === ox && rec.oy === oy) continue
+        if (rec.ox === ox && rec.oy === oy && rec.os === os) continue
         this.tree.remove(rec.item)
         rec.ox = ox
         rec.oy = oy
-        const [a, b, c, d] = rec.stroke.bbox
-        rec.item = { minX: a + ox, minY: b + oy, maxX: c + ox, maxY: d + oy, rec }
+        rec.os = os
+        rec.item = itemOf(rec)
         this.tree.insert(rec.item)
       }
     }

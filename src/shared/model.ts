@@ -111,6 +111,12 @@ export interface Page {
   documentId: ID
   schemaVersion: number
   size: { w: number; h: number } | null // null = 무한 캔버스
+  /**
+   * 내용 배율 — 획·속지 무늬·PDF를 이 배율로 키우거나 줄여 보여 준다(없으면 1). size는 배율을 곱한 뒤의 크기다.
+   * 페이지 크기 맞추기(A4 폭)는 이 값과 size만 바꾸고 획 좌표는 건드리지 않는다 — 되돌리면 정확히 원래대로이고,
+   * 다른 기기에서 같은 페이지에 쓴 획과도 부딪히지 않는다
+   */
+  scale?: number
   background: Background
   pdf?: PdfRef
   /** 있으면 보조 용지 — pageOrder에 들지 않고 기준 페이지 옆에 붙거나 떠 있다. size가 용지 크기다 */
@@ -191,6 +197,24 @@ export const PAGE_SIZES = {
   a5: { label: 'A5', w: 419.53, h: 595.28 }
 } as const
 export type PageSizeKey = keyof typeof PAGE_SIZES | 'custom'
+
+/** 페이지 내용 배율 (없으면 1) */
+export const pageScale = (p: Pick<Page, 'scale'> | null | undefined): number => p?.scale ?? 1
+
+/**
+ * A4 폭에 맞출 때의 배율 — 세로 페이지는 A4 폭, 가로 페이지는 A4 가로 폭(842pt)에 맞춘다.
+ * 슬라이드 같은 가로 페이지를 A4 세로 폭(595pt)에 맞추면 쓸 자리가 너무 작아진다
+ */
+export function a4FitFactor(size: { w: number; h: number }): number {
+  const target = size.w > size.h ? PAGE_SIZES.a4.h : PAGE_SIZES.a4.w
+  return target / size.w
+}
+
+/** 원래 크기에서 많이 벗어났는가 — PDF를 가져올 때 A4 폭에 맞출지 물어보는 기준(0.8배 미만, 1.25배 초과) */
+export const farFromA4 = (size: { w: number; h: number }) => {
+  const f = a4FitFactor(size)
+  return f > 1.25 || f < 0.8
+}
 
 export const PAPER_COLOR = '#ffffff'
 export const LINE_COLOR = '#d3d9e2'

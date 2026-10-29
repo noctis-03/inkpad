@@ -78,12 +78,15 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
         const emb = embedded.get(`${p.pdf.assetId}:${p.pdf.pageIndex}`)!
         const rot = (((src.getPage(p.pdf.pageIndex).getRotation().angle + p.pdf.rotation) % 360) + 360) % 360
         // /Rotate는 시계 방향 표시 회전. drawPage의 rotate는 (x, y) 기준 반시계 회전
-        const EW = emb.width
-        const EH = emb.height
-        if (rot === 90) page.drawPage(emb, { x: x0, y: y0 + EW, rotate: degrees(-90) })
-        else if (rot === 180) page.drawPage(emb, { x: x0 + EW, y: y0 + EH, rotate: degrees(180) })
-        else if (rot === 270) page.drawPage(emb, { x: x0 + EH, y: y0, rotate: degrees(90) })
-        else page.drawPage(emb, { x: x0, y: y0 })
+        // 페이지 크기 맞추기(내용 배율)로 페이지가 원본과 크기가 다르면 원본을 그만큼 키우거나 줄여 채운다
+        const k = p.w / (rot === 90 || rot === 270 ? emb.height : emb.width)
+        const sc = Math.abs(k - 1) < 1e-6 ? {} : { xScale: k, yScale: k }
+        const EW = emb.width * (sc.xScale ?? 1)
+        const EH = emb.height * (sc.yScale ?? 1)
+        if (rot === 90) page.drawPage(emb, { x: x0, y: y0 + EW, rotate: degrees(-90), ...sc })
+        else if (rot === 180) page.drawPage(emb, { x: x0 + EW, y: y0 + EH, rotate: degrees(180), ...sc })
+        else if (rot === 270) page.drawPage(emb, { x: x0 + EH, y: y0, rotate: degrees(90), ...sc })
+        else page.drawPage(emb, { x: x0, y: y0, ...sc })
       }
       if (p.pattern) drawPattern(page, p.pattern, ox, oy, H)
       drawPaths(page, p.paths, ox, oy, H)
