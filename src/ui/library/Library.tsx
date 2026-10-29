@@ -739,6 +739,11 @@ export function Library() {
 
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
+  /** 카테고리 없는 노트·앱·파일 수 (사이드바 미분류) */
+  const uncategorizedCount = useMemo(
+    () => docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length,
+    [docs, apps, files]
+  )
 
   /** 사이드바 카테고리 배치 — "[태그] 이름"들을 뒤쪽 이름으로 묶어(이름 순) 먼저, 그다음 [태그] 없는 것.
       묶음 머리글은 뒤쪽 이름, 그 아래 항목은 [태그](태그 순, 점 색도 태그로) */
@@ -1534,16 +1539,19 @@ export function Library() {
             })}
             {categoryLayout.groups.length > 0 && <div className="tree-group-end" aria-hidden="true" />}
             {categoryLayout.plain.map((c) => categoryItem(c, c))}
-            <button
-              data-indicator-key="uncategorized"
-              className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
-              onClick={() => pickSection({ kind: 'uncategorized' })}
-            >
-              <span className="tree-cat-dot" style={{ background: catColor(null) }} aria-hidden="true" />
-              <span className="tree-name">미분류</span>
-              {section.kind === 'uncategorized' && recentActive && recentTag}
-              <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
-            </button>
+            {/* 미분류는 띄울 것이 없으면 숨긴다 — 보고 있는 중에 비면(마지막 노트를 옮겼을 때) 나갈 때까지 남긴다 */}
+            {(uncategorizedCount > 0 || section.kind === 'uncategorized') && (
+              <button
+                data-indicator-key="uncategorized"
+                className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
+                onClick={() => pickSection({ kind: 'uncategorized' })}
+              >
+                <span className="tree-cat-dot" style={{ background: catColor(null) }} aria-hidden="true" />
+                <span className="tree-name">미분류</span>
+                {section.kind === 'uncategorized' && recentActive && recentTag}
+                <span className="count">{uncategorizedCount}</span>
+              </button>
+            )}
             <div className="tree-label">
               폴더
               <button className="icon-mini" onClick={() => onNewFolder(null)} aria-label="새 폴더">
