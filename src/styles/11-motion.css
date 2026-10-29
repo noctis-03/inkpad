@@ -233,6 +233,12 @@
 @keyframes ants {
   to { stroke-dashoffset: -12; }
 }
+/* 크기 조절 핸들 (모서리) */
+.selection-shape .sel-handle {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
 .selection-bar {
   background: var(--btn-bg);
   color: var(--btn-fg);

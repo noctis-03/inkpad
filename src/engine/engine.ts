@@ -71,6 +71,8 @@ interface ActiveStroke {
   lasso: number[]
   moveFrom: { x: number; y: number } | null
   moveD: { x: number; y: number }
+  /** 모서리 핸들로 크기 조절 중 — 반대쪽 모서리(ax, ay)를 고정하고 정비율로 s배 */
+  resize: { ax: number; ay: number; kx: number; ky: number; minS: number; s: number } | null
 }
 
 interface TouchInfo {
@@ -95,6 +97,11 @@ interface Gesture {
 }
 
 const LAT_SAMPLES = 120
+/** 올가미 선택 모서리 핸들을 잡는 반경 (화면 px) */
+const RESIZE_HANDLE_PX = 22
+/** 크기 조절로 줄일 수 있는 한계 — 고른 영역 대각선이 화면에서 이보다 작아지지 않게 (px) */
+const RESIZE_MIN_PX = 24
+const RESIZE_MAX = 20
 const SAVE_DEBOUNCE_MS = 500
 /** 미리보기에 쓰는 예측 점 상한 — 너무 많으면 펜 끝이 실제보다 길게 튀어나온다 */
 const MAX_PREDICTED = 6
@@ -571,7 +578,9 @@ export class Engine {
       const alpha = e.stroke.tool === 'highlighter' ? e.stroke.color.slice(7, 9) || '66' : color.slice(7, 9) || 'ff'
       return { ...e, stroke: { ...e.stroke, color: color.slice(0, 7) + alpha } }
     })
+    const poly = this.lassoPoly
     this.exec({ removed, added })
+    this.lassoPoly = poly
     this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
   }
 
@@ -580,8 +589,9 @@ export class Engine {
     if (!this.selection.length || this.readOnly) return
     const off = 24 / this.cam.zoom
     const added = this.selection.map((r) => this.movedEntry(r, off, off, ulid()))
-    if (this.lassoPoly) this.lassoPoly = shiftPoly(this.lassoPoly, off, off)
+    const poly = this.lassoPoly && shiftPoly(this.lassoPoly, off, off)
     this.exec({ removed: [], added })
+    this.lassoPoly = poly
     this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
   }
 
@@ -1535,13 +1545,24 @@ export class Engine {
       added: new Map(),
       lasso: [],
       moveFrom: null,
-      moveD: { x: 0, y: 0 }
+      moveD: { x: 0, y: 0 },
+      resize: null
     }
     if (tool === 'lasso') {
       const sb = this.selectionBox
       const pad = 12 / this.cam.zoom
-      // 획을 고른 영역 안을 누르면 옮기기, 밖(또는 획 없이 영역만 고른 상태)이면 새 올가미
-      if (sb && this.selection.length && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
+      const corner = sb && this.selection.length ? this.cornerAt(sb, w.x, w.y) : -1
+      // 모서리 핸들을 누르면 크기 조절, 고른 영역 안이면 옮기기, 밖(또는 획 없이 영역만 고른 상태)이면 새 올가미
+      if (sb && corner >= 0) {
+        const xs = [sb.minX, sb.maxX, sb.maxX, sb.minX]
+        const ys = [sb.minY, sb.minY, sb.maxY, sb.maxY]
+        const ax = xs[(corner + 2) % 4]
+        const ay = ys[(corner + 2) % 4]
+        const kx = xs[corner] - ax
+        const ky = ys[corner] - ay
+        // 화면에서 대각선이 RESIZE_MIN_PX보다 작아지지 않게
+        a.resize = { ax, ay, kx, ky, minS: RESIZE_MIN_PX / (Math.hypot(kx, ky) * this.cam.zoom || 1), s: 1 }
+      } else if (sb && this.selection.length && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
         a.moveFrom = w
       } else this.clearSelection()
     }
@@ -1583,7 +1604,14 @@ export class Engine {
       return
     }
     if (a.tool === 'lasso') {
-      if (a.moveFrom) {
+      if (a.resize) {
+        // 끈 점을 대각선에 투영한 비율 — 가로·세로가 같은 비율로 늘고 준다
+        const r = a.resize
+        const d2 = r.kx * r.kx + r.ky * r.ky
+        const s = d2 ? ((w.x - r.ax) * r.kx + (w.y - r.ay) * r.ky) / d2 : 1
+        r.s = Math.min(RESIZE_MAX, Math.max(r.minS, s))
+        this.liveDirty = true
+      } else if (a.moveFrom) {
         a.moveD = { x: w.x - a.moveFrom.x, y: w.y - a.moveFrom.y }
         this.liveDirty = true
       } else if (this.settings.lassoShape === 'rect') {
@@ -1714,16 +1742,18 @@ export class Engine {
   // ─────────────────────────── 올가미 ───────────────────────────
 
   private finishLasso(a: ActiveStroke, commit: boolean) {
-    if (a.moveFrom) {
-      const { x: dx, y: dy } = a.moveD
-      if (!commit || (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01)) {
+    if (a.moveFrom || a.resize) {
+      const t = xformOf(a)
+      if (!commit || (Math.abs(t.s - 1) < 0.001 && Math.abs(t.dx) < 0.01 && Math.abs(t.dy) < 0.01)) {
         this.liveDirty = true
+        this.emitSelection()
         return
       }
       const removed = this.selection.map(toEntry)
-      const added = this.selection.map((r) => this.movedEntry(r, dx, dy, r.stroke.id))
-      if (this.lassoPoly) this.lassoPoly = shiftPoly(this.lassoPoly, dx, dy) // 영역도 함께 옮긴다
-      this.exec({ removed, added })
+      const added = this.selection.map((r) => this.transformedEntry(r, t, r.stroke.id))
+      const poly = this.lassoPoly && xformPoly(this.lassoPoly, t) // 영역도 함께 옮긴다
+      this.exec({ removed, added }) // exec가 선택(영역 포함)을 지우므로 영역은 그 뒤에 되살린다
+      this.lassoPoly = poly
       this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
       return
     }
@@ -1748,18 +1778,42 @@ export class Engine {
 
   /** 획을 월드 좌표로 (dx, dy) 옮긴 새 Entry. paged에서는 시작점이 들어간 페이지로 옮겨 간다 */
   private movedEntry(rec: StrokeRec, dx: number, dy: number, id: ID): Entry {
+    return this.transformedEntry(rec, { s: 1, cx: 0, cy: 0, dx, dy }, id)
+  }
+
+  /** 획을 월드 좌표에서 p' = c + (p - c)·s + d로 옮긴 새 Entry (굵기도 s배). paged에서는 시작점이 들어간 페이지로 옮겨 간다 */
+  private transformedEntry(rec: StrokeRec, x: SelXform, id: ID): Entry {
     const s = rec.stroke
-    const sx = s.points[0] + rec.ox + dx
-    const sy = s.points[1] + rec.oy + dy
+    const sx = xformX(x, s.points[0] + rec.ox)
+    const sy = xformY(x, s.points[1] + rec.oy)
     const t = this.layout.targetAt(sx, sy) ?? { pageId: rec.pageId, key: rec.key, ox: rec.ox, oy: rec.oy }
-    const offX = rec.ox + dx - t.ox
-    const offY = rec.oy + dy - t.oy
+    // 청크 좌표 p → 새 청크 좌표: (c + (ox + p - c)·s + d) - t.o = p·s + off
+    const offX = xformX(x, rec.ox) - t.ox
+    const offY = xformY(x, rec.oy) - t.oy
     const pts = s.points.slice()
     for (let i = 0; i < pts.length; i += 4) {
-      pts[i] = q2(pts[i] + offX)
-      pts[i + 1] = q2(pts[i + 1] + offY)
+      pts[i] = q2(pts[i] * x.s + offX)
+      pts[i + 1] = q2(pts[i + 1] * x.s + offY)
     }
-    return { pageId: t.pageId, key: t.key, stroke: { ...s, id, points: pts, bbox: pointsBBox(pts, s.width) } }
+    const width = x.s === 1 ? s.width : q2(s.width * x.s)
+    return { pageId: t.pageId, key: t.key, stroke: { ...s, id, width, points: pts, bbox: pointsBBox(pts, width) } }
+  }
+
+  /** 화면에서 모서리 핸들 근처(RESIZE_HANDLE_PX)면 그 모서리 번호(0 왼위 · 1 오른위 · 2 오른아래 · 3 왼아래), 아니면 -1 */
+  private cornerAt(b: Box, wx: number, wy: number): number {
+    const r = RESIZE_HANDLE_PX / this.cam.zoom
+    const xs = [b.minX, b.maxX, b.maxX, b.minX]
+    const ys = [b.minY, b.minY, b.maxY, b.maxY]
+    let best = -1
+    let bd = r
+    for (let i = 0; i < 4; i++) {
+      const d = Math.hypot(wx - xs[i], wy - ys[i])
+      if (d <= bd) {
+        bd = d
+        best = i
+      }
+    }
+    return best
   }
 
   private setSelection(recs: StrokeRec[]) {
@@ -1781,20 +1835,21 @@ export class Engine {
   private emitSelection() {
     const b = this.selectionBox
     if (!b || !this.cb.onSelection) return
-    const d = this.active?.moveFrom ? this.active.moveD : { x: 0, y: 0 }
-    const p0 = this.cam.worldToScreen(b.minX + d.x, b.minY + d.y)
-    const p1 = this.cam.worldToScreen(b.maxX + d.x, b.maxY + d.y)
+    const a = this.active?.tool === 'lasso' ? this.active : null
+    const t = a ? xformOf(a) : IDENTITY
+    const p0 = this.cam.worldToScreen(xformX(t, b.minX), xformY(t, b.minY))
+    const p1 = this.cam.worldToScreen(xformX(t, b.maxX), xformY(t, b.maxY))
     const poly: number[] = []
     const src = this.lassoPoly ?? boxPoly(b)
     for (let i = 0; i < src.length; i += 2) {
-      const s = this.cam.worldToScreen(src[i] + d.x, src[i + 1] + d.y)
+      const s = this.cam.worldToScreen(xformX(t, src[i]), xformY(t, src[i + 1]))
       poly.push(s.x, s.y)
     }
     this.cb.onSelection({
       count: this.selection.length,
       rect: { x: p0.x, y: p0.y, w: p1.x - p0.x, h: p1.y - p0.y },
       poly,
-      moving: !!this.active?.moveFrom
+      moving: !!(a?.moveFrom || a?.resize)
     })
   }
 
@@ -2026,11 +2081,13 @@ export class Engine {
           ? { ox: a.ox, oy: a.oy, points: a.points, predicted: a.predicted, width: a.width, color: a.color, opts: a.opts, clip: this.sheetClip(a.pageId) }
           : null
       let overlay: Overlay | null = null
-      if (a && a.tool === 'lasso' && !a.moveFrom) overlay = { lasso: a.lasso }
+      const sa = a?.tool === 'lasso' ? a : null
+      const transforming = !!(sa?.moveFrom || sa?.resize)
+      if (sa && !transforming) overlay = { lasso: sa.lasso }
       if (this.selection.length) {
-        const d = a?.moveFrom ? a.moveD : { x: 0, y: 0 }
-        overlay = { ...(overlay ?? {}), selection: { recs: this.selection, dx: d.x, dy: d.y, scale: 1, cx: 0, cy: 0 } }
-        if (a?.moveFrom) this.emitSelection()
+        const t = sa ? xformOf(sa) : IDENTITY
+        overlay = { ...(overlay ?? {}), selection: { recs: this.selection, dx: t.dx, dy: t.dy, scale: t.s, cx: t.cx, cy: t.cy } }
+        if (transforming) this.emitSelection()
       }
       r.drawLive(this.cam, live, this.cursor, overlay)
       const t1 = performance.now()
@@ -2343,6 +2400,27 @@ function eventTimeToPerf(ts: number) {
 }
 
 export { PAGE_GAP }
+
+/** 고른 획 변환 — 월드 좌표 p' = c + (p - c)·s + d */
+interface SelXform {
+  s: number
+  cx: number
+  cy: number
+  dx: number
+  dy: number
+}
+const IDENTITY: SelXform = { s: 1, cx: 0, cy: 0, dx: 0, dy: 0 }
+const xformX = (t: SelXform, x: number) => t.cx + (x - t.cx) * t.s + t.dx
+const xformY = (t: SelXform, y: number) => t.cy + (y - t.cy) * t.s + t.dy
+/** 올가미로 옮기는(moveD) 중이면 이동, 모서리를 끄는 중이면 반대쪽 모서리를 고정한 확대·축소 */
+function xformOf(a: ActiveStroke): SelXform {
+  if (a.resize) return { s: a.resize.s, cx: a.resize.ax, cy: a.resize.ay, dx: 0, dy: 0 }
+  if (a.moveFrom) return { s: 1, cx: 0, cy: 0, dx: a.moveD.x, dy: a.moveD.y }
+  return IDENTITY
+}
+function xformPoly(p: number[], t: SelXform): number[] {
+  return p.map((v, i) => (i % 2 ? xformY(t, v) : xformX(t, v)))
+}
 
 /** 다각형(평탄 [x, y, …])을 (dx, dy)만큼 옮긴 새 배열 */
 function shiftPoly(p: number[], dx: number, dy: number): number[] {

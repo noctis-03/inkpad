@@ -364,10 +364,10 @@ export class Renderer {
         ctx.fill(getPath(rec))
         const it = rec.item
         boxes.push({
-          x0: (it.minX + dx - cam.x) * k,
-          y0: (it.minY + dy - cam.y) * k,
-          x1: (it.maxX + dx - cam.x) * k,
-          y1: (it.maxY + dy - cam.y) * k
+          x0: (cx + (it.minX - cx) * scale + dx - cam.x) * k,
+          y0: (cy + (it.minY - cy) * scale + dy - cam.y) * k,
+          x1: (cx + (it.maxX - cx) * scale + dx - cam.x) * k,
+          y1: (cy + (it.maxY - cy) * scale + dy - cam.y) * k
         })
       }
     }

@@ -29,7 +29,7 @@ export function SelectionBar({ engine }: { engine: Engine }) {
     bar.style.left = `${left}px`
   })
 
-  if (!sel || sel.moving) return sel?.moving ? <SelectionShape poly={sel.poly} /> : null
+  if (!sel || sel.moving) return sel?.moving ? <SelectionShape poly={sel.poly} rect={sel.count ? sel.rect : undefined} /> : null
   const send = (
     <>
       <button className="tb-btn" onClick={() => useUI.setState({ sendImage: 'selection' })} aria-label="이미지로 보내기" title="이미지로 보내기 — 복사·공유·저장">
@@ -56,7 +56,7 @@ export function SelectionBar({ engine }: { engine: Engine }) {
     )
   return (
     <>
-      <SelectionShape poly={sel.poly} />
+      <SelectionShape poly={sel.poly} rect={sel.rect} />
       <div ref={barRef} className="selection-bar" role="toolbar" aria-label="선택 영역">
         <span className="sel-count">{sel.count}개</span>
         <button className="tb-btn" onClick={() => engine.duplicateSelection()} aria-label="복제">
@@ -83,13 +83,23 @@ export function SelectionBar({ engine }: { engine: Engine }) {
   )
 }
 
-/** 고른 영역 — 올가미 모양 그대로 움직이는 점선 (이미지로 보내면 이 모양대로 잘린다) */
-function SelectionShape({ poly }: { poly: number[] }) {
+/**
+ * 고른 영역 — 올가미 모양 그대로 움직이는 점선 (이미지로 보내면 이 모양대로 잘린다).
+ * 획을 골랐으면 rect 네 모서리에 크기 조절 핸들 — 펜으로 끌면 반대쪽 모서리를 고정하고 정비율로 (엔진이 처리)
+ */
+function SelectionShape({ poly, rect }: { poly: number[]; rect?: { x: number; y: number; w: number; h: number } }) {
   let points = ''
   for (let i = 0; i < poly.length; i += 2) points += `${poly[i]},${poly[i + 1]} `
   return (
     <svg className="selection-shape" aria-hidden="true">
       <polygon points={points} />
+      {rect &&
+        [
+          [rect.x, rect.y],
+          [rect.x + rect.w, rect.y],
+          [rect.x + rect.w, rect.y + rect.h],
+          [rect.x, rect.y + rect.h]
+        ].map(([x, y], i) => <circle key={i} className="sel-handle" cx={x} cy={y} r={7} />)}
     </svg>
   )
 }
