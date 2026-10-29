@@ -22,6 +22,7 @@ import { VersionPanel } from './VersionPanel'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToolbar } from './FloatingToolbar'
 import { BlockLayer } from './BlockLayer'
+import { insertPhotos } from './insertPhoto'
 import { SheetLayer } from './SheetLayer'
 import { PageChipLayer } from './PageChipLayer'
 import { PageSidebar } from './PageSidebar'
@@ -326,6 +327,22 @@ export function Editor({ docId }: { docId: ID }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // 사진 붙여넣기 (⌘V) — 글자 입력 중이 아닐 때, 클립보드에 사진이 있으면 노트에 넣는다
+  useEffect(() => {
+    if (readOnly || scratch) return
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      const eng = engineRef.current
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+      if (!eng || !files.length) return
+      e.preventDefault()
+      void insertPhotos(eng, files)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [readOnly, scratch])
+
   // 이 노트가 동기화·되돌리기로 바뀌었을 때.
   // 쓰기 가능한 편집 화면은 노트 보호(docGuard)가 이미 멈췄다가 다시 열었으므로 할 일이 없다.
   // 읽기 전용(다른 탭이 편집 중이거나 뷰어로 연 경우)은 쓰지 않으니 바뀐 내용으로 그냥 다시 연다.
@@ -412,7 +429,7 @@ export function Editor({ docId }: { docId: ID }) {
             </div>
           )}
           <Hud />
-          {!readOnly && <FloatingToolbar engine={engine} />}
+          {!readOnly && <FloatingToolbar engine={engine} photo={!scratch} />}
           {engine && <SelectionBar engine={engine} />}
           {engine && <PageIndicator engine={engine} paged={paged} />}
           {panel === 'settings' && <SettingsPanel />}

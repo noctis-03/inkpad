@@ -2,13 +2,14 @@ import { BlockStore, anchorBlock, refreshBlockIds } from './blocks'
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, strokeInPolygon } from './geometry'
-import { History, type Command, type PageSnapshot, type SheetChange } from './history'
+import { History, type Command, type ImageChange, type PageSnapshot, type SheetChange } from './history'
+import { ImageCache } from './images'
 import { Layout, PAGE_GAP } from './layout'
 import { PdfCache } from './pdf/pdfCache'
 import { PressureDetector, PRESSURE_LABEL, resolvePressure, strokeOptsFor, type ResolvedPressure } from './pressure'
 import { minPointDist, smoothPressure } from './quality'
 import { Renderer, type Box, type Cursor, type LiveDraw, type Overlay } from './render'
-import { Scene, getPath, groupKey, type Entry, type StrokeRec } from './scene'
+import { Scene, getPath, groupKey, type Entry, type ImageEntry, type ImageRec, type StrokeRec } from './scene'
 import { drawPattern } from './background'
 import type {
   EngineStats,
@@ -19,7 +20,7 @@ import type {
   ToolStyle,
   ViewInfo
 } from './types'
-import type { Background, Block, DocumentMeta, ID, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
+import type { Background, Block, DocumentMeta, ID, ImageElement, Page, Stroke, StrokeOpts, ViewState } from '../shared/model'
 import { BLOCK_MAX_OUTSIDE, SCHEMA_VERSION, SHEET_MAX, SHEET_MIN, makeBackground, pageScale, a4FitFactor, type SheetInfo } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import type { LoadedDocument, SaveBatch } from '../storage/repo'
@@ -143,6 +144,8 @@ export class Engine {
   /** 편집 블록 저장소 — Element 청크와 별개(PDF 내보내기 제외) */
   readonly blocks = new BlockStore()
   readonly pdf: PdfCache
+  /** 노트에 넣은 사진 비트맵 */
+  readonly images = new ImageCache()
   private renderer: Renderer
   private history = new History()
   doc: DocumentMeta
@@ -182,6 +185,8 @@ export class Engine {
 
   // 선택
   private selection: StrokeRec[] = []
+  /** 함께 고른 사진 — 획과 같이 옮기고 크기를 바꾸고 지운다 */
+  private selImages: ImageRec[] = []
   private selectionBox: Box | null = null
   /**
    * 지금 고른 올가미 영역(월드 다각형) — 이미지로 보낼 때 이 모양대로 자른다(고른 획의 크기가 아니라).
@@ -285,6 +290,13 @@ export class Engine {
     this.pdf.onReady = () => {
       this.pagesDirty = true
     }
+    this.renderer.images = this.images
+    this.images.onReady = () => {
+      this.committedDirty = true
+      this.liveDirty = true
+    }
+    this.images.assetProvider = () => this.pdf.assetProvider
+    this.images.onAssetError = (id, msg) => this.pdf.onAssetError?.(id, msg)
 
     const proto = typeof PointerEvent !== 'undefined' ? PointerEvent.prototype : ({} as PointerEvent)
     this.stats = {
@@ -330,6 +342,7 @@ export class Engine {
       const gk = groupKey(c.pageId, c.key)
       for (const el of c.elements) {
         if (el.type === 'stroke') entries.push({ stroke: el, pageId: c.pageId, key: c.key })
+        else if (el.type === 'image') this.scene.addImage({ image: el, pageId: c.pageId, key: c.key })
         else {
           const arr = this.scene.extras.get(gk) ?? []
           arr.push(el)
@@ -349,6 +362,7 @@ export class Engine {
     this.disposers.forEach((d) => d())
     await this.flush()
     this.renderer.destroy()
+    this.images.clear()
   }
 
   // ─────────────────────────── 외부 API: 설정 ───────────────────────────
@@ -566,17 +580,24 @@ export class Engine {
     return this.history.canUndo
   }
 
+  /** 고른 획이나 사진이 있는가 (영역만 고른 상태는 아니다) */
+  private get hasSelection() {
+    return this.selection.length > 0 || this.selImages.length > 0
+  }
+
   deleteSelection() {
-    if (!this.selection.length || this.readOnly) return
+    if (!this.hasSelection || this.readOnly) return
     const removed = this.selection.map(toEntry)
+    const images = this.selImages.map((r) => ({ before: toImageEntry(r), after: null }))
     this.clearSelection(false)
-    this.exec({ removed, added: [] })
+    this.exec({ removed, added: [], images })
   }
 
   /** 선택한 획의 색 바꾸기 (형광펜은 투명도 유지) */
   recolorSelection(color: string) {
     if (!this.selection.length || this.readOnly) return
     const removed = this.selection.map(toEntry)
+    const imageIds = this.selImages.map((r) => r.image.id)
     const added = removed.map((e) => {
       const alpha = e.stroke.tool === 'highlighter' ? e.stroke.color.slice(7, 9) || '66' : color.slice(7, 9) || 'ff'
       return { ...e, stroke: { ...e.stroke, color: color.slice(0, 7) + alpha } }
@@ -584,29 +605,85 @@ export class Engine {
     const poly = this.lassoPoly
     this.exec({ removed, added })
     this.lassoPoly = poly
-    this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
+    this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean), this.imageRecs(imageIds))
   }
 
   /** 선택 영역 복제 (약간 옆으로) */
   duplicateSelection() {
-    if (!this.selection.length || this.readOnly) return
+    if (!this.hasSelection || this.readOnly) return
     const off = 24 / this.cam.zoom
     const added = this.selection.map((r) => this.movedEntry(r, off, off, ulid()))
+    const t: SelXform = { s: 1, cx: 0, cy: 0, dx: off, dy: off }
+    const imgs = this.selImages.map((r) => this.transformedImage(r, t, ulid()))
+    for (const e of imgs) e.image = { ...e.image, z: this.scene.nextZ() }
     const poly = this.lassoPoly && shiftPoly(this.lassoPoly, off, off)
-    this.exec({ removed: [], added })
+    this.exec({ removed: [], added, images: imgs.map((e) => ({ before: null, after: e })) })
     this.lassoPoly = poly
-    this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
+    this.setSelection(
+      added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean),
+      this.imageRecs(imgs.map((e) => e.image.id))
+    )
   }
 
   clearSelection(redraw = true) {
-    if (!this.selection.length && !this.lassoPoly) return
+    if (!this.hasSelection && !this.lassoPoly) return
     this.selection = []
+    this.selImages = []
     this.selectionBox = null
     this.lassoPoly = null
     this.renderer.hidden = null
     if (redraw) this.committedDirty = true
     this.liveDirty = true
     this.cb.onSelection?.(null)
+  }
+
+  // ─────────────────────────── 외부 API: 사진 ───────────────────────────
+
+  /**
+   * 사진 넣기 — 지금 보는 화면 가운데에, 화면(문서형이면 페이지 폭)의 60% 안에 들어가게.
+   * 원본은 미리 에셋으로 저장해 둔다(assetId). bmp를 주면 다시 디코딩하지 않는다. 넣은 사진을 골라 둔다(올가미일 때).
+   * nth: 여러 장을 한 번에 넣을 때 몇 번째인가 — 겹치지 않게 조금씩 비켜 놓는다
+   */
+  insertImage(assetId: ID, natural: { w: number; h: number }, bmp?: ImageBitmap, nth = 0): ID | null {
+    if (this.readOnly || !natural.w || !natural.h) return null
+    if (bmp) this.images.put(assetId, bmp)
+    const W = this.renderer.cssW
+    const H = this.renderer.cssH
+    const c = this.cam.screenToWorld(W / 2 + nth * 24, H / 2 + nth * 24)
+    const page = this.layout.paged ? this.layout.pageNear(c.x, c.y) : null
+    const pr = page && this.layout.rects.get(page.id)
+    // 가운데가 페이지 밖(페이지 사이 틈)이면 가까운 페이지 안으로
+    const cx = pr ? Math.min(Math.max(c.x, pr.x), pr.x + pr.w) : c.x
+    const cy = pr ? Math.min(Math.max(c.y, pr.y), pr.y + pr.h) : c.y
+    const t = this.layout.targetAt(cx, cy)
+    if (!t) return null
+    let maxW = (W / this.cam.zoom) * 0.6
+    let maxH = (H / this.cam.zoom) * 0.6
+    if (pr) {
+      maxW = Math.min(maxW, pr.w * 0.8)
+      maxH = Math.min(maxH, pr.h * 0.8)
+    }
+    // 원래 크기(1px = 1pt)보다 키우지 않는다
+    const k = Math.min(1, maxW / natural.w, maxH / natural.h)
+    const ww = natural.w * k
+    const wh = natural.h * k
+    const image: ImageElement = {
+      id: ulid(),
+      type: 'image',
+      layer: 'under',
+      z: this.scene.nextZ(),
+      createdAt: Date.now(),
+      assetId,
+      x: q2((cx - ww / 2 - t.ox) / t.os),
+      y: q2((cy - wh / 2 - t.oy) / t.os),
+      w: q2(ww / t.os),
+      h: q2(wh / t.os),
+      rotation: 0
+    }
+    this.clearSelection(false)
+    this.exec({ removed: [], added: [], images: [{ before: null, after: { image, pageId: t.pageId, key: t.key } }], label: '사진 넣기' })
+    if (this.tool === 'lasso') this.setSelection([], this.imageRecs([image.id]))
+    return image.id
   }
 
   // ─────────────────────────── 외부 API: 블록 ───────────────────────────
@@ -997,12 +1074,14 @@ export class Engine {
     // 그 페이지에 소속된 블록(여백 블록 포함)도 같은 명령으로 지운다 — Undo하면 함께 복원된다.
     // 이 페이지를 가리키던 jump 블록은 그대로 둔다. UI가 "삭제된 페이지"로 표시한다.
     const pageBlocks = this.blocks.ofPage(page.id)
+    const images = [page, ...sheets].flatMap((p) => this.scene.imagesOfPage(p.id)).map((e) => ({ before: e, after: null }))
     this.exec({
       removed,
       added: [],
       pagesBefore: before,
       pagesAfter: { order, pages: [] },
       blocks: pageBlocks.map((b) => ({ before: b, after: null })),
+      images,
       sheets: sheets.map((sh) => ({ before: sh, after: null })),
       label: '페이지 삭제'
     })
@@ -1015,6 +1094,7 @@ export class Engine {
     const now = Date.now()
     const page: Page = { ...src, id: ulid(), createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
     const added = this.scene.entriesOfPage(src.id).map((e) => ({ ...e, pageId: page.id, stroke: { ...e.stroke, id: ulid() } }))
+    const images: ImageChange[] = this.scene.imagesOfPage(src.id).map((e) => ({ before: null, after: { ...e, pageId: page.id, image: { ...e.image, id: ulid() } } }))
     const zBase = this.maxBlockZ()
     const blockCopies = this.blocks
       .ofPage(src.id)
@@ -1026,6 +1106,7 @@ export class Engine {
       const copy: Page = { ...sh, id: ulid(), sheet: { ...sh.sheet!, anchorPageId: page.id, z: ++sheetZ }, createdAt: now, updatedAt: now, version: 0, deletedAt: undefined }
       sheetCopies.push(copy)
       for (const e of this.scene.entriesOfPage(sh.id)) added.push({ ...e, pageId: copy.id, stroke: { ...e.stroke, id: ulid() } })
+      for (const e of this.scene.imagesOfPage(sh.id)) images.push({ before: null, after: { ...e, pageId: copy.id, image: { ...e.image, id: ulid() } } })
     }
     const before = this.snapshot([])
     const order = [...before.order]
@@ -1036,6 +1117,7 @@ export class Engine {
       pagesBefore: before,
       pagesAfter: { order, pages: [page] },
       blocks: blockCopies.map((b) => ({ before: null, after: b })),
+      images,
       sheets: sheetCopies.map((sh) => ({ before: null, after: sh })),
       label: '페이지 복제'
     })
@@ -1233,6 +1315,25 @@ export class Engine {
       this.markDirty(e.pageId, e.key)
       touched.add(e.pageId)
     }
+    // 사진: 먼저 모두 빼고 더한다 — 옮기기는 같은 ID의 전후라서
+    const imgs = cmd.images ?? []
+    for (const ch of imgs) {
+      const gone = inverse ? ch.after : ch.before
+      const rec = gone && this.scene.removeImage(gone.image.id)
+      if (rec) {
+        box = unionBox(box, rec.box)
+        this.markDirty(rec.pageId, rec.key)
+        touched.add(rec.pageId)
+      }
+    }
+    for (const ch of imgs) {
+      const next = inverse ? ch.before : ch.after
+      if (!next) continue
+      const rec = this.scene.addImage(next)
+      box = unionBox(box, rec.box)
+      this.markDirty(next.pageId, next.key)
+      touched.add(next.pageId)
+    }
     // 블록: inverse면 before, 아니면 after를 적용한다 (Element 청크와는 별개 경로)
     for (const ch of cmd.blocks ?? []) {
       const next = inverse ? ch.before : ch.after
@@ -1247,9 +1348,9 @@ export class Engine {
         this.deletedBlocks.add(gone.id)
       }
     }
-    if (this.selection.length) this.clearSelection(false)
+    if (this.hasSelection) this.clearSelection(false)
     // 블록만 바뀐 Command는 DOM 오버레이만 갱신하면 된다 — 획 캔버스를 다시 그리지 않는다.
-    const blocksOnly = toRemove.length === 0 && toAdd.length === 0 && !snap && !cmd.sheets?.length
+    const blocksOnly = toRemove.length === 0 && toAdd.length === 0 && !imgs.length && !snap && !cmd.sheets?.length
     if (blocksOnly) {
       // 캔버스에 그릴 변경 없음 — 블록은 BlockLayer가 렌더한다
     } else if (snap || cmd.sheets?.length || !box || !this.renderer.inSync(this.cam) || toRemove.length + toAdd.length > 500) {
@@ -1646,7 +1747,7 @@ export class Engine {
     if (tool === 'lasso') {
       const sb = this.selectionBox
       const pad = 12 / this.cam.zoom
-      const corner = sb && this.selection.length ? this.cornerAt(sb, w.x, w.y) : -1
+      const corner = sb && this.hasSelection ? this.cornerAt(sb, w.x, w.y) : -1
       // 모서리 핸들을 누르면 크기 조절, 고른 영역 안이면 옮기기, 밖(또는 획 없이 영역만 고른 상태)이면 새 올가미
       if (sb && corner >= 0) {
         const xs = [sb.minX, sb.maxX, sb.maxX, sb.minX]
@@ -1657,7 +1758,7 @@ export class Engine {
         const ky = ys[corner] - ay
         // 화면에서 대각선이 RESIZE_MIN_PX보다 작아지지 않게
         a.resize = { ax, ay, kx, ky, minS: RESIZE_MIN_PX / (Math.hypot(kx, ky) * this.cam.zoom || 1), s: 1 }
-      } else if (sb && this.selection.length && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
+      } else if (sb && this.hasSelection && w.x >= sb.minX - pad && w.x <= sb.maxX + pad && w.y >= sb.minY - pad && w.y <= sb.maxY + pad) {
         a.moveFrom = w
       } else this.clearSelection()
     }
@@ -1846,14 +1947,28 @@ export class Engine {
       }
       const removed = this.selection.map(toEntry)
       const added = this.selection.map((r) => this.transformedEntry(r, t, r.stroke.id))
+      const images = this.selImages.map((r) => ({ before: toImageEntry(r), after: this.transformedImage(r, t, r.image.id) }))
       const poly = this.lassoPoly && xformPoly(this.lassoPoly, t) // 영역도 함께 옮긴다
-      this.exec({ removed, added }) // exec가 선택(영역 포함)을 지우므로 영역은 그 뒤에 되살린다
+      this.exec({ removed, added, images }) // exec가 선택(영역 포함)을 지우므로 영역은 그 뒤에 되살린다
       this.lassoPoly = poly
-      this.setSelection(added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean))
+      this.setSelection(
+        added.map((e) => this.scene.recs.get(e.stroke.id)!).filter(Boolean),
+        this.imageRecs(images.map((c) => c.after.image.id))
+      )
       return
     }
     const poly = a.lasso
-    if (!commit || poly.length < 6) return
+    if (!commit) return
+    if (poly.length < 6 || !lassoIsBig(poly, this.cam.zoom)) {
+      // 살짝 누른 것 — 사진 위면 그 사진을 고른다 (맨 위 사진)
+      const hit = poly.length >= 2 ? this.imageAt(poly[0], poly[1]) : null
+      if (hit) {
+        this.lassoPoly = null
+        this.setSelection([], [hit])
+        return
+      }
+      if (poly.length < 6) return
+    }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (let i = 0; i < poly.length; i += 2) {
       minX = Math.min(minX, poly[i]); maxX = Math.max(maxX, poly[i])
@@ -1865,10 +1980,44 @@ export class Engine {
     const sel = this.scene
       .query(minX, minY, maxX, maxY)
       .filter((r) => (!onSheet || this.layout.visibleIn(surf, r.pageId)) && strokeInPolygon(r.stroke.points, r.ox, r.oy, poly, r.os))
+    // 사진은 가운데가 올가미 안에 들면 고른다
+    const imgs = this.scene
+      .queryImages(minX, minY, maxX, maxY)
+      .filter((r) => (!onSheet || this.layout.visibleIn(surf, r.pageId)) && pointInPoly((r.box.minX + r.box.maxX) / 2, (r.box.minY + r.box.maxY) / 2, poly))
     // 너무 작은 영역(살짝 누른 것)은 획이 없으면 고르지 않는다
-    const big = (maxX - minX) * this.cam.zoom > 8 && (maxY - minY) * this.cam.zoom > 8
+    const big = lassoIsBig(poly, this.cam.zoom)
     this.lassoPoly = sel.length || big ? poly.slice() : null
-    this.setSelection(sel)
+    this.setSelection(sel, imgs)
+  }
+
+  /** 이 점에 보이는 맨 위 사진 (불투명 보조 용지에 가린 사진은 빼고) */
+  private imageAt(wx: number, wy: number): ImageRec | null {
+    const surf = this.layout.surfacesAt(wx, wy)
+    const hits = this.scene.queryImages(wx, wy, wx, wy).filter((r) => this.layout.visibleIn(surf, r.pageId))
+    return hits[hits.length - 1] ?? null
+  }
+
+  private imageRecs(ids: ID[]): ImageRec[] {
+    return ids.map((id) => this.scene.images.get(id)!).filter(Boolean)
+  }
+
+  /** 사진을 월드 좌표에서 p' = c + (p - c)·s + d로 옮긴 새 ImageEntry. paged에서는 가운데가 들어간 페이지로 옮겨 간다 */
+  private transformedImage(rec: ImageRec, x: SelXform, id: ID): ImageEntry {
+    const b = rec.box
+    const x0 = xformX(x, b.minX)
+    const y0 = xformY(x, b.minY)
+    const x1 = xformX(x, b.maxX)
+    const y1 = xformY(x, b.maxY)
+    const t = this.layout.targetAt((x0 + x1) / 2, (y0 + y1) / 2) ?? { pageId: rec.pageId, key: rec.key, ox: rec.ox, oy: rec.oy, os: rec.os }
+    const image: ImageElement = {
+      ...rec.image,
+      id,
+      x: q2((x0 - t.ox) / t.os),
+      y: q2((y0 - t.oy) / t.os),
+      w: q2((x1 - x0) / t.os),
+      h: q2((y1 - y0) / t.os)
+    }
+    return { image, pageId: t.pageId, key: t.key }
   }
 
   /** 획을 월드 좌표로 (dx, dy) 옮긴 새 Entry. paged에서는 시작점이 들어간 페이지로 옮겨 간다 */
@@ -1912,17 +2061,20 @@ export class Engine {
     return best
   }
 
-  private setSelection(recs: StrokeRec[]) {
+  private setSelection(recs: StrokeRec[], images: ImageRec[] = []) {
     this.selection = recs
-    if (!recs.length && !this.lassoPoly) {
+    this.selImages = images
+    if (!recs.length && !images.length && !this.lassoPoly) {
       this.clearSelection()
       return
     }
-    // 고른 영역 = 올가미 영역 + 고른 획 (획이 올가미 밖으로 삐져나와도 잡을 수 있게)
+    // 고른 영역 = 올가미 영역 + 고른 획·사진 (올가미 밖으로 삐져나와도 잡을 수 있게)
     let box: Box | null = this.lassoPoly ? polyBox(this.lassoPoly) : null
     for (const r of recs) box = unionBox(box, r.item)
+    for (const r of images) box = unionBox(box, r.box)
     this.selectionBox = box
-    this.renderer.hidden = recs.length ? new Set(recs.map((r) => r.stroke.id)) : null
+    const ids = [...recs.map((r) => r.stroke.id), ...images.map((r) => r.image.id)]
+    this.renderer.hidden = ids.length ? new Set(ids) : null
     this.committedDirty = true
     this.liveDirty = true
     this.emitSelection()
@@ -1942,7 +2094,8 @@ export class Engine {
       poly.push(s.x, s.y)
     }
     this.cb.onSelection({
-      count: this.selection.length,
+      count: this.selection.length + this.selImages.length,
+      images: this.selImages.length,
       rect: { x: p0.x, y: p0.y, w: p1.x - p0.x, h: p1.y - p0.y },
       poly,
       moving: !!(a?.moveFrom || a?.resize)
@@ -2159,7 +2312,7 @@ export class Engine {
         this.stats.committedMs = r.lastFullMs
         this.stats.renderPath = moving ? 'redraw' : 'idle'
       }
-      if (this.selection.length || this.lassoPoly) this.emitSelection()
+      if (this.hasSelection || this.lassoPoly) this.emitSelection()
       this.emitView()
     }
 
@@ -2180,9 +2333,9 @@ export class Engine {
       const sa = a?.tool === 'lasso' ? a : null
       const transforming = !!(sa?.moveFrom || sa?.resize)
       if (sa && !transforming) overlay = { lasso: sa.lasso }
-      if (this.selection.length) {
+      if (this.hasSelection) {
         const t = sa ? xformOf(sa) : IDENTITY
-        overlay = { ...(overlay ?? {}), selection: { recs: this.selection, dx: t.dx, dy: t.dy, scale: t.s, cx: t.cx, cy: t.cy } }
+        overlay = { ...(overlay ?? {}), selection: { recs: this.selection, images: this.selImages, dx: t.dx, dy: t.dy, scale: t.s, cx: t.cx, cy: t.cy } }
         if (transforming) this.emitSelection()
       }
       r.drawLive(this.cam, live, this.cursor, overlay)
@@ -2266,6 +2419,7 @@ export class Engine {
     if (!page) return null
     let w: number, h: number, ox: number, oy: number
     let recs: StrokeRec[]
+    let imgs: ImageRec[]
     if (page.size) {
       const r = this.layout.rects.get(pageId)
       if (!r) return null
@@ -2274,6 +2428,7 @@ export class Engine {
       ox = r.x
       oy = r.y
       recs = this.scene.recsOfPage(pageId)
+      imgs = [...this.scene.images.values()].filter((i) => i.pageId === pageId).sort((a, b) => a.image.z - b.image.z)
     } else {
       const b = this.scene.bounds() ?? { minX: -400, minY: -300, maxX: 400, maxY: 300 }
       const pad = 40
@@ -2284,6 +2439,7 @@ export class Engine {
       // 썸네일 비율 4:3 이하로
       if (h > w * 1.4) h = w * 1.4
       recs = this.scene.query(ox, oy, ox + w, oy + h)
+      imgs = this.scene.queryImages(ox, oy, ox + w, oy + h)
     }
     const scale = width / w
     const c = document.createElement('canvas')
@@ -2306,6 +2462,7 @@ export class Engine {
       drawPattern(ctx, page.background, w, h, scale * 2, pageScale(page))
       if (page.background.type !== 'blank') drew = true
     }
+    if (await this.drawImagesTo(ctx, imgs, scale, ox, oy)) drew = true
     for (const pass of ['under', 'main'] as const) {
       for (const rec of recs) {
         if (rec.stroke.layer !== pass) continue
@@ -2385,6 +2542,8 @@ export class Engine {
         ctx.restore()
       }
     }
+    // 사진은 넣은 내용이라 필기만 보낼 때도 담는다
+    await this.drawImagesTo(ctx, this.scene.queryImages(box.minX, box.minY, box.maxX, box.maxY), k, box.minX, box.minY)
     const recs = ink ? this.scene.query(box.minX, box.minY, box.maxX, box.maxY) : []
     for (const pass of ['under', 'main'] as const) {
       for (const rec of recs) {
@@ -2395,6 +2554,31 @@ export class Engine {
       }
     }
     return new Promise((res) => c.toBlob((b) => res(b), 'image/png'))
+  }
+
+  /** 사진을 (ox, oy)가 왼쪽 위인 k배 캔버스에 — 원본을 다 불러온 뒤 그린다. 하나라도 그렸으면 true */
+  private async drawImagesTo(ctx: CanvasRenderingContext2D, imgs: ImageRec[], k: number, ox: number, oy: number): Promise<boolean> {
+    let drew = false
+    for (const rec of imgs) {
+      const bmp = await this.images.ready(rec.image.assetId)
+      if (!bmp) continue
+      const { x, y, w, h } = rec.image
+      ctx.save()
+      const sheet = this.layout.isSheet(rec.pageId) && this.layout.rects.get(rec.pageId)
+      if (sheet) {
+        // 보조 용지 사진은 화면처럼 용지 안으로 자른다
+        ctx.setTransform(k, 0, 0, k, (sheet.x - ox) * k, (sheet.y - oy) * k)
+        ctx.beginPath()
+        ctx.rect(0, 0, sheet.w, sheet.h)
+        ctx.clip()
+      }
+      ctx.setTransform(k * rec.os, 0, 0, k * rec.os, (rec.ox - ox) * k, (rec.oy - oy) * k)
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(bmp, x, y, w, h)
+      ctx.restore()
+      drew = true
+    }
+    return drew
   }
 
   private async pdfThumb(page: Page, scale: number): Promise<CanvasImageSource | null> {
@@ -2458,7 +2642,8 @@ export class Engine {
 
   clearAll() {
     const removed = [...this.scene.recs.values()].map(toEntry)
-    if (removed.length) this.exec({ removed, added: [] })
+    const images = [...this.scene.images.values()].map((r) => ({ before: toImageEntry(r), after: null }))
+    if (removed.length || images.length) this.exec({ removed, added: [], images })
   }
 }
 
@@ -2466,6 +2651,26 @@ export class Engine {
 
 function toEntry(r: StrokeRec): Entry {
   return { stroke: r.stroke, pageId: r.pageId, key: r.key }
+}
+
+function toImageEntry(r: ImageRec): ImageEntry {
+  return { image: r.image, pageId: r.pageId, key: r.key }
+}
+
+/** 올가미가 살짝 누른 것보다 큰가 — 화면에서 가로·세로 모두 8px 넘게 */
+function lassoIsBig(p: number[], zoom: number): boolean {
+  const b = polyBox(p)
+  return (b.maxX - b.minX) * zoom > 8 && (b.maxY - b.minY) * zoom > 8
+}
+
+/** 점이 다각형(평탄 [x, y, …]) 안에 있는가 (짝수-홀수 규칙) */
+function pointInPoly(x: number, y: number, p: number[]): boolean {
+  let inside = false
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+    const xi = p[i], yi = p[i + 1], xj = p[j], yj = p[j + 1]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
 }
 
 function midpoint(ts: { x: number; y: number }[]) {

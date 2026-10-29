@@ -62,7 +62,8 @@ export function SelectionBar({ engine }: { engine: Engine }) {
         <button className="tb-btn" onClick={() => engine.duplicateSelection()} aria-label="복제">
           <Icon name="copy" size={20} />
         </button>
-        {PEN_COLORS.slice(0, 5).map((c, i) => (
+        {/* 색 바꾸기는 획에만 — 사진만 골랐으면 내지 않는다 */}
+        {sel.count > sel.images && PEN_COLORS.slice(0, 5).map((c, i) => (
           <button
             key={c}
             className="color-swatch small"
@@ -85,7 +86,7 @@ export function SelectionBar({ engine }: { engine: Engine }) {
 
 /**
  * 고른 영역 — 올가미 모양 그대로 움직이는 점선 (이미지로 보내면 이 모양대로 잘린다).
- * 획을 골랐으면 rect 네 모서리에 크기 조절 핸들 — 펜으로 끌면 반대쪽 모서리를 고정하고 정비율로 (엔진이 처리)
+ * 획·사진을 골랐으면 rect 네 모서리에 크기 조절 핸들 — 펜으로 끌면 반대쪽 모서리를 고정하고 정비율로 (엔진이 처리)
  */
 function SelectionShape({ poly, rect }: { poly: number[]; rect?: { x: number; y: number; w: number; h: number } }) {
   let points = ''

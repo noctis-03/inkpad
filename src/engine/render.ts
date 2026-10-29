@@ -4,7 +4,8 @@ import { drawPattern } from './background'
 import { outlineToPath, strokeOutline } from './geometry'
 import type { Layout, Rect } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
-import { getPath, type Scene, type StrokeRec } from './scene'
+import type { ImageCache } from './images'
+import { getPath, type ImageRec, type Scene, type StrokeRec } from './scene'
 import { pageScale, type Background, type ID, type Page, type StrokeOpts } from '../shared/model'
 
 export interface Box {
@@ -37,7 +38,7 @@ export interface Cursor {
 
 export interface Overlay {
   lasso?: number[] // 월드 좌표 다각형
-  selection?: { recs: StrokeRec[]; dx: number; dy: number; scale: number; cx: number; cy: number }
+  selection?: { recs: StrokeRec[]; images: ImageRec[]; dx: number; dy: number; scale: number; cx: number; cy: number }
 }
 
 /**
@@ -65,8 +66,10 @@ export class Renderer {
   visibleCount = 0
   /** 입력 레이어에서 지난 프레임에 실제로 그린 영역(기기 픽셀). 전체 clearRect를 피하기 위해 기록한다 */
   private liveDrawn: LiveBox | null = null
-  /** 선택된 획은 확정 레이어에서 빼고 입력 레이어에 그린다 */
+  /** 선택된 획·사진은 확정 레이어에서 빼고 입력 레이어에 그린다 */
   hidden: Set<string> | null = null
+  /** 사진 비트맵 (엔진이 넣어 준다) */
+  images: ImageCache | null = null
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -217,29 +220,69 @@ export class Renderer {
     ctx.fill(getPath(rec))
   }
 
+  /** 사진 한 장 — 아직 못 불러왔으면 회색 자리, 못 그리면 안내 글자 */
+  private drawImageRec(ctx: CanvasRenderingContext2D, rec: ImageRec, cam: Camera, k: number) {
+    const { x, y, w, h, assetId } = rec.image
+    ctx.setTransform(k * rec.os, 0, 0, k * rec.os, (rec.ox - cam.x) * k, (rec.oy - cam.y) * k)
+    const bmp = this.images?.get(assetId)
+    if (bmp) {
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(bmp, x, y, w, h)
+      return
+    }
+    ctx.fillStyle = '#eef0f3'
+    ctx.fillRect(x, y, w, h)
+    ctx.lineWidth = 1 / (cam.zoom * rec.os)
+    ctx.strokeStyle = '#cbd2dc'
+    ctx.strokeRect(x, y, w, h)
+    if (this.images?.isFailed(assetId)) {
+      ctx.fillStyle = '#9ca3af'
+      ctx.font = `${12 / rec.os}px sans-serif`
+      ctx.fillText('사진을 표시할 수 없습니다', x + 8 / rec.os, y + 20 / rec.os, Math.max(1, w - 16 / rec.os))
+    }
+  }
+
+  private drawImages(ctx: CanvasRenderingContext2D, imgs: ImageRec[], cam: Camera, k: number) {
+    const hidden = this.hidden
+    for (const rec of imgs) if (!hidden || !hidden.has(rec.image.id)) this.drawImageRec(ctx, rec, cam, k)
+  }
+
   /**
-   * 확정 레이어 그리기 순서: 페이지 획 → 보조 용지(z순)마다 종이 + 그 용지의 획.
+   * 확정 레이어 그리기 순서: 페이지 사진 → 페이지 획 → 보조 용지(z순)마다 종이 + 그 용지의 사진 + 획.
    * 용지 종이도 이 레이어에 그려야 용지 아래 페이지 획을 가린다 (페이지 종이는 배경 레이어).
+   * 사진은 늘 획 아래 — 사진 위에 필기한다
    */
-  private drawList(ctx: CanvasRenderingContext2D, layout: Layout, recs: StrokeRec[], cam: Camera, view: Box) {
+  private drawList(ctx: CanvasRenderingContext2D, layout: Layout, recs: StrokeRec[], imgs: ImageRec[], cam: Camera, view: Box) {
     const k = cam.zoom * this.scale
-    if (!layout.sheets.length) return this.drawPasses(ctx, recs, cam, k)
+    if (!layout.sheets.length) {
+      this.drawImages(ctx, imgs, cam, k)
+      return this.drawPasses(ctx, recs, cam, k)
+    }
     const onSheet = new Map<ID, StrokeRec[]>()
-    for (const sh of layout.sheets) onSheet.set(sh.id, [])
+    const imgsOnSheet = new Map<ID, ImageRec[]>()
+    for (const sh of layout.sheets) {
+      onSheet.set(sh.id, [])
+      imgsOnSheet.set(sh.id, [])
+    }
     const base: StrokeRec[] = []
     for (const rec of recs) (onSheet.get(rec.pageId) ?? base).push(rec)
+    const baseImgs: ImageRec[] = []
+    for (const rec of imgs) (imgsOnSheet.get(rec.pageId) ?? baseImgs).push(rec)
+    this.drawImages(ctx, baseImgs, cam, k)
     let n = this.drawPasses(ctx, base, cam, k)
     for (const sh of layout.sheets) {
       const r = layout.rects.get(sh.id)
       if (!r || r.x > view.maxX || r.x + r.w < view.minX || r.y > view.maxY || r.y + r.h < view.minY) continue
       this.drawSheetPaper(ctx, sh, r, cam, k)
       const list = onSheet.get(sh.id)!
-      if (!list.length) continue
-      // 용지 획은 용지 밖으로 삐져나오지 않게 자른다
+      const sheetImgs = imgsOnSheet.get(sh.id)!
+      if (!list.length && !sheetImgs.length) continue
+      // 용지 획·사진은 용지 밖으로 삐져나오지 않게 자른다
       ctx.save()
       ctx.beginPath()
       ctx.rect(0, 0, r.w, r.h) // drawSheetPaper가 용지 원점 변환을 걸어 두었다
       ctx.clip()
+      this.drawImages(ctx, sheetImgs, cam, k)
       n += this.drawPasses(ctx, list, cam, k)
       ctx.restore()
     }
@@ -290,7 +333,7 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.committed.width, this.committed.height)
     const v = this.viewBox(cam)
-    this.visibleCount = this.drawList(ctx, scene.layout, scene.query(v.minX, v.minY, v.maxX, v.maxY), cam, v)
+    this.visibleCount = this.drawList(ctx, scene.layout, scene.query(v.minX, v.minY, v.maxX, v.maxY), scene.queryImages(v.minX, v.minY, v.maxX, v.maxY), cam, v)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     this.renderedCam.copy(cam)
     if (this.transformed) {
@@ -316,7 +359,14 @@ export class Renderer {
     ctx.rect(x0, y0, x1 - x0, y1 - y0)
     ctx.clip()
     const region = { minX: x0 / k + cam.x, minY: y0 / k + cam.y, maxX: x1 / k + cam.x, maxY: y1 / k + cam.y }
-    this.drawList(ctx, scene.layout, scene.query(region.minX, region.minY, region.maxX, region.maxY), cam, region)
+    this.drawList(
+      ctx,
+      scene.layout,
+      scene.query(region.minX, region.minY, region.maxX, region.maxY),
+      scene.queryImages(region.minX, region.minY, region.maxX, region.maxY),
+      cam,
+      region
+    )
     ctx.restore()
   }
 
@@ -359,7 +409,19 @@ export class Renderer {
     }
     const boxes: LiveBox[] = []
     if (overlay?.selection) {
-      const { recs, dx, dy, scale, cx, cy } = overlay.selection
+      const { recs, images, dx, dy, scale, cx, cy } = overlay.selection
+      for (const rec of images) {
+        const ox = cx + (rec.ox - cx) * scale + dx
+        const oy = cy + (rec.oy - cy) * scale + dy
+        this.drawImageRec(ctx, { ...rec, ox, oy, os: rec.os * scale }, cam, k)
+        const b = rec.box
+        boxes.push({
+          x0: (cx + (b.minX - cx) * scale + dx - cam.x) * k,
+          y0: (cy + (b.minY - cy) * scale + dy - cam.y) * k,
+          x1: (cx + (b.maxX - cx) * scale + dx - cam.x) * k,
+          y1: (cy + (b.maxY - cy) * scale + dy - cam.y) * k
+        })
+      }
       for (const rec of recs) {
         // 월드 좌표: p' = c + (p - c) * scale + d
         const ox = cx + (rec.ox - cx) * scale + dx

@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // PDF 내보내기 Worker: 원본 PDF 페이지 위에 필기를 벡터 경로로 합친다.
-import { PDFDocument, rgb, degrees, EncryptedPDFError, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, type PDFEmbeddedPage, type PDFPage } from 'pdf-lib'
-import type { ExportJob, ExportPath, ExportPattern, WorkerOut } from './exportTypes'
+import { PDFDocument, rgb, degrees, EncryptedPDFError, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, type PDFEmbeddedPage, type PDFImage, type PDFPage } from 'pdf-lib'
+import type { ExportImage, ExportJob, ExportPath, ExportPattern, WorkerOut } from './exportTypes'
 
 /** 속지 무늬. (ox, oy) = 그 종이의 왼쪽 위(PDF 페이지 위쪽 기준), H = PDF 페이지 높이 */
 function drawPattern(page: PDFPage, g: ExportPattern, ox: number, oy: number, H: number) {
@@ -21,6 +21,30 @@ function drawPaths(page: PDFPage, paths: ExportPath[], ox: number, oy: number, H
     // drawSvgPath는 SVG 좌표(y 아래로)를 (x, y) 기준으로 뒤집어 그린다
     page.drawSvgPath(path.d, { x: ox, y: H - oy, color: rgb(path.r, path.g, path.b), opacity: path.a, borderWidth: 0 })
   }
+}
+
+/** 사진 — 같은 원본은 한 번만 넣는다. PNG·JPEG가 아니거나 못 읽으면 건너뛴다 */
+async function drawImages(out: PDFDocument, cache: Map<string, Promise<PDFImage | null>>, job: ExportJob, page: PDFPage, list: ExportImage[], ox: number, oy: number, H: number) {
+  for (const im of list) {
+    let p = cache.get(im.assetId)
+    if (!p) {
+      const bytes = job.images?.[im.assetId]
+      p = !bytes
+        ? Promise.resolve(null)
+        : (isPng(bytes) ? out.embedPng(bytes) : out.embedJpg(bytes)).catch((e) => {
+            console.warn('[export] 사진을 넣지 못했습니다.', im.assetId, e)
+            return null
+          })
+      cache.set(im.assetId, p)
+    }
+    const img = await p
+    if (img) page.drawImage(img, { x: ox + im.x, y: H - oy - im.y - im.h, width: im.w, height: im.h })
+  }
+}
+
+const isPng = (b: ArrayBuffer) => {
+  const u = new Uint8Array(b, 0, Math.min(4, b.byteLength))
+  return u[0] === 0x89 && u[1] === 0x50 && u[2] === 0x4e && u[3] === 0x47
 }
 
 const post = (m: WorkerOut, transfer?: Transferable[]) => (self as unknown as Worker).postMessage(m, transfer ?? [])
@@ -60,6 +84,7 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
     }
 
     // 3) 페이지 조립
+    const imgCache = new Map<string, Promise<PDFImage | null>>()
     let done = 0
     for (const p of job.pages) {
       // 보조 용지를 함께 내보내면 PDF 페이지가 넓어지고 원래 페이지는 (ox, oy)에 놓인다
@@ -89,6 +114,11 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
         else page.drawPage(emb, { x: x0, y: y0, ...sc })
       }
       if (p.pattern) drawPattern(page, p.pattern, ox, oy, H)
+      if (p.images?.length) {
+        page.pushOperators(pushGraphicsState(), rectangle(x0, y0, p.w, p.h), clip(), endPath())
+        await drawImages(out, imgCache, job, page, p.images, ox, oy, H)
+        page.pushOperators(popGraphicsState())
+      }
       drawPaths(page, p.paths, ox, oy, H)
       // 보조 용지 (z순): 종이 → 무늬 → 테두리 → 용지 안으로 자른 필기
       for (const s of p.sheets ?? []) {
@@ -104,8 +134,9 @@ self.onmessage = async (ev: MessageEvent<ExportJob>) => {
           borderColor: s.border === 'dashed' ? rgb(0.45, 0.58, 0.85) : rgb(0.78, 0.78, 0.78),
           borderDashArray: s.border === 'dashed' ? [4, 3] : undefined
         })
-        if (!s.paths.length) continue
+        if (!s.paths.length && !s.images?.length) continue
         page.pushOperators(pushGraphicsState(), rectangle(s.x, sy0, s.w, s.h), clip(), endPath())
+        if (s.images?.length) await drawImages(out, imgCache, job, page, s.images, s.x, s.y, H)
         drawPaths(page, s.paths, s.x, s.y, H)
         page.pushOperators(popGraphicsState())
       }

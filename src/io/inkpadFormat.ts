@@ -3,7 +3,7 @@
 // blocks.json은 선택 파일이다(블록이 있을 때만 쓴다) — FORMAT_VERSION을 올리지 않고도 옛 버전 앱이 무시하고 가져올 수 있다.
 // textblocks.json도 선택 파일 — 문서(text 모드)의 블록.
 import { unzip, zip, strFromU8, strToU8, type Unzipped, type Zippable } from 'fflate'
-import { BLOCK_SCHEMA_VERSION, SCHEMA_VERSION, TEXT_MAX_INDENT, type Asset, type Block, type DocumentMeta, type Folder, type ID, type Page, type TextBlock } from '../shared/model'
+import { BLOCK_SCHEMA_VERSION, SCHEMA_VERSION, TEXT_MAX_INDENT, type Asset, type Block, type DocumentMeta, type Element, type Folder, type ID, type Page, type TextBlock } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { normalizeBlockUrl } from '../engine/blocks'
 import { db } from '../storage/db'
@@ -53,6 +53,7 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
     for (const c of chunks) {
       if (!c.elements.length) continue
       files[`${base}chunks/${c.pageId}/${c.key}.json`] = json(c.elements)
+      for (const e of c.elements) if (e.type === 'image') assetIds.add(e.assetId)
     }
     for (const p of pages) if (p.pdf) assetIds.add(p.pdf.assetId)
     onProgress?.(++i, documentIds.length)
@@ -65,7 +66,7 @@ export async function exportInkpad(documentIds: ID[], kind: 'document' | 'backup
     const src = a.blob ?? (await tryEnsureAssetLocal(a.id))
     if (!src) continue
     const file = `assets/${aid}`
-    // PDF는 이미 압축되어 있으므로 zip 압축을 끈다
+    // PDF·사진은 이미 압축되어 있으므로 zip 압축을 끈다
     files[file] = [new Uint8Array(await src.arrayBuffer()), { level: 0 }]
     const { blob: _b, ...meta } = a
     void _b
@@ -220,7 +221,10 @@ export async function importInkpad(file: Blob, targetFolderId: ID | null, onProg
       const [oldPage, keyFile] = name.slice(prefix.length).split('/')
       const pageId = pageMap.get(oldPage)
       if (!pageId) continue
-      chunks.push({ pageId, key: keyFile.replace(/\.json$/, ''), elements: JSON.parse(strFromU8(files[name])) })
+      const elements = (JSON.parse(strFromU8(files[name])) as Element[]).map((e) =>
+        e.type === 'image' ? { ...e, assetId: assetMap.get(e.assetId) ?? e.assetId } : e
+      )
+      chunks.push({ pageId, key: keyFile.replace(/\.json$/, ''), elements })
     }
     // 블록: blocks.json이 없으면(블록 기능 이전 파일) 블록 없이 정상 처리한다
     const blocksFile = files[base + 'blocks.json']

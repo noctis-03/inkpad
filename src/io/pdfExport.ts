@@ -1,15 +1,15 @@
 // [규칙] 편집 블록(메모·링크·할 일·타이머·페이지 이동)은 PDF 내보내기에 절대 포함되지 않는다.
 // 블록은 Element 청크(chunks)와 별개 테이블(blocks)에 저장되므로 이 파일의 경로는 애초에 블록을 볼 수 없다.
 // 회귀 방지: loadDocument 반환값에 blocks 필드가 새로 생겼지만, 아래 어떤 경로도 그 값을 읽지 않는다 —
-// 구조 분해에 blocks를 넣지 말 것. ExportJob은 청크의 stroke(+ 고른 경우 보조 용지)로만 만들어진다.
+// 구조 분해에 blocks를 넣지 말 것. ExportJob은 청크의 stroke·사진(+ 고른 경우 보조 용지)으로만 만들어진다.
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
-import { pageScale, type Page, type Stroke } from '../shared/model'
+import { pageScale, type ImageElement, type Page, type Stroke } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
 import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
-import type { ExportJob, ExportPage, ExportPath, ExportSheet, WorkerOut } from './exportTypes'
+import type { ExportImage, ExportJob, ExportPage, ExportPath, ExportSheet, WorkerOut } from './exportTypes'
 import { recallPassword } from './passwords'
 
 export interface ExportOptions {
@@ -54,6 +54,29 @@ function strokesToPaths(strokes: Stroke[], dx: number, dy: number, k = 1): Expor
   return out
 }
 
+/** 사진 요소 → 종이 왼쪽 위 기준 pt (k: 페이지 내용 배율, d: 청크 원점) */
+function imagesOut(list: ImageElement[], dx: number, dy: number, k = 1): ExportImage[] {
+  return [...list]
+    .sort((a, b) => a.z - b.z)
+    .map((im) => ({ assetId: im.assetId, x: im.x * k + dx, y: im.y * k + dy, w: im.w * k, h: im.h * k }))
+}
+
+/** 내보낼 사진 원본 — 이 기기에 없으면 받아 온다. 끝내 못 구한 사진은 빼고 내보낸다 */
+async function loadImageSources(pages: ExportPage[]): Promise<Record<string, ArrayBuffer>> {
+  const ids = new Set<string>()
+  for (const p of pages) {
+    for (const im of p.images ?? []) ids.add(im.assetId)
+    for (const s of p.sheets ?? []) for (const im of s.images ?? []) ids.add(im.assetId)
+  }
+  const out: Record<string, ArrayBuffer> = {}
+  for (const id of ids) {
+    const a = await getAsset(id)
+    const src = a ? (a.blob ?? (await tryEnsureAssetLocal(a.id))) : null
+    if (src) out[id] = await src.arrayBuffer()
+  }
+  return out
+}
+
 const rgb3 = (hex: string): [number, number, number] => {
   const c = parseColor(hex)
   return [c.r, c.g, c.b]
@@ -77,7 +100,13 @@ function patternFor(page: Page): ExportPage['pattern'] {
  * 페이지에 붙은 보조 용지를 둘러 PDF 페이지(frame)를 넓힌다. 좌표는 원래 페이지 왼쪽 위 기준으로 모은 뒤
  * frame 왼쪽 위 기준으로 옮긴다 (용지가 페이지보다 위로 올라가 있으면 frame도 위로 늘어난다)
  */
-function attachSheets(page: Page, sheets: Page[], strokesByPage: Map<string, Stroke[]>, includePattern: boolean): Pick<ExportPage, 'frame' | 'sheets'> {
+function attachSheets(
+  page: Page,
+  sheets: Page[],
+  strokesByPage: Map<string, Stroke[]>,
+  imagesByPage: Map<string, ImageElement[]>,
+  includePattern: boolean
+): Pick<ExportPage, 'frame' | 'sheets'> {
   const { w, h } = page.size!
   const placed = sheets.map((sh) => {
     const sw = sh.size!.w
@@ -97,6 +126,7 @@ function attachSheets(page: Page, sheets: Page[], strokesByPage: Map<string, Str
       paper: transparent ? null : rgb3(sh.background.type === 'blank' ? sh.background.color : '#ffffff'),
       pattern: transparent || !includePattern ? null : patternFor(sh),
       border: transparent ? 'dashed' : 'solid',
+      images: imagesOut(imagesByPage.get(sh.id) ?? [], 0, 0, pageScale(sh)),
       paths: strokesToPaths(strokesByPage.get(sh.id) ?? [], 0, 0, pageScale(sh))
     }
   })
@@ -107,10 +137,16 @@ function attachSheets(page: Page, sheets: Page[], strokesByPage: Map<string, Str
 export async function exportDocumentPdf(documentId: string, opts: ExportOptions = {}): Promise<Blob> {
   const { doc, pages, sheets, chunks } = await loadDocument(documentId)
   const strokesByPage = new Map<string, Stroke[]>()
+  const imagesByPage = new Map<string, ImageElement[]>()
   for (const c of chunks) {
     const arr = strokesByPage.get(c.pageId) ?? []
-    for (const e of c.elements) if (e.type === 'stroke') arr.push(e)
+    const imgs = imagesByPage.get(c.pageId) ?? []
+    for (const e of c.elements) {
+      if (e.type === 'stroke') arr.push(e)
+      else if (e.type === 'image') imgs.push(e)
+    }
     strokesByPage.set(c.pageId, arr)
+    imagesByPage.set(c.pageId, imgs)
   }
 
   if (doc.mode === 'infinite') return exportInfinitePdf(doc.title, chunks, opts)
@@ -135,10 +171,11 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
       paper: p.pdf ? null : rgb3(p.background.type === 'blank' ? p.background.color : '#ffffff'),
       pattern: p.pdf || opts.includePattern === false ? null : patternFor(p),
       pdf: p.pdf ? { ...p.pdf } : undefined,
+      images: imagesOut(imagesByPage.get(p.id) ?? [], 0, 0, pageScale(p)),
       paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0, pageScale(p))
     }
     const sh = attached.get(p.id)
-    return sh ? { ...ep, ...attachSheets(p, sh, strokesByPage, opts.includePattern !== false) } : ep
+    return sh ? { ...ep, ...attachSheets(p, sh, strokesByPage, imagesByPage, opts.includePattern !== false) } : ep
   })
 
   const sources: Record<string, ArrayBuffer> = {}
@@ -153,7 +190,7 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
     }
   }
 
-  const job: ExportJob = { title: doc.title, pages: expPages, sources }
+  const job: ExportJob = { title: doc.title, pages: expPages, sources, images: await loadImageSources(expPages) }
   let result = await runWorker(job, opts)
   if (result.type === 'need-raster') {
     // 암호가 걸린 PDF 등: 해당 페이지를 pdf.js로 이미지로 만들어 대체 (벡터 필기는 그대로)
@@ -209,9 +246,17 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
   const pad = 24
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const world: Stroke[] = []
+  const worldImages: ImageElement[] = []
   for (const c of chunks) {
     const { ox, oy } = parseChunkKey(c.key)
     for (const e of c.elements) {
+      if (e.type === 'image') {
+        minX = Math.min(minX, e.x + ox)
+        minY = Math.min(minY, e.y + oy)
+        maxX = Math.max(maxX, e.x + e.w + ox)
+        maxY = Math.max(maxY, e.y + e.h + oy)
+        worldImages.push({ ...e, x: e.x + ox, y: e.y + oy })
+      }
       if (e.type !== 'stroke') continue
       minX = Math.min(minX, e.bbox[0] + ox)
       minY = Math.min(minY, e.bbox[1] + oy)
@@ -225,7 +270,7 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
       world.push({ ...e, points: pts })
     }
   }
-  if (!world.length) {
+  if (!world.length && !worldImages.length) {
     minX = minY = 0
     maxX = 595
     maxY = 842
@@ -241,8 +286,15 @@ async function exportInfinitePdf(title: string, chunks: ChunkData[], opts: Expor
     }
     return { ...s, points: pts, width: s.width * k }
   })
-  const page: ExportPage = { w: w * k, h: h * k, paper: [1, 1, 1], pattern: null, paths: strokesToPaths(scaled, 0, 0) }
-  const result = await runWorker({ title, pages: [page], sources: {} }, opts)
+  const page: ExportPage = {
+    w: w * k,
+    h: h * k,
+    paper: [1, 1, 1],
+    pattern: null,
+    images: imagesOut(worldImages, (pad - minX) * k, (pad - minY) * k, k),
+    paths: strokesToPaths(scaled, 0, 0)
+  }
+  const result = await runWorker({ title, pages: [page], sources: {}, images: await loadImageSources([page]) }, opts)
   if (result.type !== 'done') throw new Error('PDF를 만들지 못했습니다.')
   return new Blob([result.bytes], { type: 'application/pdf' })
 }

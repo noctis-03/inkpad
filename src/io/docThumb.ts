@@ -9,7 +9,7 @@ import { drawPattern } from '../engine/background'
 import { getPath } from '../engine/scene'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
 import { useUI } from '../app/store'
-import { pageScale, type ID, type Page, type Stroke, type TextBlock } from '../shared/model'
+import { pageScale, type ID, type ImageElement, type Page, type Stroke, type TextBlock } from '../shared/model'
 import { byPos } from '../shared/fracIndex'
 import { renderTextThumb } from '../textdoc/thumb'
 
@@ -34,7 +34,7 @@ const byLayerZ = (a: Stroke, b: Stroke) => (a.layer === b.layer ? a.z - b.z : a.
  * 없으면 배경(속지) 위에 필기만 그린다.
  * 아무것도 그릴 게 없으면(빈 배경 + 필기 없음, 혹은 PDF 원본 미확보 + 필기 없음) null.
  */
-async function renderPageBlob(page: Page, strokes: Stroke[]): Promise<Blob | null> {
+async function renderPageBlob(page: Page, strokes: Stroke[], images: ImageElement[] = []): Promise<Blob | null> {
   if (!page.size) return null // 무한 캔버스는 이 경로에서 제외 (엔진 렌더가 담당)
   const { w, h } = page.size
   const scale = THUMB_W / w
@@ -76,6 +76,19 @@ async function renderPageBlob(page: Page, strokes: Stroke[]): Promise<Blob | nul
     if (page.background.type !== 'blank') drew = true
   }
 
+  // 사진도 이 기기에 원본이 있을 때만 (새로 받아오지 않는다)
+  for (const im of [...images].sort((a, b) => a.z - b.z)) {
+    const asset = await db.assets.get(im.assetId)
+    if (!asset?.blob) continue
+    const bmp = await createImageBitmap(asset.blob).catch(() => null)
+    if (!bmp) continue
+    const ps = pageScale(page)
+    ctx.setTransform(scale * ps, 0, 0, scale * ps, 0, 0)
+    ctx.drawImage(bmp, im.x, im.y, im.w, im.h)
+    bmp.close()
+    drew = true
+  }
+
   if (strokes.length) {
     const ps = pageScale(page) // 획은 페이지 내용 배율을 곱해 그린다
     ctx.setTransform(scale * ps, 0, 0, scale * ps, 0, 0)
@@ -102,11 +115,10 @@ export async function regenerateThumbnail(docId: ID): Promise<boolean> {
   }
   const first = pages[0]
   if (!first) return false
-  const strokes = chunks
-    .filter((c) => c.pageId === first.id)
-    .flatMap((c) => c.elements)
-    .filter((e): e is Stroke => e.type === 'stroke')
-  const blob = await renderPageBlob(first, strokes)
+  const elements = chunks.filter((c) => c.pageId === first.id).flatMap((c) => c.elements)
+  const strokes = elements.filter((e): e is Stroke => e.type === 'stroke')
+  const images = elements.filter((e): e is ImageElement => e.type === 'image')
+  const blob = await renderPageBlob(first, strokes, images)
   if (!blob) return false
   await putThumbnail(docId, blob)
   return true
