@@ -52,6 +52,8 @@ export interface Settings {
   density: 'comfortable' | 'compact'
   // 올가미 모양 — 자유(손으로 그린 모양) / 사각(끌어서 네모)
   lassoShape: 'free' | 'rect'
+  // 미니맵 — 확대해 좌우가 화면 밖일 때 왼쪽 위에 지금 보는 줄의 전체 폭을 작게 (ui/editor/Minimap.tsx)
+  minimap: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -81,7 +83,8 @@ export const DEFAULT_SETTINGS: Settings = {
   motion: 'auto',
   theme: 'auto',
   density: 'comfortable',
-  lassoShape: 'free'
+  lassoShape: 'free',
+  minimap: true
 }
 
 export interface PenStyle {
