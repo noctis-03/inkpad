@@ -368,14 +368,15 @@ export function pointInPolygon(x: number, y: number, poly: number[]): boolean {
 }
 
 /** 올가미 선택 판정: 점의 60% 이상이 다각형 안에 있으면 선택 */
-export function strokeInPolygon(points: number[], ox: number, oy: number, poly: number[]): boolean {
+/** os: 페이지 내용 배율 — 월드 = 원점 + 점 × os */
+export function strokeInPolygon(points: number[], ox: number, oy: number, poly: number[], os = 1): boolean {
   const n = points.length / 4
   const stride = Math.max(1, Math.floor(n / 40)) // 긴 획은 표본만 검사
   let inside = 0
   let total = 0
   for (let i = 0; i < n; i += stride) {
     total++
-    if (pointInPolygon(points[i * 4] + ox, points[i * 4 + 1] + oy, poly)) inside++
+    if (pointInPolygon(points[i * 4] * os + ox, points[i * 4 + 1] * os + oy, poly)) inside++
   }
   return total > 0 && inside / total >= 0.6
 }

@@ -7,7 +7,7 @@ import { CountUp } from '../motion/CountUp'
 import { dur, motionLevel } from '../motion/motion'
 import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
-import { askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
+import { askPdfFit, askPdfPassword, confirmDialog, promptDialog } from '../../app/dialogs'
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
@@ -40,7 +40,8 @@ import {
 } from '../../storage/repo'
 import type { Mark } from '../../storage/repo'
 import { pickFiles, saveFile } from '../../io/download'
-import { createDocumentFromPdf, ImportError, readPdf } from '../../io/pdfImport'
+import { createDocumentFromPdf, ImportError, pdfNeedsFit, readPdf } from '../../io/pdfImport'
+import { closePdf } from '../../engine/pdf/pdfjs'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { routeFiles } from '../../io/fileRoute'
 import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
@@ -929,7 +930,13 @@ export function Library() {
             continue
           }
         }
-        last = await createDocumentFromPdf(info, folderId)
+        const fit = pdfNeedsFit(info) ? await askPdfFit(info.pages) : false
+        if (fit === null) {
+          await closePdf(info.pdf)
+          act.drop()
+          continue
+        }
+        last = await createDocumentFromPdf(info, folderId, fit)
         act.done(`${info.pages.length}쪽 가져옴`)
       } catch (e) {
         act.fail(errorText(e, 'PDF를 가져오지 못했습니다.'))

@@ -5,7 +5,7 @@ import { outlineToPath, strokeOutline } from './geometry'
 import type { Layout, Rect } from './layout'
 import type { PdfCache } from './pdf/pdfCache'
 import { getPath, type Scene, type StrokeRec } from './scene'
-import type { Background, ID, Page, StrokeOpts } from '../shared/model'
+import { pageScale, type Background, type ID, type Page, type StrokeOpts } from '../shared/model'
 
 export interface Box {
   minX: number
@@ -17,6 +17,8 @@ export interface Box {
 export interface LiveDraw {
   ox: number
   oy: number
+  /** 페이지 내용 배율 — 월드 = 원점 + 점 × os */
+  os: number
   points: number[]
   predicted: number[][]
   width: number
@@ -171,9 +173,11 @@ export class Renderer {
       ctx.fillRect(1 / cam.zoom, 2 / cam.zoom, r.w, r.h)
       ctx.fillStyle = p.background.type === 'blank' ? p.background.color : '#ffffff'
       ctx.fillRect(0, 0, r.w, r.h)
+      const ps = pageScale(p)
       if (p.pdf && pdf) {
         visibleKeys.add(`${p.pdf.assetId}:${p.pdf.pageIndex}`)
-        const bmp = pdf.get(p.pdf, r.w, r.h, cam.zoom * this.scale, true)
+        // 캐시는 PDF 원래 크기(pt) 기준 — 배율만큼 해상도를 바꿔 달라고 한다
+        const bmp = pdf.get(p.pdf, r.w / ps, r.h / ps, cam.zoom * this.scale * ps, true)
         if (bmp) {
           ctx.imageSmoothingQuality = 'high'
           ctx.drawImage(bmp, 0, 0, r.w, r.h)
@@ -183,7 +187,7 @@ export class Renderer {
           ctx.fillText('PDF 페이지를 표시할 수 없습니다', 24, 40)
         } else pending = true
       } else {
-        drawPattern(ctx, p.background, r.w, r.h, cam.zoom * this.scale)
+        drawPattern(ctx, p.background, r.w, r.h, cam.zoom * this.scale, ps)
       }
     }
     pdf?.retain(visibleKeys)
@@ -193,7 +197,8 @@ export class Renderer {
       for (const p of ahead) {
         if (p.pdf) {
           const r = layout.rects.get(p.id)!
-          pdf.get(p.pdf, r.w, r.h, cam.zoom * this.scale, false)
+          const ps = pageScale(p)
+          pdf.get(p.pdf, r.w / ps, r.h / ps, cam.zoom * this.scale * ps, false)
         }
       }
     }
@@ -207,7 +212,7 @@ export class Renderer {
   // ───────── 확정 레이어 ─────────
 
   private drawRec(ctx: CanvasRenderingContext2D, rec: StrokeRec, cam: Camera, k: number) {
-    ctx.setTransform(k, 0, 0, k, (rec.ox - cam.x) * k, (rec.oy - cam.y) * k)
+    ctx.setTransform(k * rec.os, 0, 0, k * rec.os, (rec.ox - cam.x) * k, (rec.oy - cam.y) * k)
     ctx.fillStyle = rec.stroke.color
     ctx.fill(getPath(rec))
   }
@@ -256,7 +261,7 @@ export class Renderer {
     ctx.fillRect(2 / cam.zoom, 3 / cam.zoom, r.w, r.h)
     ctx.fillStyle = sh.background.type === 'blank' ? sh.background.color : '#ffffff'
     ctx.fillRect(0, 0, r.w, r.h)
-    drawPattern(ctx, sh.background, r.w, r.h, cam.zoom * this.scale)
+    drawPattern(ctx, sh.background, r.w, r.h, cam.zoom * this.scale, pageScale(sh))
     ctx.lineWidth = 1 / cam.zoom
     ctx.strokeStyle = 'rgba(0,0,0,0.22)'
     ctx.strokeRect(0, 0, r.w, r.h)
@@ -359,7 +364,7 @@ export class Renderer {
         // 월드 좌표: p' = c + (p - c) * scale + d
         const ox = cx + (rec.ox - cx) * scale + dx
         const oy = cy + (rec.oy - cy) * scale + dy
-        ctx.setTransform(k * scale, 0, 0, k * scale, (ox - cam.x) * k, (oy - cam.y) * k)
+        ctx.setTransform(k * scale * rec.os, 0, 0, k * scale * rec.os, (ox - cam.x) * k, (oy - cam.y) * k)
         ctx.fillStyle = rec.stroke.color
         ctx.fill(getPath(rec))
         const it = rec.item
@@ -380,7 +385,7 @@ export class Renderer {
         ctx.rect(c.minX, c.minY, c.maxX - c.minX, c.maxY - c.minY)
         ctx.clip()
       }
-      ctx.setTransform(k, 0, 0, k, (stroke.ox - cam.x) * k, (stroke.oy - cam.y) * k)
+      ctx.setTransform(k * stroke.os, 0, 0, k * stroke.os, (stroke.ox - cam.x) * k, (stroke.oy - cam.y) * k)
       ctx.fillStyle = stroke.color
       ctx.fill(outlineToPath(strokeOutline(stroke.points, stroke.width, stroke.opts, false, stroke.predicted)))
       ctx.restore()
@@ -466,8 +471,9 @@ function liveStrokeBox(stroke: LiveDraw): { minX: number; minY: number; maxX: nu
     if (p[1] > maxY) maxY = p[1]
   }
   if (minX === Infinity) return { minX: 0, minY: 0, maxX: 0, maxY: 0 }
-  const pad = stroke.width + 2
-  return { minX: minX + stroke.ox - pad, minY: minY + stroke.oy - pad, maxX: maxX + stroke.ox + pad, maxY: maxY + stroke.oy + pad }
+  const { ox, oy, os } = stroke
+  const pad = (stroke.width + 2) * os
+  return { minX: minX * os + ox - pad, minY: minY * os + oy - pad, maxX: maxX * os + ox + pad, maxY: maxY * os + oy + pad }
 }
 
 function unionLiveBoxes(list: LiveBox[]): LiveBox | null {

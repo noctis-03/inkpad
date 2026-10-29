@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
+import { a4FitFactor } from '../shared/model'
 
 // 브라우저 기본 prompt/confirm 대신 쓰는 앱 내 대화상자 (홈 화면 PWA에서도 일관되게 동작)
 type ConfirmDialog = {
@@ -64,6 +65,48 @@ export function askPdfPassword(incorrect: boolean) {
     password: true,
     ok: '열기'
   })
+}
+
+const LS_PDF_FIT = 'inkpad.pdfFit'
+
+/**
+ * PDF를 가져올 때 페이지 폭이 A4에서 많이 벗어나면(farFromA4) 원본 크기로 둘지 A4 폭에 맞출지 묻는다.
+ * true = A4 폭에 맞춤, false = 원본 크기, null = 가져오기 취소. 지난 선택을 이 기기에 기억해 그 버튼을 강조한다
+ */
+export async function askPdfFit(pages: { w: number; h: number }[]): Promise<boolean | null> {
+  // 가장 많이 벗어난 페이지로 설명한다
+  let worst = pages[0]
+  let wf = 1
+  for (const p of pages) {
+    const f = a4FitFactor(p)
+    if (Math.abs(Math.log(f)) > Math.abs(Math.log(wf))) {
+      worst = p
+      wf = f
+    }
+  }
+  const ratio = 1 / wf
+  const rel = ratio >= 1 ? `A4의 ${ratio.toFixed(1)}배` : `A4의 ${Math.round(ratio * 100)}%`
+  let last = 'original'
+  try {
+    last = localStorage.getItem(LS_PDF_FIT) ?? 'original'
+  } catch {
+    /* 기억하지 못해도 묻기는 한다 */
+  }
+  const v = await choiceDialog('PDF 페이지 크기', {
+    message: `페이지 폭이 ${rel}입니다 (${Math.round(worst.w)}×${Math.round(worst.h)}pt). 원본 크기 그대로 두면 다른 노트와 펜 굵기가 다르게 보일 수 있습니다.`,
+    note: '나중에 페이지 메뉴에서 언제든 바꿀 수 있습니다. 필기도 페이지와 함께 늘고 줄어듭니다.',
+    options: [
+      { key: 'original', label: '원본 크기', primary: last !== 'a4' },
+      { key: 'a4', label: 'A4 폭에 맞춤', primary: last === 'a4' }
+    ]
+  })
+  if (v === null) return null
+  try {
+    localStorage.setItem(LS_PDF_FIT, v)
+  } catch {
+    /* 무시 */
+  }
+  return v === 'a4'
 }
 
 export function DialogHost() {

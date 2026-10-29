@@ -1,4 +1,4 @@
-import { CHUNK_SIZE, PAGE_CHUNK_KEY, type ID, type Page } from '../shared/model'
+import { CHUNK_SIZE, PAGE_CHUNK_KEY, pageScale, type ID, type Page } from '../shared/model'
 
 export const PAGE_GAP = 28 // 페이지 사이 간격 (월드 단위 = pt)
 
@@ -14,6 +14,8 @@ export interface Target {
   key: string
   ox: number
   oy: number
+  /** 페이지 내용 배율 — 월드 = 원점 + 청크 좌표 × os */
+  os: number
 }
 
 /** 보조 용지의 월드 사각형 — 기준 페이지 사각형(anchor)에 상대 좌표를 더한다. snap이면 가장자리에 붙인다 */
@@ -141,12 +143,21 @@ export class Layout {
     return this.mode === 'paged'
   }
 
-  origin(pageId: ID, key: string): { ox: number; oy: number } {
+  /** 청크 원점(월드)과 내용 배율 — 월드 = 원점 + 청크 좌표 × os */
+  origin(pageId: ID, key: string): { ox: number; oy: number; os: number } {
     if (this.paged) {
       const r = this.rects.get(pageId)
-      return r ? { ox: r.x, oy: r.y } : { ox: 0, oy: 0 }
+      return r ? { ox: r.x, oy: r.y, os: this.scaleOf(pageId) } : { ox: 0, oy: 0, os: 1 }
     }
-    return parseChunkKey(key)
+    return { ...parseChunkKey(key), os: 1 }
+  }
+
+  /** 페이지(보조 용지 포함)의 내용 배율 */
+  scaleOf(pageId: ID): number {
+    if (!this.paged) return 1
+    const i = this.index.get(pageId)
+    const p = i === undefined ? this.sheets.find((s) => s.id === pageId) : this.pages[i]
+    return pageScale(p)
   }
 
   /** 월드 좌표에서 새 요소가 들어갈 위치 (paged: 가장 가까운 페이지) */
@@ -155,13 +166,13 @@ export class Layout {
       const page = this.pages[0]
       if (!page) return null
       const c = chunkOf(wx, wy)
-      return { pageId: page.id, key: c.key, ox: c.ox, oy: c.oy }
+      return { pageId: page.id, key: c.key, ox: c.ox, oy: c.oy, os: 1 }
     }
     // 보조 용지가 페이지 위에 겹쳐 있으면 용지가 먼저다
     const p = this.sheetAt(wx, wy) ?? this.pageNear(wx, wy)
     if (!p) return null
     const r = this.rects.get(p.id)!
-    return { pageId: p.id, key: PAGE_CHUNK_KEY, ox: r.x, oy: r.y }
+    return { pageId: p.id, key: PAGE_CHUNK_KEY, ox: r.x, oy: r.y, os: pageScale(p) }
   }
 
   pageNear(wx: number, wy: number): Page | null {

@@ -9,7 +9,7 @@ import { drawPattern } from '../engine/background'
 import { getPath } from '../engine/scene'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
 import { useUI } from '../app/store'
-import type { ID, Page, Stroke, TextBlock } from '../shared/model'
+import { pageScale, type ID, type Page, type Stroke, type TextBlock } from '../shared/model'
 import { byPos } from '../shared/fracIndex'
 import { renderTextThumb } from '../textdoc/thumb'
 
@@ -72,11 +72,13 @@ async function renderPageBlob(page: Page, strokes: Stroke[]): Promise<Blob | nul
       }
     }
   } else {
-    drawPattern(ctx, page.background, w, h, scale * 2)
+    drawPattern(ctx, page.background, w, h, scale * 2, pageScale(page))
     if (page.background.type !== 'blank') drew = true
   }
 
   if (strokes.length) {
+    const ps = pageScale(page) // 획은 페이지 내용 배율을 곱해 그린다
+    ctx.setTransform(scale * ps, 0, 0, scale * ps, 0, 0)
     for (const s of [...strokes].sort(byLayerZ)) {
       ctx.fillStyle = s.color
       ctx.fill(getPath({ stroke: s }))

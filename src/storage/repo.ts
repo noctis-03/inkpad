@@ -90,6 +90,8 @@ export async function getDocument(id: ID) {
 
 export interface NewPageSpec {
   size: { w: number; h: number } | null
+  /** 내용 배율 (Page.scale) — 없으면 1 */
+  scale?: number
   background: Background
   pdf?: Page['pdf']
 }
@@ -101,6 +103,7 @@ export function makePage(documentId: ID, spec: NewPageSpec): Page {
     documentId,
     schemaVersion: SCHEMA_VERSION,
     size: spec.size,
+    ...(spec.scale !== undefined && spec.scale !== 1 ? { scale: spec.scale } : {}),
     background: spec.background,
     pdf: spec.pdf,
     createdAt: now,

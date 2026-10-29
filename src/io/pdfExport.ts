@@ -5,7 +5,7 @@
 import { patternGeometry } from '../engine/background'
 import { strokeOutline } from '../engine/geometry'
 import { closePdf, openPdf } from '../engine/pdf/pdfjs'
-import type { Page, Stroke } from '../shared/model'
+import { pageScale, type Page, type Stroke } from '../shared/model'
 import { getAsset, loadDocument, type ChunkData } from '../storage/repo'
 import { tryEnsureAssetLocal } from '../sync/assets'
 import { parseChunkKey } from '../engine/layout'
@@ -27,26 +27,28 @@ export function parseColor(hex: string): { r: number; g: number; b: number; a: n
   return { r: n(0), g: n(2), b: n(4), a: h.length >= 8 ? n(6) : 1 }
 }
 
-/** perfect-freehand 외곽선 → SVG path (소수점 2자리) */
-export function strokeToSvgPath(s: Stroke, dx: number, dy: number): string {
+/** perfect-freehand 외곽선 → SVG path (소수점 2자리). k: 페이지 내용 배율(점 × k + d) */
+export function strokeToSvgPath(s: Stroke, dx: number, dy: number, k = 1): string {
   const pts = strokeOutline(s.points, s.width, s.opts, true)
   if (pts.length < 3) return ''
   const f = (v: number) => (Math.round(v * 100) / 100).toString()
+  const X = (v: number) => f(v * k + dx)
+  const Y = (v: number) => f(v * k + dy)
   const n = pts.length
-  let d = `M${f((pts[0][0] + pts[1][0]) / 2 + dx)} ${f((pts[0][1] + pts[1][1]) / 2 + dy)}`
+  let d = `M${X((pts[0][0] + pts[1][0]) / 2)} ${Y((pts[0][1] + pts[1][1]) / 2)}`
   for (let i = 1; i <= n; i++) {
     const a = pts[i % n]
     const b = pts[(i + 1) % n]
-    d += `Q${f(a[0] + dx)} ${f(a[1] + dy)} ${f((a[0] + b[0]) / 2 + dx)} ${f((a[1] + b[1]) / 2 + dy)}`
+    d += `Q${X(a[0])} ${Y(a[1])} ${X((a[0] + b[0]) / 2)} ${Y((a[1] + b[1]) / 2)}`
   }
   return d + 'Z'
 }
 
-function strokesToPaths(strokes: Stroke[], dx: number, dy: number): ExportPath[] {
+function strokesToPaths(strokes: Stroke[], dx: number, dy: number, k = 1): ExportPath[] {
   const sorted = [...strokes].sort((a, b) => (a.layer === b.layer ? a.z - b.z : a.layer === 'under' ? -1 : 1))
   const out: ExportPath[] = []
   for (const s of sorted) {
-    const d = strokeToSvgPath(s, dx, dy)
+    const d = strokeToSvgPath(s, dx, dy, k)
     if (d) out.push({ d, ...parseColor(s.color) })
   }
   return out
@@ -59,7 +61,7 @@ const rgb3 = (hex: string): [number, number, number] => {
 
 function patternFor(page: Page): ExportPage['pattern'] {
   if (!page.size) return null
-  const g = patternGeometry(page.background, page.size.w, page.size.h)
+  const g = patternGeometry(page.background, page.size.w, page.size.h, pageScale(page))
   if (!g) return null
   return {
     lines: g.lines,
@@ -95,7 +97,7 @@ function attachSheets(page: Page, sheets: Page[], strokesByPage: Map<string, Str
       paper: transparent ? null : rgb3(sh.background.type === 'blank' ? sh.background.color : '#ffffff'),
       pattern: transparent || !includePattern ? null : patternFor(sh),
       border: transparent ? 'dashed' : 'solid',
-      paths: strokesToPaths(strokesByPage.get(sh.id) ?? [], 0, 0)
+      paths: strokesToPaths(strokesByPage.get(sh.id) ?? [], 0, 0, pageScale(sh))
     }
   })
   return { frame: { w: maxX - minX, h: maxY - minY, ox: -minX, oy: -minY }, sheets: out }
@@ -133,7 +135,7 @@ export async function exportDocumentPdf(documentId: string, opts: ExportOptions 
       paper: p.pdf ? null : rgb3(p.background.type === 'blank' ? p.background.color : '#ffffff'),
       pattern: p.pdf || opts.includePattern === false ? null : patternFor(p),
       pdf: p.pdf ? { ...p.pdf } : undefined,
-      paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0)
+      paths: strokesToPaths(strokesByPage.get(p.id) ?? [], 0, 0, pageScale(p))
     }
     const sh = attached.get(p.id)
     return sh ? { ...ep, ...attachSheets(p, sh, strokesByPage, opts.includePattern !== false) } : ep
