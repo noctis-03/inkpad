@@ -1,17 +1,16 @@
-// 미니맵 — 확대해 좌우가 화면 밖일 때 왼쪽 위에, 지금 보는 높이의 띠를 가로 전체 폭(페이지·보조 용지·삐져나간 필기까지)으로
-// 작게 보여 주고 지금 보이는 자리를 사각형으로 표시한다. 화면 밖 왼쪽·오른쪽에 쓴 필기가 있는지 한눈에 보려는 것이다.
+// 미니맵 — 확대해 좌우가 화면 밖일 때 왼쪽 위에 가는 막대 하나로, 지금 보는 높이에서 가로 전체 폭(페이지·보조 용지·삐져나간 필기까지)을
+// 보여 준다: 회색 막대 = 전체 폭, 파란 구간 = 지금 보이는 부분, 검은 눈금 = 필기가 있는 가로 자리. 파란 구간 바깥에 눈금이 있으면
+// 화면 밖 왼쪽·오른쪽에 필기가 있다는 뜻이다 (필기 모양은 그리지 않는다 — 있는지만 본다).
 // 누르거나 그 위에 써도 아무 반응이 없다(pointer-events: none) — 입력은 그대로 아래 캔버스에 닿아 평소처럼 필기된다.
 // 펜이 미니맵 아래로 오면(대거나 띄워서 가까이) 흐려져 쓰는 글씨를 가리지 않는다.
 // 카메라·필기·배치가 바뀌면 React를 거치지 않고 한 프레임에 한 번 작은 캔버스만 다시 그린다 — 가만히 있으면 아무것도 하지 않는다.
 import { useEffect, useRef } from 'react'
 import type { Engine } from '../../engine/engine'
-import type { Rect } from '../../engine/layout'
-import { getPath } from '../../engine/scene'
 import { useUI } from '../../app/store'
 
-const MAX_W = 200 // 폭(css px) 상한 — 화면 폭의 30%를 넘지 않는다
-const MAX_H = 140 // 높이 상한
-const MIN_BAND = 0.3 // 띠 높이는 적어도 폭의 이만큼 — 크게 확대해도 납작한 줄이 되지 않게
+const MAX_W = 160 // 막대 폭(css px) 상한 — 화면 폭의 30%를 넘지 않는다
+const BAR_H = 10 // 막대 높이
+const TICK_MIN = 2 // 눈금 최소 폭(css px) — 아주 짧은 필기도 보이게
 const MARGIN = 12 // 화면 가장자리·도구창과의 틈
 const FADE_PAD = 16 // 펜이 이만큼 가까이 오면 흐려진다
 const PAD = 4 // 판 안쪽 여백 (CSS .minimap padding과 같게)
@@ -43,23 +42,26 @@ export function Minimap({ engine }: { engine: Engine }) {
       const vy1 = cy + H / zoom
       // 지금 보는 높이에 걸친 페이지·보조 용지·필기의 가로 범위
       const L = engine.layout
-      const papers: Rect[] = []
-      if (L.paged) {
-        for (const p of L.visiblePages(vy0, vy1)) papers.push(L.rects.get(p.id)!)
-        for (const s of engine.sheets) {
-          const r = L.rects.get(s.id)
-          if (r && r.y < vy1 && r.y + r.h > vy0) papers.push(r)
-        }
-      }
       let x0 = vx0
       let x1 = vx1
-      for (const r of papers) {
-        x0 = Math.min(x0, r.x)
-        x1 = Math.max(x1, r.x + r.w)
+      const widen = (l: number, r: number) => {
+        x0 = Math.min(x0, l)
+        x1 = Math.max(x1, r)
       }
+      if (L.paged) {
+        for (const p of L.visiblePages(vy0, vy1)) {
+          const r = L.rects.get(p.id)!
+          widen(r.x, r.x + r.w)
+        }
+        for (const sh of engine.sheets) {
+          const r = L.rects.get(sh.id)
+          if (r && r.y < vy1 && r.y + r.h > vy0) widen(r.x, r.x + r.w)
+        }
+      }
+      const ink: [number, number][] = []
       for (const rec of engine.scene.query(-Infinity, vy0, Infinity, vy1)) {
-        x0 = Math.min(x0, rec.item.minX)
-        x1 = Math.max(x1, rec.item.maxX)
+        ink.push([rec.item.minX, rec.item.maxX])
+        widen(rec.item.minX, rec.item.maxX)
       }
       // 좌우가 모두 화면 안이면 보여 줄 것이 없다
       const tol = 2 / zoom
@@ -68,49 +70,63 @@ export function Minimap({ engine }: { engine: Engine }) {
         shown = null
         return
       }
-      // 크기: 가로 전체를 폭 w에, 띠 높이는 보이는 높이(너무 납작하면 늘리고, 너무 높으면 가운데를 잘라)
       const w = Math.max(80, Math.min(MAX_W, W * 0.3))
+      const h = BAR_H
       const k = w / (x1 - x0)
-      const band = Math.min(Math.max(vy1 - vy0, (x1 - x0) * MIN_BAND), MAX_H / k)
-      const by0 = (vy0 + vy1) / 2 - band / 2
-      const by1 = by0 + band
-      const h = band * k
+      const X = (v: number) => (v - x0) * k
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       const cw = Math.round(w * dpr)
-      const ch = Math.max(1, Math.round(h * dpr))
+      const ch = Math.round(h * dpr)
       if (canvas.width !== cw || canvas.height !== ch) {
         canvas.width = cw
         canvas.height = ch
         canvas.style.width = `${w}px`
         canvas.style.height = `${h}px`
       }
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.clearRect(0, 0, cw, ch)
-      const s = dpr * k
-      // 종이 (화면처럼 테마와 상관없이 밝게)
-      ctx.setTransform(s, 0, 0, s, -x0 * s, -by0 * s)
-      for (const r of papers) {
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(r.x, r.y, r.w, r.h)
-        ctx.lineWidth = 1 / s
-        ctx.strokeStyle = 'rgba(0,0,0,0.18)'
-        ctx.strokeRect(r.x, r.y, r.w, r.h)
-      }
-      // 필기 — 아주 작게 줄어도 보이게 외곽선 둘레를 0.8px 덧그린다
-      for (const rec of engine.scene.query(x0, by0, x1, by1)) {
-        const t = s * rec.os
-        ctx.setTransform(t, 0, 0, t, (rec.ox - x0) * s, (rec.oy - by0) * s)
-        const path = getPath(rec)
-        ctx.fillStyle = ctx.strokeStyle = rec.stroke.color
-        ctx.fill(path)
-        ctx.lineWidth = (0.8 * dpr) / t
-        ctx.stroke(path)
-      }
-      // 지금 보이는 자리
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.lineWidth = 1.5
+      ctx.clearRect(0, 0, w, h)
+      // 막대 = 전체 폭
+      ctx.fillStyle = 'rgba(100,116,139,0.28)'
+      ctx.beginPath()
+      ctx.roundRect(0, 0, w, h, h / 2)
+      ctx.fill()
+      // 지금 보이는 부분
+      const sx0 = X(vx0)
+      const sx1 = X(vx1)
+      ctx.fillStyle = 'rgba(37,99,235,0.35)'
       ctx.strokeStyle = '#2563eb'
-      ctx.strokeRect((vx0 - x0) * k + 0.75, (vy0 - by0) * k + 0.75, (vx1 - vx0) * k - 1.5, (vy1 - vy0) * k - 1.5)
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.roundRect(sx0 + 0.75, 0.75, Math.max(2, sx1 - sx0 - 1.5), h - 1.5, (h - 1.5) / 2)
+      ctx.fill()
+      ctx.stroke()
+      // 필기 눈금 — 겹치는 자리는 합친다. 화면 밖(파란 구간 바깥)은 진하게, 안은 옅게
+      ink.sort((a, b) => a[0] - b[0])
+      const tick = (l: number, r: number) => {
+        let a = X(l)
+        let b = X(r)
+        if (b - a < TICK_MIN) {
+          const c = (a + b) / 2
+          a = c - TICK_MIN / 2
+          b = c + TICK_MIN / 2
+        }
+        ctx.fillStyle = 'rgba(17,24,39,0.35)'
+        ctx.fillRect(a, 2, b - a, h - 4)
+        // 파란 구간 바깥으로 나간 부분만 진하게
+        ctx.fillStyle = '#111827'
+        if (a < sx0) ctx.fillRect(a, 2, Math.min(b, sx0) - a, h - 4)
+        if (b > sx1) ctx.fillRect(Math.max(a, sx1), 2, b - Math.max(a, sx1), h - 4)
+      }
+      let cl = -Infinity
+      let cr = -Infinity
+      for (const [l, r] of ink) {
+        if (l - cr > 1 / k) {
+          if (cr > -Infinity) tick(cl, cr)
+          cl = l
+          cr = r
+        } else cr = Math.max(cr, r)
+      }
+      if (cr > -Infinity) tick(cl, cr)
 
       // 자리: 왼쪽 위. 도구창과 겹치면 가로로 긴 도구창이면 그 아래로, 세로로 긴 도구창이면 그 오른쪽으로
       const a = area.getBoundingClientRect()
@@ -159,7 +175,20 @@ export function Minimap({ engine }: { engine: Engine }) {
     const offSheets = engine.subscribeSheets(schedule)
     const ro = new ResizeObserver(schedule)
     ro.observe(area)
+    // 도구창이 옮겨 가거나(위치를 바꾸거나 끌면 style.left/top이 바뀌고 미끄러져 간다) 크기가 바뀌면 다시 비켜 선다 —
+    // 카메라는 그대로라 위 알림이 오지 않는다. 미끄러지는 동안(.32s)이 끝난 뒤에도 한 번 더 본다
+    let settle = 0
+    const bar = area.querySelector('.ft-bar')
+    if (bar) ro.observe(bar)
+    const mo = new MutationObserver(() => {
+      schedule()
+      clearTimeout(settle)
+      settle = window.setTimeout(schedule, 400)
+    })
+    if (bar) mo.observe(bar, { attributes: true, attributeFilter: ['style'] })
     return () => {
+      mo.disconnect()
+      clearTimeout(settle)
       cancelAnimationFrame(raf)
       clearTimeout(unfade)
       for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'] as const) window.removeEventListener(t, onPointer, opts)

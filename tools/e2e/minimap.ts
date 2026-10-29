@@ -1,6 +1,6 @@
-// 미니맵 — 확대해 좌우가 화면 밖일 때 왼쪽 위에 지금 보는 줄의 전체 폭을 작게 보여 준다
+// 미니맵 — 확대해 좌우가 화면 밖일 때 왼쪽 위에 가는 막대 하나로 지금 보는 줄의 전체 폭을 보여 준다
 //  - 폭 맞춤(100%)처럼 좌우가 다 보이면 숨는다, 확대해 좌우가 잘리면 나타난다
-//  - 화면 밖 왼쪽·오른쪽에 쓴 필기가 미니맵의 '보이는 자리' 사각형 바깥에 그려진다
+//  - 화면 밖 왼쪽·오른쪽에 쓴 필기가 파란 '보이는 부분' 구간 바깥에 진한 눈금으로 찍힌다
 //  - 누르거나 그 위에 써도 아무 반응이 없다 — 그 자리에 평소처럼 필기된다. 그 아래에서 쓰는 동안은 흐려진다
 //  - 도구창이 왼쪽 위에 있으면 겹치지 않게 비켜 선다, 설정에서 끌 수 있다, 무한 캔버스에서도 나온다
 import { createDoc, device, openEditor, sleep, type Ctx } from './lib.ts'
@@ -58,28 +58,30 @@ export default async function minimap(ctx: Ctx) {
   await sleep(300)
   check('확대해 좌우가 잘리면 미니맵이 나타난다', await visible())
 
-  // 미니맵 그림: 파란 '보이는 자리' 사각형의 왼쪽·오른쪽 바깥에 필기(검정)가 있다
+  // 막대: 파란 '보이는 부분' 구간의 왼쪽·오른쪽 바깥에 진한 눈금(화면 밖 필기)이 있다
   const pic = await mm.locator('canvas').evaluate((c) => {
     const cv = c as HTMLCanvasElement
     const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data
+    const y = Math.floor(cv.height / 2)
     let bx0 = cv.width
     let bx1 = 0
-    const ink: number[] = []
-    for (let i = 0; i < d.length; i += 4) {
-      const x = (i / 4) % cv.width
-      if (d[i] < 70 && d[i + 1] > 80 && d[i + 2] > 200) {
+    const dark: number[] = []
+    for (let x = 0; x < cv.width; x++) {
+      const i = (y * cv.width + x) * 4
+      const [r, g, b, a] = [d[i], d[i + 1], d[i + 2], d[i + 3]]
+      if (a > 200 && r < 40 && g < 40 && b < 60) dark.push(x)
+      else if (b > r + 60) {
         bx0 = Math.min(bx0, x)
         bx1 = Math.max(bx1, x)
-      } else if (d[i + 3] > 200 && d[i] < 80 && d[i + 1] < 80 && d[i + 2] < 80) ink.push(x)
+      }
     }
-    return { w: cv.width, bx0, bx1, left: ink.filter((x) => x < bx0).length, right: ink.filter((x) => x > bx1).length }
+    return { w: cv.width, h: cv.height, bx0, bx1, left: dark.filter((x) => x < bx0).length, right: dark.filter((x) => x > bx1).length }
   })
-  check('미니맵: 화면 밖 왼쪽·오른쪽 필기가 보이는 자리 사각형 바깥에 그려진다', pic.left > 0 && pic.right > 0 && pic.bx0 > 0 && pic.bx1 < pic.w - 1, JSON.stringify(pic))
-
+  check('막대: 화면 밖 왼쪽·오른쪽 필기가 파란 구간 바깥에 진한 눈금으로', pic.left > 0 && pic.right > 0 && pic.bx0 > 0 && pic.bx1 < pic.w - 1, JSON.stringify(pic))
   if (process.env.SHOT) await p.screenshot({ path: process.env.SHOT.replace(/\.png$/, '-zoom.png') })
   const area = (await p.locator('.editor-area').boundingBox())!
   const mb = (await mm.boundingBox())!
-  check('미니맵: 왼쪽 위에 있다', mb.x - area.x < 40 && mb.y - area.y < 120 && mb.width <= 212, JSON.stringify({ mb, area }))
+  check('미니맵: 왼쪽 위의 가는 막대', mb.x - area.x < 40 && mb.y - area.y < 120 && mb.width <= 172 && mb.height <= 24, JSON.stringify({ mb, area }))
 
   // 미니맵 위에서 긋기 — 아무 반응 없이 그 자리에 필기된다, 긋는 동안은 흐려진다
   const before = await p.evaluate(() => (window as unknown as W).inkpad.scene.size)
@@ -109,9 +111,7 @@ export default async function minimap(ctx: Ctx) {
 
   // 도구창을 왼쪽 위로 — 미니맵이 겹치지 않게 비켜 선다
   await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setToolbarPos('top-left'))
-  await sleep(700)
-  await p.evaluate(() => (window as unknown as W).inkpad.onCameraMoved())
-  await sleep(200)
+  await sleep(900)
   const bar = (await p.locator('.ft-bar').boundingBox())!
   const mb2 = (await mm.boundingBox())!
   const overlap = mb2.x < bar.x + bar.width && mb2.x + mb2.width > bar.x && mb2.y < bar.y + bar.height && mb2.y + mb2.height > bar.y
