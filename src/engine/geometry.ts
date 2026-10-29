@@ -21,16 +21,76 @@ export function strokeOutline(
     const r = briefRadius(input, width, opts) // 다듬기 전 점들로(사이값이 필압을 흐리지 않게)
     return pathLength(pts) < width * SHORT_STROKE ? shortOutline(pts, r) : brushOutline(pts, width, r)
   }
-  return getStroke(input, {
-    size: width,
-    thinning: opts.thinning,
-    smoothing: opts.smoothing,
-    streamline: opts.streamline,
-    simulatePressure: opts.simulatePressure,
-    last,
-    start: { cap: true, taper: 0 },
-    end: { cap: true, taper: 0 }
-  })
+  // perfect-freehand는 화면 좌표를 생각하고 만들어, 획 끝 3단위 안의 점을 건너뛴다(끝 떨림 무시).
+  // 2000%로 확대해 그리면 3pt가 화면 60px이라 — 천천히 긋다 살짝 되돌리면 되돌린 점들이 이 안에 들어
+  // 꺾임 처리를 건너뛰고 마지막 점만 거꾸로 붙어, 그어 놓은 끝이 잘려 나간다.
+  // 굵기 PF_SIZE인 좌표로 늘여 넘기고 되돌린다 — 다른 기준(외곽선 점 간격·속도 필압·시작 건너뛰기)은 모두 굵기 비례라 그대로이고,
+  // 끝 떨림은 sparse가 맡는다
+  const k = PF_SIZE / width
+  const out = getStroke(
+    sparse(input, width * PF_STEP).map(([x, y, p]) => [x * k, y * k, p]),
+    {
+      size: PF_SIZE,
+      thinning: opts.thinning,
+      smoothing: opts.smoothing,
+      streamline: opts.streamline,
+      simulatePressure: opts.simulatePressure,
+      last,
+      start: { cap: true, taper: 0 },
+      end: { cap: true, taper: 0 }
+    }
+  )
+  for (const q of out) {
+    q[0] /= k
+    q[1] /= k
+  }
+  return out
+}
+
+/** perfect-freehand에 넘기는 굵기 — 이 좌표에서 끝 건너뛰기(3단위)는 굵기의 0.02배로, 솎은 점 간격(PF_STEP)보다 짧다 */
+const PF_SIZE = 128
+/** perfect-freehand에 넘기는 점 사이 최소 간격(펜 굵기 배수) */
+const PF_STEP = 0.1
+
+/**
+ * 점을 솎는다 — 바로 앞에 남긴 점에서 step보다 가까운 점은 뺀다(처음·마지막 점은 남긴다).
+ * perfect-freehand는 이웃한 두 점의 방향으로 가장자리를 세운다. 크게 확대해 천천히 그으면 점 간격이 굵기의 1%쯤이라
+ * 손떨림·좌표 반올림(0.01pt)만으로 방향이 수십 도씩 흔들리고, 가장자리가 굵기의 절반만큼 앞뒤로 튀어 가시가 된다.
+ * 보통 배율에서는 입력 단계에서 이미 화면 0.55px 간격이라(minPointDist) 거의 솎이지 않는다.
+ * 뺀 점들 가운데 갔다가 되돌아온 끝(꺾인 자리)은 남긴다 — 빼면 그어 놓은 끝이 그만큼 줄어든다
+ */
+function sparse(input: number[][], step: number): number[][] {
+  const n = input.length
+  if (n < 3) return input
+  const out = [input[0]]
+  const s2 = step * step
+  let far: number[] | null = null // 마지막으로 남긴 점에서 가장 멀리 간 뺀 점
+  let farD = 0
+  for (let i = 1; i < n; i++) {
+    const p = input[i]
+    const a = out[out.length - 1]
+    const d2 = (p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2
+    const last = i === n - 1
+    if (d2 < s2 && !last) {
+      if (d2 > farD) {
+        far = p
+        farD = d2
+      }
+      continue
+    }
+    // far까지 갔다가 p로 step의 1/4 넘게 되돌아왔으면 far를 남긴다
+    let back = false
+    if (far) {
+      const [ux, uy] = unit(far[0] - a[0], far[1] - a[1])
+      back = (p[0] - far[0]) * ux + (p[1] - far[1]) * uy < -step * 0.25
+    }
+    if (back) out.push(far!, p)
+    else if (last && d2 < s2 / 4 && out.length > 1) out[out.length - 1] = p // 마지막 점이 바로 앞 점에 붙어 있으면 바꾼다(끝에서 방향이 튀지 않게)
+    else out.push(p)
+    far = null
+    farD = 0
+  }
+  return out
 }
 
 /** 이보다 짧은(펜 굵기 배수) 획은 shortOutline으로 그린다 — perfect-freehand는 굵기의 0.8배 길이부터 모양이 바르다 */
