@@ -74,6 +74,54 @@ const capsule = (o: number[][], len: number, r: number) => {
   check('보통 길이의 획은 그대로(perfect-freehand) — 곡선을 따라간다', b.x1 - b.x0 > 11 && o.length > 30, JSON.stringify({ ...b, n: o.length }))
 }
 
+console.log('크게 확대해 천천히 그은 획')
+{
+  // 2000%로 확대해 천천히 — 화면 0.6px마다 점, 화면 ±0.4px 손떨림, 좌표는 0.01pt로 반올림(엔진처럼), 화면 0.55px보다 가까운 점은 뺀다
+  const zoom = 20
+  const r2 = (v: number) => Math.round(v * 100) / 100
+  let seed = 11
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  const slow = (fwd: number, back: number) => {
+    seed = 11
+    const pts: number[][] = []
+    const add = (sx: number, sy: number) => {
+      const x = r2(sx / zoom)
+      const y = r2(sy / zoom)
+      const l = pts[pts.length - 1]
+      if (!l || Math.hypot(x - l[0], y - l[1]) * zoom >= 0.55) pts.push([x, y, 0.5])
+    }
+    for (let x = 0; x <= fwd; x += 0.6) add(x, (rnd() - 0.5) * 0.8)
+    for (let b = 0.6; b <= back; b += 0.6) add(fwd - b, (rnd() - 0.5) * 0.8)
+    return flat(pts)
+  }
+  const modes = {
+    속도: { thinning: 0.42, smoothing: 0.5, streamline: 0.3, simulatePressure: true },
+    필압: { thinning: 0.6, smoothing: 0.5, streamline: 0.3, simulatePressure: false }
+  }
+  for (const [name, o] of Object.entries(modes)) {
+    const tip = 300 / zoom
+    for (const back of [4, 10, 30, 50]) {
+      for (const last of [true, false]) {
+        const ol = strokeOutline(slow(300, back), 2.5, o, last)
+        const over = (Math.max(...ol.map((q) => q[0])) - tip) / 1.25 // 끝 너머 잉크(반지름 배수)
+        check(`${name}: 화면 ${back}px 되돌려도 그어 놓은 끝이 잘리지 않는다(${last ? '확정' : '그리는 중'})`, over > 0.7, over.toFixed(2))
+      }
+    }
+    // 손떨림이 가장자리 가시로 — 긴 변(양끝 굵기만큼 뺀 가운데)에서 외곽선이 앞뒤로 튀지 않는다
+    const ol = strokeOutline(slow(300, 0), 2.5, o, true)
+    // 외곽선은 한쪽 변을 앞으로(x 증가), 끝 모자를 돌아 다른 쪽 변을 뒤로 간다 — 한 변 안에서 거꾸로 가는 만큼이 가시
+    const mid = (q: number[]) => q[0] > 2.5 && q[0] < tip - 2.5 && Math.abs(q[1]) > 0.5
+    const first = Math.sign(ol.find(mid)![1])
+    let spike = 0
+    for (let i = 1; i < ol.length; i++) {
+      const [a, b] = [ol[i - 1], ol[i]]
+      if (!mid(a) || !mid(b) || Math.sign(a[1]) !== Math.sign(b[1])) continue
+      spike = Math.max(spike, Math.sign(a[1]) === first ? a[0] - b[0] : b[0] - a[0])
+    }
+    check(`${name}: 손떨림이 가장자리 가시로 드러나지 않는다`, spike < 0.1, (spike * zoom).toFixed(1) + '화면px')
+  }
+}
+
 console.log(`\n획 모양: ${pass}개 통과, ${fail}개 실패`)
 if (fail) process.exit(1)
 console.log('모든 획 모양 검사 통과 ✓')
