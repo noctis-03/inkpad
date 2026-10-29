@@ -43,8 +43,20 @@ export default async function pagefit(ctx: Ctx) {
     return null
   }
 
-  await dropPdf('스캔.pdf', 1240, 1754)
+  // 가져오기는 PDF 하나면 그 노트를 연다 — 열릴 때까지 기다린다(늦게 열리면 다음 단계에서 연 노트를 바꿔 버린다)
+  const opened = (id: string) => p.waitForFunction((id) => location.hash.includes(id), id, { timeout: 15000 }).catch(() => {})
   const dialog = p.locator('.dialog-host')
+
+  // A4 한 쪽 — 묻지 않고 원본 크기 그대로 (묻는 창이 뜨면 노트가 만들어지지 않아 docOf가 null)
+  await dropPdf('보통.pdf', 595.28, 841.89)
+  const a4 = await docOf('보통')
+  const askedA4 = await dialog.getByRole('button', { name: 'A4 폭에 맞춤' }).count()
+  check('가져오기: A4쯤인 PDF는 묻지 않고 원본 크기 그대로', askedA4 === 0 && !!a4 && a4.pages[0].scale === undefined, JSON.stringify({ askedA4, a4 }))
+  if (a4) await opened(a4.id)
+  await p.goto(base + '/')
+  await p.waitForSelector('.library')
+
+  await dropPdf('스캔.pdf', 1240, 1754)
   const asked = await dialog.getByRole('button', { name: 'A4 폭에 맞춤' }).waitFor({ timeout: 8000 }).then(
     () => true,
     () => false
@@ -60,12 +72,7 @@ export default async function pagefit(ctx: Ctx) {
     !!pg && Math.abs(pg.size!.w - 595.28) < 0.01 && Math.abs(pg.size!.h - 1754 * f) < 0.01 && Math.abs((pg.scale ?? 1) - f) < 1e-9,
     JSON.stringify(pg)
   )
-
-  await dropPdf('보통.pdf', 595.28, 841.89)
-  await sleep(300)
-  const askedA4 = await dialog.getByRole('button', { name: 'A4 폭에 맞춤' }).count()
-  const a4 = await docOf('보통')
-  check('가져오기: A4쯤인 PDF는 묻지 않고 원본 크기 그대로', askedA4 === 0 && !!a4 && a4.pages[0].scale === undefined, JSON.stringify({ askedA4, a4 }))
+  if (scan) await opened(scan.id)
 
   // ── 맞춘 페이지에 쓰기 ──
   await openEditor(p, base, scan!.id)
