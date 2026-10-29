@@ -241,6 +241,7 @@ export class Engine {
 
   // 카메라 리스너 — React state가 아니라 DOM transform을 직접 갱신하는 UI(BlockLayer)용
   private camListeners = new Set<(cam: { x: number; y: number; zoom: number }) => void>()
+  private contentListeners = new Set<() => void>()
   private lastCamNotified = { x: NaN, y: NaN, zoom: NaN }
 
   // 통계
@@ -1269,6 +1270,15 @@ export class Engine {
   private bumpPage(pageId: ID) {
     this.pageRev.set(pageId, (this.pageRev.get(pageId) ?? 0) + 1)
     this.cb.onPageContentChanged?.(pageId)
+    for (const fn of [...this.contentListeners]) fn()
+  }
+
+  /** 필기(획)가 바뀔 때마다 — 미니맵처럼 React를 거치지 않고 다시 그리는 쪽이 쓴다. 한 명령에 여러 번 올 수 있다 */
+  onContent(fn: () => void): () => void {
+    this.contentListeners.add(fn)
+    return () => {
+      this.contentListeners.delete(fn)
+    }
   }
 
   // ─────────────────────────── 저장 ───────────────────────────

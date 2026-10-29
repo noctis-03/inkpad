@@ -325,6 +325,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         <Row label="밀도" hint="넉넉하게는 손가락으로 누르기 편하게 목록·버튼·글자를 한 단계 키웁니다" asLabel={false}>
           <DensitySelect />
         </Row>
+        <Row label="미니맵" hint="확대해 좌우가 화면 밖일 때 왼쪽 위에 지금 보는 줄 전체를 작게 보여 줍니다. 그 위에 써도 평소처럼 필기됩니다">
+          <Toggle k="minimap" />
+        </Row>
       </section>
 
       <section className="panel-section">

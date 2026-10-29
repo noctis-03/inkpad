@@ -25,6 +25,7 @@ import { BlockLayer } from './BlockLayer'
 import { SheetLayer } from './SheetLayer'
 import { PageChipLayer } from './PageChipLayer'
 import { PageSidebar } from './PageSidebar'
+import { Minimap } from './Minimap'
 import { SelectionBar } from './SelectionBar'
 import { SendImageSheet } from './SendImageSheet'
 import { AiSendSheet } from './AiSendSheet'
@@ -387,6 +388,7 @@ export function Editor({ docId }: { docId: ID }) {
           {engine && paged && <SheetLayer engine={engine} readOnly={readOnly} />}
           {engine && paged && <PageChipLayer engine={engine} pages={pages} readOnly={readOnly} />}
           {engine && <BlockLayer engine={engine} readOnly={readOnly} />}
+          {engine && <Minimap engine={engine} />}
           {!engine && (
             <div className="doc-skeleton" role="status" aria-label={suspended ? '동기화로 노트를 맞추는 중' : '문서 여는 중'}>
               <span className="doc-skeleton-paper" />

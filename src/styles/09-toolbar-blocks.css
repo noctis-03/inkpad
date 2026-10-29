@@ -347,6 +347,19 @@
 .ft-bar[data-orient='v'] .ft-lasso-label { display: none; }
 
 /* ═══════ 페이지 칩 (PageChipLayer) — 페이지 바깥 왼쪽 위 '번호 ⋯', 누르면 페이지 메뉴 ═══════ */
+/* 미니맵 (ui/editor/Minimap.tsx) — 페이지 칩·블록·페이지 표시 위, 도구창(7) 아래. 입력은 받지 않고 아래 캔버스로 그대로 */
+.minimap {
+  position:absolute; z-index:5; pointer-events:none; padding:4px; line-height:0;
+  border-radius:var(--r-md); border:1px solid var(--tint);
+  background:color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  box-shadow:0 1px 2px rgba(15,23,42,.06), 0 8px 20px -8px rgba(15,23,42,.22);
+  opacity:.94; transition:opacity .15s ease;
+}
+.minimap[hidden] { display:none; }
+.minimap canvas { display:block; border-radius:var(--r-xs); }
+/* 펜이 미니맵 아래에서 쓰는 동안 — 쓰는 글씨를 가리지 않게 */
+.minimap.is-faded { opacity:.1; }
 .page-chip-layer { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:2; }
 .page-chip { position:absolute; left:0; top:0; display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
 .page-chip.is-row { flex-direction:row; align-items:center; }
