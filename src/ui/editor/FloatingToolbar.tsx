@@ -25,6 +25,7 @@ import { BLOCK_META } from '../../engine/blocks'
 import type { BlockType } from '../../shared/model'
 import { Icon } from '../Icon'
 import { useIndicator } from '../motion/useIndicator'
+import { insertPhotos } from './insertPhoto'
 import {
   NARROW_BP,
   POS_ALL,
@@ -94,7 +95,8 @@ type Side = 'below' | 'above' | 'left' | 'right'
 const sideOf = (p: ToolbarPos): Side =>
   p.startsWith('top') ? 'below' : p.startsWith('bottom') ? 'above' : p === 'left' ? 'right' : 'left'
 
-export function FloatingToolbar({ engine }: { engine: Engine | null }) {
+/** photo: ⋯ 메뉴에 '사진 넣기'를 낸다 (낙서 모드는 아무것도 저장하지 않으므로 끈다) */
+export function FloatingToolbar({ engine, photo = true }: { engine: Engine | null; photo?: boolean }) {
   const tool = useUI((s) => s.tool)
   const settings = useUI((s) => s.settings)
   const setSettings = useUI((s) => s.setSettings)
@@ -118,6 +120,7 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
   const [near, setNear] = useState<ToolbarPos | null>(null)
   const [pop, setPop] = useState<{ kind: PopKind; anchor: HTMLElement } | null>(null)
   const toolsRef = useRef<HTMLDivElement>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
   const widthsRef = useRef<HTMLDivElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
 
@@ -521,6 +524,18 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
                 <Icon name="blocks" />
                 블록 추가
               </button>
+              {photo && (
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    setPop(null)
+                    photoInput.current?.click()
+                  }}
+                >
+                  <Icon name="photo" />
+                  사진 넣기
+                </button>
+              )}
               <button
                 className="menu-item"
                 onClick={() => {
@@ -555,6 +570,21 @@ export function FloatingToolbar({ engine }: { engine: Engine | null }) {
             </div>
           )}
         </FtPopover>
+      )}
+      {photo && (
+        // 아이패드에서는 사진 보관함 · 사진 찍기 · 파일 중에서 고른다
+        <input
+          ref={photoInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = [...(e.currentTarget.files ?? [])]
+            e.currentTarget.value = '' // 같은 사진을 다시 고를 수 있게
+            if (engine && files.length) void insertPhotos(engine, files)
+          }}
+        />
       )}
     </>
   )

@@ -143,7 +143,10 @@ export interface ViewInfo {
 }
 
 export interface SelectionInfo {
+  /** 고른 획 + 사진 수 */
   count: number
+  /** 그중 사진 수 — 사진만 골랐으면 색 바꾸기를 내지 않는다 */
+  images: number
   rect: { x: number; y: number; w: number; h: number } // 화면 좌표 (캔버스 기준)
   /** 고른 영역의 모양 (화면 좌표 평탄 [x, y, …]) — 올가미 모양 그대로, 이미지로 보내면 이 모양대로 잘린다 */
   poly: number[]
