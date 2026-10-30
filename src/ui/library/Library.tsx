@@ -1342,136 +1342,6 @@ export function Library() {
           </div>
         </div>
       )}
-      <header className={'library-header' + (selected ? ' is-selecting' : '') + (!selected && (searchOpen || query) ? ' is-searching' : '')}>
-        {selected ? (
-          <>
-            <button className="sel-btn sel-done" onClick={() => setSelected(null)}>
-              완료
-            </button>
-            <h1 className="library-title sel-title">
-              {selected.size}개 선택됨
-            </h1>
-            <button
-              className="sel-btn"
-              onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map(cardKeyOf)))}
-              disabled={!items.length}
-            >
-              {selected.size && selected.size === items.length ? '모두 해제' : '전체 선택'}
-            </button>
-            <div className="mark-bar" role="group" aria-label="마킹 (이 기기에만 저장)">
-              {MARKS.map((m) => (
-                <button
-                  key={m.cls}
-                  className={'mark-btn mark-' + m.cls + (selectedMark === m.mark ? ' is-on' : '')}
-                  aria-label={m.label}
-                  aria-pressed={selectedMark === m.mark}
-                  title={m.label}
-                  disabled={!selected.size}
-                  onClick={() => void applyMark(m.mark)}
-                >
-                  <MarkGlyph mark={m.mark} size={22} />
-                </button>
-              ))}
-              <button className="sel-btn mark-clear" aria-label="마킹 지우기" disabled={![...selected].some((k) => marks[k])} onClick={() => void applyMark(null)}>
-                {/* 휴대폰 폭에서는 '지우기'만 — 선택 바가 한 줄에 들어가게 */}
-                <span className="mark-clear-long">마킹 </span>지우기
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
-              <Icon name="sidebar" />
-            </button>
-            <h1 className="library-title">
-              {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
-                  섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
-              <TitleText text={title} />
-              <span className="title-count">
-                <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
-              </span>
-            </h1>
-            <button
-              className="tb-btn search-toggle"
-              aria-label="제목 검색"
-              onClick={() => {
-                setSearchOpen(true)
-                requestAnimationFrame(() => searchRef.current?.focus())
-              }}
-            >
-              <Icon name="search" />
-            </button>
-            <div className="search-box">
-              <Icon name="search" size={18} />
-              <input ref={searchRef} id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
-            </div>
-            <button
-              className="text-btn search-cancel"
-              onClick={() => {
-                setQuery('')
-                setSearchOpen(false)
-              }}
-            >
-              취소
-            </button>
-            <Segmented
-              className="view-seg"
-              value={prefs.view}
-              options={[
-                ['grid', '격자'],
-                ['list', '목록']
-              ]}
-              onChange={(v) => setPrefs({ view: v })}
-              label="보기 방식"
-            />
-            <select
-              className="sort-select"
-              value={prefs.sort}
-              onChange={(e) => setPrefs({ sort: e.target.value as typeof prefs.sort })}
-              aria-label="정렬"
-            >
-              <option value="updated">수정일</option>
-              <option value="created">만든 날</option>
-              <option value="title">제목</option>
-            </select>
-            <button className="tb-btn board-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
-              <Icon name="board" />
-            </button>
-            <button
-              className="tb-btn view-more-btn"
-              aria-label="보기·정렬"
-              title="보기 · 정렬"
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                setViewMenu({ x: r.right, y: r.bottom })
-              }}
-            >
-              <Icon name="more" />
-            </button>
-            <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
-              <Icon name="gear" />
-            </button>
-            <button
-              className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
-              aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
-              title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                setMoreMenu({ x: r.right, y: r.bottom })
-              }}
-            >
-              <Icon name="cloud" />
-              {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
-            </button>
-            {section.kind !== 'trash' && (
-              <button id="new-doc-btn" className="primary-btn" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
-                <Icon name="plus" size={18} /> <span className="new-doc-label">새로 만들기</span>
-              </button>
-            )}
-          </>
-        )}
-      </header>
-
       <div className="library-body">
         {treeOpen && <div className="tree-backdrop" role="presentation" onClick={() => setTreeOpen(false)} />}
         {treeOpen && (
@@ -1575,211 +1445,343 @@ export function Library() {
           </nav>
         )}
 
-        <main className="library-main">
-          {section.kind === 'folder' && (
-            <nav className="breadcrumb" aria-label="경로">
-              <button onClick={() => setSection({ kind: 'all' })}>전체</button>
-              {breadcrumb.map((f) => (
-                <span key={f.id}>
-                  <Icon name="chevronRight" size={14} />
-                  <button onClick={() => setSection({ kind: 'folder', id: f.id })}>{f.name}</button>
-                </span>
-              ))}
-            </nav>
-          )}
-          {section.kind === 'trash' && (
-            <div className="trash-bar">
-              <span>휴지통의 문서는 {TRASH_RETENTION_DAYS}일 뒤 영구 삭제됩니다.</span>
-              <button className="text-btn danger" onClick={emptyTrash} disabled={!trash.length}>
-                휴지통 비우기
-              </button>
-            </div>
-          )}
-
-          {subfolders.length > 0 && (
-            <section className="folder-strip" aria-label="하위 폴더">
-              {subfolders.map((f) => (
-                <button key={f.id} className="folder-chip" onClick={() => setSection({ kind: 'folder', id: f.id })}>
-                  <Icon name="folder" size={18} /> {f.name}
+        {/* 오른쪽 칸 — 상단 바 + 목록. 사이드바(.folder-tree)는 그 왼쪽에서 화면 위까지 올라간다 */}
+        <div className="library-col">
+          <header className={'library-header' + (selected ? ' is-selecting' : '') + (!selected && (searchOpen || query) ? ' is-searching' : '')}>
+            {selected ? (
+              <>
+                <button className="sel-btn sel-done" onClick={() => setSelected(null)}>
+                  완료
                 </button>
-              ))}
-            </section>
-          )}
+                <h1 className="library-title sel-title">
+                  {selected.size}개 선택됨
+                </h1>
+                <button
+                  className="sel-btn"
+                  onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map(cardKeyOf)))}
+                  disabled={!items.length}
+                >
+                  {selected.size && selected.size === items.length ? '모두 해제' : '전체 선택'}
+                </button>
+                <div className="mark-bar" role="group" aria-label="마킹 (이 기기에만 저장)">
+                  {MARKS.map((m) => (
+                    <button
+                      key={m.cls}
+                      className={'mark-btn mark-' + m.cls + (selectedMark === m.mark ? ' is-on' : '')}
+                      aria-label={m.label}
+                      aria-pressed={selectedMark === m.mark}
+                      title={m.label}
+                      disabled={!selected.size}
+                      onClick={() => void applyMark(m.mark)}
+                    >
+                      <MarkGlyph mark={m.mark} size={22} />
+                    </button>
+                  ))}
+                  <button className="sel-btn mark-clear" aria-label="마킹 지우기" disabled={![...selected].some((k) => marks[k])} onClick={() => void applyMark(null)}>
+                    {/* 휴대폰 폭에서는 '지우기'만 — 선택 바가 한 줄에 들어가게 */}
+                    <span className="mark-clear-long">마킹 </span>지우기
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
+                  <Icon name="sidebar" />
+                </button>
+                <h1 className="library-title">
+                  {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
+                      섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
+                  <TitleText text={title} />
+                  <span className="title-count">
+                    <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
+                  </span>
+                </h1>
+                <button
+                  className="tb-btn search-toggle"
+                  aria-label="제목 검색"
+                  onClick={() => {
+                    setSearchOpen(true)
+                    requestAnimationFrame(() => searchRef.current?.focus())
+                  }}
+                >
+                  <Icon name="search" />
+                </button>
+                <div className="search-box">
+                  <Icon name="search" size={18} />
+                  <input ref={searchRef} id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
+                </div>
+                <button
+                  className="text-btn search-cancel"
+                  onClick={() => {
+                    setQuery('')
+                    setSearchOpen(false)
+                  }}
+                >
+                  취소
+                </button>
+                <Segmented
+                  className="view-seg"
+                  value={prefs.view}
+                  options={[
+                    ['grid', '격자'],
+                    ['list', '목록']
+                  ]}
+                  onChange={(v) => setPrefs({ view: v })}
+                  label="보기 방식"
+                />
+                <select
+                  className="sort-select"
+                  value={prefs.sort}
+                  onChange={(e) => setPrefs({ sort: e.target.value as typeof prefs.sort })}
+                  aria-label="정렬"
+                >
+                  <option value="updated">수정일</option>
+                  <option value="created">만든 날</option>
+                  <option value="title">제목</option>
+                </select>
+                <button className="tb-btn board-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
+                  <Icon name="board" />
+                </button>
+                <button
+                  className="tb-btn view-more-btn"
+                  aria-label="보기·정렬"
+                  title="보기 · 정렬"
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setViewMenu({ x: r.right, y: r.bottom })
+                  }}
+                >
+                  <Icon name="more" />
+                </button>
+                <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
+                  <Icon name="gear" />
+                </button>
+                <button
+                  className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
+                  aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
+                  title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setMoreMenu({ x: r.right, y: r.bottom })
+                  }}
+                >
+                  <Icon name="cloud" />
+                  {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
+                </button>
+                {section.kind !== 'trash' && (
+                  <button id="new-doc-btn" className="primary-btn" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
+                    <Icon name="plus" size={18} /> <span className="new-doc-label">새로 만들기</span>
+                  </button>
+                )}
+              </>
+            )}
+          </header>
+          <main className="library-main">
+            {section.kind === 'folder' && (
+              <nav className="breadcrumb" aria-label="경로">
+                <button onClick={() => setSection({ kind: 'all' })}>전체</button>
+                {breadcrumb.map((f) => (
+                  <span key={f.id}>
+                    <Icon name="chevronRight" size={14} />
+                    <button onClick={() => setSection({ kind: 'folder', id: f.id })}>{f.name}</button>
+                  </span>
+                ))}
+              </nav>
+            )}
+            {section.kind === 'trash' && (
+              <div className="trash-bar">
+                <span>휴지통의 문서는 {TRASH_RETENTION_DAYS}일 뒤 영구 삭제됩니다.</span>
+                <button className="text-btn danger" onClick={emptyTrash} disabled={!trash.length}>
+                  휴지통 비우기
+                </button>
+              </div>
+            )}
 
-          {items.length === 0 ? (
-            // 빈 상태는 앱 전체가 같은 모양(SheetEmpty: 아이콘 칸 · 제목 · 설명 · 동작) — docs/ui-plan.md 4b
-            <div className="empty-state">
-              {recentActive ? (
-                <SheetEmpty icon="restore" title="최근 열람한 노트가 없습니다" desc="노트를 열면 여기에 표시됩니다." />
-              ) : section.kind === 'trash' ? (
-                <SheetEmpty icon="trash" title="휴지통이 비어 있습니다" desc={`지운 노트는 ${TRASH_RETENTION_DAYS}일 동안 여기 남았다가 영구 삭제됩니다.`} />
-              ) : section.kind === 'apps' ? (
-                <SheetEmpty
-                  icon="app"
-                  title="아직 앱이 없습니다"
-                  desc="HTML 파일을 앱으로 추가하거나, 앱 메뉴에서 클라우드의 앱을 설치하세요."
-                  action={
-                    <div className="btn-row center">
-                      <button className="text-btn" onClick={() => setShowApps(true)}>
-                        <Icon name="apps" size={18} /> 앱 메뉴에서 설치하기
-                      </button>
-                      <button className="text-btn" onClick={() => void onAddApp()}>
-                        <Icon name="plus" size={18} /> 앱 추가
-                      </button>
-                    </div>
-                  }
-                />
-              ) : section.kind === 'files' ? (
-                <SheetEmpty
-                  icon="file"
-                  title="아직 파일이 없습니다"
-                  desc="노트·앱이 아닌 파일(이미지·문서 등)을 여기에 모아 둘 수 있습니다."
-                  action={
-                    <div className="btn-row center">
-                      <button className="text-btn" onClick={() => void onAddFile()}>
-                        <Icon name="plus" size={18} /> 파일 추가
-                      </button>
-                    </div>
-                  }
-                />
-              ) : query ? (
-                <SheetEmpty
-                  icon="search"
-                  title="검색 결과가 없습니다"
-                  desc={`“${query}”와(과) 일치하는 제목이 없습니다.`}
-                  action={
-                    <div className="btn-row center">
-                      <button
-                        className="text-btn"
-                        onClick={() => {
-                          setQuery('')
-                          setSearchOpen(false)
-                        }}
-                      >
-                        검색 지우기
-                      </button>
-                    </div>
-                  }
-                />
-              ) : (
-                <SheetEmpty
-                  icon="notebook"
-                  title="아직 노트가 없습니다"
-                  desc="새 노트를 만들거나 PDF를 가져와 시작하세요."
-                  action={
-                    <div className="btn-row center">
-                      <button className="primary-btn" onClick={() => setShowNew(true)}>
-                        <Icon name="plus" size={18} /> 새 노트
-                      </button>
-                      <button className="text-btn" onClick={onImportPdf}>
-                        <Icon name="filePdf" size={18} /> PDF 가져오기
-                      </button>
-                    </div>
-                  }
-                />
-              )}
-            </div>
-          ) : (
-            <section
-              ref={gridRef}
-              className={prefs.view === 'grid' ? 'doc-grid' : 'doc-list'}
-              data-enter={enter ? '' : undefined}
-              aria-label="문서"
-              onPointerMove={onGridMove}
-              onPointerLeave={onGridLeave}
-            >
-              {items.flatMap((i, idx) => [
-                subhead(i, idx),
-                i.kind === 'app' ? (
-                  itemCard({
-                    key: 'app:' + i.a.id,
-                    id: i.a.id,
-                    kind: 'app',
-                    title: i.a.title,
-                    category: i.a.category,
-                    updatedAt: i.a.updatedAt,
-                    ext: '',
-                    idx,
-                    onPlay: () => navigate({ name: 'app', appId: i.a.id }),
-                    onMenu: (x, y) => setAppMenu({ app: i.a, x, y })
-                  })
-                ) : i.kind === 'file' ? (
-                  itemCard({
-                    key: 'file:' + i.f.id,
-                    id: i.f.id,
-                    kind: 'file',
-                    title: i.f.title,
-                    category: i.f.category,
-                    updatedAt: i.f.updatedAt,
-                    ext: extOf(i.f.name).toUpperCase(),
-                    idx,
-                    onPlay: () => navigate({ name: 'file', fileId: i.f.id }),
-                    onMenu: (x, y) => setFileMenu({ file: i.f, x, y })
-                  })
+            {subfolders.length > 0 && (
+              <section className="folder-strip" aria-label="하위 폴더">
+                {subfolders.map((f) => (
+                  <button key={f.id} className="folder-chip" onClick={() => setSection({ kind: 'folder', id: f.id })}>
+                    <Icon name="folder" size={18} /> {f.name}
+                  </button>
+                ))}
+              </section>
+            )}
+
+            {items.length === 0 ? (
+              // 빈 상태는 앱 전체가 같은 모양(SheetEmpty: 아이콘 칸 · 제목 · 설명 · 동작) — docs/ui-plan.md 4b
+              <div className="empty-state">
+                {recentActive ? (
+                  <SheetEmpty icon="restore" title="최근 열람한 노트가 없습니다" desc="노트를 열면 여기에 표시됩니다." />
+                ) : section.kind === 'trash' ? (
+                  <SheetEmpty icon="trash" title="휴지통이 비어 있습니다" desc={`지운 노트는 ${TRASH_RETENTION_DAYS}일 동안 여기 남았다가 영구 삭제됩니다.`} />
+                ) : section.kind === 'apps' ? (
+                  <SheetEmpty
+                    icon="app"
+                    title="아직 앱이 없습니다"
+                    desc="HTML 파일을 앱으로 추가하거나, 앱 메뉴에서 클라우드의 앱을 설치하세요."
+                    action={
+                      <div className="btn-row center">
+                        <button className="text-btn" onClick={() => setShowApps(true)}>
+                          <Icon name="apps" size={18} /> 앱 메뉴에서 설치하기
+                        </button>
+                        <button className="text-btn" onClick={() => void onAddApp()}>
+                          <Icon name="plus" size={18} /> 앱 추가
+                        </button>
+                      </div>
+                    }
+                  />
+                ) : section.kind === 'files' ? (
+                  <SheetEmpty
+                    icon="file"
+                    title="아직 파일이 없습니다"
+                    desc="노트·앱이 아닌 파일(이미지·문서 등)을 여기에 모아 둘 수 있습니다."
+                    action={
+                      <div className="btn-row center">
+                        <button className="text-btn" onClick={() => void onAddFile()}>
+                          <Icon name="plus" size={18} /> 파일 추가
+                        </button>
+                      </div>
+                    }
+                  />
+                ) : query ? (
+                  <SheetEmpty
+                    icon="search"
+                    title="검색 결과가 없습니다"
+                    desc={`“${query}”와(과) 일치하는 제목이 없습니다.`}
+                    action={
+                      <div className="btn-row center">
+                        <button
+                          className="text-btn"
+                          onClick={() => {
+                            setQuery('')
+                            setSearchOpen(false)
+                          }}
+                        >
+                          검색 지우기
+                        </button>
+                      </div>
+                    }
+                  />
                 ) : (
-                  <article
-                    key={i.d.id}
-                    className={'doc-card' + (revealKey === i.d.id ? ' is-revealed' : '') + cardClass('doc:' + i.d.id)}
-                    data-doc-id={i.d.id}
-                    data-flip-key={i.d.id}
-                    data-reveal-key={i.d.id}
-                    style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
-                    {...pressProps('doc:' + i.d.id)}
-                    onClick={(e) => {
-                      if (selectClick('doc:' + i.d.id)) return
-                      if (section.kind === 'trash') return setMenu({ doc: i.d, x: 0, y: 0 })
-                      cardTap(i.d.id, () => openIn(i.d, false))
-                    }}
-                  >
-                    <div className="doc-thumb">
-                      {thumbs.get(i.d.id) ? (
-                        <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
-                      ) : (
-                        <Icon name={i.d.mode === 'infinite' ? 'infinite' : i.d.mode === 'text' ? 'textDoc' : 'page'} size={36} />
-                      )}
-                      <span className="doc-gloss" aria-hidden="true" />
-                      {syncPillFor(i.d.id)}
-                      {selectCheck('doc:' + i.d.id)}
-                      {markBadge('doc:' + i.d.id)}
-                      {prefs.view === 'grid' &&
-                        openPanel(
-                          docMetaText(i.d),
-                          { icon: 'edit', label: '편집', aria: '편집 — 편집모드로 열기', run: () => openIn(i.d, false) },
-                          [
-                            { icon: 'eye', label: '보기', aria: '보기 — 뷰어보드(읽기 전용)로 열기', run: () => openIn(i.d, true) },
-                            // 낙서(저장 안 하는 필기)는 필기 노트에만
-                            ...(i.d.mode === 'text'
-                              ? []
-                              : [{ icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: () => openIn(i.d, 'scratch') }])
-                          ]
+                  <SheetEmpty
+                    icon="notebook"
+                    title="아직 노트가 없습니다"
+                    desc="새 노트를 만들거나 PDF를 가져와 시작하세요."
+                    action={
+                      <div className="btn-row center">
+                        <button className="primary-btn" onClick={() => setShowNew(true)}>
+                          <Icon name="plus" size={18} /> 새 노트
+                        </button>
+                        <button className="text-btn" onClick={onImportPdf}>
+                          <Icon name="filePdf" size={18} /> PDF 가져오기
+                        </button>
+                      </div>
+                    }
+                  />
+                )}
+              </div>
+            ) : (
+              <section
+                ref={gridRef}
+                className={prefs.view === 'grid' ? 'doc-grid' : 'doc-list'}
+                data-enter={enter ? '' : undefined}
+                aria-label="문서"
+                onPointerMove={onGridMove}
+                onPointerLeave={onGridLeave}
+              >
+                {items.flatMap((i, idx) => [
+                  subhead(i, idx),
+                  i.kind === 'app' ? (
+                    itemCard({
+                      key: 'app:' + i.a.id,
+                      id: i.a.id,
+                      kind: 'app',
+                      title: i.a.title,
+                      category: i.a.category,
+                      updatedAt: i.a.updatedAt,
+                      ext: '',
+                      idx,
+                      onPlay: () => navigate({ name: 'app', appId: i.a.id }),
+                      onMenu: (x, y) => setAppMenu({ app: i.a, x, y })
+                    })
+                  ) : i.kind === 'file' ? (
+                    itemCard({
+                      key: 'file:' + i.f.id,
+                      id: i.f.id,
+                      kind: 'file',
+                      title: i.f.title,
+                      category: i.f.category,
+                      updatedAt: i.f.updatedAt,
+                      ext: extOf(i.f.name).toUpperCase(),
+                      idx,
+                      onPlay: () => navigate({ name: 'file', fileId: i.f.id }),
+                      onMenu: (x, y) => setFileMenu({ file: i.f, x, y })
+                    })
+                  ) : (
+                    <article
+                      key={i.d.id}
+                      className={'doc-card' + (revealKey === i.d.id ? ' is-revealed' : '') + cardClass('doc:' + i.d.id)}
+                      data-doc-id={i.d.id}
+                      data-flip-key={i.d.id}
+                      data-reveal-key={i.d.id}
+                      style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
+                      {...pressProps('doc:' + i.d.id)}
+                      onClick={(e) => {
+                        if (selectClick('doc:' + i.d.id)) return
+                        if (section.kind === 'trash') return setMenu({ doc: i.d, x: 0, y: 0 })
+                        cardTap(i.d.id, () => openIn(i.d, false))
+                      }}
+                    >
+                      <div className="doc-thumb">
+                        {thumbs.get(i.d.id) ? (
+                          <img src={thumbs.get(i.d.id)} alt="" draggable={false} />
+                        ) : (
+                          <Icon name={i.d.mode === 'infinite' ? 'infinite' : i.d.mode === 'text' ? 'textDoc' : 'page'} size={36} />
                         )}
-                    </div>
-                    <div className="doc-info">
-                      <h3 className="doc-title">{i.d.title}</h3>
-                      {prefs.view === 'grid' ? (
-                        <div className="doc-cap">
-                          <p className="doc-cat-line">{catLine(i.d.category)}</p>
+                        <span className="doc-gloss" aria-hidden="true" />
+                        {syncPillFor(i.d.id)}
+                        {selectCheck('doc:' + i.d.id)}
+                        {markBadge('doc:' + i.d.id)}
+                        {prefs.view === 'grid' &&
+                          openPanel(
+                            docMetaText(i.d),
+                            { icon: 'edit', label: '편집', aria: '편집 — 편집모드로 열기', run: () => openIn(i.d, false) },
+                            [
+                              { icon: 'eye', label: '보기', aria: '보기 — 뷰어보드(읽기 전용)로 열기', run: () => openIn(i.d, true) },
+                              // 낙서(저장 안 하는 필기)는 필기 노트에만
+                              ...(i.d.mode === 'text'
+                                ? []
+                                : [{ icon: 'scribble', label: '낙서', aria: '낙서 — 낙서모드로 열기, 저장 안 됨', scratch: true, run: () => openIn(i.d, 'scratch') }])
+                            ]
+                          )}
+                      </div>
+                      <div className="doc-info">
+                        <h3 className="doc-title">{i.d.title}</h3>
+                        {prefs.view === 'grid' ? (
+                          <div className="doc-cap">
+                            <p className="doc-cat-line">{catLine(i.d.category)}</p>
+                            {moreButton((x, y) => setMenu({ doc: i.d, x, y }))}
+                          </div>
+                        ) : (
+                          <p className="doc-sub">
+                            <span>{catLine(i.d.category)}</span>
+                            <span>{docMetaText(i.d)}</span>
+                          </p>
+                        )}
+                      </div>
+                      {prefs.view === 'list' && (
+                        <div className="doc-tail">
+                          {syncLabelFor(i.d.id)}
                           {moreButton((x, y) => setMenu({ doc: i.d, x, y }))}
                         </div>
-                      ) : (
-                        <p className="doc-sub">
-                          <span>{catLine(i.d.category)}</span>
-                          <span>{docMetaText(i.d)}</span>
-                        </p>
                       )}
-                    </div>
-                    {prefs.view === 'list' && (
-                      <div className="doc-tail">
-                        {syncLabelFor(i.d.id)}
-                        {moreButton((x, y) => setMenu({ doc: i.d, x, y }))}
-                      </div>
-                    )}
-                  </article>
-                )
-              ])}
-            </section>
-          )}
-        </main>
+                    </article>
+                  )
+                ])}
+              </section>
+            )}
+          </main>
+        </div>
       </div>
 
       {radial && (() => {

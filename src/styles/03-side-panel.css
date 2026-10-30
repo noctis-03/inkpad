@@ -317,7 +317,7 @@ textarea {
   min-height: var(--h-control);
   padding: 0 16px;
   border: 0;
-  border-radius: var(--r-md);
+  border-radius: var(--r-2xs);
   background: var(--accent);
   color: var(--on-ink);
   font-size: var(--fs-md);
