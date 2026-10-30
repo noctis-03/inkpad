@@ -405,3 +405,32 @@
     display: none;
   }
 }
+
+/* ───────── 알림(토스트) — 상태 칸 아래에서 내려온다 (app/App Toasts) ─────────
+   자리(top·right)는 App이 상태 칸 알약을 재서 정한다. 새 알림이 칸에 가장 가깝게(위에) 쌓이고, 칸 오른쪽 위 모서리에서 자라 나온다.
+   상태 칸이 없으면 .is-docked 없이 예전 자리(아래 가운데, 06-editor.css) */
+:root .toasts.is-docked {
+  left: auto;
+  bottom: auto;
+  transform: none;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  width: min(380px, calc(100vw - 12px));
+  min-width: min(260px, calc(100vw - 12px));
+  pointer-events: none;
+}
+.toasts.is-docked .toast {
+  width: 100%;
+  pointer-events: auto;
+  transform-origin: top right;
+  animation-name: toast-drop;
+}
+.toasts.is-docked .toast.is-out {
+  animation-name: toast-lift;
+}
+@keyframes toast-drop {
+  from { opacity: 0; transform: translateY(-12px) scale(.92); }
+}
+@keyframes toast-lift {
+  to { opacity: 0; transform: translateY(-8px) scale(.97); }
+}

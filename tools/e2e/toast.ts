@@ -38,5 +38,17 @@ export default async function toast(ctx: Ctx) {
     check(`토스트(${theme}): 글자 4.5:1 이상`, r.text >= 4.5, r.text.toFixed(2))
     check(`토스트(${theme}): 동작 버튼 4.5:1 이상`, r.action >= 4.5, r.action.toFixed(2))
   }
+
+  // 자리 — 탭 바 오른쪽 상태 칸 바로 아래, 오른쪽 끝을 맞춰 내려온다. 새 알림이 칸에 가장 가깝다
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().toast('두 번째 알림', 'success', undefined, { sticky: true }))
+  await sleep(700)
+  const at = await p.evaluate(() => {
+    const pill = document.querySelector('.dock-pill')!.getBoundingClientRect()
+    const list = [...document.querySelectorAll('.toast')].map((e) => e.getBoundingClientRect())
+    const newest = document.querySelectorAll('.toast')[document.querySelectorAll('.toast').length - 1].getBoundingClientRect()
+    return { pill: [pill.right, pill.bottom], top: Math.min(...list.map((r) => r.top)), newest: [newest.right, newest.top], docked: !!document.querySelector('.toasts.is-docked') }
+  })
+  check('토스트 자리: 상태 칸 바로 아래에서 내려온다', at.docked && Math.abs(at.top - (at.pill[1] + 6)) < 1.5, JSON.stringify(at))
+  check('토스트 자리: 오른쪽 끝이 상태 칸과 맞고, 새 알림이 칸에 가장 가깝다', Math.abs(at.newest[0] - at.pill[0]) < 1.5 && Math.abs(at.newest[1] - at.top) < 1.5, JSON.stringify(at))
   await p.context().close()
 }
