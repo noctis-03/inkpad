@@ -64,12 +64,16 @@
   background: var(--line);
 }
 /* 휴대폰 폭에서만 보이는 항목 (상단 바에서 빠진 버튼을 메뉴로 옮긴 것) */
-.menu-item.phone-only {
+.menu-item.phone-only,
+.menu-sep.phone-only {
   display: none;
 }
 @media (max-width: 700px) {
   .menu-item.phone-only {
     display: flex;
+  }
+  .menu-sep.phone-only {
+    display: block;
   }
 }
 /* ── 떠 있는 그릇 세 가지 — 모양은 한 벌 (docs/ui-plan.md 2단계) ──

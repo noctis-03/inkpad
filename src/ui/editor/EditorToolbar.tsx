@@ -6,6 +6,7 @@ import { onSyncStatus } from '../../sync/sync'
 import { NoteSyncChip } from './NoteSyncChip'
 import { Icon } from '../Icon'
 import { Menu, MenuItem } from '../Menu'
+import { Segmented } from '../Segmented'
 
 const SAVE_LABEL = { saved: '저장됨', pending: '저장 대기', saving: '저장 중', error: '저장 실패' }
 
@@ -23,6 +24,8 @@ export function EditorToolbar(props: {
   scratch?: boolean
   onRename: (t: string) => void
   onBack: () => void
+  /** 편집·보기·낙서 전환 — 같은 노트를 그 방식으로 다시 연다 */
+  onReopen: (as: 'edit' | 'view' | 'scratch') => void
 }) {
   const { doc } = props
   const panel = useUI((s) => s.panel)
@@ -49,6 +52,8 @@ export function EditorToolbar(props: {
   }, [saveState])
 
   useEffect(() => onSyncStatus((s) => setSyncing(s === 'syncing')), [])
+
+  const openedAs = props.scratch ? 'scratch' : props.readOnly ? 'view' : 'edit'
 
   const openMenu = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -77,24 +82,27 @@ export function EditorToolbar(props: {
               <Icon name="sidebar" size={20} />
             </button>
           )}
-          {editingTitle ? (
-            <input
-              className="title-input"
-              value={title}
-              autoFocus
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => {
-                setEditingTitle(false)
-                props.onRename(title)
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            />
-          ) : (
-            <button className="doc-title-btn" onClick={() => !props.readOnly && !props.scratch && setEditingTitle(true)} title={props.scratch ? undefined : '이름 바꾸기'}>
-              <span className="doc-title-text">{doc?.title ?? ''}</span>
-              {!props.readOnly && !props.scratch && <Icon name="edit" size={14} className="doc-title-edit" />}
-            </button>
-          )}
+          <div className="doc-heading">
+            {doc?.category && <span className="doc-heading-cat">{doc.category}</span>}
+            {editingTitle ? (
+              <input
+                className="title-input"
+                value={title}
+                autoFocus
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => {
+                  setEditingTitle(false)
+                  props.onRename(title)
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              />
+            ) : (
+              <button className="doc-title-btn" onClick={() => !props.readOnly && !props.scratch && setEditingTitle(true)} title={props.scratch ? undefined : '이름 바꾸기'}>
+                <span className="doc-title-text">{doc?.title ?? ''}</span>
+                {!props.readOnly && !props.scratch && <Icon name="edit" size={14} className="doc-title-edit" />}
+              </button>
+            )}
+          </div>
         </nav>
 
         <div className="toolbar-spacer" />
@@ -124,6 +132,22 @@ export function EditorToolbar(props: {
         {/* 이 노트의 동기화 상태 — 읽기 전용(다른 탭에서 편집 중·뷰어)이면 내지 않는다 */}
         {doc && !props.readOnly && !props.scratch && <NoteSyncChip docId={doc.id} title={doc.title} />}
 
+        <button className="tb-pill export-pill" onClick={() => setPanel('export')}>
+          내보내기
+        </button>
+        {/* 여는 방식 — 라이브러리 카드의 편집·보기·낙서와 같다. 바꾸면 같은 노트를 그 방식으로 다시 연다 */}
+        <Segmented
+          className="mode-seg"
+          value={openedAs}
+          options={[
+            ['edit', '편집'],
+            ['view', '보기'],
+            ['scratch', '낙서']
+          ]}
+          onChange={(v) => v !== openedAs && props.onReopen(v)}
+          label="여는 방식"
+        />
+
         <nav className="toolbar-group" aria-label="문서">
           {doc?.mode === 'paged' && (
             <button className={'tb-btn' + (panel === 'page' ? ' is-active' : '')} onClick={() => setPanel('page')} aria-label="페이지 설정">
@@ -143,6 +167,11 @@ export function EditorToolbar(props: {
 
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          {/* 휴대폰: 문서 바의 편집·보기·낙서 전환이 빠지는 대신 여기서 */}
+          <MenuItem icon="edit" label="편집" className="phone-only mode-item" current={openedAs === 'edit'} onClick={run(() => openedAs !== 'edit' && props.onReopen('edit'))} />
+          <MenuItem icon="eye" label="보기" className="phone-only mode-item" current={openedAs === 'view'} onClick={run(() => openedAs !== 'view' && props.onReopen('view'))} />
+          <MenuItem icon="scribble" label="낙서" className="phone-only mode-item" current={openedAs === 'scratch'} onClick={run(() => openedAs !== 'scratch' && props.onReopen('scratch'))} />
+          <div className="menu-sep phone-only mode-item" />
           {!props.scratch && <MenuItem icon="restore" label="버전 기록" onClick={run(() => setPanel('history'))} />}
           <MenuItem icon="share" label="내보내기" onClick={run(() => setPanel('export'))} />
           {/* 페이지 노트는 페이지마다의 메뉴(캔버스의 페이지 칩·썸네일 ⋯)에서 보낸다 — 페이지가 없는 무한 캔버스만 여기서 */}

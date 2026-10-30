@@ -54,6 +54,7 @@ import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMet
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { UPLOADING_EVENT, isUploading } from '../../sync/uploading'
 import { confirmTransfer, uploadChoice } from '../../sync/transfer'
+import { getDeviceName } from '../../sync/token'
 import type { FileRow } from '../../storage/db'
 
 type Section =
@@ -103,6 +104,8 @@ function sameSection(a: Section, b: Section): boolean {
   if (a.kind === 'folder' && b.kind === 'folder') return a.id === b.id
   return true
 }
+
+const WIDE_QUERY = '(min-width: 901px)'
 
 export function Library() {
   const navigate = useUI((s) => s.navigate)
@@ -167,6 +170,22 @@ export function Library() {
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
+  // 넓은 화면(사이드바가 서랍이 아니라 옆에 붙는 폭) — 06-editor.css의 서랍 기준(900px 이하)과 같다
+  const [wide, setWide] = useState(() => window.matchMedia(WIDE_QUERY).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY)
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  const inSplit = useUI((s) => s.split != null)
+  // 사이드바가 옆에 붙어 있으면 새로 만들기·작업보드·설정·동기화는 사이드바에 둔다(상단 바에는 두지 않는다 — 같은 버튼이 두 벌 생기지 않게).
+  // 서랍(좁은 화면)·듀얼(칸이 좁다)에서는 예전처럼 상단 바에
+  const sideTools = treeOpen && wide && !inSplit
+  const [deviceName, setDeviceNameState] = useState('')
+  useEffect(() => {
+    if (!showSettings) void getDeviceName().then(setDeviceNameState) // 설정에서 이름을 바꾸고 닫으면 다시 읽는다
+  }, [showSettings])
   const [revealKey, setRevealKey] = useState<string | null>(null) // 격자: 누르면 미리보기가 블러되며 오버레이가 뜬 카드
   const [marks, setMarkMap] = useState<Record<string, Mark>>({}) // 이 기기의 마킹 — 키 'doc:'·'app:'·'file:' + id
   const [selected, setSelected] = useState<Set<string> | null>(null) // 선택 모드(카드를 꾹 눌러 들어간다). null이면 평소
@@ -1325,9 +1344,49 @@ export function Library() {
     </button>
   )
 
+  // 동기화(구름) — 사이드바 아래 줄 또는 상단 바, 한 곳에만 둔다(sideTools)
+  const syncButton = (
+    <button
+      className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
+      aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
+      title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
+      onClick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        setMoreMenu({ x: r.right, y: r.bottom })
+      }}
+    >
+      <Icon name="cloud" />
+      {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
+    </button>
+  )
+  const sideToggle = (
+    <button className="tb-btn side-toggle" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록" aria-expanded={treeOpen}>
+      <Icon name="sidebar" />
+    </button>
+  )
+  // 휴대폰 폭의 카테고리 칩 줄 — 사이드바(서랍)를 열지 않고 고른다. 사이드바와 같은 섹션으로 간다
+  const chips: { key: string; label: string; color?: string; on: boolean; go: () => void }[] = [
+    { key: 'all', label: '전체', on: section.kind === 'all', go: () => pickSection({ kind: 'all' }) },
+    { key: 'notes', label: '모든 노트', on: section.kind === 'notes', go: () => pickSection({ kind: 'notes' }) },
+    ...categoryLayout.groups.map((g) => ({
+      key: 'catgroup:' + g.name,
+      label: g.name,
+      color: catColor(g.cats[0]),
+      on: section.kind === 'catgroup' && section.name === g.name,
+      go: () => pickSection({ kind: 'catgroup', name: g.name })
+    })),
+    ...categoryLayout.plain.map((c) => ({
+      key: 'cat:' + c,
+      label: c,
+      color: catColor(c),
+      on: section.kind === 'category' && section.name === c,
+      go: () => pickSection({ kind: 'category', name: c })
+    }))
+  ]
+
   return (
     <div
-      className={'library' + (selected ? ' is-selecting' : '')}
+      className={'library' + (selected ? ' is-selecting' : '') + (treeOpen ? ' has-side' : '') + (sideTools ? ' has-side-tools' : '')}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
       onDragOver={onDragOver}
@@ -1345,104 +1404,129 @@ export function Library() {
       <div className="library-body">
         {treeOpen && <div className="tree-backdrop" role="presentation" onClick={() => setTreeOpen(false)} />}
         {treeOpen && (
-          <nav className="folder-tree" aria-label="폴더" ref={treeRef}>
-            <button
-              data-indicator-key="all"
-              className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')}
-              onClick={() => pickSection({ kind: 'all' })}
-            >
-              <Icon name="grid" size={18} /> 전체 {section.kind === 'all' && recentActive && recentTag}
-              <span className="count">
-                <CountUp value={docs.length + apps.length + files.length} />
-              </span>
-            </button>
-            <button
-              data-indicator-key="notes"
-              className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')}
-              onClick={() => pickSection({ kind: 'notes' })}
-            >
-              <Icon name="notebook" size={18} /> 모든 노트 {section.kind === 'notes' && recentActive && recentTag}{' '}
-              <span className="count"><CountUp value={docs.length} /></span>
-            </button>
-            <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
-              <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
-            </button>
-            <button data-indicator-key="files" className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
-              <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
-            </button>
-            <div className="tree-label">카테고리</div>
-            {categoryLayout.groups.map((g) => {
-              const open = openGroup === g.name
-              // 접힌 묶음에 보고 있는 카테고리가 있으면 선택 칩이 구분선에 앉는다
-              const activeInside = !open && section.kind === 'category' && g.cats.includes(section.name)
-              const activeGroup = section.kind === 'catgroup' && section.name === g.name
-              return (
-                <Fragment key={'group:' + g.name}>
-                  {/* 머리글 — 화살표는 접고 펴기만, 이름 쪽은 묶음 화면(태그별로 나눠 전부)으로 가며 펼친다 */}
-                  <div
-                    className={'tree-group' + (open ? ' is-open' : '') + (activeInside || activeGroup ? ' is-active' : '')}
-                    data-indicator-key={activeGroup ? 'catgroup:' + g.name : activeInside ? 'cat:' + section.name : undefined}
-                  >
-                    <button className="tree-group-toggle" aria-expanded={open} aria-label={g.name + (open ? ' 접기' : ' 펼치기')} onClick={() => toggleGroup(g.name)}>
-                      <Icon name="chevronRight" size={12} />
-                    </button>
-                    <button
-                      className="tree-group-main"
-                      onClick={() => {
-                        setOpenGroup(g.name) // 같은 묶음을 다시 눌러(최근 열람 바꾸기) 보던 곳이 그대로여도 펼친다
-                        pickSection({ kind: 'catgroup', name: g.name })
-                      }}
-                    >
-                      <span className="tree-group-name">{g.name}</span>
-                      {activeGroup && recentActive && recentTag}
-                      {!open && (
-                        <span className="tree-group-dots" aria-hidden="true">
-                          {g.cats.slice(0, 4).map((c) => (
-                            <i key={c} style={{ background: catColor(c) }} />
-                          ))}
-                        </span>
-                      )}
-                      {!open && <span className="count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>}
-                    </button>
-                  </div>
-                  {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).group ?? c))}</div>}
-                </Fragment>
-              )
-            })}
-            {categoryLayout.groups.length > 0 && <div className="tree-group-end" aria-hidden="true" />}
-            {categoryLayout.plain.map((c) => categoryItem(c, c))}
-            <button
-              data-indicator-key="uncategorized"
-              className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
-              onClick={() => pickSection({ kind: 'uncategorized' })}
-            >
-              <span className="tree-cat-dot" style={{ background: catColor(null) }} aria-hidden="true" />
-              <span className="tree-name">미분류</span>
-              {section.kind === 'uncategorized' && recentActive && recentTag}
-              <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
-            </button>
-            <div className="tree-label">
-              폴더
-              <button className="icon-mini" onClick={() => onNewFolder(null)} aria-label="새 폴더">
-                <Icon name="folderPlus" size={16} />
-              </button>
+          <aside className="lib-side">
+            <div className="lib-side-head">
+              <span className="lib-brand">inkpad</span>
+              {sideToggle}
             </div>
-            <FolderTree
-              folders={folders}
-              parentId={null}
-              depth={0}
-              activeId={currentFolderId}
-              docs={docs}
-              apps={apps}
-              files={files}
-              recentActive={recentActive}
-              onSelect={(id) => pickSection({ kind: 'folder', id })}
-              onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
-            />
-            <button data-indicator-key="trash" className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
-              <Icon name="trash" size={18} /> 휴지통 <span className="count"><CountUp value={trash.length} /></span>
+            {sideTools && section.kind !== 'trash' && (
+              <button id="new-doc-btn" className="primary-btn side-new" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
+                새로 만들기
+              </button>
+            )}
+            <button className="side-link" onClick={() => navigate({ name: 'board' })}>
+              <Icon name="board" size={18} />
+              <span>작업보드</span>
+              <Icon name="chevronRight" size={14} />
             </button>
-          </nav>
+            <nav className="folder-tree" aria-label="폴더" ref={treeRef}>
+              <button
+                data-indicator-key="all"
+                className={'tree-item' + (section.kind === 'all' ? ' is-active' : '')}
+                onClick={() => pickSection({ kind: 'all' })}
+              >
+                <Icon name="grid" size={18} /> 전체 {section.kind === 'all' && recentActive && recentTag}
+                <span className="count">
+                  <CountUp value={docs.length + apps.length + files.length} />
+                </span>
+              </button>
+              <button
+                data-indicator-key="notes"
+                className={'tree-item' + (section.kind === 'notes' ? ' is-active' : '')}
+                onClick={() => pickSection({ kind: 'notes' })}
+              >
+                <Icon name="notebook" size={18} /> 모든 노트 {section.kind === 'notes' && recentActive && recentTag}{' '}
+                <span className="count"><CountUp value={docs.length} /></span>
+              </button>
+              <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
+                <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
+              </button>
+              <button data-indicator-key="files" className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
+                <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
+              </button>
+              <div className="tree-label">카테고리</div>
+              {categoryLayout.groups.map((g) => {
+                const open = openGroup === g.name
+                // 접힌 묶음에 보고 있는 카테고리가 있으면 선택 칩이 구분선에 앉는다
+                const activeInside = !open && section.kind === 'category' && g.cats.includes(section.name)
+                const activeGroup = section.kind === 'catgroup' && section.name === g.name
+                return (
+                  <Fragment key={'group:' + g.name}>
+                    {/* 머리글 — 화살표는 접고 펴기만, 이름 쪽은 묶음 화면(태그별로 나눠 전부)으로 가며 펼친다 */}
+                    <div
+                      className={'tree-group' + (open ? ' is-open' : '') + (activeInside || activeGroup ? ' is-active' : '')}
+                      data-indicator-key={activeGroup ? 'catgroup:' + g.name : activeInside ? 'cat:' + section.name : undefined}
+                    >
+                      <button className="tree-group-toggle" aria-expanded={open} aria-label={g.name + (open ? ' 접기' : ' 펼치기')} onClick={() => toggleGroup(g.name)}>
+                        <Icon name="chevronRight" size={12} />
+                      </button>
+                      <button
+                        className="tree-group-main"
+                        onClick={() => {
+                          setOpenGroup(g.name) // 같은 묶음을 다시 눌러(최근 열람 바꾸기) 보던 곳이 그대로여도 펼친다
+                          pickSection({ kind: 'catgroup', name: g.name })
+                        }}
+                      >
+                        <span className="tree-group-name">{g.name}</span>
+                        {activeGroup && recentActive && recentTag}
+                        {!open && (
+                          <span className="tree-group-dots" aria-hidden="true">
+                            {g.cats.slice(0, 4).map((c) => (
+                              <i key={c} style={{ background: catColor(c) }} />
+                            ))}
+                          </span>
+                        )}
+                        {!open && <span className="count">{g.cats.reduce((n, c) => n + catCount(c), 0)}</span>}
+                      </button>
+                    </div>
+                    {open && <div className="tree-group-items">{g.cats.map((c) => categoryItem(c, splitCategory(c).group ?? c))}</div>}
+                  </Fragment>
+                )
+              })}
+              {categoryLayout.groups.length > 0 && <div className="tree-group-end" aria-hidden="true" />}
+              {categoryLayout.plain.map((c) => categoryItem(c, c))}
+              <button
+                data-indicator-key="uncategorized"
+                className={'tree-item' + (section.kind === 'uncategorized' ? ' is-active' : '')}
+                onClick={() => pickSection({ kind: 'uncategorized' })}
+              >
+                <span className="tree-cat-dot" style={{ background: catColor(null) }} aria-hidden="true" />
+                <span className="tree-name">미분류</span>
+                {section.kind === 'uncategorized' && recentActive && recentTag}
+                <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
+              </button>
+              <div className="tree-label">
+                폴더
+                <button className="icon-mini" onClick={() => onNewFolder(null)} aria-label="새 폴더">
+                  <Icon name="folderPlus" size={16} />
+                </button>
+              </div>
+              <FolderTree
+                folders={folders}
+                parentId={null}
+                depth={0}
+                activeId={currentFolderId}
+                docs={docs}
+                apps={apps}
+                files={files}
+                recentActive={recentActive}
+                onSelect={(id) => pickSection({ kind: 'folder', id })}
+                onMenu={(folder, x, y) => setFolderMenu({ folder, x, y })}
+              />
+              <button data-indicator-key="trash" className={'tree-item trash' + (section.kind === 'trash' ? ' is-active' : '')} onClick={() => setSection({ kind: 'trash' })}>
+                <Icon name="trash" size={18} /> 휴지통 <span className="count"><CountUp value={trash.length} /></span>
+              </button>
+            </nav>
+            {/* 아래 줄 — 이 기기 이름 · 설정 · 동기화 */}
+            <div className="lib-side-foot">
+              <span className="side-avatar" aria-hidden="true">{(deviceName.trim()[0] ?? 'i').toUpperCase()}</span>
+              <span className="side-device">{deviceName || '이 기기'}</span>
+              <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
+                <Icon name="gear" />
+              </button>
+              {sideTools && syncButton}
+            </div>
+          </aside>
         )}
 
         {/* 오른쪽 칸 — 상단 바 + 목록. 사이드바(.folder-tree)는 그 왼쪽에서 화면 위까지 올라간다 */}
@@ -1485,17 +1569,9 @@ export function Library() {
               </>
             ) : (
               <>
-                <button className="tb-btn" onClick={() => setTreeOpen((v) => !v)} aria-label="폴더 목록">
-                  <Icon name="sidebar" />
-                </button>
-                <h1 className="library-title">
-                  {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
-                      섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
-                  <TitleText text={title} />
-                  <span className="title-count">
-                    <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
-                  </span>
-                </h1>
+                {!sideTools && sideToggle}
+                <span className="lib-brand lib-brand-bar">inkpad</span>
+                <span className="bar-spacer" />
                 <button
                   className="tb-btn search-toggle"
                   aria-label="제목 검색"
@@ -1506,6 +1582,71 @@ export function Library() {
                 >
                   <Icon name="search" />
                 </button>
+                <Segmented
+                  className="view-seg"
+                  value={prefs.view}
+                  options={[
+                    ['grid', '격자'],
+                    ['list', '목록']
+                  ]}
+                  onChange={(v) => setPrefs({ view: v })}
+                  label="보기 방식"
+                />
+                {!sideTools && (
+                  <button className="tb-btn board-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
+                    <Icon name="board" />
+                  </button>
+                )}
+                <button
+                  className="tb-btn view-more-btn"
+                  aria-label="보기·정렬"
+                  title="보기 · 정렬"
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setViewMenu({ x: r.right, y: r.bottom })
+                  }}
+                >
+                  <Icon name="more" />
+                </button>
+                {!sideTools && (
+                  <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
+                    <Icon name="gear" />
+                  </button>
+                )}
+                {!sideTools && syncButton}
+                {!sideTools && section.kind !== 'trash' && (
+                  <button id="new-doc-btn" className="primary-btn" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
+                    <Icon name="plus" size={18} /> <span className="new-doc-label">새로 만들기</span>
+                  </button>
+                )}
+              </>
+            )}
+          </header>
+          {/* 제목 줄 — 정렬 ▾ 위에 명조 제목, 오른쪽에 밑줄 검색. 휴대폰은 아래에 카테고리 칩 */}
+          <div className={'lib-titlebar' + (searchOpen || query ? ' is-searching' : '')}>
+            <div className="lib-title-main">
+              <select
+                className="sort-select"
+                value={prefs.sort}
+                onChange={(e) => setPrefs({ sort: e.target.value as typeof prefs.sort })}
+                aria-label="정렬"
+              >
+                <option value="updated">수정일 순</option>
+                <option value="created">만든 날 순</option>
+                <option value="title">제목 순</option>
+              </select>
+              <h1 className="library-title">
+                {/* 제목 모핑은 TitleText 가 두 단계로 처리한다 — 개수는 리마운트되지 않아야
+                    섹션을 바꿀 때 이전 값에서 새 값으로 카운트업된다 */}
+                <TitleText text={title} />
+                <span className="title-count">
+                  <CountUp value={recentActive ? scopedRecentDocs.length : items.length} />
+                </span>
+              </h1>
+            </div>
+            {/* 선택 모드에서는 검색을 내지 않는다(예전 상단 바와 같다) */}
+            {!selected && (
+              <>
                 <div className="search-box">
                   <Icon name="search" size={18} />
                   <input ref={searchRef} id="doc-search" type="search" placeholder="제목 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -1519,63 +1660,17 @@ export function Library() {
                 >
                   취소
                 </button>
-                <Segmented
-                  className="view-seg"
-                  value={prefs.view}
-                  options={[
-                    ['grid', '격자'],
-                    ['list', '목록']
-                  ]}
-                  onChange={(v) => setPrefs({ view: v })}
-                  label="보기 방식"
-                />
-                <select
-                  className="sort-select"
-                  value={prefs.sort}
-                  onChange={(e) => setPrefs({ sort: e.target.value as typeof prefs.sort })}
-                  aria-label="정렬"
-                >
-                  <option value="updated">수정일</option>
-                  <option value="created">만든 날</option>
-                  <option value="title">제목</option>
-                </select>
-                <button className="tb-btn board-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
-                  <Icon name="board" />
-                </button>
-                <button
-                  className="tb-btn view-more-btn"
-                  aria-label="보기·정렬"
-                  title="보기 · 정렬"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    setViewMenu({ x: r.right, y: r.bottom })
-                  }}
-                >
-                  <Icon name="more" />
-                </button>
-                <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
-                  <Icon name="gear" />
-                </button>
-                <button
-                  className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
-                  aria-label={todoCount ? `동기화·에셋·앱·파일 메뉴 — 할 일 ${todoCount}` : '동기화·에셋·앱·파일 메뉴'}
-                  title={todoCount ? `올릴 노트 ${todo!.pending.length} · 머지 대기 ${todo!.merge}` : '동기화 · 에셋 원본 · 앱 · 기타 파일'}
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    setMoreMenu({ x: r.right, y: r.bottom })
-                  }}
-                >
-                  <Icon name="cloud" />
-                  {todoCount > 0 && <span className="sync-badge">{todoCount > 99 ? '99+' : todoCount}</span>}
-                </button>
-                {section.kind !== 'trash' && (
-                  <button id="new-doc-btn" className="primary-btn" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
-                    <Icon name="plus" size={18} /> <span className="new-doc-label">새로 만들기</span>
-                  </button>
-                )}
               </>
             )}
-          </header>
+          </div>
+          <div className="lib-chips" role="group" aria-label="카테고리">
+            {chips.map((c) => (
+              <button key={c.key} className={'lib-chip' + (c.on ? ' is-on' : '')} aria-pressed={c.on} onClick={c.go}>
+                {c.color && <i className="cat-dot" style={{ background: c.color }} aria-hidden="true" />}
+                {c.label}
+              </button>
+            ))}
+          </div>
           <main className="library-main">
             {section.kind === 'folder' && (
               <nav className="breadcrumb" aria-label="경로">
