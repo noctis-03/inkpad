@@ -1419,6 +1419,11 @@ export function Library() {
               <span>작업보드</span>
               <Icon name="chevronRight" size={14} />
             </button>
+            <button className="side-link" onClick={() => navigate({ name: 'plan' })}>
+              <Icon name="calendar" size={18} />
+              <span>일정</span>
+              <Icon name="chevronRight" size={14} />
+            </button>
             <nav className="folder-tree" aria-label="폴더" ref={treeRef}>
               <button
                 data-indicator-key="all"
@@ -1595,6 +1600,11 @@ export function Library() {
                 {!sideTools && (
                   <button className="tb-btn board-btn" onClick={() => useUI.getState().navigate({ name: 'board' })} aria-label="작업보드" title="작업보드">
                     <Icon name="board" />
+                  </button>
+                )}
+                {!sideTools && (
+                  <button className="tb-btn board-btn plan-btn" onClick={() => useUI.getState().navigate({ name: 'plan' })} aria-label="일정" title="일정">
+                    <Icon name="calendar" />
                   </button>
                 )}
                 <button
@@ -1930,6 +1940,7 @@ export function Library() {
           <MenuItem icon="sort" label="제목" current={prefs.sort === 'title'} onClick={() => { setViewMenu(null); setPrefs({ sort: 'title' }) }} />
           <div className="menu-sep" />
           <MenuItem icon="board" label="작업보드" onClick={() => { setViewMenu(null); navigate({ name: 'board' }) }} />
+          <MenuItem icon="calendar" label="일정" onClick={() => { setViewMenu(null); navigate({ name: 'plan' }) }} />
           <MenuItem icon="gear" label="설정" className="phone-only" onClick={() => { setViewMenu(null); setShowSettings(true) }} />
         </Menu>
       )}

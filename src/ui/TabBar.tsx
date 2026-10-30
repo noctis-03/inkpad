@@ -2,7 +2,7 @@
 // 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없어도 바(홈 탭)는 늘 그린다.
 // 탭은 끌어서 순서를 바꾼다 — 마우스·펜은 바로 끌고, 손가락은 길게 눌러 집는다(그냥 밀면 탭 바가 옆으로 넘어간다).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { isTabRoute, routeKey, useUI, type TabRoute } from '../app/store'
+import { isHomeRoute, isTabRoute, routeKey, useUI, type TabRoute } from '../app/store'
 import { getDocument } from '../storage/repo'
 import { APPS_EVENT, getApp } from '../sync/apps'
 import { FILES_EVENT, getFile } from '../sync/files'
@@ -243,17 +243,18 @@ export function TabBar() {
 
   const activeKey = isTabRoute(route) ? routeKey(route) : null
   const splitKey = split ? routeKey(split) : null
-  const homeActive = route.name === 'library' || route.name === 'board'
+  const homeActive = isHomeRoute(route)
+  const homeName = home.name === 'board' ? '작업보드' : home.name === 'plan' ? '일정' : '라이브러리'
 
   return (
     <nav className="tabbar" aria-label="열린 탭">
       <button
         className={'tab tab-home' + (homeActive ? ' is-active' : '')}
         onClick={() => navigate(homeActive ? route : home)}
-        aria-label={home.name === 'board' ? '작업보드' : '라이브러리'}
-        title={home.name === 'board' ? '작업보드' : '라이브러리'}
+        aria-label={homeName}
+        title={homeName}
       >
-        <Icon name={home.name === 'board' ? 'board' : 'grid'} size={18} />
+        <Icon name={home.name === 'board' ? 'board' : home.name === 'plan' ? 'calendar' : 'grid'} size={18} />
       </button>
       <div className="tabbar-scroll" ref={bar} role="tablist">
         {tabs.map((t) => {

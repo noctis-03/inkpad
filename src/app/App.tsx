@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { isTabRoute, routeKey, useUI, type Route, type Toast } from './store'
+import { isHomeRoute, isTabRoute, routeKey, useUI, type Route, type Toast } from './store'
 import { DialogHost } from './dialogs'
 import { MergeHost } from '../ui/merge/MergeView'
 import { ArchiveHost } from '../ui/ArchiveSheet'
@@ -7,6 +7,7 @@ import { ChangesHost } from '../ui/ChangesView'
 import { installSyncReminders } from './syncReminders'
 import { Library } from '../ui/library/Library'
 import { Board } from '../ui/board/Board'
+import { Plan } from '../ui/plan/Plan'
 import { DocEditor } from '../ui/editor/DocEditor'
 import { AppRunner } from '../ui/app/AppRunner'
 import type { PaneSlot } from '../ui/app/RunnerNav'
@@ -16,6 +17,7 @@ import { TabBar, useSplitAllowed } from '../ui/TabBar'
 import type { ID } from '../shared/model'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
+import { purgeExpiredTasks } from '../storage/tasks'
 import { installPress } from '../ui/motion/press'
 import { dur } from '../ui/motion/motion'
 import { dockPresent, onNotices } from '../shared/notices'
@@ -24,6 +26,7 @@ export function App() {
   useEffect(() => {
     // 휴지통 30일 정리 (로컬). 서버 쪽은 Phase 2에서 요청 시 lazy 정리
     void purgeExpiredTrash().catch(() => {})
+    void purgeExpiredTasks().catch(() => {})
   }, [])
 
   // 동기화 편의 — 앱 아이콘 배지, (켰다면) 앱을 열 때·돌아올 때 클라우드 확인
@@ -194,6 +197,8 @@ function mainView(route: Route) {
     <FileRunner fileId={route.fileId} pane="main" />
   ) : route.name === 'board' ? (
     <Board />
+  ) : route.name === 'plan' ? (
+    <Plan />
   ) : (
     <Library />
   )
@@ -207,7 +212,7 @@ interface Leaving {
 }
 /** 열기·닫기 같은 시간 */
 const FADE_MS = 450
-const isHome = (r: Route) => r.name === 'library' || r.name === 'board'
+const isHome = isHomeRoute
 
 /** 이 화면 바뀜을 겹쳐 바꿀지 — 홈에서 노트를 열 때와 노트에서 홈으로 돌아갈 때만 (모션 끄기면 바로) */
 function fadeFor(prev: { key: string; route: Route }, next: Route): Leaving | null {
