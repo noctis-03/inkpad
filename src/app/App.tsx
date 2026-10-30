@@ -18,6 +18,7 @@ import type { ID } from '../shared/model'
 import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
 import { purgeExpiredTasks } from '../storage/tasks'
+import { installTaskUpload } from '../sync/tasks'
 import { installPress } from '../ui/motion/press'
 import { dur } from '../ui/motion/motion'
 import { dockPresent, onNotices } from '../shared/notices'
@@ -31,6 +32,8 @@ export function App() {
 
   // 동기화 편의 — 앱 아이콘 배지, (켰다면) 앱을 열 때·돌아올 때 클라우드 확인
   useEffect(() => installSyncReminders(), [])
+  // 할 일은 고치면 바로 올린다(동기화를 설정한 기기에서만) — sync/tasks 규칙 1
+  useEffect(() => installTaskUpload(), [])
 
   // 모션 단계 결정 — auto는 OS '동작 줄이기'를 따르고, 결과를 <html data-motion>에 반영한다
   useEffect(() => {

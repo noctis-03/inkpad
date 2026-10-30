@@ -1,19 +1,24 @@
 // 할 일 저장 (일정 화면, ui/plan) — 이 기기 DB의 tasks 표.
 // 고칠 때마다 그 칸의 고친 시각(ts)을 남긴다 — 동기화가 칸별로 나중에 고친 쪽을 남기는 데 쓴다.
 // 지우기는 휴지통(deletedAt)으로 — TRASH_RETENTION_DAYS 뒤 purgeExpiredTasks가 지운다.
+// 고치면 pending 표식이 붙는다 — sync/tasks가 그 할 일을 Drive에 올린다(올린 적 있는 할 일의 영구 삭제도 표식으로 올린다).
 import { TRASH_RETENTION_DAYS, type ID, type Task, type TaskField } from '../shared/model'
 import { ulid } from '../shared/ulid'
 import { db } from './db'
 
 export const TASKS_EVENT = 'inkpad-tasks-changed'
-const emit = () => window.dispatchEvent(new Event(TASKS_EVENT))
+export const emitTasksChanged = () => window.dispatchEvent(new Event(TASKS_EVENT))
+const emit = emitTasksChanged
 
 /** 제목 최대 길이 — 한 줄 할 일 */
 export const TASK_TITLE_MAX = 200
 
 const cleanTitle = (t: string) => t.replace(/\s+/g, ' ').trim().slice(0, TASK_TITLE_MAX)
 
-export const listTasks = () => db.tasks.toArray()
+/** 화면에 보일 할 일 — 영구 삭제 표식은 뺀다 */
+export const listTasks = async () => (await db.tasks.toArray()).filter((t) => !t.purgedAt)
+/** 올리지 않은 할 일 수 */
+export const pendingTaskCount = async () => (await db.tasks.toArray()).filter((t) => t.pending).length
 export const getTask = (id: ID) => db.tasks.get(id)
 
 export async function createTask(init: Partial<Pick<Task, 'memo' | 'due' | 'time' | 'category' | 'link'>> & { title: string }): Promise<Task | null> {
@@ -32,7 +37,8 @@ export async function createTask(init: Partial<Pick<Task, 'memo' | 'due' | 'time
     link: init.link ?? null,
     createdAt: now,
     updatedAt: now,
-    ts: { title: now, memo: now, due: now, time: now, category: now, doneAt: now, deletedAt: now, link: now }
+    ts: { title: now, memo: now, due: now, time: now, category: now, doneAt: now, deletedAt: now, link: now },
+    pending: true
   }
   await db.tasks.add(task)
   emit()
@@ -56,7 +62,7 @@ export async function updateTask(id: ID, patch: TaskPatch): Promise<boolean> {
       ts[k] = now
     }
     if (!Object.keys(next).length) return false
-    await db.tasks.update(id, { ...next, ts, updatedAt: now })
+    await db.tasks.update(id, { ...next, ts, updatedAt: now, pending: true })
     return true
   })
   if (changed) emit()
@@ -67,9 +73,21 @@ export const setTaskDone = (id: ID, done: boolean) => updateTask(id, { doneAt: d
 export const trashTask = (id: ID) => updateTask(id, { deletedAt: Date.now() })
 export const restoreTask = (id: ID) => updateTask(id, { deletedAt: null })
 
-/** 휴지통에서 바로 지우기 */
+/** 휴지통에서 바로 지우기 — 올린 적 없으면 행을 지우고, 올렸으면 다른 기기도 지우도록 표식을 남긴다 */
 export async function purgeTask(id: ID) {
-  await db.tasks.delete(id)
+  await db.transaction('rw', db.tasks, async () => {
+    const cur = await db.tasks.get(id)
+    if (!cur) return
+    if (!cur.fileId) return void (await db.tasks.delete(id))
+    const now = Date.now()
+    await db.tasks.update(id, {
+      purgedAt: now,
+      deletedAt: cur.deletedAt ?? now,
+      ts: cur.deletedAt ? cur.ts : { ...cur.ts, deletedAt: now },
+      updatedAt: now,
+      pending: true
+    })
+  })
   emit()
 }
 

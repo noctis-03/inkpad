@@ -28,8 +28,9 @@
 //     다른 탭이 편집 중인 노트는 건드리지 않고 건너뛴다(DocBusyError).
 // 12. 자동 동기화는 없다 — 네트워크는 사용자가 누른 동작이 직접 일으킬 때만 쓴다 (tools/e2e/stores.ts가 지킨다).
 //     노트: 필기·이름 바꾸기 같은 편집은 이 기기에만 저장되고, "받기"/"올리기"를 누를 때 오간다(편집은 잦고 저절로 생기므로).
-//     앱·기타 파일·보드 프리셋(sync/apps·files·board): 추가·교체·이름/카테고리 변경 자체가 클라우드 스토어에
+//     앱·기타 파일·보드 프리셋·할 일(sync/apps·files·board·tasks): 추가·교체·이름/카테고리 변경 자체가 클라우드 스토어에
 //     올리는 동작이라 그 항목만 바로 올린다. 오프라인·실패면 대기로 남고, 각 메뉴의 업로드 버튼으로 다시 올린다.
+//     할 일 받기는 일정 화면의 동기화 버튼(또는 열 때 확인을 켰을 때 일정 화면을 열 때) — sync/tasks.ts
 //     노트의 "올리기"는 이 대기를 올리지 않는다.
 import { errorText, startActivity, trackActivity, type ActivityHandle } from '../shared/activity'
 import type { DocumentMeta, ID } from '../shared/model'
