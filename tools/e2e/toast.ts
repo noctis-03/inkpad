@@ -50,5 +50,23 @@ export default async function toast(ctx: Ctx) {
   })
   check('토스트 자리: 상태 칸 바로 아래에서 내려온다', at.docked && Math.abs(at.top - (at.pill[1] + 6)) < 1.5, JSON.stringify(at))
   check('토스트 자리: 오른쪽 끝이 상태 칸과 맞고, 새 알림이 칸에 가장 가깝다', Math.abs(at.newest[0] - at.pill[0]) < 1.5 && Math.abs(at.newest[1] - at.top) < 1.5, JSON.stringify(at))
+
+  // 상태 칸의 '알림' 쪽 — 알림이 오면 칸이 그 쪽으로 넘어가 마지막 알림을 보여 주고, 펼치면 지난 알림이 남아 있다
+  await sleep(600) // 쪽 넘김(부드럽게)
+  const dock = await p.evaluate(() => ({
+    label: document.querySelector('.dock')!.getAttribute('aria-label') ?? '',
+    text: (document.querySelector('.dock-page:not([aria-hidden="true"]) .dock-text') as HTMLElement | null)?.innerText ?? ''
+  }))
+  check('알림 쪽: 알림이 오면 상태 칸이 알림 쪽으로 넘어가 마지막 알림을 보인다', dock.label.includes('알림') && dock.text.includes('두 번째 알림'), JSON.stringify(dock))
+  await p.evaluate(async () => {
+    const ui = (await import('/src/app/store.ts')).useUI.getState()
+    for (const t of ui.toasts) ui.dismissToast(t.id)
+  })
+  await p.click('.dock')
+  await p.waitForSelector('.dock-panel')
+  await sleep(500)
+  const rows = await p.locator('.dock-panel-page:not([aria-hidden="true"]) .dock-row-title').allInnerTexts()
+  check('알림 쪽: 토스트가 사라져도 펼치면 지난 알림이 새것부터 남아 있다', rows[0] === '두 번째 알림' && rows.includes('노트를 휴지통으로 옮겼습니다.'), JSON.stringify(rows))
+  await p.keyboard.press('Escape')
   await p.context().close()
 }

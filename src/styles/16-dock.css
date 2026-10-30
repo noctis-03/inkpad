@@ -302,6 +302,11 @@
   font-size: var(--fs-base);
   color: var(--ink);
 }
+/* 알림 글은 잘라 내지 않고 줄을 바꾼다 */
+.dock-row-title.is-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .dock-row-when {
   flex: 0 0 auto;
   font-size: var(--fs-xs);
@@ -406,8 +411,8 @@
   }
 }
 
-/* ───────── 알림(토스트) — 상태 칸 아래에서 내려온다 (app/App Toasts) ─────────
-   자리(top·right)는 App이 상태 칸 알약을 재서 정한다. 새 알림이 칸에 가장 가깝게(위에) 쌓이고, 칸 오른쪽 위 모서리에서 자라 나온다.
+/* ───────── 알림(토스트) — 상태 칸의 '알림' 쪽에서 내려온다 (app/App Toasts, dock/pages 알림) ─────────
+   알림이 오면 칸이 알림 쪽으로 넘어가고, 토스트는 칸 바로 아래에 놓인다. 자리(top·right)는 App이 상태 칸 알약을 재서 정한다. 새 알림이 칸에 가장 가깝게(위에) 쌓이고, 칸 오른쪽 위 모서리에서 자라 나온다.
    상태 칸이 없으면 .is-docked 없이 예전 자리(아래 가운데, 06-editor.css) */
 :root .toasts.is-docked {
   left: auto;

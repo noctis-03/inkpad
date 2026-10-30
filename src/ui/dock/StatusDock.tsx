@@ -7,7 +7,8 @@ import { SPRING, dur } from '../motion/motion'
 import { Segmented } from '../Segmented'
 import { Icon } from '../Icon'
 import { useEscClose } from '../sheetParts'
-import { DOCK_PAGES, useActivities } from './pages'
+import { DOCK_PAGES, useActivities, useNotices } from './pages'
+import { markNoticesRead } from '../../shared/notices'
 
 /** 마우스로 이만큼 끌면 누르기가 아니라 넘기기 */
 const DRAG_PX = 6
@@ -18,6 +19,8 @@ const GAP = 6
 const MARGIN = 6 // 탭 바 안쪽 여백과 같게 — 창 오른쪽 끝이 칸 오른쪽 끝과 맞는다
 /** 넘기기가 멈췄다고 볼 때까지 */
 const SETTLE_MS = 120
+/** 알림 쪽 — 토스트가 이 쪽에서 나온다 */
+const NOTICES_PAGE = DOCK_PAGES.findIndex((p) => p.id === 'notices')
 
 interface Box {
   left: number
@@ -72,6 +75,16 @@ export function StatusDock() {
       if (page !== 0) goTo(0)
     }
   }, [activities, page, goTo])
+  // 알림(토스트)이 오면 알림 쪽으로 넘어온다 — 토스트는 이 칸 바로 아래로 내려온다(app/App Toasts)
+  const notices = useNotices()
+  const lastNotice = useRef(0)
+  useEffect(() => {
+    const newest = notices.length ? notices[notices.length - 1].id : 0
+    if (newest > lastNotice.current) {
+      lastNotice.current = newest
+      if (page !== NOTICES_PAGE) goTo(NOTICES_PAGE)
+    }
+  }, [notices, page, goTo])
   // 칸 폭이 바뀌면(창 크기) 지금 쪽에 다시 맞춘다
   const pageRef = useRef(page)
   pageRef.current = page
@@ -211,6 +224,11 @@ export function StatusDock() {
     if (open) setSeenAt(Date.now())
   }, [open, activities])
   const unseenError = activities.some((a) => a.state === 'error' && (a.endedAt ?? 0) > seenAt)
+
+  // 알림 쪽을 펼쳐 보면 읽은 것으로
+  useEffect(() => {
+    if (open && page === NOTICES_PAGE) markNoticesRead()
+  }, [open, page, notices])
 
   const cur = DOCK_PAGES[page]
   return (
