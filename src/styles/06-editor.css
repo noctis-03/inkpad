@@ -368,13 +368,13 @@
   /* 모바일 사이드바: 헤더 바로 아래에서 화면 끝까지 내려오는 서랍.
      예전 top:60px 는 헤더 높이를 가정한 값인데 .library-body 는 이미 헤더
      아래에서 시작하므로 서랍이 60px 밀려 내려가고 위쪽이 비어 있었다. */
-  .folder-tree {
+  .lib-side {
     position: absolute;
     z-index: 20;
     top: 0;
     bottom: 0;
     left: 0;
-    width: 220px;
+    width: 260px;
     max-width: 84vw;
     box-shadow: var(--e2);
     overscroll-behavior: contain;
@@ -453,8 +453,7 @@
 }
 
 @media (max-width: 700px) {
-  .save-label,
-  .sort-select {
+  .save-label {
     display: none;
   }
   .mode-cards {

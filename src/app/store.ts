@@ -202,6 +202,8 @@ interface UIState {
   viewOnly: boolean
   /** 낙서 모드로 열기 — 쓸 수 있지만 아무것도 저장하지 않는다 (편집 화면이 1회 읽고 지운다) */
   scratch: boolean
+  /** 편집 화면을 같은 노트로 다시 연다 — 문서 바의 편집·보기·낙서 전환이 값을 올리면 편집 화면이 새로 마운트되며 viewOnly·scratch를 읽는다 */
+  editorEpoch: number
   /** 노트·앱·파일을 열기 전 화면 — 뒤로가기면 이 화면으로 돌아간다 (작업보드에서 열었으면 작업보드로) */
   returnRoute: Route | null
   /** 열린 탭 (노트·앱·파일). 지금 보는 탭은 route다 */
@@ -294,6 +296,7 @@ export const useUI = create<UIState>((set, get) => ({
   returnDocId: null,
   viewOnly: false,
   scratch: false,
+  editorEpoch: 0,
   returnRoute: null,
   tabs: firstTabs.tabs,
   split: firstTabs.split,

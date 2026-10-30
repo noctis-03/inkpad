@@ -43,6 +43,51 @@
   font-weight: 700;
   letter-spacing: -.01em;
 }
+/* 제목 묶음 — 카테고리(작은 글자) 위, 명조 제목 아래 */
+.doc-heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.doc-heading-cat {
+  padding: 0 8px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+  color: var(--muted);
+}
+.doc-heading .doc-title-btn {
+  height: auto;
+  min-height: 26px;
+}
+/* 문서 바의 알약 버튼(내보내기) · 여는 방식 전환 */
+.tb-pill {
+  flex: none;
+  height: var(--h-control-sm);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.tb-pill:active {
+  background: var(--surface-3);
+}
+.toolbar-doc .mode-seg {
+  flex: none;
+  flex-wrap: nowrap;
+}
+.toolbar-doc .mode-seg button {
+  min-height: calc(var(--h-control-sm) - 2px);
+  padding: 0 13px;
+  font-size: var(--fs-sm);
+}
 .doc-title-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,6 +108,25 @@
 @media (max-width: 820px) {
   .doc-title-btn {
     max-width: 170px;
+  }
+}
+/* 듀얼(칸 나눔)의 편집 화면은 칸이 좁다 — 내보내기·편집/보기/낙서는 ⋯ 메뉴로(버튼이 칸 밖으로 밀려나지 않게) */
+.panes.is-split .toolbar-doc .export-pill,
+.panes.is-split .toolbar-doc .mode-seg {
+  display: none;
+}
+.panes.is-split .menu-item.mode-item {
+  display: flex;
+}
+.panes.is-split .menu-sep.mode-item {
+  display: block;
+}
+/* 휴대폰: 내보내기·편집/보기/낙서는 ⋯ 메뉴에(.phone-only 메뉴 항목과 같은 700px), 카테고리 줄은 접는다 */
+@media (max-width: 700px) {
+  .export-pill,
+  .toolbar-doc .mode-seg,
+  .doc-heading-cat {
+    display: none;
   }
 }
 @media (max-width: 640px) {

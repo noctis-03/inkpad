@@ -388,6 +388,13 @@ export function Editor({ docId }: { docId: ID }) {
     } else if (!readOnly) remindOnLeave(docId, doc?.title ?? '')
     useUI.getState().backHome()
   }
+  /** 문서 바의 편집·보기·낙서 전환 — 지금까지 쓴 것을 기록한 뒤 같은 노트를 그 방식으로 다시 연다(편집 화면을 새로 마운트).
+      낙서에서 나가면 쓴 것은 사라진다(나갈 때와 같다) */
+  const reopenAs = async (as: 'edit' | 'view' | 'scratch') => {
+    await engineRef.current?.flush().catch(() => {})
+    if (scratch && scribbledRef.current) toast('낙서는 저장하지 않았습니다.', 'info')
+    useUI.setState((s) => ({ viewOnly: as === 'view', scratch: as === 'scratch', editorEpoch: s.editorEpoch + 1 }))
+  }
   /** 낙서 모두 지우기 — 노트를 처음 연 상태로 다시 연다 */
   const clearScratch = () => {
     scribbledRef.current = false
@@ -397,7 +404,7 @@ export function Editor({ docId }: { docId: ID }) {
 
   return (
     <div className={'editor' + (scratch ? ' is-scratch' : '')} ref={rootRef}>
-      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} scratch={scratch} onRename={rename} onBack={() => void leave()} />
+      <EditorToolbar engine={engine} doc={doc} readOnly={readOnly} scratch={scratch} onRename={rename} onBack={() => void leave()} onReopen={(as) => void reopenAs(as)} />
       <div className="editor-body">
         {paged && sidebar && engine && <PageSidebar engine={engine} pages={pages} tick={thumbTick} />}
         <div className="editor-area">

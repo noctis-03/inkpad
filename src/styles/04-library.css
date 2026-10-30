@@ -1,5 +1,6 @@
 /* ───────── 문서 목록 ───────── */
 .library {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -9,7 +10,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 14px;
+  padding: 0 16px;
   min-height: var(--h-bar);
   background: var(--paper);
   /* 한 줄을 유지하고, 좁은 화면에서는 가로로 스크롤한다.
@@ -36,11 +37,51 @@
 .library-header > * {
   flex-shrink: 0;
 }
-.library-header .search-box {
-  flex-basis: 220px;
+.library-header > .bar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* 앱 이름 — 사이드바 맨 위. 상단 바의 것(.lib-brand-bar)은 사이드바가 없는 휴대폰에서만 */
+.lib-brand {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.lib-brand-bar {
+  display: none;
+}
+/* 제목 줄 — 정렬 ▾ 위에 명조 제목, 오른쪽에 밑줄 검색 */
+.lib-titlebar {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 4px 32px 12px;
+  background: var(--paper);
+}
+.lib-title-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.lib-title-main .library-title {
+  max-width: 100%;
+}
+.lib-titlebar .search-box {
+  flex: 0 1 260px;
   min-width: 160px;
-  /* 오른쪽 정렬 그룹(검색·보기·정렬·버튼) — 남는 공간을 제목과 검색 사이로 몰아 넣는다 */
-  margin-left: auto;
+}
+.lib-titlebar .search-cancel {
+  display: none;
+}
+/* 휴대폰의 카테고리 칩 줄 — 넓은 화면은 사이드바로 고른다 */
+.lib-chips {
+  display: none;
 }
 .library-header #new-doc-btn {
   flex-shrink: 0;
@@ -113,14 +154,17 @@
   font-size: var(--fs-md);
   color: var(--ink);
 }
+/* 정렬 — 제목 위 작은 글자 '수정일 순 ▾' */
 .sort-select {
-  height: var(--h-control);
-  border-radius: var(--r-pill);
+  height: var(--h-control-sm);
+  margin-left: -4px;
+  border-radius: var(--r-2xs);
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 0 10px;
-  font-size: var(--fs-base);
+  padding: 0 4px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
 }
 /* 상단 바의 격자/목록 세그먼트 — .seg의 축소판 (선택 칩은 인디케이터가 얹는다) */
 .library-header .seg {
@@ -156,10 +200,10 @@
   flex-direction: column;
 }
 /* 듀얼(칸 나눔)에서는 칸이 좁아 상단 바가 사이드바 폭만큼 줄면 버튼이 밀려난다 —
-   예전처럼 상단 바를 칸 폭 전체에 두고 사이드바는 그 아래로 */
+   예전처럼 상단 바(버튼을 모두 담는다)를 칸 폭 전체에 두고 사이드바는 그 아래로. 사이드바 머리·아래 줄은 상단 바와 겹쳐 숨긴다 */
 .panes.is-split .library-body {
   display: grid;
-  grid-template: 'head head' auto 'tree main' minmax(0, 1fr) / auto minmax(0, 1fr);
+  grid-template: 'head head' auto 'tree title' auto 'tree chips' auto 'tree main' minmax(0, 1fr) / auto minmax(0, 1fr);
 }
 .panes.is-split .library-col {
   display: contents;
@@ -168,21 +212,118 @@
   grid-area: head;
   border-bottom: 1px solid var(--line);
 }
-.panes.is-split .folder-tree {
+.panes.is-split .lib-side {
   grid-area: tree;
 }
-.panes.is-split .folder-tree::before {
+.panes.is-split .lib-titlebar {
+  grid-area: title;
+}
+.panes.is-split .lib-chips {
+  grid-area: chips;
+}
+.panes.is-split .lib-side-head,
+.panes.is-split .lib-side-foot {
   display: none;
 }
 .panes.is-split .library-main {
   grid-area: main;
 }
-.folder-tree {
+/* ── 사이드바 — 앱 이름·접기 / 새로 만들기 / 작업보드 / 목록(스크롤) / 기기·설정·동기화 ── */
+.lib-side {
   flex: 0 0 240px;
-  padding: 0 8px 12px;
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--paper-2);
+  border-right: 1px solid var(--line);
+}
+.lib-side-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--h-bar);
+  padding: 0 6px 0 18px;
+}
+.lib-side .side-toggle {
+  color: var(--accent);
+}
+.side-new {
+  flex: none;
+  margin: 6px 14px 8px;
+  min-height: 42px;
+  font-weight: 500;
+}
+.side-link {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--h-row);
+  margin: 0 8px 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-2xs);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  text-align: left;
+  cursor: pointer;
+}
+.side-link span {
+  flex: 1;
+}
+.side-link svg {
+  color: var(--muted);
+}
+.side-link:active {
+  background: var(--hover);
+}
+.lib-side-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 56px;
+  padding: 0 8px env(safe-area-inset-bottom, 0px) 16px;
+  border-top: 1px solid var(--line);
+}
+.side-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.side-device {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-base);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.lib-side-foot .tb-btn {
+  position: relative;
+  width: var(--h-control);
+  min-width: var(--h-control);
+  height: var(--h-control);
+  border-radius: var(--r-pill);
+  color: var(--muted);
+}
+.folder-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 8px 12px;
+  border-top: 1px solid var(--line);
+  overflow-y: auto;
   /* 스크롤바를 얇게 — 평소에는 숨기고 스크롤할 때만 뜬다 */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -206,18 +347,6 @@
 .folder-tree:hover::-webkit-scrollbar-thumb,
 .folder-tree:focus-within::-webkit-scrollbar-thumb {
   background: var(--muted-2);
-}
-/* 사이드바 맨 위 앱 이름 — 상단 바와 같은 높이 */
-.folder-tree::before {
-  content: 'inkpad';
-  display: flex;
-  align-items: center;
-  height: var(--h-bar);
-  padding: 0 10px;
-  font-size: var(--fs-xl);
-  font-weight: 700;
-  letter-spacing: -.02em;
-  color: var(--ink);
 }
 /* 모바일 서랍을 닫는 배경막 — 넓은 화면에서는 쓰지 않는다 */
 .tree-backdrop {
