@@ -2,6 +2,7 @@
 // 쪽을 더하려면 DockPage를 하나 만들어 DOCK_PAGES에 넣는다. 칸에서 좌우로 넘기고, 펼친 창 위 탭으로 고른다.
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { clearFinishedActivities, getActivities, onActivities, type Activity, type ActivityKind } from '../../shared/activity'
+import { clearNotices, getNotices, onNotices, unreadNotices, type Notice } from '../../shared/notices'
 import { formatBytes, formatDate } from '../../shared/util'
 import { db } from '../../storage/db'
 import { storageStats } from '../../storage/repo'
@@ -18,6 +19,7 @@ export interface DockPage {
 // ───────── 공용 ─────────
 
 export const useActivities = () => useSyncExternalStore(onActivities, getActivities)
+export const useNotices = () => useSyncExternalStore(onNotices, getNotices)
 
 /** 이만큼 지난 시각을 다시 그린다 — "3분 전" 같은 글자가 멈추지 않게 */
 function useNow(ms: number) {
@@ -160,6 +162,81 @@ function TransfersDetail() {
           </ul>
         </section>
       )}
+    </div>
+  )
+}
+
+// ───────── 알림 ─────────
+// 토스트가 이 쪽에서 나온다 — 알림이 오면 칸이 이 쪽으로 넘어오고, 토스트는 칸 바로 아래로 내려온다(app/App Toasts).
+// 토스트가 사라진 뒤에도 칸에는 마지막 알림이 남고, 펼치면 지난 알림을 모두 본다.
+
+const NOTICE_ICON: Record<Notice['kind'], string> = { info: 'bell', success: 'checkCircle', error: 'xCircle' }
+
+function NoticesCompact() {
+  const list = useNotices()
+  const last = list[list.length - 1]
+  const unread = unreadNotices()
+  if (!last) {
+    return (
+      <div className="dock-line is-idle">
+        <span className="dock-ic">
+          <Icon name="bell" size={14} />
+        </span>
+        <span className="dock-text">알림 없음</span>
+      </div>
+    )
+  }
+  return (
+    <div className={'dock-line' + (last.kind === 'error' ? ' is-bad' : last.kind === 'success' ? ' is-ok' : '')}>
+      <span className="dock-ic">
+        <Icon name={NOTICE_ICON[last.kind]} size={14} />
+      </span>
+      <span className="dock-text">{last.text}</span>
+      <span className="dock-meta">{unread ? `새 ${unread}` : '알림'}</span>
+    </div>
+  )
+}
+
+function NoticesDetail() {
+  const list = useNotices()
+  const now = useNow(15000)
+  if (!list.length) {
+    return (
+      <div className="dock-empty">
+        <Icon name="bell" size={28} />
+        <p>알림이 없습니다</p>
+        <small>저장·올리기·되돌리기 같은 알림이 여기에 남습니다. 새로고침하면 비워집니다.</small>
+      </div>
+    )
+  }
+  return (
+    <div className="dock-detail">
+      <section>
+        <h3 className="dock-h">
+          최근 알림 {list.length}
+          <button className="dock-h-btn" onClick={clearNotices}>
+            모두 지우기
+          </button>
+        </h3>
+        <ul className="dock-rows">
+          {list
+            .slice()
+            .reverse()
+            .map((n) => (
+              <li key={n.id} className={'dock-row' + (n.kind === 'error' ? ' is-bad' : '')}>
+                <span className="dock-row-ic">
+                  <Icon name={NOTICE_ICON[n.kind]} size={16} />
+                </span>
+                <div className="dock-row-main">
+                  <div className="dock-row-top">
+                    <span className="dock-row-title is-wrap">{n.text}</span>
+                    <span className="dock-row-when">{ago(n.at, now)}</span>
+                  </div>
+                </div>
+              </li>
+            ))}
+        </ul>
+      </section>
     </div>
   )
 }
@@ -316,6 +393,7 @@ function StorageDetail() {
 
 export const DOCK_PAGES: DockPage[] = [
   { id: 'transfers', label: '전송', Compact: TransfersCompact, Detail: TransfersDetail },
+  { id: 'notices', label: '알림', Compact: NoticesCompact, Detail: NoticesDetail },
   { id: 'sync', label: '동기화', Compact: SyncCompact, Detail: SyncDetail },
   { id: 'storage', label: '저장 공간', Compact: StorageCompact, Detail: StorageDetail }
 ]

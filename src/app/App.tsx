@@ -259,6 +259,10 @@ function SplitDivider({ box }: { box: React.RefObject<HTMLDivElement | null> }) 
   )
 }
 
+/** 알림 판 폭 하한과 상태 칸과의 틈 — 16-dock.css의 .toasts.is-docked와 같다 */
+const TOAST_MIN_W = 260
+const TOAST_GAP = 6
+
 function Toasts() {
   const toasts = useUI((s) => s.toasts)
   const dismiss = useUI((s) => s.dismissToast)
@@ -274,6 +278,39 @@ function Toasts() {
     })
   }, [toasts])
 
+  // 탭 바 오른쪽 상태 칸(.dock-pill) 바로 아래에서 내려온다 — 오른쪽 끝을 칸에 맞추고, 새 알림이 칸에 가장 가깝다.
+  // 상태 칸을 펼쳐 둔 동안에는 그 창 왼쪽에. 칸이 없거나(탭 바가 없는 화면) 옆에 자리가 없으면 예전처럼 아래 가운데
+  const [dockAt, setDockAt] = useState<{ top: number; right: number } | null>(null)
+  const showing = rendered.length > 0
+  useLayoutEffect(() => {
+    if (!showing) return
+    const place = () => {
+      const pill = document.querySelector('.dock-pill')?.getBoundingClientRect()
+      if (!pill?.width) return setDockAt(null)
+      const vw = window.innerWidth
+      const panel = document.querySelector('.dock-panel')?.getBoundingClientRect()
+      if (panel) return setDockAt(panel.left >= TOAST_MIN_W + TOAST_GAP * 2 ? { top: panel.top, right: vw - panel.left + TOAST_GAP } : null)
+      setDockAt({ top: pill.bottom + TOAST_GAP, right: Math.max(TOAST_GAP, vw - pill.right) })
+    }
+    place()
+    // 창 크기, 상태 칸 펼치기·접기(창은 body에 붙는다)를 따라간다 — 알림이 떠 있는 동안만
+    const mo = new MutationObserver(place)
+    mo.observe(document.body, { childList: true })
+    window.addEventListener('resize', place)
+    return () => {
+      mo.disconnect()
+      window.removeEventListener('resize', place)
+    }
+  }, [showing])
+  // 새 알림이 나오면 상태 칸이 살짝 튄다 — 알림이 칸에서 나온다는 느낌
+  const seen = useRef(new Set<number>())
+  useEffect(() => {
+    const fresh = rendered.filter((r) => !r.out && !seen.current.has(r.id))
+    for (const r of fresh) seen.current.add(r.id)
+    if (!fresh.length || !dockAt || !dur(1)) return
+    document.querySelector('.dock-pill')?.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }, { transform: 'scale(1)' }], { duration: dur(320), easing: 'ease-out' })
+  }, [rendered, dockAt])
+
   useEffect(() => {
     const outIds = rendered.filter((r) => r.out).map((r) => r.id)
     if (!outIds.length) return
@@ -282,7 +319,7 @@ function Toasts() {
   }, [rendered])
 
   return (
-    <div className="toasts" aria-live="polite">
+    <div className={'toasts' + (dockAt ? ' is-docked' : '')} style={dockAt ? { top: dockAt.top, right: dockAt.right } : undefined} aria-live="polite">
       {rendered.map((t) => (
         <div key={t.id} className={'toast ' + t.kind + (t.out ? ' is-out' : '')}>
           <i className="toast-dot" aria-hidden="true" />

@@ -10,6 +10,7 @@ import {
 } from '../engine/types'
 import type { SaveState } from '../engine/engine'
 import type { BlockType, ID } from '../shared/model'
+import { pushNotice } from '../shared/notices'
 
 // UI 상태만 관리한다. 문서 데이터는 Engine과 IndexedDB가 관리한다.
 const LS_SETTINGS = 'inkpad.settings.v2'
@@ -418,6 +419,7 @@ export const useUI = create<UIState>((set, get) => ({
   toast: (text, kind = 'info', action, opts) => {
     const id = ++toastSeq
     set({ toasts: [...get().toasts, { id, text, kind, action, sticky: opts?.sticky }].slice(-3) })
+    pushNotice(id, text, kind) // 상태 칸 '알림' 쪽에 남긴다 — 토스트는 그 칸에서 나온다
     // sticky(진행 표시 등)는 직접 닫을 때까지 남는다
     if (!opts?.sticky) setTimeout(() => get().dismissToast(id), action ? 7000 : kind === 'error' ? 6000 : 3000)
     return id

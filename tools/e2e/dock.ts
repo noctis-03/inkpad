@@ -1,5 +1,5 @@
 // 탭 바 오른쪽 상태 칸 — 화면을 막던 진행 창 대신, 올리기·받기·가져오기·내보내기를 칸에 보이고
-// 누르면 그 자리에서 커져 자세히 본다. 좌우로 넘겨 다른 쪽(동기화·저장 공간)을 본다.
+// 누르면 그 자리에서 커져 자세히 본다. 좌우로 넘겨 다른 쪽(알림·동기화·저장 공간)을 본다.
 import { createDoc, device, logsOf, sleep, type Ctx } from './lib.ts'
 import { createFakeDrive } from './fake-drive.ts'
 
@@ -30,13 +30,17 @@ export default async function dock(ctx: Ctx) {
   await p.hover('.dock')
   await p.mouse.wheel(0, 60)
   await sleep(600)
-  check('넘기기(휠): 다음 쪽(동기화)', (await dotOn()) === 1, String(await dotOn()))
-  await snap('2-compact-sync')
+  check('넘기기(휠): 다음 쪽(알림)', (await dotOn()) === 1, String(await dotOn()))
+  check('알림 쪽: 아직 알림이 없다', (await p.locator('.dock-page').nth(1).innerText()).includes('알림 없음'))
   await p.focus('.dock')
   await p.keyboard.press('ArrowRight')
   await sleep(600)
-  check('넘기기(→): 그다음 쪽(저장 공간)', (await dotOn()) === 2)
-  const storage = await p.locator('.dock-page').nth(2).innerText()
+  check('넘기기(→): 그다음 쪽(동기화)', (await dotOn()) === 2)
+  await snap('2-compact-sync')
+  await p.keyboard.press('ArrowRight')
+  await sleep(600)
+  check('넘기기(→): 그다음 쪽(저장 공간)', (await dotOn()) === 3)
+  const storage = await p.locator('.dock-page').nth(3).innerText()
   check('저장 공간 쪽: 사용량을 보인다', /사용/.test(storage), storage)
   await p.keyboard.press('ArrowRight')
   await sleep(600)
@@ -102,9 +106,9 @@ export default async function dock(ctx: Ctx) {
   // 펼친 창에서 쪽 바꾸기 (위 세그먼트) — 칸도 같은 쪽
   await p.click('.dock-panel .seg [data-indicator-key="sync"]')
   await sleep(500)
-  const syncText = await p.locator('.dock-panel .dock-panel-page').nth(1).innerText()
+  const syncText = await p.locator('.dock-panel .dock-panel-page').nth(2).innerText()
   check('펼친 창: 동기화 쪽', syncText.includes('마지막 올리기'), syncText)
-  check('…칸도 같은 쪽', (await dotOn()) === 1)
+  check('…칸도 같은 쪽', (await dotOn()) === 2)
   await snap('6-expanded-sync')
 
   // 닫기: Esc → 칸으로 줄어들고 사라진다
