@@ -2,7 +2,8 @@
  * 테스트용 가짜 Google Drive — Playwright route로 브라우저의 Drive API 요청을 가로챈다.
  * 이 앱이 쓰는 API만 흉내 낸다: 파일 목록·메타·내려받기, multipart·이어 올리기(resumable) 업로드,
  * 리비전(목록·고정·내려받기·삭제), 폴더 만들기, 휴지통, appProperties 검색.
- * 실패 주입: fail.nextDocUpload(노트 main 파일 덮어쓰기 한 번 403), fail.abortChunk(n번째 이어 올리기 조각에서 연결 끊기).
+ * 실패 주입: fail.nextDocUpload(노트 main 파일 덮어쓰기 한 번 403), fail.abortChunk(n번째 이어 올리기 조각에서 연결 끊기),
+ *           fail.download(이 파일 id의 내려받기 500), fail.revisionList(이 파일 id의 리비전 목록 500).
  */
 import { gunzipSync } from 'node:zlib'
 import type { BrowserContext, Request, Route } from 'playwright'
@@ -35,7 +36,7 @@ interface Session {
 export function createFakeDrive() {
   const files = new Map<string, FakeFile>()
   const sessions = new Map<string, Session>()
-  const fail = { nextDocUpload: false, abortChunk: 0 }
+  const fail = { nextDocUpload: false, abortChunk: 0, download: new Set<string>(), revisionList: new Set<string>() }
   /** upBytes·downBytes: 노트 파일·조각을 오간 본문 바이트 (multipart 업로드 본문 · alt=media 내려받기) */
   const stats = { chunkPuts: 0, uploadedBytes: 0, aborted: 0, statusQueries: 0, upBytes: 0, downBytes: 0, uploads: 0, downloads: 0, listedFiles: 0 }
   let chunkSeen = 0
@@ -191,6 +192,7 @@ export function createFakeDrive() {
     if (m) {
       const f = files.get(m[1])
       if (!f) return json(route, req, 404, { error: 'notFound' })
+      if (!m[2] && fail.revisionList.has(f.id)) return json(route, req, 500, { error: { message: 'injected failure' } })
       if (!m[2]) return json(route, req, 200, { revisions: f.revisions.map((r) => ({ id: r.id, modifiedTime: r.modifiedTime, size: String(r.content.length), keepForever: r.keepForever })) })
       const r = f.revisions.find((x) => x.id === m![2])
       if (!r) return json(route, req, 404, { error: 'notFound' })
@@ -220,6 +222,7 @@ export function createFakeDrive() {
       const f = files.get(m[1])
       if (!f) return json(route, req, 404, { error: 'notFound' })
       if (method === 'GET' && url.searchParams.get('alt') === 'media') {
+        if (fail.download.has(f.id)) return json(route, req, 500, { error: { message: 'injected failure' } })
         stats.downBytes += head(f).content.length
         stats.downloads++
         return route.fulfill({ status: 200, contentType: 'application/octet-stream', headers: cors(req), body: head(f).content })

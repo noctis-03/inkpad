@@ -177,6 +177,41 @@ export default async function delta(ctx: Ctx) {
   )
   check('조각 정리 뒤: 노트는 그대로 받아진다', drive.headStrokes(D).length === 800)
 
+  // ── 검사 중 노트 파일을 읽지 못하면 정리하지 않는다 — 못 읽은 노트의 최신 조각을 '안 씀'으로 잘못 세서 지우던 구멍 ──
+  // 가장 나쁜 경우: 그 조각을 가리키는 파일(main·기기 브랜치)을 모두 못 읽고, 예전 검사에서도 못 읽어 최신 조각에 46일 전 표식이 붙어 있다
+  const liveMain = drive.docFile(D)!
+  const liveObjs = new Set(
+    (JSON.parse(gunzipSync(liveMain.revisions.at(-1)!.content).toString()) as { objs: { f: string }[] }).objs.map((o) => o.f)
+  )
+  for (const id of liveObjs) drive.files.get(id)!.appProperties.unref = String(Date.now() - 46 * 24 * 3600_000)
+  const unreadIds = [liveMain.id, ...drive.branchesOf(D).map((b) => b.id)]
+  for (const id of unreadIds) drive.fail.download.add(id)
+  const s3 = (await scan(A))!
+  check('못 읽은 노트 파일: 검사 결과에 이름이 남는다', s3.unreadable.length === unreadIds.length, JSON.stringify(s3.unreadable))
+  check('못 읽은 노트 파일: 이번 정리에 휴지통으로 갈 조각이 없다고 본다', s3.ready === 0, JSON.stringify({ ready: s3.ready, unused: s3.unused.length }))
+  const c3 = await A.evaluate(async (scan) => (await import('/src/sync/archive.ts')).cleanObjects(scan), s3)
+  check(
+    '못 읽은 노트 파일: 정리는 표식도 휴지통도 하지 않는다 — 최신 조각이 남는다',
+    c3.blocked === unreadIds.length && c3.trashed === 0 && c3.marked === 0 && [...liveObjs].every((id) => !drive.files.get(id)!.trashed),
+    JSON.stringify(c3)
+  )
+  drive.fail.download.clear()
+  // 버전 목록을 못 읽어도(고정한 버전이 가리키는 조각을 모른다) 같다
+  drive.fail.revisionList.add(liveMain.id)
+  const s4 = (await scan(A))!
+  const c4 = await A.evaluate(async (scan) => (await import('/src/sync/archive.ts')).cleanObjects(scan), s4)
+  check('못 읽은 버전 목록: 정리하지 않는다', s4.unreadable.some((n) => n.includes('버전 목록')) && c4.blocked === 1 && c4.trashed === 0, JSON.stringify({ u: s4.unreadable, c4 }))
+  drive.fail.revisionList.delete(liveMain.id)
+  // 다시 읽히면 최신 조각의 잘못된 표식을 지운다
+  const s5 = (await scan(A))!
+  const c5 = await A.evaluate(async (scan) => (await import('/src/sync/archive.ts')).cleanObjects(scan), s5)
+  check(
+    '다시 읽히면: 최신 조각의 표식을 지우고 아무것도 휴지통으로 보내지 않는다',
+    s5.unreadable.length === 0 && c5.trashed === 0 && [...liveObjs].every((id) => drive.files.get(id)!.appProperties.unref === '0' && !drive.files.get(id)!.trashed),
+    JSON.stringify(c5)
+  )
+  check('…노트는 그대로 받아진다', drive.headStrokes(D).length === 800)
+
   // 휴지통의 조각은 다시 가리키지 않는다 — 알고 있던 조각이 휴지통에 있으면 새로 올린다
   const live = drive.ungz(drive.docFile(D)!.revisions.at(-1)!.content)
   const rawMain = JSON.parse(gunzipSync(drive.docFile(D)!.revisions.at(-1)!.content).toString()) as { objs: { f: string; pageId: string }[] }

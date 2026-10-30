@@ -184,6 +184,8 @@ export async function releaseAutoPins(pins: ArchiveReport['autoPins']): Promise<
 //   1. 정리를 누르면 아무도 가리키지 않는 조각에 '안 씀' 표식(unref=시각)을 단다. 다시 가리키는 조각은 표식을 지운다
 //   2. 표식을 단 지 45일이 지나도 여전히 아무도 가리키지 않는 조각만 휴지통으로(30일 뒤 Drive가 지운다)
 // 올리기는 휴지통의 조각을 다시 가리키지 않고 새로 올린다(objects.ts) — 정리와 올리기가 겹쳐도 잃지 않는다.
+// 검사에서 노트 파일(main·브랜치·고정한 버전·버전 목록)을 하나라도 읽지 못하면 그 검사로는 표식도 휴지통도 하지 않는다 —
+// 못 읽은 파일이 가리키는 조각(최신일 수 있다)을 '안 씀'으로 잘못 세기 때문이다. 표식 지우기(다시 쓰게 된 조각)만 한다.
 
 export interface ObjectScan {
   total: number
@@ -198,6 +200,8 @@ export interface ObjectScan {
   readyBytes: number
   /** 살펴본 노트 파일(main·브랜치·고정 리비전) 수 */
   files: number
+  /** 읽지 못한 노트 파일(이름) — 하나라도 있으면 이 검사로는 표식·휴지통을 하지 않는다 */
+  unreadable: string[]
 }
 
 const markedAt = (f: drive.RemoteFile) => Number(f.appProperties?.unref) || 0
@@ -217,18 +221,35 @@ export async function scanObjects(onProgress?: (done: number, total: number) => 
     branchFolder ? drive.listFiles(branchFolder) : Promise.resolve([] as drive.RemoteFile[])
   ])
   const used = new Set<string>()
-  const take = (raw: unknown) => {
+  const unreadable: string[] = []
+  /** 노트 파일 하나를 읽어 가리키는 조각을 모은다. 읽지 못하면(네트워크·망가진 파일) 이름을 남긴다 — 조용히 넘기면 그 파일의 조각이 '안 씀'이 된다.
+      읽었지만 노트 파일이 아니면 조각을 가리킬 수 없으므로 그냥 넘어간다 */
+  const take = async (what: string, get: () => Promise<unknown>) => {
+    let raw: unknown
+    try {
+      raw = await get()
+    } catch {
+      unreadable.push(what)
+      return
+    }
     if (isNoteFile(raw)) for (const o of objsOf(raw as StoredNote)) used.add(o.f)
   }
+  const nameOf = (f: drive.RemoteFile) => f.appProperties?.title || f.name
   const jobs: (() => Promise<void>)[] = []
   for (const m of mains) {
     jobs.push(async () => {
-      take(await drive.downloadJson(m.id, m.appProperties?.enc).catch(() => null))
-      const revs = await drive.listRevisions(m.id).catch(() => [] as drive.Revision[])
-      for (const r of revs.slice(0, -1)) if (r.keepForever) take(await drive.downloadRevision(m.id, r.id, m.appProperties?.enc).catch(() => null))
+      await take(nameOf(m), () => drive.downloadJson(m.id, m.appProperties?.enc))
+      let revs: drive.Revision[]
+      try {
+        revs = await drive.listRevisions(m.id)
+      } catch {
+        unreadable.push(`${nameOf(m)} (버전 목록)`) // 고정한 버전이 가리키는 조각을 모를 수 있다
+        return
+      }
+      for (const r of revs.slice(0, -1)) if (r.keepForever) await take(`${nameOf(m)} (고정한 버전)`, () => drive.downloadRevision(m.id, r.id, m.appProperties?.enc))
     })
   }
-  for (const b of branches) jobs.push(async () => take(await drive.downloadJson(b.id, b.appProperties?.enc ?? drive.ENC_GZIP).catch(() => null)))
+  for (const b of branches) jobs.push(() => take(`${nameOf(b)} (기기 브랜치)`, () => drive.downloadJson(b.id, b.appProperties?.enc ?? drive.ENC_GZIP)))
   let done = 0
   let next = 0
   await Promise.all(
@@ -241,7 +262,7 @@ export async function scanObjects(onProgress?: (done: number, total: number) => 
   )
 
   const now = Date.now()
-  const scan: ObjectScan = { total: objects.length, bytes: 0, unused: [], unusedBytes: 0, revived: [], ready: 0, readyBytes: 0, files: jobs.length }
+  const scan: ObjectScan = { total: objects.length, bytes: 0, unused: [], unusedBytes: 0, revived: [], ready: 0, readyBytes: 0, files: jobs.length, unreadable }
   for (const o of objects) {
     const size = Number(o.size ?? 0) || 0
     scan.bytes += size
@@ -251,7 +272,7 @@ export async function scanObjects(onProgress?: (done: number, total: number) => 
     }
     scan.unused.push({ id: o.id, size, markedAt: markedAt(o) })
     scan.unusedBytes += size
-    if (markedAt(o) && now - markedAt(o) >= OBJECT_GRACE_MS) {
+    if (!unreadable.length && markedAt(o) && now - markedAt(o) >= OBJECT_GRACE_MS) {
       scan.ready++
       scan.readyBytes += size
     }
@@ -259,13 +280,15 @@ export async function scanObjects(onProgress?: (done: number, total: number) => 
   return scan
 }
 
-/** 조각 정리 — 검사 결과대로 표식을 달고·지우고, 45일 지난 것은 휴지통으로 */
-export function cleanObjects(scan: ObjectScan): Promise<{ marked: number; trashed: number; revived: number }> {
+/** 조각 정리 — 검사 결과대로 표식을 달고·지우고, 45일 지난 것은 휴지통으로.
+    검사에서 읽지 못한 노트 파일이 있으면 표식 지우기만 한다(blocked) — '안 씀' 판정을 믿을 수 없다 */
+export function cleanObjects(scan: ObjectScan): Promise<{ marked: number; trashed: number; revived: number; blocked: number }> {
   return withSyncLock(async () => {
     const now = Date.now()
     let marked = 0
     let trashed = 0
     for (const id of scan.revived) await drive.updateMeta(id, { appProperties: { unref: '0' } })
+    if (scan.unreadable.length) return { marked, trashed, revived: scan.revived.length, blocked: scan.unreadable.length }
     for (const o of scan.unused) {
       if (!o.markedAt) {
         await drive.updateMeta(o.id, { appProperties: { unref: String(now) } })
@@ -276,6 +299,6 @@ export function cleanObjects(scan: ObjectScan): Promise<{ marked: number; trashe
       }
     }
     forgetTrashedObjects()
-    return { marked, trashed, revived: scan.revived.length }
+    return { marked, trashed, revived: scan.revived.length, blocked: 0 }
   })
 }
