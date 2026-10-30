@@ -53,9 +53,14 @@ export async function logout() {
 export async function getDeviceName(): Promise<string> {
   const row = await db.syncState.get('deviceName')
   if (row?.value) return row.value as string
-  const auto = guessDeviceName()
-  await db.syncState.put({ key: 'deviceName', value: auto })
-  return auto
+  // 없을 때 만드는 일은 한 트랜잭션으로 — 읽고 쓰는 사이에 setDeviceName이 끼면 정한 이름을 자동 이름으로 덮었다
+  return db.transaction('rw', db.syncState, async () => {
+    const again = await db.syncState.get('deviceName')
+    if (again?.value) return again.value as string
+    const auto = guessDeviceName()
+    await db.syncState.put({ key: 'deviceName', value: auto })
+    return auto
+  })
 }
 
 /**
@@ -65,9 +70,14 @@ export async function getDeviceName(): Promise<string> {
 export async function getDeviceId(): Promise<string> {
   const row = await db.syncState.get('deviceId')
   if (row?.value) return row.value as string
-  const id = newDeviceId()
-  await db.syncState.put({ key: 'deviceId', value: id })
-  return id
+  // 처음 만드는 일은 한 트랜잭션으로 — 동시에 두 번 불려도 ID는 하나
+  return db.transaction('rw', db.syncState, async () => {
+    const again = await db.syncState.get('deviceId')
+    if (again?.value) return again.value as string
+    const id = newDeviceId()
+    await db.syncState.put({ key: 'deviceId', value: id })
+    return id
+  })
 }
 
 export async function setDeviceName(name: string): Promise<void> {

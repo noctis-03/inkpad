@@ -148,6 +148,37 @@ async function settle(p: Page, ms = 700) {
   await sleep(ms)
 }
 
+/** 일정 화면 — 예시 할 일을 (한 번만) 넣고 보기를 고른 채 연다 */
+async function openPlan(p: Page, s: Seed, view: 'list' | 'week' | 'month') {
+  await p.evaluate(
+    async ([view, docId]) => {
+      localStorage.setItem('inkpad.plan.view', JSON.stringify(view))
+      sessionStorage.removeItem('inkpad.plan.filter')
+      const t = await import('/src/storage/tasks.ts')
+      if (!(await t.listTasks()).length) {
+        const day = (n: number) => {
+          const d = new Date()
+          d.setDate(d.getDate() + n)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        }
+        const mk = (title: string, due: string | null, category: string | null, extra: object = {}) => t.createTask({ title, due, category, ...extra })
+        await mk('회로 실습 보고서 초안', day(-1), '[과제] 회로 실습')
+        await mk('MUX 진리표 외우기', day(0), '[과제] 디지털 시스템', { link: { docId }, memo: 'S=0이면 I₀, S=1이면 I₁. 4:1 MUX까지.' })
+        await mk('영어 단어 Day 15', day(0), '어학', { time: '21:00' })
+        const done = await mk('3주차 복습', day(0), '[과제] 디지털 시스템')
+        if (done) await t.setTaskDone(done.id, true)
+        await mk('수학 오답노트 12번 다시 풀기', day(1), '[시험] 수학')
+        await mk('독서 메모 정리', day(1), '개인')
+        await mk('다음 주 계획 세우기', day(3), '개인')
+        await mk('PDF 가져오기 정리', null, null)
+      }
+      ;(await import('/src/app/store.ts')).useUI.getState().navigate({ name: 'plan' })
+    },
+    [view, s.paged] as const
+  )
+  await p.waitForSelector('.plan')
+}
+
 /** 화면 이름 → 찍기 직전까지 이동. 홈(라이브러리)에서 시작한다 */
 const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>> = {
   library: async () => {},
@@ -256,6 +287,14 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
     })
   },
   // ── 빈 상태·결과 없음 (4b) ──
+  // ── 일정 (ui/plan) — 오늘 기준 예시 할 일(지난 마감·오늘·내일·이번 주·날짜 없음·끝냄, 노트에서 보낸 것 하나) ──
+  plan: async (p, _base, s) => openPlan(p, s, 'list'),
+  'plan-detail': async (p, _base, s) => {
+    await openPlan(p, s, 'list')
+    await p.locator('.task-main', { hasText: 'MUX 진리표 외우기' }).click()
+  },
+  'plan-week': async (p, _base, s) => openPlan(p, s, 'week'),
+  'plan-month': async (p, _base, s) => openPlan(p, s, 'month'),
   'search-empty': async (p) => {
     if (!(await p.locator('.search-box input:visible').count())) await p.click('.search-toggle')
     await p.fill('.search-box input', '없는 제목 xyz')

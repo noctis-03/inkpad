@@ -128,11 +128,16 @@ export interface LibraryPrefs {
 export type Route =
   | { name: 'library' }
   | { name: 'board' }
+  | { name: 'plan' }
   | { name: 'editor'; docId: ID }
   | { name: 'app'; appId: ID }
   | { name: 'file'; fileId: ID }
 
-/** 탭으로 열리는 화면 — 라이브러리·작업보드는 맨 앞 '홈' 탭이다 */
+/** 홈 화면 — 라이브러리·작업보드·일정. 맨 앞 '홈' 탭에서 열린다 */
+export type HomeRoute = Extract<Route, { name: 'library' | 'board' | 'plan' }>
+export const isHomeRoute = (r: Route): r is HomeRoute => r.name === 'library' || r.name === 'board' || r.name === 'plan'
+
+/** 탭으로 열리는 화면 — 홈 화면은 맨 앞 '홈' 탭이다 */
 export type TabRoute = Extract<Route, { name: 'editor' | 'app' | 'file' }>
 /** 옆 칸에 띄울 수 있는 화면 — 편집 화면은 상태(도구·선택·보기)를 앱 전체에 하나만 두므로 왼쪽(가운데)에만 */
 export type SplitRoute = Extract<Route, { name: 'app' | 'file' }>
@@ -217,8 +222,8 @@ interface UIState {
   sendImage: SendImageTarget | null
   /** AI로 보내기 — 추천 문구를 골라 이미지와 함께 Claude로 (ui/editor/AiSendSheet) */
   aiSend: SendImageTarget | null
-  /** 마지막으로 본 홈 화면 (라이브러리 / 작업보드) — 홈 탭을 누르면 여기로 */
-  home: Extract<Route, { name: 'library' | 'board' }>
+  /** 마지막으로 본 홈 화면 (라이브러리 / 작업보드 / 일정) — 홈 탭을 누르면 여기로 */
+  home: HomeRoute
 
   navigate: (r: Route) => void
   setTool: (t: Tool) => void
@@ -254,6 +259,7 @@ let toastSeq = 0
 
 function initialRoute(): Route {
   if (/^#\/board\/?$/.test(location.hash)) return { name: 'board' }
+  if (/^#\/plan\/?$/.test(location.hash)) return { name: 'plan' }
   const m = /^#\/doc\/([0-9A-Z]{26})$/.exec(location.hash)
   if (m) return { name: 'editor', docId: m[1] }
   const a = /^#\/app\/([0-9A-Z]{26})$/.exec(location.hash)
@@ -305,7 +311,7 @@ export const useUI = create<UIState>((set, get) => ({
   splitSide: firstTabs.splitSide,
   sendImage: null,
   aiSend: null,
-  home: firstRoute.name === 'board' ? { name: 'board' } : { name: 'library' },
+  home: isHomeRoute(firstRoute) ? firstRoute : { name: 'library' },
 
   navigate: (route) => {
     const hash =
@@ -317,7 +323,9 @@ export const useUI = create<UIState>((set, get) => ({
             ? `#/file/${route.fileId}`
             : route.name === 'board'
               ? '#/board'
-              : '#/'
+              : route.name === 'plan'
+                ? '#/plan'
+                : '#/'
     if (location.hash !== hash) history.pushState(null, '', hash)
     const prev = get().route
     const opens = route.name === 'editor' || route.name === 'app' || route.name === 'file'
@@ -333,7 +341,7 @@ export const useUI = create<UIState>((set, get) => ({
       tabs: withTab(tabs, route, prev),
       // 옆 칸에 있던 것을 가운데로 열면 칸을 닫는다 (같은 화면을 두 번 띄우지 않는다)
       split: sameTab(split, route) ? null : split,
-      ...(route.name === 'library' || route.name === 'board' ? { home: route } : {})
+      ...(isHomeRoute(route) ? { home: route } : {})
     })
   },
   closeTab: (r) => {
@@ -449,7 +457,7 @@ window.addEventListener('popstate', () => {
     route: next,
     tabs: withTab(tabs, next, prev),
     split: sameTab(split, next) ? null : split,
-    ...(next.name === 'library' || next.name === 'board' ? { home: next } : {}),
+    ...(isHomeRoute(next) ? { home: next } : {}),
     panel: 'none',
     // 뒤로가기로 편집 화면에서 나올 때도 닫기 전환을 위해 카드 id를 남긴다
     ...(prev.name === 'editor' && next.name === 'library' ? { returnDocId: prev.docId } : {})

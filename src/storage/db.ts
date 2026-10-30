@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { BoardPreset } from '../shared/board'
-import type { Asset, Block, DocumentMeta, Folder, HtmlApp, ID, Page, StoredFile, TextBlock } from '../shared/model'
+import type { Asset, Block, DocumentMeta, Folder, HtmlApp, ID, Page, StoredFile, Task, TextBlock } from '../shared/model'
 
 /** IndexedDB 레코드 */
 export interface ChunkRow {
@@ -84,6 +84,7 @@ export class InkpadDB extends Dexie {
   boardPresets!: Table<BoardPreset, ID>
   itemThumbs!: Table<ItemThumbRow, string>
   textBlocks!: Table<TextBlock, ID>
+  tasks!: Table<Task, ID>
 
   constructor(name = 'inkpad') {
     super(name)
@@ -113,6 +114,8 @@ export class InkpadDB extends Dexie {
     this.version(7).stores({ itemThumbs: 'key' })
     // v8: 문서(text 모드)의 블록 — 한 줄 한 행. 필기 노트의 편집 블록(blocks)과는 별개
     this.version(8).stores({ textBlocks: 'id, documentId, deletedAt' })
+    // v9: 할 일 (일정 화면) — 마감 날짜로 캘린더를 그린다
+    this.version(9).stores({ tasks: 'id, due, updatedAt, deletedAt' })
   }
 }
 
