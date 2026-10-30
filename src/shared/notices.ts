@@ -39,6 +39,17 @@ export function markNoticesRead() {
   list = list.slice() // 구독하는 쪽이 다시 그리게
   emit()
 }
+/** 상태 칸이 떠 있는가 — 떠 있으면 알림(토스트)은 칸이 알림창으로 커져 보여 주고, 아니면 App이 예전 자리(아래 가운데)에 띄운다 */
+let docks = 0
+export const dockPresent = () => docks > 0
+export function registerDock() {
+  docks++
+  emit()
+  return () => {
+    docks--
+    emit()
+  }
+}
 export function clearNotices() {
   list = []
   emit()

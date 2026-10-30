@@ -1,6 +1,7 @@
 // 탭 바 오른쪽 상태 칸 — 전송(올리기·받기·가져오기·내보내기)·동기화·저장 공간을 한 줄로 보여 준다.
 // 좌우로 넘겨(손가락·트랙패드는 밀기, 마우스는 끌기·휠, 키보드는 ←/→) 다른 쪽을 본다. 쪽은 pages.tsx의 DOCK_PAGES.
 // 누르면 칸이 그 자리에서 커지며 자세히 보는 창이 된다(닫으면 다시 칸으로 줄어든다). 화면은 막지 않는다.
+// 알림(토스트)이 오면 칸이 알림 쪽으로 넘어가며 그 자리에서 알림창으로 커지고, 시간이 지나면 다시 칸으로 줄어든다.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { SPRING, dur } from '../motion/motion'
@@ -8,7 +9,8 @@ import { Segmented } from '../Segmented'
 import { Icon } from '../Icon'
 import { useEscClose } from '../sheetParts'
 import { DOCK_PAGES, useActivities, useNotices } from './pages'
-import { markNoticesRead } from '../../shared/notices'
+import { markNoticesRead, registerDock } from '../../shared/notices'
+import { useUI, type Toast } from '../../app/store'
 
 /** 마우스로 이만큼 끌면 누르기가 아니라 넘기기 */
 const DRAG_PX = 6
@@ -19,6 +21,8 @@ const GAP = 6
 const MARGIN = 6 // 탭 바 안쪽 여백과 같게 — 창 오른쪽 끝이 칸 오른쪽 끝과 맞는다
 /** 넘기기가 멈췄다고 볼 때까지 */
 const SETTLE_MS = 120
+/** 알림창(칸이 커진 것) 폭 */
+const NOTICE_W = 360
 /** 알림 쪽 — 토스트가 이 쪽에서 나온다 */
 const NOTICES_PAGE = DOCK_PAGES.findIndex((p) => p.id === 'notices')
 
@@ -230,12 +234,105 @@ export function StatusDock() {
     if (open && page === NOTICES_PAGE) markNoticesRead()
   }, [open, page, notices])
 
+  // ── 알림창 — 칸 자체가 커져 알림을 보여 준다 ──
+  // 칸 오른쪽 위 모서리에 붙어 아래·왼쪽으로 자라고, 알림이 모두 사라지면 다시 칸으로 줄어든다.
+  // 펼친 창(자세히)이 열려 있으면 알림창을 띄우지 않는다 — 창의 알림 쪽에 바로 쌓인다
+  useEffect(registerDock, [])
+  const toasts = useUI((s) => s.toasts)
+  const dismissToast = useUI((s) => s.dismissToast)
+  const noticeOn = toasts.length > 0 && !open
+  /** 보이는 알림 — 사라지는 동안(줄어드는 동안)에도 마지막 내용을 남긴다 */
+  const [shown, setShown] = useState<Toast[]>([])
+  const [noticeLeaving, setNoticeLeaving] = useState(false)
+  const notice = useRef<HTMLDivElement>(null)
+  const noticeH = useRef(0)
+  useEffect(() => {
+    if (noticeOn) {
+      // 줄어드는 도중에 새 알림이 오면 줄어들기를 멈추고 그 크기에서 다시 맞춘다
+      if (noticeLeaving) for (const a of notice.current?.getAnimations({ subtree: true }) ?? []) a.cancel()
+      setShown(toasts)
+      setNoticeLeaving(false)
+    } else if (shown.length && !noticeLeaving) setNoticeLeaving(true)
+  }, [noticeOn, toasts]) // eslint-disable-line react-hooks/exhaustive-deps
+  const noticeBox = () => {
+    const a = anchor()
+    const vw = window.innerWidth
+    const width = Math.min(NOTICE_W, vw - MARGIN * 2)
+    return { left: Math.max(MARGIN, Math.min(a.right - width, vw - MARGIN - width)), top: a.top, width }
+  }
+  const [nPos, setNPos] = useState<{ left: number; top: number; width: number } | null>(null)
+  const noticeMounted = shown.length > 0
+  // 칸 자리에서 알림창 크기로 커진다 / 알림이 늘거나 줄면 높이를 부드럽게
+  useLayoutEffect(() => {
+    const el = notice.current
+    if (!el || noticeLeaving) return
+    const r = el.getBoundingClientRect()
+    const first = noticeH.current === 0
+    const prevH = noticeH.current
+    noticeH.current = r.height
+    const t = dur(first ? 460 : 260)
+    if (!t) return
+    if (first) {
+      const from = anchor()
+      el.animate(
+        [
+          { ...px({ left: from.left, top: from.top, width: from.width, height: from.height }), borderRadius: `${from.height / 2}px` },
+          { ...px({ left: r.left, top: r.top, width: r.width, height: r.height }), borderRadius: 'var(--r-xl)' }
+        ],
+        { duration: t, easing: SPRING }
+      )
+      el.querySelector('.dock-notice-inner')?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur(220), delay: dur(100), easing: 'ease-out', fill: 'backwards' })
+    } else if (Math.abs(prevH - r.height) > 1) {
+      el.animate([{ height: `${prevH}px` }, { height: `${r.height}px` }], { duration: t, easing: SPRING })
+    }
+  }, [shown, noticeLeaving, nPos])
+  // 다 사라지면 칸으로 줄어든 뒤 내린다
+  useLayoutEffect(() => {
+    const el = notice.current
+    if (!noticeLeaving) return
+    const done = () => {
+      setShown([])
+      setNoticeLeaving(false)
+      noticeH.current = 0
+    }
+    const t = dur(320)
+    if (!el || !t) return done()
+    const r = el.getBoundingClientRect()
+    const to = anchor()
+    el.querySelector('.dock-notice-inner')?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur(110), fill: 'forwards' })
+    el.animate(
+      [
+        { ...px({ left: r.left, top: r.top, width: r.width, height: r.height }), borderRadius: 'var(--r-xl)' },
+        { ...px({ left: to.left, top: to.top, width: to.width, height: to.height }), borderRadius: `${to.height / 2}px` }
+      ],
+      { duration: t, easing: 'cubic-bezier(.3,0,.2,1)', fill: 'forwards' }
+    ).onfinish = done
+  }, [noticeLeaving])
+  // 자리는 띄울 때와 창 크기가 바뀔 때 칸을 다시 재서
+  useLayoutEffect(() => {
+    if (!noticeMounted) return setNPos(null)
+    setNPos(noticeBox())
+    const onResize = () => setNPos(noticeBox())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [noticeMounted]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** 알림창을 누르면 — 알림을 닫고 그 자리에서 자세히 보는 창(알림 쪽)을 연다 */
+  const openNotices = () => {
+    for (const t of useUI.getState().toasts) dismissToast(t.id)
+    setShown([])
+    setNoticeLeaving(false)
+    noticeH.current = 0
+    goTo(NOTICES_PAGE, false)
+    setBox(panelBox(anchor()))
+    setOpen(true)
+  }
+
   const cur = DOCK_PAGES[page]
   return (
     <>
       <div
         ref={dock}
-        className={'dock' + (open ? ' is-open' : '')}
+        className={'dock' + (open ? ' is-open' : '') + (noticeMounted ? ' is-noticing' : '')}
         role="button"
         tabIndex={0}
         aria-expanded={open}
@@ -276,6 +373,61 @@ export function StatusDock() {
           {unseenError && <span className="dock-alert" aria-label="실패한 일이 있습니다" />}
         </div>
       </div>
+
+      {/* 화면 읽기 도구에는 알림창이 뜨기 전부터 있는 자리에서 읽어 준다 */}
+      <div className="dock-live" aria-live="polite">
+        {toasts.length ? toasts[toasts.length - 1].text : ''}
+      </div>
+
+      {noticeMounted &&
+        nPos &&
+        createPortal(
+          <div
+            ref={notice}
+            className="dock-notice"
+            style={{ left: nPos.left, top: nPos.top, width: nPos.width }}
+            role="group"
+            aria-label="알림"
+            onClick={openNotices}
+          >
+            <div className="dock-notice-inner" style={{ width: nPos.width }}>
+              {shown
+                .slice()
+                .reverse()
+                .map((t) => (
+                  <div key={t.id} className={'toast dock-notice-row ' + t.kind}>
+                    <span className="dock-notice-ic" aria-hidden="true">
+                      <Icon name={t.kind === 'error' ? 'xCircle' : t.kind === 'success' ? 'checkCircle' : 'bell'} size={16} />
+                    </span>
+                    <span className="dock-notice-text">{t.text}</span>
+                    {t.action && (
+                      <button
+                        className="dock-notice-action"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          t.action!.run()
+                          dismissToast(t.id)
+                        }}
+                      >
+                        {t.action.label}
+                      </button>
+                    )}
+                    <button
+                      className="toast-close"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        dismissToast(t.id)
+                      }}
+                      aria-label="닫기"
+                    >
+                      <Icon name="close" size={14} />
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>,
+          document.body
+        )}
 
       {open &&
         box &&

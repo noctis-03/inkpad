@@ -411,31 +411,103 @@
   }
 }
 
-/* ───────── 알림(토스트) — 상태 칸의 '알림' 쪽에서 내려온다 (app/App Toasts, dock/pages 알림) ─────────
-   알림이 오면 칸이 알림 쪽으로 넘어가고, 토스트는 칸 바로 아래에 놓인다. 자리(top·right)는 App이 상태 칸 알약을 재서 정한다. 새 알림이 칸에 가장 가깝게(위에) 쌓이고, 칸 오른쪽 위 모서리에서 자라 나온다.
-   상태 칸이 없으면 .is-docked 없이 예전 자리(아래 가운데, 06-editor.css) */
-:root .toasts.is-docked {
-  left: auto;
-  bottom: auto;
-  transform: none;
-  flex-direction: column-reverse;
-  align-items: flex-end;
-  width: min(380px, calc(100vw - 12px));
-  min-width: min(260px, calc(100vw - 12px));
-  pointer-events: none;
+/* ───────── 알림창 — 칸이 그 자리에서 커져 알림이 된다 (dock/StatusDock) ─────────
+   알림이 오면 칸이 알림 쪽으로 넘어가며 오른쪽 위 모서리에 붙은 채 아래·왼쪽으로 커진다.
+   알림이 모두 사라지면 다시 칸으로 줄어든다. 누르면 그 자리에서 자세히 보는 창(알림 쪽)이 된다.
+   행은 .toast 이름을 그대로 쓴다(알림을 찾는 쪽과 맞춘다) — 겉모양은 여기서 판판하게 */
+.dock.is-noticing {
+  opacity: 0;
 }
-.toasts.is-docked .toast {
-  width: 100%;
-  pointer-events: auto;
-  transform-origin: top right;
-  animation-name: toast-drop;
+.dock-notice {
+  position: fixed;
+  z-index: 60; /* 펼친 창(58) 위 — 시트 위에서도 알림은 보인다 */
+  display: flex;
+  justify-content: flex-end; /* 안은 처음부터 알림창 폭으로 오른쪽에 — 칸 자리(오른쪽 위)에서부터 드러난다 */
+  overflow: hidden;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--e3), 0 0 0 1px var(--line);
+  cursor: pointer;
 }
-.toasts.is-docked .toast.is-out {
-  animation-name: toast-lift;
+.dock-notice-inner {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
 }
-@keyframes toast-drop {
-  from { opacity: 0; transform: translateY(-12px) scale(.92); }
+.dock-notice .toast.dock-notice-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 6px 6px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+  color: var(--ink);
+  font-size: var(--fs-base);
 }
-@keyframes toast-lift {
-  to { opacity: 0; transform: translateY(-8px) scale(.97); }
+.dock-notice .toast.dock-notice-row + .toast.dock-notice-row {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+/* .toast span { flex: 1 }(06-editor)보다 세게 — 아이콘 칸은 늘지 않는다 */
+.dock-notice .dock-notice-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.dock-notice-row.success .dock-notice-ic {
+  color: var(--success);
+}
+.dock-notice-row.error .dock-notice-ic {
+  color: var(--danger);
+}
+.dock-notice .dock-notice-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.dock-notice .dock-notice-action {
+  flex: none;
+  min-height: var(--h-control-sm);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.dock-notice .toast-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dock-notice .toast-close:active,
+.dock-notice .dock-notice-action:active {
+  background: var(--surface-3);
+}
+/* 화면 읽기 도구용 알림 자리 — 보이지 않는다 */
+.dock-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
