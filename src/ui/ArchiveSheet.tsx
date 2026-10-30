@@ -242,6 +242,13 @@ function ArchiveSheet() {
                     살펴봤습니다.
                   </p>
                 )}
+                {scan && scan.unreadable.length > 0 && (
+                  <p className="hint warn" role="alert">
+                    노트 파일 {scan.unreadable.length}개를 읽지 못해 이번에는 조각을 표시하거나 휴지통으로 옮기지 않습니다 — 그 노트가 쓰는 조각을 '안 씀'으로 잘못 셀 수
+                    있어서입니다. 네트워크를 확인하고 다시 살펴보세요. ({scan.unreadable.slice(0, 3).join(', ')}
+                    {scan.unreadable.length > 3 ? ` 외 ${scan.unreadable.length - 3}개` : ''})
+                  </p>
+                )}
                 <div className="btn-row">
                   <button className="text-btn" disabled={!!busy} onClick={() => void runScan()}>
                     {scanProgress ?? (scan ? '다시 살펴보기' : '조각 살펴보기')}
@@ -249,11 +256,12 @@ function ArchiveSheet() {
                   {scan && (
                     <button
                       className="text-btn"
-                      disabled={!!busy || (!scan.unused.length && !scan.revived.length)}
+                      disabled={!!busy || (scan.unreadable.length ? !scan.revived.length : !scan.unused.length && !scan.revived.length)}
                       onClick={() =>
                         void run('objects', null, async () => {
                           const r = await cleanObjects(scan)
                           setScan(undefined)
+                          if (r.blocked) return `읽지 못한 노트 파일이 있어 정리하지 않았습니다${r.revived ? ` — 다시 쓰게 된 조각 ${r.revived}개의 표시만 지웠습니다` : ''}.`
                           return r.trashed
                             ? `안 쓰는 조각 ${r.trashed}개를 휴지통으로 옮겼습니다${r.marked ? `(새로 표시 ${r.marked}개)` : ''}.`
                             : r.marked
