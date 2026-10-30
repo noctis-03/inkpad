@@ -1,6 +1,7 @@
 /* ── 라이브러리 상단 바 — 폭에 따라 줄인다 ──
    넓은 화면: 검색 · 격자/목록 · 정렬 · 작업보드 · 설정 · 동기화 · 새로 만들기를 모두 늘어놓는다.
-   980px 이하(iPad 세로): 격자/목록 · 정렬 · 작업보드를 ⋯(보기·정렬) 메뉴로 옮긴다.
+   1120px 이하(iPad 세로 · 사이드바를 연 좁은 가로): 격자/목록 · 정렬 · 작업보드를 ⋯(보기·정렬) 메뉴로 옮긴다
+   (사이드바가 화면 위까지 올라와 상단 바는 사이드바 폭만큼 좁다).
    700px 이하(휴대폰): 검색은 돋보기 버튼으로 접고(누르면 상단 바 전체가 검색창), 설정도 ⋯ 메뉴로,
    새로 만들기는 ＋ 아이콘만 남긴다. 가로 스크롤(04-library)은 그래도 넘칠 때를 위한 안전망이다. */
 .library-header .search-toggle,
@@ -9,7 +10,7 @@
   display: none;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1120px) {
   .library-header .view-seg,
   .library-header .sort-select,
   .library-header .board-btn {

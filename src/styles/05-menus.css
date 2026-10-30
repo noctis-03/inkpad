@@ -252,23 +252,25 @@
   display: inline-flex;
   flex-wrap: wrap;
   padding: 3px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-pill);
   background: var(--surface-2);
   gap: 2px;
 }
 .seg button {
   min-height: calc(var(--h-control) - 6px);
-  padding: 0 12px;
+  padding: 0 14px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: transparent;
   font-size: var(--fs-base);
   cursor: pointer;
 }
+/* 켜진 칸 — 흰 칩(인디케이터) 위 강조색 글자 */
 .seg button.is-active {
   background: var(--chip);
   box-shadow: var(--e1);
-  font-weight: 600;
+  color: var(--accent);
+  font-weight: 500;
 }
 .seg.full {
   display: flex;

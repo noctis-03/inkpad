@@ -3,7 +3,7 @@
 .app-runner { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--surface); }
 /* 높이·바탕·선은 노트 머리(.toolbar-doc: --h-bar, 버튼 --h-tap, --paper-2)와 같다 */
 .app-runner-bar .tb-btn { min-width: var(--h-tap); height: var(--h-tap); }
-.app-runner-bar { display: flex; align-items: center; gap: 8px; min-height: var(--h-bar); padding: 0 10px; background: var(--paper-2); border-bottom: 1px solid var(--line); }
+.app-runner-bar { display: flex; align-items: center; gap: 8px; min-height: var(--h-bar); padding: 0 10px; background: var(--paper); border-bottom: 1px solid var(--line); }
 .app-runner-title { flex: 1; margin: 0; font-size: var(--fs-lg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-runner-frame { flex: 1; width: 100%; border: 0; background: var(--surface); }
 /* 동기화 상태 점 (카드 썸네일 오른쪽 위) — 회:클라우드에 없음 / 노랑:변경 있음 / 초록:최신 / 파랑:클라우드에 새 버전 */

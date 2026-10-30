@@ -6,48 +6,48 @@
 :root[data-theme='dark'] .ft-pop {
   color-scheme: light;
 
-  /* ── 표면 (종이 · 카드 · 채움) ── */
-  --paper: #f7f6f2;        /* 앱 바탕 */
-  --paper-2: #f2f0eb;      /* 사이드바·패널 바탕 */
-  --lib-bg: #eeedea;       /* 라이브러리 카드 뒤 바탕 — 앱 바탕보다 조금 어둡게(미색 카드가 떠 보이게), 노란 기운은 덜게 */
+  /* ── 표면 (종이 · 카드 · 채움) — 흰 본문 + 옅은 회색 사이드바, 영역은 면 색 차이로 나눈다 ── */
+  --paper: #ffffff;        /* 앱 바탕 */
+  --paper-2: #f7f7f6;      /* 사이드바·패널 바탕 */
+  --lib-bg: #ffffff;       /* 라이브러리 카드 뒤 바탕 — 본문과 같은 흰색, 카드는 옅은 테두리로 */
   --surface: #ffffff;      /* 카드·시트·입력 */
-  --surface-2: #f1efe9;    /* 옅은 채움(검색창·칩) */
-  --surface-3: #e9e6de;    /* 한 단계 더 */
+  --surface-2: #f3f3f2;    /* 옅은 채움(알약·검색·칩) */
+  --surface-3: #e9e9e7;    /* 한 단계 더 — 사이드바 선택 행 */
   --panel: #fffffff0;      /* 상단바·떠 있는 패널(반투명) */
   --chip: #ffffff;         /* 선택된 항목의 떠 있는 칩 */
 
   /* ── 경계 ── */
-  --line: #e3dfd5;
-  --line-2: #e3dfd5;
+  --line: #ececea;
+  --line-2: #e3e3e0;
 
   /* ── 글자 ── */
-  --ink: #23211d;
-  --ink-2: #3e3a33;
-  --muted: #6a655b;        /* --surface·--paper 위에서 4.5:1 이상 (AA) */
-  --muted-2: #a49e92;      /* 아이콘·장식 전용 — 본문 글자에 쓰지 않는다 */
+  --ink: #1f1f1d;
+  --ink-2: #444441;
+  --muted: #666664;        /* --surface·--paper·--paper-2·선택 행(--surface-3) 위에서 4.5:1 이상 (AA) */
+  --muted-2: #a5a5a0;      /* 아이콘·장식 전용 — 본문 글자에 쓰지 않는다 */
   --on-ink: #ffffff;       /* 어두운 면 위 글자(테마 공통) */
-  --btn-bg: #23211d;       /* 잉크 버튼 면 — 다크에서 뒤집힌다 */
+  --btn-bg: #1f1f1d;       /* 잉크 버튼 면 — 다크에서 뒤집힌다 */
   --btn-fg: #ffffff;
-  --toast-bg: #111827eb;
+  --toast-bg: #1f1f1deb;
   /* 토스트는 테마와 상관없이 '어두운 판 위 밝은 글자' — 뒤집히는 토큰(--surface-2 등)을 글자에 쓰지 않는다 */
   --toast-fg: #f5f5f4;
-  --toast-action: #a8bcff;  /* 동작 버튼(되돌리기 등) */
+  --toast-action: #7fdcae;  /* 동작 버튼(되돌리기 등) */
   --toast-dim: #ffffffa6;   /* 닫기 */
   --toast-line: transparent;
 
   /* ── 상호작용 ── */
-  --press: #1f29370d;
+  --press: #1f1f1d0d;
   --hover: #0000000d;
-  --focus-outline: #1f293759;
-  --focus-ring: 0 0 0 4px #1f29370a;
+  --focus-outline: #1f1f1d59;
+  --focus-ring: 0 0 0 4px #1f1f1d0a;
 
-  /* ── 강조 (잉크 블루) ── */
-  --accent: #3355c8;
-  --accent-ink: #2442a8;
-  --accent-soft: #e5eafa;
-  --accent-soft-2: #f1f4fd;
-  --accent-line: #c5d1f4;
-  --accent-line-2: #9fb2ea;
+  /* ── 강조 (초록) — 켜진 전환·'+ 새 노트'·정렬 ▾ 같은 한 군데에만 ── */
+  --accent: #1a7f4b;       /* 흰 바탕 5.0:1 */
+  --accent-ink: #136039;
+  --accent-soft: #e4f3ea;
+  --accent-soft-2: #f1f9f4;
+  --accent-line: #bfe3cf;
+  --accent-line-2: #8fcdab;
 
   /* ── 상태 ── */
   --success: #16a34a;
@@ -87,7 +87,7 @@
   --r-lg: 12px;
   --r-xl: 14px;
   --r-2xl: 18px;
-  --r-card: 6px;           /* 라이브러리 노트 카드(미리보기) 모서리 */
+  --r-card: 4px;           /* 라이브러리 노트 카드(미리보기) 모서리 */
   --r-pill: 999px;
 
   /* ── 타이포 스케일 — UI 글자는 이 눈금만 쓴다 (텍스트 문서 본문·인쇄 pt·표시용 큰 글자는 예외, docs/ui-plan.md) ── */
@@ -100,9 +100,12 @@
   --fs-title: 18px;        /* 시트·패널 제목 */
   --fs-xl: 20px;
   --fs-2xl: 24px;
+  /* 제목용 명조 — 기기에 있는 글꼴만 쓴다(오프라인 PWA라 웹 글꼴을 받지 않는다) */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
+  --font-serif: 'Noto Serif KR', 'AppleMyungjo', 'Nanum Myeongjo', 'Source Han Serif K', Georgia, serif;
 
   /* ── 모션 ── */
-  --tray: #eeebe4;
+  --tray: #f3f3f2;
   --spring-pop: cubic-bezier(.34, 1.56, .64, 1);
   --ft-spring: cubic-bezier(.2, .9, .25, 1.05);
   --ft-ease: cubic-bezier(.2, .8, .2, 1);
@@ -112,11 +115,12 @@
   --dur-slow: 520ms;
 
   /* ── 필기 캔버스(종이) — 테마와 무관하게 종이는 흰색 ── */
+  --desk: #f3f3f2;          /* 편집 화면에서 흰 종이 뒤 바탕 — 앱 바탕(흰색)과 달라야 종이 가장자리가 보인다 */
   --bg-pattern: #d6dbe3;
 
   /* ── 고정 종이·태그 ── */
   --thumb-paper: #ffffff;   /* 썸네일·종이는 테마와 상관없이 흰색 */
-  --thumb-cream: #fbf9f4;   /* 격자 카드 바탕 — 앱·파일 카드, 미리보기 없는 노트 */
+  --thumb-cream: #fbfbf9;   /* 격자 카드 바탕 — 앱·파일 카드, 미리보기 없는 노트 */
   --tag-border: color-mix(in srgb, var(--ink) 15%, transparent);
   --tag-ink: #2b2a26;       /* 카드 동기화 꼬리표(.sync-tag) 먹색 — 미색 카드 위라 테마와 상관없이 */
   --tag-alert: #b3261e;     /* 꼬리표 '갈라짐' 빨강 */
@@ -155,7 +159,7 @@
   /* 위 --h-control·--h-row·--fs-base는 '촘촘하게' 값 — 기본 '넉넉하게'는 아래 :root:not([data-density='compact'])가 키운다 */
   --toolbar-h: var(--h-bar);
   --safe-top: env(safe-area-inset-top, 0px);
-  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
+  font-family: var(--font-sans);
   color: var(--ink);
 }
 
@@ -173,27 +177,27 @@
 :root[data-theme='dark'] {
     color-scheme: dark;
 
-    --paper: #161513;
-    --paper-2: #1b1a17;
-    --lib-bg: #2a2825;       /* 다크에서는 앱 바탕보다 밝게 */
-    --thumb-cream: #dfdbd1;  /* 다크에서는 카드 미색을 조금 어둡게 — 눈부시지 않게 */
-    --surface: #211f1c;
-    --surface-2: #2a2824;
-    --surface-3: #33302b;
-    --panel: #211f1cf0;
-    --chip: #3b3833;
+    --paper: #1b1b1a;
+    --paper-2: #222221;
+    --lib-bg: #1b1b1a;       /* 본문과 같게 — 카드(밝은 종이)가 그대로 떠 보인다 */
+    --thumb-cream: #e4e3df;  /* 다크에서는 카드 종이를 조금 어둡게 — 눈부시지 않게 */
+    --surface: #252524;
+    --surface-2: #2a2a28;
+    --surface-3: #333331;
+    --panel: #1b1b1af0;
+    --chip: #3b3b38;
 
-    --line: #34312c;
-    --line-2: #34312c;
+    --line: #2e2e2c;
+    --line-2: #3a3a37;
 
-    --ink: #ece8e1;
-    --ink-2: #d2ccc2;
-    --muted: #a39d92;
-    --muted-2: #77726a;
+    --ink: #ededea;
+    --ink-2: #c9c9c4;
+    --muted: #a3a39e;
+    --muted-2: #77776f;
     --on-ink: #ffffff;
-    --btn-bg: #ece8e1;
-    --btn-fg: #161513;
-    --toast-bg: #3b404cf5;   /* 다크 바탕(#161513)보다 밝게 — 판이 바탕에서 떠 보이게 */
+    --btn-bg: #ededea;
+    --btn-fg: #1b1b1a;
+    --toast-bg: #3a3a38f5;   /* 다크 바탕(#1b1b1a)보다 밝게 — 판이 바탕에서 떠 보이게 */
     --toast-line: #ffffff1f;
 
     --press: #ffffff14;
@@ -201,12 +205,12 @@
     --focus-outline: #ffffff66;
     --focus-ring: 0 0 0 4px #ffffff1a;
 
-    --accent: #8aa6ff;
-    --accent-ink: #b0c3ff;
-    --accent-soft: #24304f;
-    --accent-soft-2: #1b2338;
-    --accent-line: #34467a;
-    --accent-line-2: #3f6399;
+    --accent: #4cc38a;
+    --accent-ink: #8adfb5;
+    --accent-soft: #1a3326;
+    --accent-soft-2: #15261d;
+    --accent-line: #2a5a40;
+    --accent-line-2: #3a7a58;
 
     --success: #4ade80;
     --success-ink: #86efac;
@@ -235,7 +239,8 @@
     --e2: 0 8px 24px #00000099;
     --e3: 0 24px 60px #000000b3;
 
-    --tray: #2a2824;
+    --tray: #2a2a28;
+    --desk: #1b1b1a;
 
     --merge-main-ink: #f5a855;
     --merge-branch-ink: #8fb0ff;
@@ -263,6 +268,12 @@ button {
   font: inherit;
   color: inherit;
   -webkit-tap-highlight-color: transparent;
+}
+/* 기본 슬라이더·체크 상자도 강조색을 따른다 (브라우저 기본 파랑 대신) */
+input[type='range'],
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
 }
 
 .app-shell {

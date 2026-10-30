@@ -135,7 +135,7 @@
   position: relative;
 }
 .seg .motion-ind {
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
 }
 .folder-tree,
 .ft-tools,
@@ -143,10 +143,11 @@
 .ft-widths {
   position: relative;
 }
+/* 사이드바 선택 — 떠 있는 칩이 아니라 판판한 회색 줄 */
 .folder-tree .motion-ind {
-  background: var(--chip);
-  border-radius: var(--r-md);
-  box-shadow: var(--raise), 0 6px 14px -8px #1f293726;
+  background: var(--surface-3);
+  border-radius: var(--r-2xs);
+  box-shadow: none;
 }
 .ft-tools .motion-ind,
 .ft-swatches .motion-ind,
@@ -155,9 +156,9 @@
   background: color-mix(in srgb, var(--ink) 7%, transparent);
   box-shadow: none;
 }
-/* 선택한 도구는 강조색 바탕 — 하나의 바 위에서도 또렷하게 */
+/* 선택한 도구는 먹색 동그라미 + 흰 아이콘 — 하나의 바 위에서도 또렷하게 */
 .ft-tools .motion-ind {
-  background: var(--accent-soft);
+  background: var(--btn-bg);
 }
 
 /* ═══════════════ 5.7 · 도구 구역 + 선택 스타일 ═══════════════ */
@@ -173,7 +174,7 @@
 }
 .ft-tool.is-active {
   background: transparent;
-  color: var(--accent);
+  color: var(--btn-fg);
 }
 .ft-tool.is-active svg {
   animation: ft-pop .45s var(--spring-pop);
