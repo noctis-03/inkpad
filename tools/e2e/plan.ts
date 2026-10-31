@@ -139,10 +139,10 @@ export default async function plan(ctx: Ctx) {
   const panel = (kind: string) => p.locator(`.day-panel .task-section[data-kind="${kind}"]`)
   check('월: 이날 만든 노트', (await panel('made').locator('h3').innerText()).startsWith('이날 만든 노트') && (await panel('made').locator('.day-note').allInnerTexts()).some((t) => t.includes('디지털 시스템 3주차')))
   check(
-    '월: 이날 마지막으로 고친 노트와 옮겨 간다는 안내',
+    '월: 이날 마지막으로 고친 노트 — 항목이 있으면 안내 문구는 없다',
     (await panel('last').locator('h3').innerText()).startsWith('이날 마지막으로 고친 노트') &&
       (await panel('last').locator('.day-note').allInnerTexts()).some((t) => t.includes('회로 정리')) &&
-      (await panel('last').locator('.hint').innerText()).includes('다른 날 또 고치면 그날로 옮겨 갑니다')
+      (await panel('last').locator('.hint').count()) === 0
   )
   const twoAgo = await p.evaluate(async () => {
     const { db } = await import('/src/storage/db.ts')
@@ -152,6 +152,10 @@ export default async function plan(ctx: Ctx) {
   await p.locator('.cal-day.is-today').locator('xpath=following-sibling::button[1]').click()
   await sleep(200)
   check('월: 다른 날을 누르면 그날 칸 (내일 마감)', (await p.locator('.day-panel').innerText()).includes('단어 외우기'))
+  check(
+    '월: 마지막으로 고친 노트가 없는 날에만 옮겨 간다는 안내',
+    (await panel('last').locator('.day-note').count()) === 0 && (await panel('last').locator('.hint').innerText()).includes('다른 날 또 고쳤으면 그날로 옮겨 갑니다')
+  )
   await p.locator('.day-panel .day-task-main', { hasText: '단어 외우기' }).click()
   check('월: 그날 칸의 할 일을 누르면 자세히', (await p.locator('.task-detail-title').inputValue()) === '단어 외우기')
 

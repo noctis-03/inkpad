@@ -229,11 +229,7 @@ export function DayPanel({ day, today, tasks, docs, catColor, onPick, onToggle, 
       </section>
       <section className="task-section" data-kind="last">
         <h3>이날 마지막으로 고친 노트 {notes.last.length}</h3>
-        {notes.last.length ? (
-          <p className="hint">그 뒤로 고치지 않은 노트입니다 — 다른 날 또 고치면 그날로 옮겨 갑니다.</p>
-        ) : (
-          <p className="hint">이날을 마지막으로 고친 노트가 없습니다.</p>
-        )}
+        {!notes.last.length && <p className="hint">이날을 마지막으로 고친 노트가 없습니다 — 이날 고쳤어도 다른 날 또 고쳤으면 그날로 옮겨 갑니다.</p>}
         {notes.last.map(note)}
       </section>
     </div>
