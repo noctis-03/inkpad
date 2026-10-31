@@ -1,5 +1,5 @@
 // 일정 — 할 일과 캘린더 (#/plan). 라이브러리 사이드바에서 열고, 빠른 추가·끝내기·자세히(제목·마감·카테고리·메모)·
-// 휴지통(되돌리기·되살리기·30일 정리)·주·월(그날 고친 노트)·연결한 노트 열기·다시 열어도 남는지
+// 휴지통(되돌리기·되살리기·30일 정리)·주·월(그날 만든 노트·그날을 마지막으로 고친 노트)·연결한 노트 열기·다시 열어도 남는지
 import type { Page } from 'playwright'
 import { createDoc, device, logsOf, sleep, type Ctx } from './lib.ts'
 
@@ -17,6 +17,12 @@ export default async function plan(ctx: Ctx) {
   const { check, base } = ctx
   const p = await device(ctx)
   const noteId = await createDoc(p, '디지털 시스템 3주차')
+  // 이틀 전에 만들고 오늘 마지막으로 고친 노트
+  const oldId = await createDoc(p, '회로 정리')
+  await p.evaluate(async (id) => {
+    const { db } = await import('/src/storage/db.ts')
+    await db.documents.update(id, { createdAt: Date.now() - 2 * 86400_000 })
+  }, oldId)
   await p.reload()
   await p.waitForSelector('.lib-side')
 
@@ -118,14 +124,31 @@ export default async function plan(ctx: Ctx) {
   await p.waitForSelector('.cal-week')
   const todayCol = p.locator('.cal-week-day.is-today')
   check('주: 오늘 칸에 오늘 마감 할 일, 내일 칸에 내일 것', (await todayCol.innerText()).includes('노트 복습') && (await todayCol.innerText()).includes('보고서') === false)
-  check('주: 그날 고친 노트', (await todayCol.locator('.cal-note').allInnerTexts()).includes('디지털 시스템 3주차'))
+  const group = (kind: string) => todayCol.locator(`.cal-note-group[data-kind="${kind}"]`)
+  check('주: 오늘 만든 노트', (await group('made').locator('small').innerText()) === '만든 노트' && (await group('made').locator('.cal-note').allInnerTexts()).includes('디지털 시스템 3주차'))
+  check(
+    '주: 오늘 마지막으로 고친 노트 (전에 만든 것) — 만든 노트에는 없다',
+    (await group('last').locator('small').innerText()) === '마지막으로 고친 노트' && (await group('last').locator('.cal-note').allInnerTexts()).join() === '회로 정리' && !(await group('made').locator('.cal-note').allInnerTexts()).includes('회로 정리')
+  )
   await todayCol.getByRole('button', { name: '노트 복습 — 끝냄' }).click()
   await sleep(300)
   check('주: 동그라미로 끝내기', (await tasks(p)).find((t) => t.title === '노트 복습')!.done)
   await p.locator('.plan-view-seg').getByRole('radio', { name: '월' }).click()
   await p.waitForSelector('.cal-month')
   check('월: 오늘을 고른 채로 그날 칸', (await p.locator('.day-panel h2').innerText()).length > 0 && (await p.locator('.day-panel').innerText()).includes('노트 복습'))
-  check('월: 그날 고친 노트', (await p.locator('.day-panel .day-note').allInnerTexts()).some((t) => t.includes('디지털 시스템 3주차')))
+  const panel = (kind: string) => p.locator(`.day-panel .task-section[data-kind="${kind}"]`)
+  check('월: 이날 만든 노트', (await panel('made').locator('h3').innerText()).startsWith('이날 만든 노트') && (await panel('made').locator('.day-note').allInnerTexts()).some((t) => t.includes('디지털 시스템 3주차')))
+  check(
+    '월: 이날 마지막으로 고친 노트와 옮겨 간다는 안내',
+    (await panel('last').locator('h3').innerText()).startsWith('이날 마지막으로 고친 노트') &&
+      (await panel('last').locator('.day-note').allInnerTexts()).some((t) => t.includes('회로 정리')) &&
+      (await panel('last').locator('.hint').innerText()).includes('다른 날 또 고치면 그날로 옮겨 갑니다')
+  )
+  const twoAgo = await p.evaluate(async () => {
+    const { db } = await import('/src/storage/db.ts')
+    return (await db.documents.toArray()).find((d) => d.title === '회로 정리')!.createdAt
+  })
+  check('준비: 회로 정리는 이틀 전에 만들었다', Date.now() - twoAgo > 86400_000)
   await p.locator('.cal-day.is-today').locator('xpath=following-sibling::button[1]').click()
   await sleep(200)
   check('월: 다른 날을 누르면 그날 칸 (내일 마감)', (await p.locator('.day-panel').innerText()).includes('단어 외우기'))

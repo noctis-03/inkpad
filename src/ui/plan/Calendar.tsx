@@ -23,19 +23,31 @@ function tasksByDay(tasks: Task[]) {
     list.sort((a, b) => Number(!!a.doneAt) - Number(!!b.doneAt) || (a.time ?? '99').localeCompare(b.time ?? '99') || a.createdAt - b.createdAt)
   return m
 }
-/** 날짜 → 그날 만들었거나 고친 노트 (지운 노트 제외, 최근 것 먼저) */
+/** 그날의 노트 — 만든 노트, 그날을 마지막으로 고친 노트(그날 만든 것은 빼고) */
+interface DayNotes {
+  made: DocumentMeta[]
+  last: DocumentMeta[]
+}
+const noteCount = (n: DayNotes | undefined) => (n ? n.made.length + n.last.length : 0)
+
+/**
+ * 날짜 → 그날 만든 노트와 그날을 마지막으로 고친 노트 (지운 노트 제외, 최근 것 먼저).
+ * 노트는 만든 날과 마지막으로 고친 날만 남는다 — 25일에 고친 노트를 26일에 또 고치면 25일에서는 빠지고 26일로 옮겨 간다.
+ */
 function notesByDay(docs: DocumentMeta[]) {
-  const m = new Map<string, DocumentMeta[]>()
-  const put = (k: string, d: DocumentMeta) => {
-    if (!m.has(k)) m.set(k, [])
-    if (!m.get(k)!.includes(d)) m.get(k)!.push(d)
+  const m = new Map<string, DayNotes>()
+  const at = (k: string) => {
+    if (!m.has(k)) m.set(k, { made: [], last: [] })
+    return m.get(k)!
   }
   for (const d of docs) {
     if (d.deletedAt) continue
-    put(dayKey(new Date(d.updatedAt)), d)
-    put(dayKey(new Date(d.createdAt)), d)
+    const made = dayKey(new Date(d.createdAt))
+    const last = dayKey(new Date(d.updatedAt))
+    at(made).made.push(d)
+    if (last !== made) at(last).last.push(d)
   }
-  for (const list of m.values()) list.sort((a, b) => b.updatedAt - a.updatedAt)
+  for (const n of m.values()) for (const list of [n.made, n.last]) list.sort((a, b) => b.updatedAt - a.updatedAt)
   return m
 }
 
@@ -79,18 +91,39 @@ export function WeekView({ start, today, tasks, docs, catColor, selected, onPick
               <TaskChip key={t.id} t={t} today={today} color={catColor(t.category)} on={t.id === selected} onPick={() => onPick(t.id)} onToggle={() => onToggle(t)} />
             ))}
           </div>
-          <div className="cal-week-notes">
-            <small>고친 노트</small>
-            {(notes.get(d) ?? []).slice(0, 4).map((n) => (
-              <button key={n.id} className="cal-note" onClick={() => onOpenNote(n.id)}>
-                <i aria-hidden="true" />
-                {n.title}
-              </button>
-            ))}
-            {(notes.get(d)?.length ?? 0) > 4 && <small>+{notes.get(d)!.length - 4}</small>}
-          </div>
+          <WeekNotes notes={notes.get(d)} onOpenNote={onOpenNote} />
         </section>
       ))}
+    </div>
+  )
+}
+
+/** 주 칸 아래의 노트 — 만든 노트와 마지막으로 고친 노트, 합쳐서 넷까지 */
+function WeekNotes({ notes, onOpenNote }: { notes: DayNotes | undefined; onOpenNote: (id: ID) => void }) {
+  const made = notes?.made.slice(0, 4) ?? []
+  const last = notes?.last.slice(0, 4 - made.length) ?? []
+  const rest = noteCount(notes) - made.length - last.length
+  const item = (n: DocumentMeta) => (
+    <button key={n.id} className="cal-note" onClick={() => onOpenNote(n.id)}>
+      <i aria-hidden="true" />
+      {n.title}
+    </button>
+  )
+  return (
+    <div className="cal-week-notes">
+      {made.length > 0 && (
+        <div className="cal-note-group" data-kind="made">
+          <small>만든 노트</small>
+          {made.map(item)}
+        </div>
+      )}
+      {last.length > 0 && (
+        <div className="cal-note-group" data-kind="last">
+          <small>마지막으로 고친 노트</small>
+          {last.map(item)}
+        </div>
+      )}
+      {rest > 0 && <small>+{rest}</small>}
     </div>
   )
 }
@@ -109,14 +142,15 @@ export function MonthView({ month, day, today, tasks, docs, catColor, onPickDay 
       <div className="cal-month-grid" style={{ gridTemplateRows: `repeat(${cells.length / 7}, minmax(0, 1fr))` }}>
         {cells.map((d) => {
           const list = byDay.get(d) ?? []
-          const n = notes.get(d)?.length ?? 0
+          const dn = notes.get(d)
+          const n = noteCount(dn)
           const out = d.slice(0, 7) !== month.slice(0, 7)
           return (
             <button
               key={d}
               className={'cal-day' + (d === today ? ' is-today' : '') + (d === day ? ' is-picked' : '') + (out ? ' is-out' : '')}
               onClick={() => onPickDay(d)}
-              aria-label={`${longDay(d)} — 할 일 ${list.length}개, 고친 노트 ${n}개`}
+              aria-label={`${longDay(d)} — 할 일 ${list.length}개, 만든 노트 ${dn?.made.length ?? 0}개, 마지막으로 고친 노트 ${dn?.last.length ?? 0}개`}
               aria-pressed={d === day}
             >
               <span className="cal-day-top">
@@ -143,10 +177,22 @@ export function MonthView({ month, day, today, tasks, docs, catColor, onPickDay 
   )
 }
 
-/** 달력에서 고른 날 — 그날 마감인 할 일과 그날 고친 노트 */
+/** 달력에서 고른 날 — 그날 마감인 할 일, 그날 만든 노트, 그날을 마지막으로 고친 노트 */
 export function DayPanel({ day, today, tasks, docs, catColor, onPick, onToggle, onOpenNote, onClose }: Common & { day: string; onPick: (id: ID) => void; onToggle: (t: Task) => void; onOpenNote: (id: ID) => void; onClose?: () => void }) {
   const list = useMemo(() => tasksByDay(tasks).get(day) ?? [], [tasks, day])
-  const notes = useMemo(() => notesByDay(docs).get(day) ?? [], [docs, day])
+  const notes = useMemo(() => notesByDay(docs).get(day) ?? { made: [], last: [] }, [docs, day])
+  const note = (n: DocumentMeta) => (
+    <button key={n.id} className="day-note" onClick={() => onOpenNote(n.id)}>
+      <Icon name={n.mode === 'text' ? 'textDoc' : n.mode === 'infinite' ? 'infinite' : 'notebook'} size={18} />
+      <span>
+        <b>{n.title}</b>
+        <small>
+          <i className="cat-dot" style={{ background: catColor(n.category) }} aria-hidden="true" />
+          {n.category ?? '미분류'}
+        </small>
+      </span>
+    </button>
+  )
   return (
     <div className="day-panel">
       <div className="day-panel-head">
@@ -176,21 +222,19 @@ export function DayPanel({ day, today, tasks, docs, catColor, onPick, onToggle, 
           </div>
         ))}
       </section>
-      <section className="task-section">
-        <h3>이날 고친 노트 {notes.length}</h3>
-        {!notes.length && <p className="hint">이날 만들거나 고친 노트가 없습니다.</p>}
-        {notes.map((n) => (
-          <button key={n.id} className="day-note" onClick={() => onOpenNote(n.id)}>
-            <Icon name={n.mode === 'text' ? 'textDoc' : n.mode === 'infinite' ? 'infinite' : 'notebook'} size={18} />
-            <span>
-              <b>{n.title}</b>
-              <small>
-                <i className="cat-dot" style={{ background: catColor(n.category) }} aria-hidden="true" />
-                {n.category ?? '미분류'}
-              </small>
-            </span>
-          </button>
-        ))}
+      <section className="task-section" data-kind="made">
+        <h3>이날 만든 노트 {notes.made.length}</h3>
+        {!notes.made.length && <p className="hint">이날 만든 노트가 없습니다.</p>}
+        {notes.made.map(note)}
+      </section>
+      <section className="task-section" data-kind="last">
+        <h3>이날 마지막으로 고친 노트 {notes.last.length}</h3>
+        {notes.last.length ? (
+          <p className="hint">그 뒤로 고치지 않은 노트입니다 — 다른 날 또 고치면 그날로 옮겨 갑니다.</p>
+        ) : (
+          <p className="hint">이날을 마지막으로 고친 노트가 없습니다.</p>
+        )}
+        {notes.last.map(note)}
       </section>
     </div>
   )
