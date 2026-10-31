@@ -314,18 +314,6 @@ export function Plan() {
             )}
             <span className="plan-bar-name">일정</span>
             <span className="bar-spacer" />
-            {!taskSync.cloudOff && (
-              <button
-                className={'tb-btn sync-btn plan-sync' + (taskSync.busy ? ' is-syncing' : '')}
-                onClick={taskSync.sync}
-                disabled={taskSync.busy}
-                aria-label={pendingCount ? `할 일 동기화 — 올릴 것 ${pendingCount}개` : '할 일 동기화'}
-                title="할 일 동기화"
-              >
-                <Icon name="cloud" />
-                {pendingCount > 0 && <span className="sync-badge">{pendingCount}</span>}
-              </button>
-            )}
             <Segmented
               className="plan-view-seg"
               value={view}
@@ -340,6 +328,18 @@ export function Plan() {
               }}
               label="보기"
             />
+            {!taskSync.cloudOff && (
+              <button
+                className={'tb-btn sync-btn plan-sync' + (taskSync.busy ? ' is-syncing' : '')}
+                onClick={taskSync.sync}
+                disabled={taskSync.busy}
+                aria-label={pendingCount ? `할 일 동기화 — 올릴 것 ${pendingCount}개` : '할 일 동기화'}
+                title="할 일 동기화"
+              >
+                <Icon name="cloud" />
+                {pendingCount > 0 && <span className="sync-badge">{pendingCount}</span>}
+              </button>
+            )}
             {(!sideOpen || !wide) && (
               <button className="primary-btn plan-new" onClick={startNew} aria-label="새 할 일">
                 <Icon name="plus" size={16} /> <span className="plan-new-label">새 할 일</span>
