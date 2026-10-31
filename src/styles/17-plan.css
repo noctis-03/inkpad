@@ -182,6 +182,29 @@
   color: var(--muted);
   font-size: var(--fs-sm);
 }
+/* 빠른 추가의 달력 버튼 — 투명한 날짜 입력을 덮는다 (DatePick) */
+.plan-add .plan-add-date {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  border-radius: var(--r-xs);
+  color: var(--muted);
+  cursor: pointer;
+}
+.plan-add .plan-add-date.is-on {
+  color: var(--accent);
+}
+.plan-add .plan-add-date input {
+  position: absolute;
+  inset: 0;
+  flex: none;
+  opacity: 0;
+  cursor: pointer;
+}
 .plan-empty {
   display: flex;
   flex-direction: column;
@@ -500,13 +523,61 @@
   border-radius: var(--r-sm);
   background: var(--surface);
 }
-.day-task-box.is-empty {
-  justify-content: center;
-  align-items: center;
-}
 .day-task-box.is-empty .hint {
+  flex: 1;
+  display: grid;
+  place-items: center;
   margin: 0;
   text-align: center;
+}
+/* 그날 할 일 넣기 — 그날 칸 상자 맨 아래, 주 보기는 「+ 추가」를 누른 칸에 */
+.day-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 6px;
+  color: var(--accent);
+}
+.day-task-box .day-add {
+  border-top: 1px solid var(--line);
+}
+.day-add input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--ink);
+  font-size: var(--fs-base);
+}
+.cal-week-tasks .day-add {
+  min-height: 34px;
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+}
+.cal-week-tasks .day-add input {
+  font-size: var(--fs-sm);
+}
+.cal-week-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  opacity: .7;
+}
+.cal-week-add:hover,
+.cal-week-add:focus-visible {
+  opacity: 1;
+  color: var(--accent);
 }
 .day-task {
   display: flex;
@@ -1042,4 +1113,41 @@
     width: 56px;
     height: 36px;
   }
+}
+
+/* ───────── 꾹 눌러 옮기기 (ui/plan/useTaskDrag) ───────── */
+.plan [data-task-id] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.plan [data-task-id].is-dragging {
+  opacity: .35;
+}
+.plan [data-day].is-drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft-2);
+}
+.task-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 90;
+  max-width: 220px;
+  padding: 6px 12px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 6px 20px #0003;
+}
+html.is-task-dragging,
+html.is-task-dragging * {
+  cursor: grabbing !important;
 }
