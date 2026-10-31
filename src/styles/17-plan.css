@@ -108,8 +108,9 @@
   font-size: var(--fs-sm);
 }
 
-/* 칩 — 휴대폰의 보기 줄, 자세히의 마감 고르기 */
-.plan .lib-chip {
+/* 칩 — 휴대폰의 보기 줄, 자세히·할 일로 보내기의 마감 고르기 */
+.plan .lib-chip,
+.task-send .lib-chip {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -124,13 +125,15 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.plan .lib-chip.is-on {
+.plan .lib-chip.is-on,
+.task-send .lib-chip.is-on {
   border-color: var(--btn-bg);
   background: var(--btn-bg);
   color: var(--btn-fg);
   font-weight: 500;
 }
-.plan .lib-chip:disabled {
+.plan .lib-chip:disabled,
+.task-send .lib-chip:disabled {
   opacity: .5;
 }
 .plan-chips {
@@ -909,5 +912,113 @@
 @keyframes plan-sync-pulse {
   to {
     opacity: .35;
+  }
+}
+
+/* ───────── 노트에서 보낸 부분 (올가미 그림) ───────── */
+.task-snippet {
+  flex: none;
+  width: 72px;
+  height: 44px;
+  margin-right: 6px;
+  object-fit: contain;
+  border-radius: var(--r-2xs);
+  background: var(--thumb-paper);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.task-snippet-big {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-height: 240px;
+  margin: 0 0 8px;
+  padding: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.task-snippet-big:disabled {
+  cursor: default;
+}
+.task-snippet-big img {
+  display: block;
+  max-width: 100%;
+  max-height: 224px;
+  object-fit: contain;
+  background: var(--thumb-paper);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+/* ───────── 할 일로 보내기 창 (편집 화면, ui/editor/TaskSendSheet) ───────── */
+.task-send-preview {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  max-height: min(30vh, 260px);
+  margin: 12px 0 8px;
+  padding: 8px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.task-send-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(min(30vh, 260px) - 16px);
+  object-fit: contain;
+  background: var(--thumb-paper);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.task-send-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-send-title {
+  height: var(--h-control);
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-md);
+}
+.task-send-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.task-send-row > span {
+  flex: none;
+  min-width: 56px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.task-send-row .task-due {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-send-row select {
+  height: var(--h-control-sm);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-base);
+}
+@media (max-width: 700px) {
+  .task-snippet {
+    width: 56px;
+    height: 36px;
   }
 }

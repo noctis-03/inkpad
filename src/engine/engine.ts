@@ -537,6 +537,24 @@ export class Engine {
     return this.layout.currentIndex(v.minY, v.maxY)
   }
 
+  /** 올가미로 고른 영역이 놓인 페이지 (할 일로 보내기의 연결) — 무한 캔버스·선택 없음이면 null */
+  selectionPage(): { id: string; index: number } | null {
+    const poly = this.lassoPoly ?? (this.selectionBox ? boxPoly(this.selectionBox) : null)
+    const b = poly && polyBox(poly)
+    if (!b || !this.layout.paged || !this.layout.pages.length) return null
+    const index = this.layout.currentIndex(b.minY, b.maxY)
+    const page = this.layout.pages[index]
+    return page ? { id: page.id, index } : null
+  }
+
+  /** 페이지 id로 그 페이지로 간다 (일정에서 연결한 노트를 열 때) — 없는 페이지면 false */
+  scrollToPageId(id: string): boolean {
+    const i = this.layout.pages.findIndex((p) => p.id === id)
+    if (i < 0) return false
+    this.scrollToPage(i)
+    return true
+  }
+
   jumpTo(wx: number, wy: number) {
     this.cam.zoom = 1
     this.cam.x = wx - this.renderer.cssW / 2

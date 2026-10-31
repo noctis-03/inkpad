@@ -82,7 +82,7 @@ export default async function tasksync(ctx: Ctx) {
   await sleep(1500)
   check('동기화를 설정하기 전에는 할 일을 넣어도 Drive 요청 0 (대기로 남는다)', aRequests === 0 && (await byTitle(A, '회로 보고서'))?.pending === true, String(aRequests))
   const syncBtn = A.locator('.plan-sync')
-  check('동기화 버튼에 올릴 것 배지', (await syncBtn.getAttribute('aria-label')) === '할 일 동기화 — 올릴 것 1개' && (await syncBtn.locator('.sync-badge').innerText()) === '1')
+  check('동기화를 설정하기 전에는 올릴 것 배지가 없다 (올라가지 않는 게 정상)', (await syncBtn.getAttribute('aria-label')) === '할 일 동기화' && (await syncBtn.locator('.sync-badge').count()) === 0)
 
   // ── 동기화 버튼 ──
   await syncBtn.click()
@@ -113,6 +113,7 @@ export default async function tasksync(ctx: Ctx) {
   await sleep(1000)
   await A.context().setOffline(false)
   check('오프라인에서 고친 것은 대기로 남는다', (await byTitle(A, '회로 보고서'))?.pending === true)
+  check('설정한 뒤 대기가 있으면 동기화 버튼에 개수 배지', (await syncBtn.getAttribute('aria-label')) === '할 일 동기화 — 올릴 것 1개' && (await syncBtn.locator('.sync-badge').innerText()) === '1')
   await sleep(5)
   await update(B, report.id, { due: dayKey(3) })
   await settled(B)

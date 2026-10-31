@@ -73,6 +73,9 @@ function SyncComfortSection() {
       <Row label="앱 아이콘 배지" hint="올리지 않은 노트와 머지 대기 수를 앱 아이콘에 표시합니다(홈 화면에 설치한 앱에서, 기기가 지원할 때)">
         <Toggle k="appBadge" />
       </Row>
+      <Row label="마감 알림" hint="하루에 한 번, 앱을 열 때 오늘 마감과 지난 마감 할 일이 있으면 알림을 띄웁니다(일정 보기 버튼). 네트워크를 쓰지 않습니다">
+        <Toggle k="dueReminder" />
+      </Row>
       <Row
         label="앱을 열 때 클라우드 확인"
         hint={

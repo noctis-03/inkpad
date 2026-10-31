@@ -222,6 +222,10 @@ interface UIState {
   sendImage: SendImageTarget | null
   /** AI로 보내기 — 추천 문구를 골라 이미지와 함께 Claude로 (ui/editor/AiSendSheet) */
   aiSend: SendImageTarget | null
+  /** 할 일로 보내기 — 올가미로 고른 영역을 그림이 붙은 할 일로 (ui/editor/TaskSendSheet) */
+  taskSend: boolean
+  /** 노트를 열면 이 페이지로 간다 — 일정에서 노트에서 보낸 할 일을 열 때 (편집 화면이 쓰고 비운다) */
+  openAt: { docId: ID; pageId: ID } | null
   /** 마지막으로 본 홈 화면 (라이브러리 / 작업보드 / 일정) — 홈 탭을 누르면 여기로 */
   home: HomeRoute
 
@@ -311,6 +315,8 @@ export const useUI = create<UIState>((set, get) => ({
   splitSide: firstTabs.splitSide,
   sendImage: null,
   aiSend: null,
+  taskSend: false,
+  openAt: null,
   home: isHomeRoute(firstRoute) ? firstRoute : { name: 'library' },
 
   navigate: (route) => {
@@ -336,6 +342,7 @@ export const useUI = create<UIState>((set, get) => ({
       selection: null,
       sendImage: null,
       aiSend: null,
+      taskSend: false,
       // 노트·앱·파일을 열 때는 열기 전 화면을 기억해 뒤로가기 때 돌아간다 (작업보드 → 노트 → 뒤로 = 작업보드)
       returnRoute: opens ? prev : null,
       tabs: withTab(tabs, route, prev),

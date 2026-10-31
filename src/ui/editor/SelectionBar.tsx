@@ -38,6 +38,9 @@ export function SelectionBar({ engine }: { engine: Engine }) {
       <button className="tb-btn" onClick={() => useUI.setState({ aiSend: 'selection' })} aria-label="AI로 보내기" title="AI로 보내기 — 추천 문구를 골라 Claude로">
         <Icon name="sparkle" size={20} />
       </button>
+      <button className="tb-btn sel-task" onClick={() => useUI.setState({ taskSend: true })} aria-label="할 일로 보내기" title="할 일로 보내기 — 이 부분이 붙은 할 일을 일정에">
+        <Icon name="todo" size={20} />
+      </button>
     </>
   )
   // 획 없이 영역만 고른 경우(인쇄된 PDF 문제만 감쌌을 때 등) — 보내기만 할 수 있다

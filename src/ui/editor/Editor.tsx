@@ -30,6 +30,7 @@ import { Minimap } from './Minimap'
 import { SelectionBar } from './SelectionBar'
 import { SendImageSheet } from './SendImageSheet'
 import { AiSendSheet } from './AiSendSheet'
+import { TaskSendSheet } from './TaskSendSheet'
 import { PagePanel } from './PagePanel'
 import { ExportPanel } from './ExportPanel'
 import { SettingsPanel } from '../SettingsPanel'
@@ -46,6 +47,14 @@ export function Editor({ docId }: { docId: ID }) {
   const [engine, setEngine] = useState<Engine | null>(null)
   const sendImage = useUI((s) => s.sendImage)
   const aiSend = useUI((s) => s.aiSend)
+  const taskSend = useUI((s) => s.taskSend)
+  // 일정에서 노트에서 보낸 할 일을 열었다 — 그 페이지로 (새로 열었든 이미 열려 있던 노트든)
+  const openAt = useUI((s) => s.openAt)
+  useEffect(() => {
+    if (!engine || openAt?.docId !== docId) return
+    engine.scrollToPageId(openAt.pageId)
+    useUI.setState({ openAt: null })
+  }, [engine, openAt, docId])
   const [doc, setDoc] = useState<DocumentMeta | null>(null)
   const [pages, setPages] = useState<Page[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -449,6 +458,7 @@ export function Editor({ docId }: { docId: ID }) {
       </div>
       {sendImage && engine && <SendImageSheet engine={engine} title={doc?.title ?? ''} target={sendImage} paged={paged} />}
       {aiSend && engine && <AiSendSheet engine={engine} target={aiSend} paged={paged} />}
+      {taskSend && engine && doc && <TaskSendSheet engine={engine} doc={doc} />}
     </div>
   )
 }

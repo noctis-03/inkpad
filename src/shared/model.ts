@@ -400,7 +400,7 @@ export function fileKindOf(name: string, mime: string): FileKind {
 // ───────── 할 일 (일정 화면, ui/plan) ─────────
 
 /** 할 일에서 사용자가 고치는 칸 — 칸마다 고친 시각(Task.ts)을 따로 둔다. 동기화가 칸별로 나중에 고친 쪽을 남긴다 */
-export type TaskField = 'title' | 'memo' | 'due' | 'time' | 'category' | 'doneAt' | 'deletedAt' | 'link'
+export type TaskField = 'title' | 'memo' | 'due' | 'time' | 'category' | 'doneAt' | 'deletedAt' | 'link' | 'snippet'
 
 /** 할 일 — 노트와 달리 지우면 모든 기기에서 휴지통으로 간다(30일 뒤 지움) */
 export interface Task {
@@ -419,6 +419,8 @@ export interface Task {
   deletedAt: number | null
   /** 노트에서 보낸 할 일 — 그 노트(·쪽) */
   link: { docId: ID; pageId?: ID } | null
+  /** 노트에서 올가미로 보낸 부분의 그림 (작은 이미지 data URL) — 예전 할 일에는 없다 */
+  snippet?: string | null
   createdAt: number
   updatedAt: number
   /** 칸별 고친 시각 */

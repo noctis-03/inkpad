@@ -23,7 +23,7 @@ export function TaskDetail({
   catColor: (c: string | null) => string
   /** 연결한 노트의 제목 — 이 기기에 없으면 null */
   noteTitle: string | null
-  onOpenNote: (docId: ID) => void
+  onOpenNote: (docId: ID, pageId?: ID) => void
   onClose: () => void
   onTrashed: (id: ID, title: string) => void
 }) {
@@ -98,9 +98,14 @@ export function TaskDetail({
 
       {task.link && (
         <section className="task-section">
-          <h3>연결한 노트</h3>
+          <h3>{task.snippet ? '노트에서 보낸 부분' : '연결한 노트'}</h3>
+          {task.snippet && (
+            <button className="task-snippet-big" onClick={() => noteTitle !== null && onOpenNote(task.link!.docId, task.link!.pageId)} disabled={noteTitle === null} aria-label="노트에서 보낸 부분 — 그 자리 열기">
+              <img src={task.snippet} alt="" />
+            </button>
+          )}
           {noteTitle !== null ? (
-            <button className="task-note-card" onClick={() => onOpenNote(task.link!.docId)}>
+            <button className="task-note-card" onClick={() => onOpenNote(task.link!.docId, task.link!.pageId)}>
               <Icon name="notebook" size={16} />
               <span>{noteTitle}</span>
               <em>열기 ›</em>
