@@ -192,8 +192,9 @@
   font-weight: 600;
 }
 
-/* ───────── 동기화 버튼 (설정 버튼 오른쪽, 초록 계열) ───────── */
+/* ───────── 동기화 버튼 (상단 바, 초록 계열) — 라이브러리·일정 모두 약간 둥근 네모 하나로 ───────── */
 .tb-btn.sync-btn {
+  border-radius: var(--r-md);
   color: var(--success-ink);
   background: var(--success-soft);
   border: 1px solid var(--success-line);

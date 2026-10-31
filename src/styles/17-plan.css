@@ -930,18 +930,10 @@
   }
 }
 
-/* ───────── 할 일 동기화 버튼 (올릴 것 배지는 07-sync-panel의 .sync-badge) ───────── */
-.plan-sync {
-  position: relative;
+/* ───────── 할 일 동기화 버튼 — 라이브러리와 같은 .sync-btn(08-settings, 약간 둥근 네모), 배지는 .sync-badge ───────── */
+.plan-bar .tb-btn.plan-sync {
   flex: none;
-}
-.plan-sync.is-busy svg {
-  animation: plan-sync-pulse 1s ease-in-out infinite alternate;
-}
-@keyframes plan-sync-pulse {
-  to {
-    opacity: .35;
-  }
+  border-radius: var(--r-md);
 }
 
 /* ───────── 노트에서 보낸 부분 (올가미 그림) ───────── */

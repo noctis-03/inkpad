@@ -316,7 +316,7 @@ export function Plan() {
             <span className="bar-spacer" />
             {!taskSync.cloudOff && (
               <button
-                className={'tb-btn plan-sync' + (taskSync.busy ? ' is-busy' : '')}
+                className={'tb-btn sync-btn plan-sync' + (taskSync.busy ? ' is-syncing' : '')}
                 onClick={taskSync.sync}
                 disabled={taskSync.busy}
                 aria-label={pendingCount ? `할 일 동기화 — 올릴 것 ${pendingCount}개` : '할 일 동기화'}
