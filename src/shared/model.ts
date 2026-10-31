@@ -423,4 +423,13 @@ export interface Task {
   updatedAt: number
   /** 칸별 고친 시각 */
   ts: Partial<Record<TaskField, number>>
+  /** 휴지통에서 영구 삭제한 시각 — 다른 기기도 지우도록 표식으로 남는다(목록에는 없다). 휴지통 기한이 지나면 행도 지운다 */
+  purgedAt?: number
+  // ── 동기화 (sync/tasks) — 이 기기 기록, Drive 파일에는 넣지 않는다 ──
+  /** Drive 파일 (Inkpad/tasks/<id>.json) */
+  fileId?: string
+  /** 마지막으로 맞춘 Drive 파일 version — 다르면 받아서 합친다 */
+  rev?: string
+  /** 이 기기에서 고쳐 아직 올리지 않았다 */
+  pending?: true
 }

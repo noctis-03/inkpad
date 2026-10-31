@@ -10,7 +10,10 @@ import type { DocumentMeta, ID, Task } from '../../shared/model'
 import { assignCategoryColors, categoryColor } from '../../shared/util'
 import { db } from '../../storage/db'
 import { TASKS_EVENT, createTask, listTasks, setTaskDone } from '../../storage/tasks'
-import { REMOTE_EVENT } from '../../sync/sync'
+import { REMOTE_EVENT, onSyncStatus } from '../../sync/sync'
+import { shouldCheckTasksOnOpen, syncTasks, type TaskSyncResult } from '../../sync/tasks'
+import { AuthRequiredError, SyncNotConfiguredError, login } from '../../sync/token'
+import { errorText, trackActivity } from '../../shared/activity'
 import { TaskDetail } from './TaskDetail'
 import { MonthView, WeekView, DayPanel } from './Calendar'
 import { addDays, addMonths, dueLabel, fromKey, groupTasks, inFilter, isLate, longDay, monthStart, timeLabel, todayKey, weekStart, type PlanFilter } from './planUtil'
@@ -92,6 +95,48 @@ function useToday() {
   return today
 }
 
+/** 할 일 동기화 — 버튼과 (켰다면) 화면을 열 때 확인. 클라우드를 쓰지 않는 서버면 버튼을 숨긴다 */
+function useTaskSync() {
+  const toast = useUI((s) => s.toast)
+  const checkOnOpen = useUI((s) => s.settings.cloudCheckOnOpen)
+  const [busy, setBusy] = useState(false)
+  const [cloudOff, setCloudOff] = useState(false)
+  useEffect(() => onSyncStatus((s) => setCloudOff(s === 'disabled')), [])
+  const running = useRef(false)
+  const run = useCallback(
+    async (quiet: boolean) => {
+      if (running.current) return
+      running.current = true
+      setBusy(true)
+      try {
+        const r = await trackActivity('download', '할 일', () => syncTasks(), resultText)
+        if (!quiet || r.down) toast(resultText(r))
+      } catch (e) {
+        if (e instanceof SyncNotConfiguredError) setCloudOff(true)
+        if (quiet) return
+        if (e instanceof AuthRequiredError) toast('할 일을 동기화하려면 로그인이 필요합니다.', 'error', { label: '로그인', run: login })
+        else toast(errorText(e, '할 일을 동기화하지 못했습니다.'), 'error')
+      } finally {
+        running.current = false
+        setBusy(false)
+      }
+    },
+    [toast]
+  )
+  // 일정 화면을 열 때 — '앱을 열 때 클라우드 확인'을 켰을 때만, 30분에 한 번
+  useEffect(() => {
+    void shouldCheckTasksOnOpen(checkOnOpen).then((yes) => {
+      if (yes) void run(true)
+    })
+  }, [checkOnOpen, run])
+  return { busy, cloudOff, sync: () => void run(false) }
+}
+
+const resultText = (r: TaskSyncResult) => {
+  const parts = [r.down && `${r.down}개 받음`, r.up && `${r.up}개 올림`].filter(Boolean)
+  return parts.length ? `할 일 ${parts.join(' · ')}` : '할 일이 최신입니다'
+}
+
 const FILTER_LABEL: Record<Exclude<PlanFilter['kind'], 'category'>, string> = { today: '오늘', upcoming: '예정', all: '전체', done: '완료', trash: '휴지통' }
 const filterKey = (f: PlanFilter) => (f.kind === 'category' ? `cat:${f.name ?? ''}` : f.kind)
 const filterLabel = (f: PlanFilter) => (f.kind === 'category' ? f.name ?? '미분류' : FILTER_LABEL[f.kind])
@@ -104,6 +149,8 @@ export function Plan() {
   const tasks = useTasks()
   const { docs, cats } = useHomeData()
   const today = useToday()
+  const taskSync = useTaskSync()
+  const pendingCount = useMemo(() => (tasks ?? []).filter((t) => t.pending).length, [tasks])
 
   const [view, setViewState] = useState<View>(() => load(localStorage, VIEW_KEY, 'list'))
   const setView = (v: View) => {
@@ -257,6 +304,18 @@ export function Plan() {
             )}
             <span className="plan-bar-name">일정</span>
             <span className="bar-spacer" />
+            {!taskSync.cloudOff && (
+              <button
+                className={'tb-btn plan-sync' + (taskSync.busy ? ' is-busy' : '')}
+                onClick={taskSync.sync}
+                disabled={taskSync.busy}
+                aria-label={pendingCount ? `할 일 동기화 — 올릴 것 ${pendingCount}개` : '할 일 동기화'}
+                title="할 일 동기화"
+              >
+                <Icon name="cloud" />
+                {pendingCount > 0 && <span className="sync-badge">{pendingCount}</span>}
+              </button>
+            )}
             <Segmented
               className="plan-view-seg"
               value={view}

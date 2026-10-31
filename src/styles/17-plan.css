@@ -897,3 +897,17 @@
     display: none;
   }
 }
+
+/* ───────── 할 일 동기화 버튼 (올릴 것 배지는 07-sync-panel의 .sync-badge) ───────── */
+.plan-sync {
+  position: relative;
+  flex: none;
+}
+.plan-sync.is-busy svg {
+  animation: plan-sync-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes plan-sync-pulse {
+  to {
+    opacity: .35;
+  }
+}
