@@ -249,7 +249,7 @@ export default async function sendimage(ctx: Ctx) {
   const regionLabel = await p.locator('.selection-bar .sel-count').textContent()
   const regionBtns = await p.locator('.selection-bar button').count()
   const region = await raw('selection', true)
-  check('영역만: 획 없이 감싸도 보내기 도구 모음이 뜨고(이미지로·AI로 보내기·해제만), PDF를 담는다', regionLabel === '영역' && regionBtns === 3 && !!region && region.pink > 0.5 && region.ink === 0, JSON.stringify({ regionLabel, regionBtns, region }))
+  check('영역만: 획 없이 감싸도 보내기 도구 모음이 뜨고(이미지로·AI로·할 일로 보내기·해제만), PDF를 담는다', regionLabel === '영역' && regionBtns === 4 && !!region && region.pink > 0.5 && region.ink === 0, JSON.stringify({ regionLabel, regionBtns, region }))
 
   check('이미지로 보내기: 네트워크를 쓰지 않는다', outside.length === 0, outside.join(' '))
   if (process.env.SHOT) {
