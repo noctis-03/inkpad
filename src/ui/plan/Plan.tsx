@@ -12,6 +12,7 @@ import { db } from '../../storage/db'
 import { TASKS_EVENT, createTask, listTasks, setTaskDone } from '../../storage/tasks'
 import { REMOTE_EVENT, onSyncStatus } from '../../sync/sync'
 import { shouldCheckTasksOnOpen, syncTasks, type TaskSyncResult } from '../../sync/tasks'
+import { getSync } from '../../sync/folders'
 import { AuthRequiredError, SyncNotConfiguredError, login } from '../../sync/token'
 import { errorText, trackActivity } from '../../shared/activity'
 import { TaskDetail } from './TaskDetail'
@@ -102,6 +103,11 @@ function useTaskSync() {
   const [busy, setBusy] = useState(false)
   const [cloudOff, setCloudOff] = useState(false)
   useEffect(() => onSyncStatus((s) => setCloudOff(s === 'disabled')), [])
+  /** 동기화를 한 번이라도 설정했나 — 아니면 올릴 것 배지를 띄우지 않는다(올라가지 않는 게 정상이므로) */
+  const [configured, setConfigured] = useState(false)
+  useEffect(() => {
+    void getSync('rootFolderId').then((v) => setConfigured(!!v))
+  }, [busy])
   const running = useRef(false)
   const run = useCallback(
     async (quiet: boolean) => {
@@ -129,7 +135,7 @@ function useTaskSync() {
       if (yes) void run(true)
     })
   }, [checkOnOpen, run])
-  return { busy, cloudOff, sync: () => void run(false) }
+  return { busy, cloudOff, configured, sync: () => void run(false) }
 }
 
 const resultText = (r: TaskSyncResult) => {
@@ -150,7 +156,7 @@ export function Plan() {
   const { docs, cats } = useHomeData()
   const today = useToday()
   const taskSync = useTaskSync()
-  const pendingCount = useMemo(() => (tasks ?? []).filter((t) => t.pending).length, [tasks])
+  const pendingCount = useMemo(() => (taskSync.configured ? (tasks ?? []).filter((t) => t.pending).length : 0), [tasks, taskSync.configured])
 
   const [view, setViewState] = useState<View>(() => load(localStorage, VIEW_KEY, 'list'))
   const setView = (v: View) => {
@@ -236,7 +242,11 @@ export function Plan() {
   const treeRef = useRef<HTMLElement>(null)
   useIndicator(treeRef, sideOpen && view === 'list' ? filterKey(filter) : null, 'y', `${sideCats.length}`)
 
-  const openNote = (docId: ID) => navigate({ name: 'editor', docId })
+  /** 노트를 연다 — 노트에서 보낸 할 일이면 그 페이지로 (편집 화면이 openAt을 쓴다) */
+  const openNote = (docId: ID, pageId?: ID) => {
+    useUI.setState({ openAt: pageId ? { docId, pageId } : null })
+    navigate({ name: 'editor', docId })
+  }
   const toggle = (t: Task) => void setTaskDone(t.id, !t.doneAt)
 
   const sideItems: { f: PlanFilter; icon: string }[] = [
@@ -501,6 +511,7 @@ function TaskRow({ t, today, on, color, note, onToggle, onPick }: { t: Task; tod
           )}
         </span>
       </button>
+      {t.snippet && <img className="task-snippet" src={t.snippet} alt="" aria-hidden="true" />}
     </div>
   )
 }

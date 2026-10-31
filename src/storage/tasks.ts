@@ -21,7 +21,7 @@ export const listTasks = async () => (await db.tasks.toArray()).filter((t) => !t
 export const pendingTaskCount = async () => (await db.tasks.toArray()).filter((t) => t.pending).length
 export const getTask = (id: ID) => db.tasks.get(id)
 
-export async function createTask(init: Partial<Pick<Task, 'memo' | 'due' | 'time' | 'category' | 'link'>> & { title: string }): Promise<Task | null> {
+export async function createTask(init: Partial<Pick<Task, 'memo' | 'due' | 'time' | 'category' | 'link' | 'snippet'>> & { title: string }): Promise<Task | null> {
   const title = cleanTitle(init.title)
   if (!title) return null
   const now = Date.now()
@@ -35,9 +35,10 @@ export async function createTask(init: Partial<Pick<Task, 'memo' | 'due' | 'time
     doneAt: null,
     deletedAt: null,
     link: init.link ?? null,
+    ...(init.snippet ? { snippet: init.snippet } : {}),
     createdAt: now,
     updatedAt: now,
-    ts: { title: now, memo: now, due: now, time: now, category: now, doneAt: now, deletedAt: now, link: now },
+    ts: { title: now, memo: now, due: now, time: now, category: now, doneAt: now, deletedAt: now, link: now, snippet: now },
     pending: true
   }
   await db.tasks.add(task)

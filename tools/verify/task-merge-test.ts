@@ -67,7 +67,15 @@ check('파일 읽기 — 숫자가 아닌 고친 시각은 버린다', !!f && f.
 check('파일 읽기 — 다른 할 일이거나 할 일이 아니면 null', fromTaskFile(toTaskFile(base), 'other') === null && fromTaskFile({ id: 'x' }) === null && fromTaskFile(null) === null)
 check('파일로 갔다 와도 같다', sameContent(fromTaskFile(JSON.parse(JSON.stringify(toTaskFile(purged))))!, purged))
 
-// 7) 휴지통 기한
+// 7) 올가미로 보낸 그림
+const pic = 'data:image/png;base64,AAAA'
+const withPic: TaskContent = { ...base, snippet: pic, ts: { ...base.ts, snippet: T0 } }
+const oldApp = fromTaskFile({ ...toTaskFile(withPic), snippet: undefined, ts: { ...base.ts }, title: '예전 앱이 고침', updatedAt: T0 + 90 })!
+check('그림 칸을 모르는 예전 앱이 다시 올려도 그림이 남는다', mergeTask(withPic, oldApp).snippet === pic && mergeTask(oldApp, withPic).snippet === pic)
+check('그림 칸이 없는 할 일은 파일에도 없다', !('snippet' in toTaskFile(base)) && toTaskFile(withPic).snippet === pic)
+check('그림이 아니거나 너무 크면 버린다', !fromTaskFile({ ...toTaskFile(base), snippet: 'javascript:x' })?.snippet && !fromTaskFile({ ...toTaskFile(base), snippet: 'data:image/png;base64,' + 'A'.repeat(400_001) })?.snippet)
+
+// 8) 휴지통 기한
 const now = Date.now()
 check('휴지통 30일', isExpired(now - 31 * 86400_000, now) && !isExpired(now - 29 * 86400_000, now) && !isExpired(null, now))
 
