@@ -5,7 +5,8 @@ import type { ID, Task } from '../../shared/model'
 import { confirmDialog } from '../../app/dialogs'
 import { purgeTask, restoreTask, setTaskDone, trashTask, updateTask } from '../../storage/tasks'
 import { formatDate } from '../../shared/util'
-import { addDays, dueLabel } from './planUtil'
+import { addDays, dueLabel, weekStart } from './planUtil'
+import { DatePick } from './DatePick'
 
 export function TaskDetail({
   task,
@@ -34,6 +35,7 @@ export function TaskDetail({
   const dueChips: { label: string; value: string | null }[] = [
     { label: '오늘', value: today },
     { label: '내일', value: addDays(today, 1) },
+    { label: '이번 주', value: addDays(weekStart(today), 6) },
     { label: '없음', value: null }
   ]
   const customDue = task.due && !dueChips.some((c) => c.value === task.due)
@@ -67,10 +69,9 @@ export function TaskDetail({
               {c.label}
             </button>
           ))}
-          <label className={'lib-chip task-date' + (customDue ? ' is-on' : '')}>
+          <DatePick value={task.due} on={!!customDue} disabled={trashed} onPick={(due) => set({ due })}>
             {customDue ? dueLabel(task.due!, today) : '날짜…'}
-            <input type="date" value={task.due ?? ''} disabled={trashed} onChange={(e) => e.target.value && set({ due: e.target.value })} aria-label="마감 날짜 고르기" />
-          </label>
+          </DatePick>
         </dd>
         <dt>시각</dt>
         <dd className="task-time">

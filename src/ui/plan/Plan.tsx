@@ -2,20 +2,22 @@
 // 왼쪽은 보기(오늘·예정·전체·완료·휴지통)와 카테고리, 가운데는 목록·주·월, 오른쪽은 고른 할 일(또는 달력에서 고른 날).
 // 할 일은 이 기기 DB(storage/tasks)에 있다. 노트는 읽기만 한다 — 연결한 노트 이름, 그날 만든 노트·그날을 마지막으로 고친 노트.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useUI } from '../../app/store'
+import { ro, useUI } from '../../app/store'
 import { Icon } from '../Icon'
 import { Segmented } from '../Segmented'
 import { useIndicator } from '../motion/useIndicator'
 import type { DocumentMeta, ID, Task } from '../../shared/model'
 import { assignCategoryColors, categoryColor } from '../../shared/util'
 import { db } from '../../storage/db'
-import { TASKS_EVENT, createTask, listTasks, setTaskDone } from '../../storage/tasks'
+import { TASKS_EVENT, createTask, listTasks, setTaskDone, updateTask } from '../../storage/tasks'
 import { REMOTE_EVENT, onSyncStatus } from '../../sync/sync'
 import { shouldCheckTasksOnOpen, syncTasks, type TaskSyncResult } from '../../sync/tasks'
 import { getSync } from '../../sync/folders'
 import { AuthRequiredError, SyncNotConfiguredError, login } from '../../sync/token'
 import { errorText, trackActivity } from '../../shared/activity'
 import { TaskDetail } from './TaskDetail'
+import { DatePick } from './DatePick'
+import { useTaskDrag } from './useTaskDrag'
 import { MonthView, WeekView, DayPanel } from './Calendar'
 import { addDays, addMonths, dueLabel, fromKey, groupTasks, inFilter, isLate, longDay, monthStart, timeLabel, todayKey, weekStart, type PlanFilter } from './planUtil'
 
@@ -147,7 +149,8 @@ const FILTER_LABEL: Record<Exclude<PlanFilter['kind'], 'category'>, string> = { 
 const filterKey = (f: PlanFilter) => (f.kind === 'category' ? `cat:${f.name ?? ''}` : f.kind)
 const filterLabel = (f: PlanFilter) => (f.kind === 'category' ? f.name ?? '미분류' : FILTER_LABEL[f.kind])
 
-type DueChoice = 'today' | 'tomorrow' | 'none'
+/** 빠른 추가의 마감 — 오늘·내일·이번 주(일요일)·없음, 또는 달력에서 고른 날('YYYY-MM-DD') */
+type DueChoice = 'today' | 'tomorrow' | 'week' | 'none' | (string & {})
 
 export function Plan() {
   const navigate = useUI((s) => s.navigate)
@@ -219,7 +222,8 @@ export function Plan() {
   const defaultDue: DueChoice = filter.kind === 'today' ? 'today' : filter.kind === 'upcoming' ? 'tomorrow' : 'none'
   const [dueChoice, setDueChoice] = useState<DueChoice>(defaultDue)
   useEffect(() => setDueChoice(defaultDue), [defaultDue])
-  const dueOf = (c: DueChoice) => (c === 'today' ? today : c === 'tomorrow' ? addDays(today, 1) : null)
+  const dueOf = (c: DueChoice) => (c === 'today' ? today : c === 'tomorrow' ? addDays(today, 1) : c === 'week' ? addDays(weekStart(today), 6) : c === 'none' ? null : c)
+  const pickedDay = !['today', 'tomorrow', 'week', 'none'].includes(dueChoice) ? dueChoice : null
   const add = async () => {
     const title = draft.trim()
     if (!title) return
@@ -243,6 +247,24 @@ export function Plan() {
   useIndicator(treeRef, sideOpen && view === 'list' ? filterKey(filter) : null, 'y', `${sideCats.length}`)
 
   /** 노트를 연다 — 노트에서 보낸 할 일이면 그 페이지로 (편집 화면이 openAt을 쓴다) */
+  // ── 꾹 눌러 다른 날로 옮기기 (주·월·목록·그날 칸) ──
+  const planRef = useRef<HTMLDivElement>(null)
+  const tasksRef = useRef(tasks)
+  tasksRef.current = tasks
+  /** 목록 묶음 중 놓을 수 있는 것 — 날짜 묶음과 날짜 없음 (지난 마감·완료·휴지통 묶음은 아니다) */
+  const dropDayOf = (key: string) => (filter.kind === 'done' || filter.kind === 'trash' ? undefined : key === 'none' ? 'none' : /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : undefined)
+  const dropTask = useCallback(
+    (id: ID, day: string | null) => {
+      const t = tasksRef.current?.find((x) => x.id === id)
+      if (!t || t.due === day) return
+      const prev = { due: t.due, time: t.time }
+      void updateTask(id, { due: day, ...(day ? {} : { time: null }) })
+      toast(day ? `‘${t.title}’ 마감을 ${ro(dueLabel(day, todayKey()))} 옮겼습니다.` : `‘${t.title}’의 마감을 없앴습니다.`, 'info', { label: '되돌리기', run: () => void updateTask(id, prev) })
+    },
+    [toast]
+  )
+  useTaskDrag(planRef, dropTask)
+
   const openNote = (docId: ID, pageId?: ID) => {
     useUI.setState({ openAt: pageId ? { docId, pageId } : null })
     navigate({ name: 'editor', docId })
@@ -262,7 +284,7 @@ export function Plan() {
   const showPane = !!selectedTask || (view === 'month' && (wide || dayOpen))
 
   return (
-    <div className={'plan' + (sideOpen ? ' has-side' : '') + (showPane ? ' has-pane' : '')}>
+    <div className={'plan' + (sideOpen ? ' has-side' : '') + (showPane ? ' has-pane' : '')} ref={planRef}>
       <div className="plan-body">
         {sideOpen && !wide && <div className="tree-backdrop" role="presentation" onClick={() => setSideOpen(false)} />}
         {sideOpen && (
@@ -397,8 +419,13 @@ export function Plan() {
                     <select value={dueChoice} onChange={(e) => setDueChoice(e.target.value as DueChoice)} aria-label="마감">
                       <option value="today">마감: 오늘</option>
                       <option value="tomorrow">마감: 내일</option>
+                      <option value="week">마감: 이번 주</option>
                       <option value="none">마감 없음</option>
+                      {pickedDay && <option value={pickedDay}>마감: {dueLabel(pickedDay, today)}</option>}
                     </select>
+                    <DatePick className="tb-btn plan-add-date" value={dueOf(dueChoice)} on={!!pickedDay} onPick={setDueChoice}>
+                      <Icon name="calendar" size={18} />
+                    </DatePick>
                   </form>
                 )}
                 {tasks && !shown.length && (
@@ -409,7 +436,7 @@ export function Plan() {
                   </div>
                 )}
                 {groups.map((g) => (
-                  <section key={g.key} className="plan-group">
+                  <section key={g.key} className="plan-group" data-day={dropDayOf(g.key)}>
                     <h2 className={'plan-group-head' + (g.late ? ' is-late' : '')}>
                       {g.label} <span>{g.items.length}</span>
                     </h2>
@@ -486,7 +513,7 @@ const weekTitle = (k: string) => {
 function TaskRow({ t, today, on, color, note, onToggle, onPick }: { t: Task; today: string; on: boolean; color: string; note?: string; onToggle: () => void; onPick: () => void }) {
   const late = isLate(t, today)
   return (
-    <div className={'task-row' + (on ? ' is-on' : '') + (t.doneAt ? ' is-done' : '') + (late ? ' is-late' : '')}>
+    <div className={'task-row' + (on ? ' is-on' : '') + (t.doneAt ? ' is-done' : '') + (late ? ' is-late' : '')} data-task-id={t.id} data-task-title={t.title}>
       <button className="task-check" onClick={onToggle} aria-label={t.doneAt ? `${t.title} — 끝냄 취소` : `${t.title} — 끝냄`} aria-pressed={!!t.doneAt} disabled={!!t.deletedAt}>
         {t.doneAt && <Icon name="check" size={13} />}
       </button>

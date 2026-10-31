@@ -1,7 +1,8 @@
 // 일정 화면의 주·월 보기와 고른 날 칸 — 마감이 있는 할 일과 그날 고친 노트를 날짜에 놓는다.
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import type { DocumentMeta, ID, Task } from '../../shared/model'
+import { createTask } from '../../storage/tasks'
 import { addDays, dayKey, fromKey, isLate, longDay, monthCells, timeLabel, weekdayOf } from './planUtil'
 
 type Common = {
@@ -9,6 +10,33 @@ type Common = {
   tasks: Task[]
   docs: DocumentMeta[]
   catColor: (c: string | null) => string
+}
+
+/** 그날 마감으로 할 일 넣기 — Enter로 넣고 칸은 비운 채 남는다(이어서 넣게). Esc나 빈 채로 벗어나면 onClose */
+function DayAdd({ day, autoFocus, onClose }: { day: string; autoFocus?: boolean; onClose?: () => void }) {
+  const [text, setText] = useState('')
+  return (
+    <form
+      className="day-add"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!text.trim()) return
+        void createTask({ title: text, due: day }).then((t) => t && setText(''))
+      }}
+    >
+      <Icon name="plus" size={16} />
+      <input
+        value={text}
+        autoFocus={autoFocus}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && onClose?.()}
+        onBlur={() => !text.trim() && onClose?.()}
+        placeholder="이날 할 일 추가"
+        aria-label={`${longDay(day)} 할 일 추가`}
+        enterKeyHint="done"
+      />
+    </form>
+  )
 }
 
 /** 날짜 → 그날 마감인 할 일 (시각 순, 끝낸 것은 아래로) */
@@ -55,7 +83,7 @@ function notesByDay(docs: DocumentMeta[]) {
 function TaskChip({ t, today, color, on, onPick, onToggle }: { t: Task; today: string; color: string; on?: boolean; onPick: () => void; onToggle?: () => void }) {
   const late = isLate(t, today)
   return (
-    <div className={'cal-task' + (t.doneAt ? ' is-done' : '') + (late ? ' is-late' : '') + (on ? ' is-on' : '')} style={{ '--cat': color } as React.CSSProperties}>
+    <div className={'cal-task' + (t.doneAt ? ' is-done' : '') + (late ? ' is-late' : '') + (on ? ' is-on' : '')} style={{ '--cat': color } as React.CSSProperties} data-task-id={t.id} data-task-title={t.title}>
       {onToggle && (
         <button className="cal-check" onClick={onToggle} aria-label={t.doneAt ? `${t.title} — 끝냄 취소` : `${t.title} — 끝냄`} aria-pressed={!!t.doneAt} />
       )}
@@ -71,6 +99,8 @@ export function WeekView({ start, today, tasks, docs, catColor, selected, onPick
   const byDay = useMemo(() => tasksByDay(tasks), [tasks])
   const notes = useMemo(() => notesByDay(docs), [docs])
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i))
+  /** 할 일을 넣고 있는 날 — 그 칸에만 입력 칸이 열린다 */
+  const [adding, setAdding] = useState<string | null>(null)
   // 좁은 화면은 주를 옆으로 밀어 본다 — 이번 주면 오늘 칸이 보이게 둔다
   const box = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -81,7 +111,7 @@ export function WeekView({ start, today, tasks, docs, catColor, selected, onPick
   return (
     <div className="cal-week" ref={box}>
       {days.map((d) => (
-        <section key={d} className={'cal-week-day' + (d === today ? ' is-today' : '') + (fromKey(d).getDay() % 6 === 0 ? ' is-weekend' : '')} aria-label={longDay(d)}>
+        <section key={d} className={'cal-week-day' + (d === today ? ' is-today' : '') + (fromKey(d).getDay() % 6 === 0 ? ' is-weekend' : '')} aria-label={longDay(d)} data-day={d}>
           <h3 className="cal-week-head">
             <span>{weekdayOf(d)}</span>
             <b>{fromKey(d).getDate()}</b>
@@ -90,6 +120,13 @@ export function WeekView({ start, today, tasks, docs, catColor, selected, onPick
             {(byDay.get(d) ?? []).map((t) => (
               <TaskChip key={t.id} t={t} today={today} color={catColor(t.category)} on={t.id === selected} onPick={() => onPick(t.id)} onToggle={() => onToggle(t)} />
             ))}
+            {adding === d ? (
+              <DayAdd day={d} autoFocus onClose={() => setAdding(null)} />
+            ) : (
+              <button className="cal-week-add" onClick={() => setAdding(d)} aria-label={`${longDay(d)}에 할 일 추가`}>
+                <Icon name="plus" size={14} /> 추가
+              </button>
+            )}
           </div>
           <WeekNotes notes={notes.get(d)} onOpenNote={onOpenNote} />
         </section>
@@ -149,6 +186,7 @@ export function MonthView({ month, day, today, tasks, docs, catColor, onPickDay 
             <button
               key={d}
               className={'cal-day' + (d === today ? ' is-today' : '') + (d === day ? ' is-picked' : '') + (out ? ' is-out' : '')}
+              data-day={d}
               onClick={() => onPickDay(d)}
               aria-label={`${longDay(d)} — 할 일 ${list.length}개, 만든 노트 ${dn?.made.length ?? 0}개, 마지막으로 고친 노트 ${dn?.last.length ?? 0}개`}
               aria-pressed={d === day}
@@ -163,7 +201,7 @@ export function MonthView({ month, day, today, tasks, docs, catColor, onPickDay 
                 )}
               </span>
               {list.slice(0, 2).map((t) => (
-                <span key={t.id} className={'cal-day-task' + (t.doneAt ? ' is-done' : '') + (isLate(t, today) ? ' is-late' : '')}>
+                <span key={t.id} className={'cal-day-task' + (t.doneAt ? ' is-done' : '') + (isLate(t, today) ? ' is-late' : '')} data-task-id={t.id} data-task-title={t.title}>
                   <i className="cat-dot" style={{ background: catColor(t.category) }} aria-hidden="true" />
                   {t.title}
                 </span>
@@ -208,11 +246,11 @@ export function DayPanel({ day, today, tasks, docs, catColor, onPick, onToggle, 
       </div>
       <section className="task-section">
         <h3>할 일 {list.length}</h3>
-        {/* 비어 있어도 자리를 차지하는 상자 — 할 일이 생기면 이 안에 들어온다 */}
+        {/* 비어 있어도 자리를 차지하는 상자 — 할 일이 생기면 이 안에 들어오고, 맨 아래 칸에서 이날 할 일을 넣는다 */}
         <div className={'day-task-box' + (list.length ? '' : ' is-empty')}>
           {!list.length && <p className="hint">이날 마감인 할 일이 없습니다.</p>}
           {list.map((t) => (
-            <div key={t.id} className={'day-task' + (t.doneAt ? ' is-done' : '')}>
+            <div key={t.id} className={'day-task' + (t.doneAt ? ' is-done' : '')} data-task-id={t.id} data-task-title={t.title}>
               <button className="task-check" onClick={() => onToggle(t)} aria-label={t.doneAt ? `${t.title} — 끝냄 취소` : `${t.title} — 끝냄`} aria-pressed={!!t.doneAt}>
                 {t.doneAt && <Icon name="check" size={13} />}
               </button>
@@ -223,6 +261,7 @@ export function DayPanel({ day, today, tasks, docs, catColor, onPick, onToggle, 
               <i className="cat-dot" style={{ background: catColor(t.category) }} aria-hidden="true" />
             </div>
           ))}
+          <DayAdd key={day} day={day} />
         </div>
       </section>
       <section className="task-section" data-kind="made">

@@ -51,10 +51,12 @@ export const PEN_COLOR_NAMES = PEN_PALETTE.map(([, name]) => name)
 export const HL_COLOR_NAMES = HL_PALETTE.map(([, name]) => name)
 
 /** 마지막 글자의 받침에 따라 '로/으로' 조사를 붙인다 ("파랑으로") */
+/** 조사 (으)로 — 받침이 있으면 '으로', 없거나 ㄹ 받침이면 '로' (내일로·일요일로·검정으로). 끝의 괄호·공백은 건너뛰고 본다 */
 export const ro = (name: string) => {
-  const code = name.charCodeAt(name.length - 1)
-  const hasFinal = code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 > 0
-  return `${name}${hasFinal ? '으로' : '로'}`
+  const last = name.replace(/[\s)\]]+$/, '')
+  const code = last.charCodeAt(last.length - 1)
+  const fin = code >= 0xac00 && code <= 0xd7a3 ? (code - 0xac00) % 28 : 0
+  return `${name}${fin > 0 && fin !== 8 ? '으로' : '로'}`
 }
 
 export const PEN_WIDTHS = [1, 1.5, 2.5, 4, 6, 10]

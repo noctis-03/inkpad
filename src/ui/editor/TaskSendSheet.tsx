@@ -12,6 +12,7 @@ import { SNIPPET_MAX } from '../../sync/taskMerge'
 import { Icon } from '../Icon'
 import { useEscClose } from '../sheetParts'
 import { addDays, dueLabel, todayKey, weekStart } from '../plan/planUtil'
+import { DatePick } from '../plan/DatePick'
 
 const blobToDataUrl = (b: Blob) =>
   new Promise<string>((res, rej) => {
@@ -121,10 +122,9 @@ export function TaskSendSheet({ engine, doc }: { engine: Engine; doc: DocumentMe
                   {c.label}
                 </button>
               ))}
-              <label className={'lib-chip task-date' + (customDue ? ' is-on' : '')}>
+              <DatePick value={due} on={!!customDue} onPick={setDue}>
                 {customDue ? dueLabel(due!, today) : '날짜…'}
-                <input type="date" value={due ?? ''} onChange={(e) => e.target.value && setDue(e.target.value)} aria-label="마감 날짜 고르기" />
-              </label>
+              </DatePick>
             </div>
           </div>
           <div className="task-send-row">
