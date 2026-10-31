@@ -490,11 +490,32 @@
   font-size: var(--fs-xl);
   font-weight: 700;
 }
+/* 그날 할 일 상자 — 비어 있어도 할 일 세 줄쯤의 자리를 차지하고, 할 일은 이 안에 쌓인다 */
+.day-task-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.day-task-box.is-empty {
+  justify-content: center;
+  align-items: center;
+}
+.day-task-box.is-empty .hint {
+  margin: 0;
+  text-align: center;
+}
 .day-task {
   display: flex;
   align-items: center;
   gap: 2px;
   min-height: 44px;
+}
+.day-task + .day-task {
+  border-top: 1px solid var(--line);
 }
 .day-task-main {
   flex: 1;

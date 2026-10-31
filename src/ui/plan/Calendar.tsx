@@ -208,19 +208,22 @@ export function DayPanel({ day, today, tasks, docs, catColor, onPick, onToggle, 
       </div>
       <section className="task-section">
         <h3>할 일 {list.length}</h3>
-        {!list.length && <p className="hint">이날 마감인 할 일이 없습니다.</p>}
-        {list.map((t) => (
-          <div key={t.id} className={'day-task' + (t.doneAt ? ' is-done' : '')}>
-            <button className="task-check" onClick={() => onToggle(t)} aria-label={t.doneAt ? `${t.title} — 끝냄 취소` : `${t.title} — 끝냄`} aria-pressed={!!t.doneAt}>
-              {t.doneAt && <Icon name="check" size={13} />}
-            </button>
-            <button className="day-task-main" onClick={() => onPick(t.id)}>
-              {t.title}
-              {t.time && <small>{timeLabel(t.time)}</small>}
-            </button>
-            <i className="cat-dot" style={{ background: catColor(t.category) }} aria-hidden="true" />
-          </div>
-        ))}
+        {/* 비어 있어도 자리를 차지하는 상자 — 할 일이 생기면 이 안에 들어온다 */}
+        <div className={'day-task-box' + (list.length ? '' : ' is-empty')}>
+          {!list.length && <p className="hint">이날 마감인 할 일이 없습니다.</p>}
+          {list.map((t) => (
+            <div key={t.id} className={'day-task' + (t.doneAt ? ' is-done' : '')}>
+              <button className="task-check" onClick={() => onToggle(t)} aria-label={t.doneAt ? `${t.title} — 끝냄 취소` : `${t.title} — 끝냄`} aria-pressed={!!t.doneAt}>
+                {t.doneAt && <Icon name="check" size={13} />}
+              </button>
+              <button className="day-task-main" onClick={() => onPick(t.id)}>
+                {t.title}
+                {t.time && <small>{timeLabel(t.time)}</small>}
+              </button>
+              <i className="cat-dot" style={{ background: catColor(t.category) }} aria-hidden="true" />
+            </div>
+          ))}
+        </div>
       </section>
       <section className="task-section" data-kind="made">
         <h3>이날 만든 노트 {notes.made.length}</h3>
