@@ -679,6 +679,14 @@
   padding: 8px 2px 10px;
   border-top: 1px dashed var(--line-2);
 }
+.cal-note-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cal-note-group + .cal-note-group {
+  margin-top: 6px;
+}
 .cal-week-notes small {
   font-size: var(--fs-2xs);
   font-weight: 500;

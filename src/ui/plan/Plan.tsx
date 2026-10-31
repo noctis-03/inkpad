@@ -1,6 +1,6 @@
 // 일정 — 할 일과 캘린더 (홈 화면, #/plan). 라이브러리·작업보드와 같은 홈 탭에서 연다.
 // 왼쪽은 보기(오늘·예정·전체·완료·휴지통)와 카테고리, 가운데는 목록·주·월, 오른쪽은 고른 할 일(또는 달력에서 고른 날).
-// 할 일은 이 기기 DB(storage/tasks)에 있다. 노트는 읽기만 한다 — 연결한 노트 이름, 그날 고친 노트.
+// 할 일은 이 기기 DB(storage/tasks)에 있다. 노트는 읽기만 한다 — 연결한 노트 이름, 그날 만든 노트·그날을 마지막으로 고친 노트.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { Icon } from '../Icon'
