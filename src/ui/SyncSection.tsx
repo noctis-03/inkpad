@@ -218,13 +218,20 @@ function CloudRow({
           {draft && <span className="cloud-draft">작업 중</span>}
         </div>
         <div className="cloud-meta">
-          {!compact && <span className="bdg">{m.badge}</span>}
-          {split && <span>이 기기 ↔ {c.device || '클라우드'}</span>}
+          {!compact && (
+            <span className="bdg" title={split ? '이 기기 변경은 브랜치에 안전하게 보관됨' : undefined}>
+              {m.badge}
+            </span>
+          )}
+          {split && (
+            <span>
+              <span className="wide-only">이 기기 </span>↔ {c.device || '클라우드'}
+            </span>
+          )}
           {!split && c.category && <span>{c.category}</span>}
-          {!split && c.device && <span>{c.device}</span>}
+          {!split && c.device && <span className="dev">{c.device}</span>}
           <span>{formatDate(c.updatedAt)}</span>
           {c.state === 'cloud-deleted' && <span className="note">일괄 올리기에서 제외</span>}
-          {split && <span className="wide-only">이 기기 변경은 브랜치에 안전하게 보관됨</span>}
         </div>
       </div>
 

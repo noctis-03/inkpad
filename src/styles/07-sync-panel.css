@@ -1,6 +1,14 @@
 /* ── 동기화 창 (시트·사이드 패널 공용) ──
    머리 카드 하나가 상태와 할 일을 맡고, 아래 목록은 처리할 것(머지 필요 → 받을 것 → 올릴 것)이 먼저 온다.
    색은 아이콘 칸·상태 글자에만 쓴다 — 빨강은 머지, 주황은 올릴 것. 색만으로 정보를 전하지 않게 늘 글자를 함께 둔다. */
+/* 세로 눈금 — 동기화 창의 높이는 이 셋만 쓴다. 모두 --h-control에서 계산해 넉넉하게·촘촘하게 설정을 그대로 따른다
+   (넉넉하게 38 · 44 · 56 / 촘촘하게 34 · 40 · 52). 예외는 휴대폰 화면 아래 버튼 줄(엄지 자리) 하나 */
+.sync-sec,
+.sync-head {
+  --sy-c: var(--h-control); /* 컨트롤 — 버튼·입력·알약 */
+  --sy-row1: calc(var(--sy-c) + 6px); /* 한 줄 행 — 최신 행·메뉴 항목·그룹 머리·맨 아래 줄 */
+  --sy-row2: calc(var(--sy-c) + 18px); /* 두 줄 행 — 제목 + 정보 줄 */
+}
 .sync-sec {
   display: flex;
   flex-direction: column;
@@ -21,7 +29,7 @@
   gap: 6px;
   min-width: 0;
   max-width: 60%;
-  height: var(--h-control); /* 닫기 버튼과 같은 높이 — 머리 한 줄의 세로 리듬을 맞춘다 */
+  height: var(--sy-c); /* 닫기 버튼과 같은 높이 — 머리 한 줄의 세로 리듬을 맞춘다 */
   padding: 0 12px;
   border-radius: var(--r-pill);
   background: var(--surface-2);
@@ -32,6 +40,11 @@
 .sync-device-pill span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sync-head .tb-btn {
+  min-width: var(--sy-c);
+  height: var(--sy-c);
+  padding: 0 6px;
 }
 #sync-panel .sync-device-pill {
   max-width: 50%;
@@ -135,7 +148,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: var(--h-tap);
+  min-height: var(--sy-c);
   padding: 0 14px;
   border-radius: var(--r-md);
   font: inherit;
@@ -314,8 +327,8 @@
   text-overflow: ellipsis;
 }
 .cloud-icon-btn {
-  width: var(--h-tap);
-  height: var(--h-tap);
+  width: var(--sy-c);
+  height: var(--sy-c);
   border-radius: var(--r-md);
   border: 0;
   background: transparent;
@@ -348,7 +361,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: var(--h-tap);
+  height: var(--sy-c);
   padding: 0 12px;
   border-radius: var(--r-md);
   background: var(--surface-2);
@@ -403,7 +416,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: var(--h-tap);
+  height: var(--sy-c);
   padding: 0 10px 0 12px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-md);
@@ -452,7 +465,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
+  min-height: var(--sy-row1);
   padding: 0 12px;
   border: 0;
   border-radius: var(--r-md);
@@ -512,7 +525,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: var(--sy-row1);
 }
 .cloud-gtitle,
 .cloud-gtoggle {
@@ -528,7 +541,7 @@
 }
 .cloud-gtoggle {
   align-items: center;
-  min-height: var(--h-tap);
+  min-height: var(--sy-c);
   border: 0;
   background: none;
   padding: 0;
@@ -559,7 +572,7 @@
   white-space: nowrap;
 }
 .cloud-bulk {
-  height: 36px;
+  height: var(--sy-c);
   padding: 0 12px;
   border-radius: var(--r-md);
   border: 1px solid var(--line-2);
@@ -580,7 +593,7 @@
   cursor: default;
 }
 .cloud-link {
-  min-height: 36px;
+  min-height: var(--sy-c);
   padding: 0 6px;
   border: 0;
   background: none;
@@ -614,8 +627,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 60px;
-  padding: 8px 4px 8px 16px;
+  min-height: var(--sy-row2);
+  padding: 6px 4px 6px 16px;
 }
 .cloud-row + .cloud-row {
   border-top: 1px solid var(--line);
@@ -627,7 +640,7 @@
   background: color-mix(in srgb, var(--danger-soft) 45%, var(--surface));
 }
 .cloud-row.compact {
-  min-height: 46px;
+  min-height: var(--sy-row1);
   padding: 0 0 0 4px;
   gap: 10px;
 }
@@ -692,11 +705,22 @@
 .cloud-meta {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* 정보 줄은 한 줄 — 두 줄 행 높이(--sy-row2)를 지킨다. 넘치면 뒤쪽부터 말줄임 */
   gap: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
   margin-top: 2px;
   font-size: var(--fs-sm);
   color: var(--muted);
+}
+.cloud-meta > * {
+  flex-shrink: 0;
+}
+.cloud-meta > :last-child {
+  flex-shrink: 1; /* 줄어들 때는 맨 뒤(덜 중요한 설명) 하나만 말줄임 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cloud-meta > * + *::before {
   content: '·';
@@ -716,7 +740,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
+  height: var(--sy-c);
   padding: 0 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--line-2);
@@ -729,8 +753,7 @@
   cursor: pointer;
 }
 .cloud-act-main.strong {
-  height: 40px;
-  border-color: transparent;
+  border-color: transparent; /* 강조는 빨간 바탕만 — 높이는 다른 행 버튼과 같게 */
   background: var(--danger-ink);
   color: var(--btn-fg); /* 다크에서 --danger-ink가 밝아진다 — 잉크 버튼 글자색(테마마다 반대) */
   font-weight: 600;
@@ -760,8 +783,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--h-tap);
-  height: var(--h-tap);
+  width: var(--sy-c);
+  height: var(--sy-c);
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
@@ -797,7 +820,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--sy-row1);
   padding: 0 12px;
   border: 0;
   border-radius: var(--r-sm);
@@ -832,7 +855,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 10px;
-  padding: 8px 8px 8px 14px;
+  min-height: var(--sy-row1);
+  padding: 3px 8px 3px 14px;
   border-radius: var(--r-lg);
   background: var(--paper-2);
   font-size: var(--fs-base);
@@ -847,7 +871,8 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 18px 16px;
+  min-height: var(--sy-row2);
+  padding: 0 16px;
 }
 .cloud-skel + .cloud-skel {
   border-top: 1px solid var(--line);
@@ -903,7 +928,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 52px;
+  min-height: var(--sy-row1);
   padding: 0 8px 0 16px;
   font-size: var(--fs-md);
 }
@@ -926,7 +951,7 @@
 .sync-foot-row input {
   flex: 1;
   min-width: 0;
-  height: 36px;
+  height: var(--sy-c);
   padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -962,7 +987,7 @@
   color: var(--muted);
 }
 .sync-link {
-  min-height: var(--h-tap);
+  min-height: var(--sy-c);
   border: 0;
   background: none;
   color: var(--accent-ink);
@@ -986,6 +1011,7 @@
 
 /* 좁은 사이드 패널(편집 화면) — 휴대폰과 같은 촘촘한 목록 규칙 */
 #sync-panel .wide-only,
+#sync-panel .cloud-meta .dev,
 #sync-panel .cloud-row.g-split .cloud-ico {
   display: none;
 }
@@ -1046,6 +1072,7 @@
     padding-bottom: 16px;
   }
   .wide-only,
+  .cloud-meta .dev,
   .cloud-row.g-split .cloud-ico {
     display: none;
   }
@@ -1081,10 +1108,6 @@
   }
   .cloud-cat-title {
     display: block;
-  }
-  .cloud-cat-menu button {
-    min-height: 52px;
-    font-size: var(--fs-lg);
   }
 }
 
