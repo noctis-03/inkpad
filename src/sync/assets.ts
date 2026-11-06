@@ -206,20 +206,6 @@ export async function downloadMissing(
   )
 }
 
-/**
- * 원본 파일의 내용 — 이 기기에 있으면 그대로, 없으면 클라우드에서 받아 돌려준다. 받은 것은 앱 저장소에 남기지 않는다
- * (노트 원본을 기기 파일로 저장할 때 — 원본 관리 시트의 '기기에 저장'과 같은 규칙). 받는 진행은 onAssetProgress로 알린다
- */
-export async function fetchAssetBlob(row: AssetRow): Promise<Blob> {
-  if (row.blob) return row.blob
-  if (typeof navigator !== 'undefined' && !navigator.onLine) throw new AssetUnavailableError('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.')
-  try {
-    return await downloadAsset(row)
-  } finally {
-    emit({ assetId: row.id, loaded: 0, total: null, done: true })
-  }
-}
-
 async function downloadAsset(row: AssetRow): Promise<Blob> {
   const key = KEY(row.sha256)
   let rec: FileRecord | null | undefined = await getSync<FileRecord>(key)
