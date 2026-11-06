@@ -60,6 +60,10 @@ function Select({ k, options }: { k: keyof Settings; options: [string, string][]
 /** 동기화 편의 — 알림·배지는 네트워크를 쓰지 않는다. '앱 열 때 확인'만 목록 메타를 읽는다(기본 끔) */
 function SyncComfortSection() {
   const on = useUI((s) => s.settings.cloudCheckOnOpen)
+  const interval = useUI((s) => s.settings.cloudCheckInterval)
+  const setSettings = useUI((s) => s.setSettings)
+  // 끔 · 항상 · 10·20·30분 — 켜고 끄기(cloudCheckOnOpen)와 간격(cloudCheckInterval)을 한 칸에서 고른다
+  const checkValue = on ? interval : 'off'
   const [last, setLast] = useState<CloudCheckRecord | null>(null)
   useEffect(() => {
     void getSync<CloudCheckRecord>('cloudCheck').then((r) => setLast(r ?? null))
@@ -80,8 +84,8 @@ function SyncComfortSection() {
         label="앱을 열 때 클라우드 확인"
         hint={
           <>
-            앱을 열거나 돌아올 때 클라우드의 노트·브랜치 목록만 확인해 '받을 것·갈라짐·머지 대기'를 표시합니다. 내용은 받지 않으며, 30분 안에 다시 열면 확인하지 않습니다. 데이터는
-            노트 100개에 약 35KB, 300개에 약 100KB입니다.
+            앱을 열거나 돌아올 때 클라우드의 노트·브랜치 목록만 확인해 '받을 것·갈라짐·머지 대기'를 표시합니다(동기화 창의 새로 고침과 같은 확인). 받을 것·머지할 것이 있으면 알림을
+            띄웁니다. 내용은 받지 않으며, 고른 간격 안에 다시 열면 확인하지 않습니다. 데이터는 노트 100개에 약 35KB, 300개에 약 100KB입니다.
             {last && (
               <>
                 {' '}
@@ -91,7 +95,21 @@ function SyncComfortSection() {
           </>
         }
       >
-        <Toggle k="cloudCheckOnOpen" />
+        <select
+          aria-label="앱을 열 때 클라우드 확인"
+          value={checkValue}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v === 'off') setSettings({ cloudCheckOnOpen: false })
+            else setSettings({ cloudCheckOnOpen: true, cloudCheckInterval: v as Settings['cloudCheckInterval'] })
+          }}
+        >
+          <option value="off">끔</option>
+          <option value="always">항상</option>
+          <option value="10">10분</option>
+          <option value="20">20분</option>
+          <option value="30">30분</option>
+        </select>
       </Row>
     </section>
   )
