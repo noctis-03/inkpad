@@ -21,12 +21,12 @@
   gap: 6px;
   min-width: 0;
   max-width: 60%;
-  height: var(--h-control-sm);
-  padding: 0 10px;
+  height: var(--h-control); /* 닫기 버튼과 같은 높이 — 머리 한 줄의 세로 리듬을 맞춘다 */
+  padding: 0 12px;
   border-radius: var(--r-pill);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   white-space: nowrap;
 }
 .sync-device-pill span {
@@ -70,10 +70,10 @@
 .sync-hero {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px 16px 16px;
   border: 1px solid var(--tb);
-  border-radius: var(--r-2xl);
+  border-radius: var(--r-xl); /* 목록 카드와 같은 모서리 */
   background: var(--surface);
 }
 .sync-hero-head {
@@ -82,18 +82,18 @@
   gap: 12px;
 }
 .sync-status-ic {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--ts);
   color: var(--t);
   display: grid;
   place-items: center;
 }
 .sync-status-ic .spinner {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-width: 2px;
   border-color: currentColor;
   border-top-color: currentColor;
@@ -104,17 +104,16 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-top: 1px;
+  gap: 1px;
 }
 .sync-status-txt b {
-  font-size: var(--fs-title);
+  font-size: var(--fs-md); /* 시트 제목(--fs-lg)보다 작게 — 그룹 제목과 같은 크기 */
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.35;
   color: var(--ink);
 }
 .sync-status-txt small {
-  font-size: var(--fs-md);
+  font-size: var(--fs-base);
   line-height: 1.45;
   color: var(--muted);
 }
@@ -136,9 +135,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 46px;
-  padding: 0 16px;
-  border-radius: var(--r-lg);
+  min-height: var(--h-tap);
+  padding: 0 14px;
+  border-radius: var(--r-md);
   font: inherit;
   font-size: var(--fs-md);
   white-space: nowrap;
@@ -1013,16 +1012,6 @@
   .sync-hero {
     display: contents;
   }
-  .sync-status-ic {
-    width: 36px;
-    height: 36px;
-  }
-  .sync-status-txt b {
-    font-size: var(--fs-lg);
-  }
-  .sync-status-txt small {
-    font-size: var(--fs-base);
-  }
   .sync-help {
     order: 98;
     margin-top: -6px;
@@ -1051,7 +1040,7 @@
   }
   .sync-cta .sync-go,
   .sync-cta .sync-sub {
-    min-height: 50px;
+    min-height: 46px; /* 화면 아래 엄지 자리라 조금 크게 */
   }
   .sync-body {
     padding-bottom: 16px;
