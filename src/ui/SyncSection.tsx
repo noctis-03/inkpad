@@ -639,7 +639,7 @@ function SyncHero({
     <div className={'sync-hero sync-status tone-' + tone + (tone === 'wait' ? ' sync-wait' : '')}>
       <div className="sync-hero-head" role="status" aria-live="polite">
         <span className="sync-status-ic" aria-hidden="true">
-          {icon ? <Icon name={icon} size={20} /> : <span className="spinner" />}
+          {icon ? <Icon name={icon} size={17} /> : <span className="spinner" />}
         </span>
         <span className="sync-status-txt">
           <b>{title}</b>
@@ -998,7 +998,10 @@ export function SyncSection() {
         {act === 'push' && (
           <>
             <button className="sync-go" data-act="push" data-push={counts.bulkPush} disabled={busyAll} onClick={() => void doPush()}>
-              <Icon name="swap" size={18} /> 지금 동기화 · {counts.bulkPush}건<span className="wide-only"> 올리고 받기</span>
+              <Icon name="swap" size={16} />
+              <span>
+                지금 동기화 · {counts.bulkPush}건<span className="wide-only"> 올리고 받기</span>
+              </span>
             </button>
             <button className="sync-sub" disabled={busyAll} onClick={() => void doPull()}>
               <Icon name="download" size={16} /> 받기만
@@ -1007,7 +1010,7 @@ export function SyncSection() {
         )}
         {act === 'pull' && (
           <button className="sync-go" data-act="pull" data-push={0} disabled={busyAll} onClick={() => void doPull()}>
-            <Icon name="download" size={18} /> {counts.recv}건 받기
+            <Icon name="download" size={16} /> {counts.recv}건 받기
           </button>
         )}
         {act === 'check' && (
