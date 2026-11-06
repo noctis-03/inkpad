@@ -35,12 +35,29 @@ export function Menu({ x, y, onClose, children }: { x: number; y: number; onClos
   )
 }
 
-export function MenuItem({ icon, label, onClick, danger, current, className }: { icon: string; label: string; onClick: () => void; danger?: boolean; current?: boolean; className?: string }) {
+export function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
+  current,
+  className,
+  disabled
+}: {
+  icon: string
+  label: string
+  onClick: () => void
+  danger?: boolean
+  current?: boolean
+  className?: string
+  disabled?: boolean
+}) {
   return (
     <button
       className={'menu-item' + (danger ? ' danger' : '') + (current ? ' is-current' : '') + (className ? ' ' + className : '')}
       role={current === undefined ? 'menuitem' : 'menuitemradio'}
       aria-checked={current}
+      disabled={disabled}
       onClick={onClick}
     >
       <Icon name={icon} size={16} /> {label}

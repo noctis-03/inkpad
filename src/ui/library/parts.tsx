@@ -9,7 +9,7 @@ import { refreshAllThumbnailsWithToast } from '../../io/docThumb'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import type { CardSyncState } from '../../sync/sync'
-import type { FileRow } from '../../storage/db'
+import type { AssetRow, FileRow } from '../../storage/db'
 import type { Mark } from '../../storage/repo'
 import { collectAssetUsage, listDocuments } from '../../storage/repo'
 import { downloadMissing, listMissingAssets } from '../../sync/assets'
@@ -238,27 +238,41 @@ export function refreshThumbnails() {
 
 let assetFetchBusy = false
 /**
+ * 노트 하나의 원본 상태 — 그 노트가 쓰는 PDF·이미지 수와, 그중 이 기기에 원본이 없는 것(네트워크 없음).
+ * 노트 카드 ⋯ 메뉴가 「원본 받기」를 보일지·몇 개인지 정할 때 쓴다
+ */
+export async function noteAssetStatus(docId: ID): Promise<{ used: number; missing: AssetRow[]; bytes: number }> {
+  const [usage, missing] = await Promise.all([collectAssetUsage(), listMissingAssets()])
+  let used = 0
+  for (const docs of usage.values()) if (docs.has(docId)) used++
+  const mine = missing.filter((a) => usage.get(a.id)?.has(docId))
+  return { used, missing: mine, bytes: mine.reduce((n, a) => n + (a.size || 0), 0) }
+}
+
+/**
  * 노트 원본 받기 — 노트(휴지통 제외)가 쓰는데 이 기기에 원본이 없는 PDF·이미지를 한 번에 받는다.
  * "받기"는 메타데이터만 받으므로 다른 기기에서 온 노트는 열 때까지 원본이 없다 — 미리 받아 두고 싶을 때.
- * 큰 전송 확인은 다른 받기와 같은 기준. 받은 뒤 그 노트들의 카드 미리보기를 원본으로 다시 만든다.
+ * only를 주면 그 노트의 원본만(노트 카드 ⋯ 메뉴). 큰 전송 확인은 다른 받기와 같은 기준.
+ * 받은 뒤 그 노트들의 카드 미리보기를 원본으로 다시 만든다.
  */
-export async function downloadNoteAssets() {
+export async function downloadNoteAssets(only?: ID) {
   if (assetFetchBusy) return
   assetFetchBusy = true
   const { toast } = useUI.getState()
+  const what = only ? '이 노트의 원본' : '노트 원본'
   try {
     const [usage, missing, docs] = await Promise.all([collectAssetUsage(), listMissingAssets(), listDocuments()])
-    const live = new Set(docs.map((d) => d.id))
+    const live = new Set(only ? [only] : docs.map((d) => d.id))
     const usedBy = (assetId: ID) => [...(usage.get(assetId) ?? [])].filter((id) => live.has(id))
     const targets = missing.filter((a) => usedBy(a.id).length)
-    if (!targets.length) return toast('노트가 쓰는 원본이 모두 이 기기에 있습니다.', 'info')
+    if (!targets.length) return toast(only ? '이 노트의 원본이 모두 이 기기에 있습니다.' : '노트가 쓰는 원본이 모두 이 기기에 있습니다.', 'info')
     if (!navigator.onLine) return toast('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.', 'error')
     const bytes = targets.reduce((sum, a) => sum + (a.size || 0), 0)
     if (!(await confirmTransfer('down', bytes, targets.length, '노트 원본'))) return
     const r = await downloadMissing(targets) // 받는 동안은 탭 바 상태 칸(전송)에 보인다
     if (r.authFailed) toast('Google 로그인이 만료되었습니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
-    else if (r.failed) toast(`노트 원본 ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
-    else toast(`노트 원본 ${r.ok}개를 모두 받았습니다.`, 'success')
+    else if (r.failed) toast(`${what} ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
+    else toast(`${what} ${r.ok}개를 모두 받았습니다.`, 'success')
     // 원본이 없어 필기만 그렸거나 비어 있던 미리보기를 실제 모습으로
     if (r.ok) void refreshAllThumbnailsWithToast([...new Set(targets.flatMap((a) => usedBy(a.id)))])
   } catch (e) {

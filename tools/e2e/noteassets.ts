@@ -1,5 +1,6 @@
 // 빠진 노트 원본 받기: "받기"는 메타데이터만 받으므로 다른 기기에서 온 PDF 노트는 원본이 없다.
-// 동기화 메뉴의 '빠진 노트 원본 받기'는 노트(휴지통 제외)가 쓰는 원본만 한 번에 받고, 그 노트의 카드 미리보기를 다시 만든다
+// 동기화 메뉴의 '빠진 노트 원본 받기'는 노트(휴지통 제외)가 쓰는 원본만 한 번에 받고, 그 노트의 카드 미리보기를 다시 만든다.
+// 노트 카드 ⋯ 메뉴의 '원본 받기'는 그 노트의 원본만
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { createFakeDrive } from './fake-drive.ts'
 import { device, sleep, type Ctx } from './lib.ts'
@@ -47,6 +48,30 @@ export default async function noteassets(ctx: Ctx) {
   const before = await B.evaluate(async () => (await import('/src/storage/db.ts')).db.assets.filter((a) => !!a.blob).count())
   check('노트 원본: 받기는 원본을 받지 않는다', before === 0, String(before))
 
+  // ── 노트 카드 ⋯ → 원본 받기: 그 노트의 원본만 ──
+  const cardMenu = async (title: string) => {
+    await B.locator('.doc-card', { hasText: title }).getByRole('button', { name: '더보기' }).click()
+    return B.getByRole('menuitem', { name: /^원본 받기/ })
+  }
+  const item = await cardMenu('강의 1')
+  await B.waitForFunction(() => /원본 받기 · 1개/.test([...document.querySelectorAll('.menu-item')].map((e) => e.textContent).join('|')), null, { timeout: 5000 }).catch(() => {})
+  const label = await item.innerText()
+  check('카드 원본 받기: ⋯ 메뉴에 그 노트의 빠진 원본 수', /원본 받기 · 1개/.test(label) && (await item.isEnabled()), label)
+  await item.click()
+  const askedOne = await B.locator('.dialog-host').getByRole('button', { name: '다운로드' }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+  if (askedOne) await B.locator('.dialog-host').getByRole('button', { name: '다운로드' }).click()
+  const doneOne = await B.locator('.toast', { hasText: '이 노트의 원본 1개를 모두 받았습니다' }).waitFor({ timeout: 10000 }).then(() => true, () => false)
+  const one = await B.evaluate(async (ids) => {
+    const { db } = await import('/src/storage/db.ts')
+    return Promise.all(ids.map(async (id: string) => !!(await db.assets.get(id))?.blob))
+  }, made.live)
+  check('카드 원본 받기: 그 노트의 원본만 받는다', doneOne && one[0] && !one[1], JSON.stringify({ doneOne, one }))
+  const again = await cardMenu('강의 1')
+  await B.waitForFunction(() => [...document.querySelectorAll('.menu-item')].some((e) => e.textContent?.includes('모두 이 기기에 있음')), null, { timeout: 5000 }).catch(() => {})
+  check('카드 원본 받기: 받은 뒤에는 "모두 이 기기에 있음"으로 누를 수 없다', (await again.innerText()).includes('모두 이 기기에 있음') && !(await again.isEnabled()), await again.innerText())
+  await B.keyboard.press('Escape')
+  await sleep(200)
+
   const openMenu = async () => {
     await B.locator('.sync-btn').click()
     await B.getByRole('menuitem', { name: '빠진 노트 원본 받기' }).click()
@@ -55,13 +80,13 @@ export default async function noteassets(ctx: Ctx) {
   // 큰 전송 확인 — 다른 받기와 같은 기준으로 묻는다
   const asked = await B.locator('.dialog-host').getByRole('button', { name: '다운로드' }).waitFor({ timeout: 3000 }).then(() => true, () => false)
   if (asked) await B.locator('.dialog-host').getByRole('button', { name: '다운로드' }).click()
-  const done = await B.locator('.toast', { hasText: '노트 원본 2개를 모두 받았습니다' }).waitFor({ timeout: 10000 }).then(() => true, () => false)
+  const done = await B.locator('.toast', { hasText: '노트 원본 1개를 모두 받았습니다' }).waitFor({ timeout: 10000 }).then(() => true, () => false)
   const after = await B.evaluate(async (ids) => {
     const { db } = await import('/src/storage/db.ts')
     const has = async (id: string) => !!(await db.assets.get(id))?.blob
     return { live: await Promise.all(ids.live.map(has)), trashed: await has(ids.trashed), orphan: await has(ids.orphan) }
   }, made)
-  check('노트 원본: 노트가 쓰는 원본을 한 번에 받는다', done && after.live.every(Boolean), JSON.stringify(after))
+  check('노트 원본: 노트가 쓰는 원본을 한 번에 받는다(이미 받은 것은 빼고)', done && after.live.every(Boolean), JSON.stringify(after))
   check('노트 원본: 휴지통 노트와 어느 노트도 쓰지 않는 원본은 받지 않는다', !after.trashed && !after.orphan, JSON.stringify(after))
 
   let thumbs = 0

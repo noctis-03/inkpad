@@ -16,10 +16,10 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import { Menu, MenuItem } from '../Menu'
-import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
+import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, noteAssetStatus, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
-import { assignCategoryColors, categoryColor, formatDate, splitCategory } from '../../shared/util'
+import { assignCategoryColors, categoryColor, formatBytes, formatDate, splitCategory } from '../../shared/util'
 import { loadRecentDocs } from '../../shared/recentDocs'
 import { errorText, startActivity, trackActivity } from '../../shared/activity'
 import {
@@ -185,6 +185,18 @@ export function Library() {
   const [searchOpen, setSearchOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [menu, setMenu]= useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
+  // 노트 카드 ⋯ 메뉴의 「원본 받기」 — 메뉴를 열 때 그 노트의 원본 상태를 본다(네트워크 없음). null = 확인 중
+  const [menuAssets, setMenuAssets] = useState<{ docId: ID; used: number; missing: number; bytes: number } | null>(null)
+  useEffect(() => {
+    setMenuAssets(null)
+    if (!menu || section.kind === 'trash') return
+    let alive = true
+    const id = menu.doc.id
+    void noteAssetStatus(id).then((s) => alive && setMenuAssets({ docId: id, used: s.used, missing: s.missing.length, bytes: s.bytes }))
+    return () => {
+      alive = false
+    }
+  }, [menu, section.kind])
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
   const [appMenu, setAppMenu] = useState<{ app: HtmlApp; x: number; y: number } | null>(null)
@@ -2129,6 +2141,29 @@ export function Library() {
               <MenuItem icon="copy" label="복제" onClick={() => docAction('duplicate', menu.doc)} />
               <MenuItem icon="tag" label="카테고리 지정" onClick={() => docAction('category', menu.doc)} />
               <MenuItem icon="share" label=".inkpad로 내보내기" onClick={() => docAction('export', menu.doc)} />
+              {(() => {
+                // 원본 받기 — 이 노트가 쓰는 PDF·이미지 중 이 기기에 없는 것만. 받을 게 없으면 까닭을 적고 누를 수 없게
+                const st = menuAssets?.docId === menu.doc.id ? menuAssets : null
+                const label = !st
+                  ? '원본 받기'
+                  : !st.used
+                    ? '원본 받기 · 쓰는 원본 없음'
+                    : !st.missing
+                      ? '원본 받기 · 모두 이 기기에 있음'
+                      : `원본 받기 · ${st.missing}개${st.bytes ? ` ${formatBytes(st.bytes)}` : ''}`
+                return (
+                  <MenuItem
+                    icon="cloudDown"
+                    label={label}
+                    disabled={!st || !st.missing}
+                    onClick={() => {
+                      const id = menu.doc.id
+                      setMenu(null)
+                      void downloadNoteAssets(id)
+                    }}
+                  />
+                )
+              })()}
               <MenuItem icon="upload" label="클라우드에 올리기" onClick={() => docAction('cloudPush', menu.doc)} />
               {syncStates.get(menu.doc.id) !== 'new' && <MenuItem icon="download" label="클라우드에 맞추기" onClick={() => docAction('cloudPull', menu.doc)} />}
               <MenuItem icon="trash" label="휴지통으로" danger onClick={() => docAction('trash', menu.doc)} />
