@@ -43,7 +43,8 @@ export interface Settings {
   // 동기화 편의 (sync/reminders.ts) — 네트워크를 쓰는 것은 cloudCheckOnOpen 하나뿐이고 기본은 끔
   leaveReminder: boolean // 노트를 닫을 때 올리지 않은 변경이 있으면 알림
   appBadge: boolean // 앱 아이콘에 할 일(올릴 노트 + 머지 대기) 개수
-  cloudCheckOnOpen: boolean // 앱을 열 때 클라우드 목록 확인 (목록만, 30분에 한 번)
+  cloudCheckOnOpen: boolean // 앱을 열 때 클라우드 목록 확인 (목록만) — 켜고 끄기. 간격은 아래
+  cloudCheckInterval: 'always' | '10' | '20' | '30' // 열 때 확인의 최소 간격(분). always = 열거나 돌아올 때마다
   dueReminder: boolean // 하루 한 번 앱을 열 때 오늘·지난 마감 할 일을 알림 (app/dueReminder.ts)
   // 인터랙티브 모션 (MOTION_SPEC 4장). auto = 기기의 '동작 줄이기' 설정을 따름
   motion: 'auto' | 'off' | 'normal' | 'rich'
@@ -81,6 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   leaveReminder: true,
   appBadge: true,
   cloudCheckOnOpen: false,
+  cloudCheckInterval: '30',
   dueReminder: true,
   motion: 'auto',
   theme: 'auto',

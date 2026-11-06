@@ -3,15 +3,37 @@
 //  - 앱 아이콘 배지: 올리지 않은 노트 + 머지 대기 수 (Badging API, 지원하는 곳만 — 설치한 PWA 등). 네트워크 없음
 //  - 노트를 닫을 때 알림: 그 노트에 올리지 않은 변경이 있으면 '정리' 버튼이 달린 알림 → 비교 화면에서 올리기·변경 버리기
 //  - 앱을 열 때 클라우드 확인: 설정에서 켰을 때만(기본 끔). 노트 목록·브랜치 목록 메타만 읽는다(본문은 받지 않는다) —
-//    노트 100개에 약 35KB, 300개에 약 100KB(gzip 전송 기준). 30분 안에 다시 열면 확인하지 않는다.
+//    노트 100개에 약 35KB, 300개에 약 100KB(gzip 전송 기준). 간격(항상·10·20·30분) 안에 다시 열면 확인하지 않는다.
+//    동기화 창의 새로 고침과 같은 일(listCloudNotes + listMergeQueue)을 한다. 받을 것·머지할 것이 있으면 알린다.
 import { useUI } from './store'
 import { CLOUD_STATES_EVENT, listCloudNotes, listMergeQueue, notifySyncChanged, syncSummary } from '../sync/sync'
 import { getSync, putSync } from '../sync/folders'
 import { pendingSeqsFor } from '../sync/unchanged'
 import type { ID } from '../shared/model'
+import type { Settings } from '../engine/types'
 
-/** 앱을 열 때 확인의 최소 간격 */
-export const CLOUD_CHECK_INTERVAL_MS = 30 * 60_000
+/** 앱을 열 때 확인의 최소 간격 — 설정(cloudCheckInterval)에서. '항상'도 연 직후 겹쳐 두 번(열기 + 화면 보임) 읽지 않게 10초는 둔다 */
+export function cloudCheckIntervalMs(v: Settings['cloudCheckInterval'] = useUI.getState().settings.cloudCheckInterval): number {
+  return v === 'always' ? 10_000 : Number(v) * 60_000
+}
+
+/** 동기화 창을 연다 — 편집 화면이면 옆 패널, 아니면 라이브러리의 동기화 시트(OPEN_SYNC_EVENT를 Library가 받는다) */
+export const OPEN_SYNC_EVENT = 'inkpad:open-sync'
+export function openSyncWindow(): void {
+  const st = useUI.getState()
+  if (st.route.name === 'editor') {
+    if (st.panel !== 'sync') st.setPanel('sync')
+    return
+  }
+  if (st.route.name !== 'library') st.navigate({ name: 'library' })
+  setTimeout(() => window.dispatchEvent(new Event(OPEN_SYNC_EVENT)), 0)
+}
+
+/** 열 때 확인 알림 문구 — 받을 것·머지할 것. 없으면 null(알리지 않는다) */
+export function cloudCheckText(recv: number, merge: number): string | null {
+  if (!recv && !merge) return null
+  return '클라우드 확인 — ' + [recv && `받을 것 ${recv}`, merge && `머지 ${merge}`].filter(Boolean).join(' · ')
+}
 
 export interface CloudCheckRecord {
   at: number
@@ -79,14 +101,15 @@ function driveBytesSince(t0: number): number {
 }
 
 /**
- * 설정에서 켰고, 동기화를 설정했고, 온라인이고, 마지막 확인에서 30분이 지났으면 클라우드 목록을 한 번 본다.
+ * 설정에서 켰고, 동기화를 설정했고, 온라인이고, 마지막 확인에서 설정한 간격이 지났으면 클라우드 목록을 한 번 본다.
  * 받지는 않는다 — 라이브러리 점·배지·편집 화면 칩이 '받을 것·갈라짐·머지 대기'를 보여 줄 수 있게 판정만 새로 한다.
+ * 받을 것·머지할 것이 있으면 '동기화 열기' 버튼이 달린 알림을 띄운다(없으면 조용히).
  */
 export async function maybeCheckCloud(): Promise<CloudCheckRecord | null> {
   if (checking || !settings().cloudCheckOnOpen || !navigator.onLine) return null
   if (!(await syncConfigured())) return null
   const last = await getSync<CloudCheckRecord>('cloudCheck')
-  if (last && Date.now() - last.at < CLOUD_CHECK_INTERVAL_MS) return null
+  if (last && Date.now() - last.at < cloudCheckIntervalMs()) return null
   checking = true
   const t0 = performance.now()
   try {
@@ -96,6 +119,11 @@ export async function maybeCheckCloud(): Promise<CloudCheckRecord | null> {
     const rec: CloudCheckRecord = { at: Date.now(), notes: notes.length, merge: queue.length, ...(bytes > 0 ? { bytes } : {}) }
     await putSync('cloudCheck', rec)
     notifySyncChanged()
+    // 머지 — 동기화 창의 「머지 필요」와 같은 셈: 갈라진 노트 + 그 밖의 머지할 브랜치(다른 기기 것)
+    const split = new Set(notes.filter((n) => n.state === 'diverged').map((n) => n.docId))
+    const merge = split.size + queue.filter((e) => !split.has(e.docId)).length
+    const text = cloudCheckText(notes.filter((n) => n.state === 'remote-new').length, merge)
+    if (text) toast(text, 'info', { label: '동기화 열기', run: openSyncWindow })
     return rec
   } catch (e) {
     console.warn('[sync] 앱 열 때 확인을 하지 못했습니다 — 다음에 다시:', e)
@@ -118,7 +146,8 @@ export function installSyncReminders(): () => void {
   document.addEventListener('visibilitychange', onVisible)
   const unsub = useUI.subscribe((s, prev) => {
     if (s.settings.appBadge !== prev.settings.appBadge) void refreshAppBadge()
-    if (s.settings.cloudCheckOnOpen && !prev.settings.cloudCheckOnOpen) void maybeCheckCloud() // 켜는 순간 한 번
+    // 켜는 순간·간격을 바꾸는 순간 한 번 (간격 안이면 maybeCheckCloud가 건너뛴다)
+    if (s.settings.cloudCheckOnOpen && (!prev.settings.cloudCheckOnOpen || s.settings.cloudCheckInterval !== prev.settings.cloudCheckInterval)) void maybeCheckCloud()
   })
   return () => {
     window.removeEventListener(CLOUD_STATES_EVENT, onChanged)

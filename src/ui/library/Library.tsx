@@ -11,6 +11,7 @@ import { askPdfFit, askPdfPassword, confirmDialog, promptDialog } from '../../ap
 import { NewDocumentSheet } from './NewDocumentSheet'
 import { LibrarySettings } from './LibrarySettings'
 import { SyncSheet } from '../SyncSection'
+import { OPEN_SYNC_EVENT } from '../../app/syncReminders'
 import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
@@ -135,6 +136,12 @@ export function Library() {
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showSync, setShowSync] = useState(false)
+  // 알림의 '동기화 열기'(앱 열 때 확인) — 어느 화면에서든 라이브러리의 동기화 시트를 연다
+  useEffect(() => {
+    const open = () => setShowSync(true)
+    window.addEventListener(OPEN_SYNC_EVENT, open)
+    return () => window.removeEventListener(OPEN_SYNC_EVENT, open)
+  }, [])
   // 할 일 배지 — 올리지 않은 노트 + 머지 대기 (네트워크 없이, 마지막으로 본 판정까지)
   const [todo, setTodo] = useState<SyncSummary | null>(null)
   useEffect(() => {
