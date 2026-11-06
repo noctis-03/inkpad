@@ -33,7 +33,7 @@ export default async function noteassets(ctx: Ctx) {
     const d1 = await note('강의 1', a1.id)
     const d2 = await note('강의 2', a2.id)
     const d3 = await note('버린 노트', a3.id)
-    // 원본 두 개를 쓰는 노트 — 원본 파일 받기 창에서 골라 받는다
+    // 원본 두 개를 쓰는 노트 — 원본 파일 저장 창에 줄마다 보인다
     const both = (
       await repo.createDocument({
         title: 'Bundle',
@@ -56,43 +56,40 @@ export default async function noteassets(ctx: Ctx) {
   const before = await B.evaluate(async () => (await import('/src/storage/db.ts')).db.assets.filter((a) => !!a.blob).count())
   check('노트 원본: 받기는 원본을 받지 않는다', before === 0, String(before))
 
-  // ── 노트 카드 ⋯ → 원본 파일 받기: 그 노트가 쓰는 원본을 보여 주는 창에서 골라 받는다(앱 저장소로) ──
+  // ── 노트 카드 ⋯ → 원본 파일 저장: 그 노트의 원본을 줄마다 「기기에 저장」(원본 관리 시트의 '기기에 저장'과 같다) ──
   const openSheet = async (title: string) => {
     await B.locator('.doc-card', { hasText: title }).getByRole('button', { name: '더보기' }).click()
-    const item = B.getByRole('menuitem', { name: /^원본 파일 받기/ })
-    await B.waitForFunction(() => [...document.querySelectorAll('.menu-item')].some((e) => /원본 파일 받기 · /.test(e.textContent ?? '')), null, { timeout: 5000 }).catch(() => {})
+    const item = B.getByRole('menuitem', { name: '원본 파일 저장' })
     const label = await item.innerText()
     await item.click()
     const sheet = B.locator('.note-assets')
     await sheet.locator('.note-assets-row:not(.skel)').first().waitFor({ timeout: 5000 })
     return { label, sheet }
   }
-  const has = (ids: string[]) =>
-    B.evaluate(async (ids) => {
-      const { db } = await import('/src/storage/db.ts')
-      return Promise.all(ids.map(async (id) => !!(await db.assets.get(id))?.blob))
-    }, ids)
+  let driveReqs = 0
+  B.on('request', (r) => {
+    if (r.url().includes('googleapis.com')) driveReqs++
+  })
+  const saveRow = async (sheet: ReturnType<typeof B.locator>, name: string) => {
+    const dl = B.waitForEvent('download', { timeout: 15000 })
+    await sheet.locator('.note-assets-row', { hasText: name }).getByRole('button', { name: /기기에 저장/ }).click()
+    const ask = B.locator('.dialog-host').getByRole('button', { name: '다운로드' })
+    if (await ask.waitFor({ timeout: 2000 }).then(() => true, () => false)) await ask.click()
+    const d = await dl
+    const path = await d.path()
+    const head = path ? (await import('node:fs')).readFileSync(path).subarray(0, 4).toString('latin1') : ''
+    return { name: d.suggestedFilename(), head }
+  }
   const first = await openSheet('Bundle')
-  check('원본 파일 받기: ⋯ 메뉴에 그 노트의 원본 수·받을 것', first.label.includes('원본 파일 받기 · PDF 2 (받을 것 2)'), first.label)
-  const rows = first.sheet.locator('.note-assets-row')
-  check('원본 파일 받기: 그 노트가 쓰는 원본만 보이고, 없는 것은 처음부터 골라 둔다', (await rows.count()) === 2 && (await first.sheet.locator('input:checked').count()) === 2, String(await rows.count()))
+  check('원본 파일 저장: 메뉴는 개수 없이 「원본 파일 저장」', first.label.trim() === '원본 파일 저장', first.label)
+  check('원본 파일 저장: 그 노트가 쓰는 원본이 줄마다 「기기에 저장」과 함께', (await first.sheet.locator('.note-assets-row').count()) === 2 && (await first.sheet.getByRole('button', { name: /기기에 저장/ }).count()) === 2)
   if (process.env.MERGE_SHOT_DIR) await B.screenshot({ path: `${process.env.MERGE_SHOT_DIR}/note-assets.png` })
-  await rows.filter({ hasText: '2.pdf' }).locator('input').uncheck()
-  await first.sheet.getByRole('button', { name: '1개 받기' }).click()
-  const ask = B.locator('.dialog-host').getByRole('button', { name: '다운로드' })
-  if (await ask.waitFor({ timeout: 2000 }).then(() => true, () => false)) await ask.click()
-  const gotOne = await B.locator('.toast', { hasText: '"Bundle"의 원본 1개를 받았습니다' }).waitFor({ timeout: 10000 }).then(() => true, () => false)
-  const [h1, h2] = await has(made.live)
-  check('원본 파일 받기: 고른 원본만 받는다', gotOne && h1 && !h2, JSON.stringify({ gotOne, h1, h2 }))
-  await first.sheet.locator('.note-assets-row', { hasText: '1.pdf' }).locator('.st.ok').waitFor({ timeout: 5000 }).catch(() => {})
-  const doneRow = first.sheet.locator('.note-assets-row', { hasText: '1.pdf' })
-  check('원본 파일 받기: 받은 원본은 "이 기기에 있음"으로 고를 수 없다', (await doneRow.innerText()).includes('이 기기에 있음') && (await doneRow.locator('input').isDisabled()), await doneRow.innerText())
+  const saved = await saveRow(first.sheet, '1.pdf')
+  check('원본 파일 저장: 그 원본 파일을 기기에 저장한다(1.pdf, PDF 내용)', saved.name === '1.pdf' && saved.head === '%PDF', JSON.stringify(saved))
+  const kept = await B.evaluate(async () => (await import('/src/storage/db.ts')).db.assets.filter((a) => !!a.blob).count())
+  check('원본 파일 저장: 이 기기에 없던 원본은 받아 저장만 하고 앱에는 남기지 않는다', kept === 0, String(kept))
   await B.keyboard.press('Escape')
   await first.sheet.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
-  const second = await openSheet('강의 1')
-  check('원본 파일 받기: 다른 노트에서도 같은 원본은 받은 것으로(모두 있음)', second.label.includes('(모두 있음)') && (await second.sheet.getByRole('button', { name: '받기' }).isDisabled()), second.label)
-  await B.keyboard.press('Escape')
-  await second.sheet.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
   const openMenu = async () => {
     await B.locator('.sync-btn').click()
@@ -102,13 +99,13 @@ export default async function noteassets(ctx: Ctx) {
   // 큰 전송 확인 — 다른 받기와 같은 기준으로 묻는다
   const asked = await B.locator('.dialog-host').getByRole('button', { name: '다운로드' }).waitFor({ timeout: 3000 }).then(() => true, () => false)
   if (asked) await B.locator('.dialog-host').getByRole('button', { name: '다운로드' }).click()
-  const done = await B.locator('.toast', { hasText: '노트 원본 1개를 모두 받았습니다' }).waitFor({ timeout: 10000 }).then(() => true, () => false)
+  const done = await B.locator('.toast', { hasText: '노트 원본 2개를 모두 받았습니다' }).waitFor({ timeout: 10000 }).then(() => true, () => false)
   const after = await B.evaluate(async (ids) => {
     const { db } = await import('/src/storage/db.ts')
     const has = async (id: string) => !!(await db.assets.get(id))?.blob
     return { live: await Promise.all(ids.live.map(has)), trashed: await has(ids.trashed), orphan: await has(ids.orphan) }
   }, made)
-  check('노트 원본: 노트가 쓰는 원본을 한 번에 받는다(이미 받은 것은 빼고)', done && after.live.every(Boolean), JSON.stringify(after))
+  check('노트 원본: 노트가 쓰는 원본을 한 번에 받는다', done && after.live.every(Boolean), JSON.stringify(after))
   check('노트 원본: 휴지통 노트와 어느 노트도 쓰지 않는 원본은 받지 않는다', !after.trashed && !after.orphan, JSON.stringify(after))
 
   let thumbs = 0
@@ -120,6 +117,13 @@ export default async function noteassets(ctx: Ctx) {
     }, made.docs)
   }
   check('노트 원본: 받은 노트의 카드 미리보기를 만든다', thumbs === 2, String(thumbs))
+
+  const local = await openSheet('강의 2')
+  driveReqs = 0
+  const saved2 = await saveRow(local.sheet, '2.pdf')
+  check('원본 파일 저장: 이 기기에 있는 원본은 네트워크 없이 저장한다', saved2.name === '2.pdf' && saved2.head === '%PDF' && driveReqs === 0, JSON.stringify({ ...saved2, driveReqs }))
+  await B.keyboard.press('Escape')
+  await local.sheet.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
   await openMenu()
   const nothing = await B.locator('.toast', { hasText: '노트가 쓰는 원본이 모두 이 기기에 있습니다' }).waitFor({ timeout: 5000 }).then(() => true, () => false)
