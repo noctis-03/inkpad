@@ -9,10 +9,15 @@ import { refreshAllThumbnailsWithToast } from '../../io/docThumb'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import type { CardSyncState } from '../../sync/sync'
-import type { AssetRow, FileRow } from '../../storage/db'
+import { db, type AssetRow, type FileRow } from '../../storage/db'
 import type { Mark } from '../../storage/repo'
 import { collectAssetUsage, listDocuments } from '../../storage/repo'
-import { downloadMissing, listMissingAssets } from '../../sync/assets'
+import { downloadMissing, fetchAssetBlob, listMissingAssets } from '../../sync/assets'
+import { assetFileName } from '../../sync/pack'
+import { saveFile } from '../../io/download'
+import { trackActivity } from '../../shared/activity'
+import { zip } from 'fflate'
+import { formatBytes } from '../../shared/util'
 import { confirmTransfer } from '../../sync/transfer'
 
 /**
@@ -238,47 +243,102 @@ export function refreshThumbnails() {
 
 let assetFetchBusy = false
 /**
- * 노트 하나의 원본 상태 — 그 노트가 쓰는 PDF·이미지 수와, 그중 이 기기에 원본이 없는 것(네트워크 없음).
- * 노트 카드 ⋯ 메뉴가 「원본 받기」를 보일지·몇 개인지 정할 때 쓴다
- */
-export async function noteAssetStatus(docId: ID): Promise<{ used: number; missing: AssetRow[]; bytes: number }> {
-  const [usage, missing] = await Promise.all([collectAssetUsage(), listMissingAssets()])
-  let used = 0
-  for (const docs of usage.values()) if (docs.has(docId)) used++
-  const mine = missing.filter((a) => usage.get(a.id)?.has(docId))
-  return { used, missing: mine, bytes: mine.reduce((n, a) => n + (a.size || 0), 0) }
-}
-
-/**
  * 노트 원본 받기 — 노트(휴지통 제외)가 쓰는데 이 기기에 원본이 없는 PDF·이미지를 한 번에 받는다.
  * "받기"는 메타데이터만 받으므로 다른 기기에서 온 노트는 열 때까지 원본이 없다 — 미리 받아 두고 싶을 때.
- * only를 주면 그 노트의 원본만(노트 카드 ⋯ 메뉴). 큰 전송 확인은 다른 받기와 같은 기준.
- * 받은 뒤 그 노트들의 카드 미리보기를 원본으로 다시 만든다.
+ * 큰 전송 확인은 다른 받기와 같은 기준. 받은 뒤 그 노트들의 카드 미리보기를 원본으로 다시 만든다.
  */
-export async function downloadNoteAssets(only?: ID) {
+export async function downloadNoteAssets() {
   if (assetFetchBusy) return
   assetFetchBusy = true
   const { toast } = useUI.getState()
-  const what = only ? '이 노트의 원본' : '노트 원본'
   try {
     const [usage, missing, docs] = await Promise.all([collectAssetUsage(), listMissingAssets(), listDocuments()])
-    const live = new Set(only ? [only] : docs.map((d) => d.id))
+    const live = new Set(docs.map((d) => d.id))
     const usedBy = (assetId: ID) => [...(usage.get(assetId) ?? [])].filter((id) => live.has(id))
     const targets = missing.filter((a) => usedBy(a.id).length)
-    if (!targets.length) return toast(only ? '이 노트의 원본이 모두 이 기기에 있습니다.' : '노트가 쓰는 원본이 모두 이 기기에 있습니다.', 'info')
+    if (!targets.length) return toast('노트가 쓰는 원본이 모두 이 기기에 있습니다.', 'info')
     if (!navigator.onLine) return toast('오프라인이라 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.', 'error')
     const bytes = targets.reduce((sum, a) => sum + (a.size || 0), 0)
     if (!(await confirmTransfer('down', bytes, targets.length, '노트 원본'))) return
     const r = await downloadMissing(targets) // 받는 동안은 탭 바 상태 칸(전송)에 보인다
     if (r.authFailed) toast('Google 로그인이 만료되었습니다. 로그인한 뒤 다시 시도해 주세요.', 'error')
-    else if (r.failed) toast(`${what} ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
-    else toast(`${what} ${r.ok}개를 모두 받았습니다.`, 'success')
+    else if (r.failed) toast(`노트 원본 ${r.ok}개를 받았습니다. ${r.failed}개는 받지 못했습니다.`, 'error')
+    else toast(`노트 원본 ${r.ok}개를 모두 받았습니다.`, 'success')
     // 원본이 없어 필기만 그렸거나 비어 있던 미리보기를 실제 모습으로
     if (r.ok) void refreshAllThumbnailsWithToast([...new Set(targets.flatMap((a) => usedBy(a.id)))])
   } catch (e) {
     toast(`노트 원본을 받지 못했습니다: ${(e as Error).message}`, 'error')
   } finally {
     assetFetchBusy = false
+  }
+}
+
+/** 노트가 쓰는 원본(살아 있는 페이지 배경 PDF·이미지 요소)의 행 — 이 기기에 내용(blob)이 없어도 행은 있다. 네트워크 없음 */
+export async function noteAssetRows(docId: ID): Promise<AssetRow[]> {
+  const usage = await collectAssetUsage()
+  const ids = [...usage].filter(([, docs]) => docs.has(docId)).map(([id]) => id)
+  return (await db.assets.bulkGet(ids)).filter((r): r is AssetRow => !!r)
+}
+
+/** 원본 파일 이름 — 가져올 때의 이름, 없으면 내용 주소 이름(sha256.pdf 등) */
+const assetName = (r: AssetRow) => r.name || assetFileName(r.sha256, r.mime).split('/').pop()!
+
+/** 같은 이름이 겹치면 '이름 (2).pdf'처럼 — 압축 파일 안에서 덮이지 않게 */
+function uniqueName(name: string, used: Set<string>): string {
+  if (!used.has(name)) return used.add(name), name
+  const dot = name.lastIndexOf('.')
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  for (let i = 2; ; i++) {
+    const n = `${stem} (${i})${ext}`
+    if (!used.has(n)) return used.add(n), n
+  }
+}
+
+let assetSaveBusy = false
+/**
+ * 노트 원본 파일 저장 — 그 노트가 쓰는 PDF·이미지 원본을 앱 저장소가 아니라 **기기 파일로** 저장한다(노트 카드 ⋯ 메뉴).
+ * 하나면 그 파일 그대로, 여럿이면 「노트 제목 원본.zip」 하나로(이미 압축된 형식이라 다시 압축하지 않는다).
+ * 이 기기에 없는 원본은 클라우드에서 받아 저장만 하고 앱에는 남기지 않는다 — 원본 관리 시트의 '기기에 저장'과 같은 규칙.
+ * 받을 것이 있으면 큰 전송 확인을 다른 받기와 같은 기준으로 묻는다
+ */
+export async function saveNoteAssets(doc: DocumentMeta) {
+  if (assetSaveBusy) return
+  assetSaveBusy = true
+  const { toast } = useUI.getState()
+  try {
+    const rows = await noteAssetRows(doc.id)
+    if (!rows.length) return toast('이 노트는 PDF·이미지 원본을 쓰지 않습니다.', 'info')
+    const missing = rows.filter((r) => !r.blob)
+    if (missing.length) {
+      if (!navigator.onLine) return toast('오프라인이라 이 기기에 없는 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.', 'error')
+      const bytes = missing.reduce((n, r) => n + (r.size || 0), 0)
+      if (!(await confirmTransfer('down', bytes, missing.length, '노트 원본'))) return
+    }
+    const zipName = `${doc.title} 원본.zip`
+    const out = await trackActivity(
+      'export',
+      rows.length === 1 ? assetName(rows[0]) : zipName,
+      async (a) => {
+        if (rows.length === 1) return { blob: await fetchAssetBlob(rows[0]), name: assetName(rows[0]) }
+        const used = new Set<string>()
+        const files: Record<string, [Uint8Array, { level: 0 }]> = {}
+        let i = 0
+        for (const r of rows) {
+          a.update({ progress: i / rows.length, detail: `${i + 1}/${rows.length}` })
+          files[uniqueName(assetName(r), used)] = [new Uint8Array(await (await fetchAssetBlob(r)).arrayBuffer()), { level: 0 }]
+          i++
+        }
+        const data = await new Promise<Uint8Array>((res, rej) => zip(files, (e, d) => (e ? rej(e) : res(d))))
+        return { blob: new Blob([data as BlobPart], { type: 'application/zip' }), name: zipName }
+      },
+      (r) => formatBytes(r.blob.size)
+    )
+    await saveFile(out.blob, out.name)
+    toast(rows.length === 1 ? `"${out.name}"을(를) 기기에 저장했습니다.` : `원본 ${rows.length}개를 "${out.name}"(으)로 저장했습니다.`, 'success')
+  } catch (e) {
+    toast(`원본을 저장하지 못했습니다: ${(e as Error).message}`, 'error')
+  } finally {
+    assetSaveBusy = false
   }
 }
 

@@ -47,7 +47,7 @@
 .menu-item.danger {
   color: var(--danger);
 }
-/* 지금은 할 수 없는 항목 — 까닭을 문구에 적고 흐리게(예: 원본 받기 · 모두 이 기기에 있음) */
+/* 지금은 할 수 없는 항목 — 까닭을 문구에 적고 흐리게(예: 원본 파일 저장 · 쓰는 원본 없음) */
 .menu-item:disabled {
   color: var(--muted);
   cursor: default;
