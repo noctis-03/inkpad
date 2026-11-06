@@ -165,8 +165,20 @@ export function FilterTabs<T extends string>({ tabs, value, onChange }: { tabs: 
   )
 }
 
-/** ⋯ 팝오버 — 버튼 옆에 떠서 목록을 밀지 않는다. 아래 공간이 없으면 위로 연다 */
-export function Popover({ anchor, onClose, children }: { anchor: DOMRect | null; onClose: () => void; children: ReactNode }) {
+/** ⋯ 팝오버 — 버튼 옆에 떠서 목록을 밀지 않는다. 아래 공간이 없으면 위로 연다. align: 버튼의 오른쪽 끝(기본)·왼쪽 끝에 맞춘다 */
+export function Popover({
+  anchor,
+  onClose,
+  children,
+  className,
+  align = 'end'
+}: {
+  anchor: DOMRect | null
+  onClose: () => void
+  children: ReactNode
+  className?: string
+  align?: 'start' | 'end'
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   useLayoutEffect(() => {
@@ -177,11 +189,11 @@ export function Popover({ anchor, onClose, children }: { anchor: DOMRect | null;
     }
     const w = el.offsetWidth
     const h = el.offsetHeight
-    const left = Math.min(Math.max(8, anchor.right - w), window.innerWidth - w - 8)
+    const left = Math.min(Math.max(8, align === 'start' ? anchor.left : anchor.right - w), window.innerWidth - w - 8)
     let top = anchor.bottom + 6
     if (top + h > window.innerHeight - 8) top = Math.max(8, anchor.top - h - 6)
     setPos({ top, left })
-  }, [anchor])
+  }, [anchor, align])
   useEffect(() => {
     const onDoc = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null
@@ -190,7 +202,11 @@ export function Popover({ anchor, onClose, children }: { anchor: DOMRect | null;
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     const t = window.setTimeout(() => document.addEventListener('pointerdown', onDoc), 0)
-    const onScroll = () => onClose()
+    // 팝오버 안의 목록을 스크롤할 때는 닫지 않는다 — 바깥(시트·페이지)이 스크롤될 때만
+    const onScroll = (e: Event) => {
+      if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return
+      onClose()
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -205,7 +221,7 @@ export function Popover({ anchor, onClose, children }: { anchor: DOMRect | null;
   }, [onClose])
   if (!anchor) return null
   return createPortal(
-    <div ref={ref} className="store-pop" style={pos ?? { top: -9999, left: -9999 }} role="menu">
+    <div ref={ref} className={'store-pop' + (className ? ' ' + className : '')} style={pos ?? { top: -9999, left: -9999 }} role="menu">
       {children}
     </div>,
     document.body

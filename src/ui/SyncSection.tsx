@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
@@ -36,7 +36,8 @@ import { mergeDraftKeys } from '../sync/mergeDraft'
 import { openArchive } from './ArchiveSheet'
 import { openChanges } from './ChangesView'
 import { Segmented } from './Segmented'
-import { SheetEmpty, useEscClose } from './sheetParts'
+import { Popover, SheetEmpty, useEscClose } from './sheetParts'
+import { EASE, dur } from './motion/motion'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -285,8 +286,9 @@ function MergeExtraRow({ e, draft }: { e: MergeQueueEntry; draft: boolean }) {
 }
 
 /**
- * 카테고리 고르기 — 카테고리가 2개 이상일 때만 목록 도구 줄 끝에 붙는다.
- * 항목마다 처리할 건수를 보여 어느 카테고리부터 볼지 알게 한다. 좁은 화면에서는 아래 시트로 열린다(CSS)
+ * 카테고리 고르기 — 카테고리가 2개 이상일 때만 목록 도구 줄에 붙는다.
+ * 항목마다 처리할 건수를 보여 어느 카테고리부터 볼지 알게 한다.
+ * 목록은 공용 Popover로 body에 띄운다 — 시트(overflow: hidden)·스크롤 칸 안에서 잘리지 않게. 좁은 화면에서는 아래 시트(CSS)
  */
 function CategorySelect({
   cats,
@@ -299,58 +301,46 @@ function CategorySelect({
   total: number
   onChange: (key: string) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
   const cur = cats.find((c) => c.key === value)
+  const close = useCallback(() => setAnchor(null), [])
   const pick = (k: string) => {
     onChange(k)
-    setOpen(false)
+    close()
   }
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation() // 고르기만 닫는다 — 시트는 닫지 않는다
-      setOpen(false)
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [open])
   return (
-    <div className="cloud-cat">
+    <>
       <button
         className={'cloud-cat-btn' + (cur ? ' on' : '')}
+        data-pop-anchor
         aria-haspopup="listbox"
-        aria-expanded={open}
+        aria-expanded={!!anchor}
         aria-label={cur ? `카테고리: ${cur.name}` : '카테고리 고르기'}
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget.getBoundingClientRect())}
       >
         {cur && <i className="dot" style={{ background: cur.color }} />}
         <span>{cur ? cur.name : '카테고리'}</span>
         <Icon name="chevronDown" size={14} />
       </button>
-      {open && (
-        <>
-          <button className="cloud-menu-bg cloud-cat-bg" aria-label="카테고리 고르기 닫기" onClick={() => setOpen(false)} />
-          <div className="cloud-cat-menu" role="listbox" aria-label="카테고리">
-            <b className="cloud-cat-title">카테고리</b>
-            <button role="option" aria-selected={!cur} className={!cur ? 'on' : ''} onClick={() => pick(CAT_ALL)}>
-              <span className="nm">모든 카테고리</span>
-              <span className="n">{total}</span>
+      <Popover anchor={anchor} onClose={close} className="cloud-cat-pop">
+        <div className="cloud-cat-menu" role="listbox" aria-label="카테고리">
+          <b className="cloud-cat-title">카테고리</b>
+          <button role="option" aria-selected={!cur} className={!cur ? 'on' : ''} onClick={() => pick(CAT_ALL)}>
+            <span className="nm">모든 카테고리</span>
+            <span className="n">{total}</span>
+          </button>
+          <div className="sep" aria-hidden="true" />
+          {cats.map((c) => (
+            <button key={c.key} role="option" aria-selected={c.key === value} className={c.key === value ? 'on' : ''} onClick={() => pick(c.key)}>
+              <i className="dot" style={{ background: c.color }} />
+              <span className="nm">{c.name}</span>
+              {c.todo > 0 && <span className="todo">처리 {c.todo}</span>}
+              <span className="n">{c.count}</span>
             </button>
-            <div className="sep" aria-hidden="true" />
-            {cats.map((c) => (
-              <button key={c.key} role="option" aria-selected={c.key === value} className={c.key === value ? 'on' : ''} onClick={() => pick(c.key)}>
-                <i className="dot" style={{ background: c.color }} />
-                <span className="nm">{c.name}</span>
-                {c.todo > 0 && <span className="todo">처리 {c.todo}</span>}
-                <span className="n">{c.count}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+          ))}
+        </div>
+      </Popover>
+    </>
   )
 }
 
@@ -470,23 +460,12 @@ function CloudList({
     )
   }
 
-  const todoTotal = counts.split + counts.recv + counts.push + extra.length
   // 보기 칸의 건수는 고른 카테고리 안에서 센다 — 머리의 「수학 3 / 전체 8」과 맞게
   const catCounts = catValue === CAT_ALL ? counts : countCloud(cloud.filter(inCat))
   const catExtra = catValue === CAT_ALL ? extra.length : 0
   const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => STATE_META[n.state].group === g.key), extra: g.key === 'split' ? visibleExtra : [] })).filter(
     (g) => g.items.length + g.extra.length > 0
   )
-  const shownTodo = groups.filter((g) => g.todo).reduce((n, g) => n + g.items.length + g.extra.length, 0)
-  const hiddenTodo = todoTotal - shownTodo
-  // 걸러져 안 보이는 처리할 것 — 카테고리 이름별로 알린다(놓치지 않게)
-  const hiddenByCat =
-    catValue !== CAT_ALL && !q && view !== 'fresh'
-      ? cats
-          .filter((c) => c.key !== catValue && c.todo > 0)
-          .map((c) => `${c.name} ${c.todo}`)
-          .join(' · ')
-      : ''
   const catName = cats.find((c) => c.key === catValue)?.name ?? ''
   const recvCatCount = cloud.filter((n) => n.state === 'remote-new' && inCat(n)).length
   const reset = () => {
@@ -603,16 +582,6 @@ function CloudList({
           </section>
         )
       })}
-
-      {/* 걸러진 바깥에 처리할 것이 남아 있으면 알린다 — 놓친 것이 없게 */}
-      {groups.length > 0 && hiddenTodo > 0 && (
-        <div className="cloud-hidden-todo">
-          <span>{hiddenByCat ? `다른 카테고리에도 처리할 노트가 있습니다 — ${hiddenByCat}` : `필터 밖에 처리할 노트 ${hiddenTodo}개가 있습니다`}</span>
-          <button className="cloud-link" onClick={reset}>
-            {hiddenByCat ? '모든 카테고리 보기' : '모두 보기'}
-          </button>
-        </div>
-      )}
     </section>
   )
 }
@@ -631,8 +600,7 @@ function SyncHero({
   title,
   sub,
   progress,
-  children,
-  help
+  children
 }: {
   tone: HeroTone
   icon: string | null
@@ -640,7 +608,6 @@ function SyncHero({
   sub: string
   progress?: number | null // 0–1, null = 끝을 모름, undefined = 막대 없음
   children?: ReactNode
-  help?: boolean
 }) {
   return (
     <div className={'sync-hero sync-status tone-' + tone + (tone === 'wait' ? ' sync-wait' : '')}>
@@ -659,12 +626,6 @@ function SyncHero({
         </div>
       )}
       {children && <div className="sync-cta">{children}</div>}
-      {help && (
-        <details className="sync-help">
-          <summary>무엇이 주고받아지나요?</summary>
-          <p>받기·올리기는 노트만 주고받습니다. 앱·기타 파일·보드 프리셋은 추가하거나 고칠 때 그 항목만 바로 올라가고, 못 올린 것은 각 메뉴에서 다시 올립니다.</p>
-        </details>
-      )}
     </div>
   )
 }
@@ -1000,7 +961,6 @@ export function SyncSection() {
         icon={todoN ? 'swap' : 'checkCircle'}
         title={cloud === null ? '클라우드 확인 중…' : todoN ? `확인할 노트 ${todoN}개` : '모두 최신입니다'}
         sub={[...parts, lastText].join(' · ')}
-        help
       >
         {act === 'push' && (
           <>
@@ -1164,6 +1124,66 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
   )
 }
 
+/**
+ * 도움말 — 시트 머리의 제목 바로 옆. 동기화 창 전체에 대한 설명이라 머리 카드(지금 상태)가 아니라 창 제목에 붙인다.
+ * 누르면 말풍선(공용 Popover)으로 연다
+ */
+function SyncHelp() {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const close = useCallback(() => setAnchor(null), [])
+  return (
+    <>
+      <button
+        className="sync-help-btn"
+        data-pop-anchor
+        aria-label="동기화 도움말"
+        aria-expanded={!!anchor}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget.getBoundingClientRect())}
+      >
+        <Icon name="help" size={16} />
+      </button>
+      <Popover anchor={anchor} onClose={close} className="sync-help-pop" align="start">
+        <div className="sync-help-body">
+          <b>무엇이 주고받아지나요?</b>
+          <p>「지금 동기화」는 이 기기에서 바꾼 노트를 올리고, 다른 기기가 올린 노트를 받습니다. 「받기만」은 받기만 합니다.</p>
+          <p>앱·기타 파일·보드 프리셋은 노트와 따로 — 추가하거나 고칠 때 그 항목만 바로 올라가고, 못 올린 것은 각 메뉴에서 다시 올립니다.</p>
+          <p>두 기기가 같은 노트를 각각 고치면 덮지 않고 「머지 필요」에 둡니다. 머지하기로 직접 합칩니다.</p>
+        </div>
+      </Popover>
+    </>
+  )
+}
+
+/**
+ * 시트 높이가 바뀔 때(목록을 다시 읽음·접기·필터 등) 뚝 바뀌지 않고 늘거나 줄게 한다.
+ * 내용(첫 자식)을 지켜보다 바뀌면, 바뀌기 전 높이에서 새 높이로 시트의 height를 애니메이션한다. 모션을 끄면 바로 바뀐다
+ */
+function useSheetHeightMotion(sheet: RefObject<HTMLElement | null>, content: RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const el = sheet.current
+    const inner = content.current
+    if (!el || !inner || typeof ResizeObserver === 'undefined') return
+    let last = el.getBoundingClientRect().height
+    let anim: Animation | null = null
+    const ro = new ResizeObserver(() => {
+      const from = anim ? el.getBoundingClientRect().height : last
+      anim?.cancel()
+      anim = null
+      const to = el.getBoundingClientRect().height
+      last = to
+      const ms = dur(280)
+      if (!ms || Math.abs(to - from) < 2) return
+      anim = el.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: ms, easing: EASE })
+      anim.onfinish = () => (anim = null)
+    })
+    ro.observe(inner)
+    return () => {
+      ro.disconnect()
+      anim?.cancel()
+    }
+  }, [sheet, content])
+}
+
 /** 시트·패널 머리의 기기 알약 — 어느 기기에서 무엇과 맞추는지 늘 보이게 */
 function DevicePill() {
   const [name, setName] = useState('')
@@ -1175,7 +1195,7 @@ function DevicePill() {
   }, [])
   return (
     <span className="sync-device-pill" title="이 기기 · 동기화 계정">
-      <Icon name="page" size={14} />
+      <Icon name="page" size={12} />
       <span>{name ? `${name} · Google Drive` : 'Google Drive'}</span>
     </span>
   )
@@ -1380,6 +1400,7 @@ export function SyncPanel() {
     <aside id="sync-panel" className="side-panel" aria-label="동기화">
       <header className="panel-header sync-head">
         <h2>동기화</h2>
+        <SyncHelp />
         <DevicePill />
         <button className="tb-btn" onClick={() => close('sync')} aria-label="닫기">
           <Icon name="close" />
@@ -1393,18 +1414,24 @@ export function SyncPanel() {
 /** 라이브러리용 동기화 시트 — 설정 버튼 옆 초록 동기화 버튼으로 연다 */
 export function SyncSheet({ onClose }: { onClose: () => void }) {
   useEscClose(onClose)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, bodyRef)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet sync-sheet" role="dialog" aria-label="동기화">
+      <div className="sheet sync-sheet" role="dialog" aria-label="동기화" ref={sheetRef}>
         <header className="sheet-header sync-head">
           <h2>동기화</h2>
+          <SyncHelp />
           <DevicePill />
           <button className="tb-btn" onClick={onClose} aria-label="닫기">
             <Icon name="close" />
           </button>
         </header>
         <div className="sheet-scroll">
-          <SyncSection />
+          <div ref={bodyRef}>
+            <SyncSection />
+          </div>
         </div>
       </div>
     </div>
