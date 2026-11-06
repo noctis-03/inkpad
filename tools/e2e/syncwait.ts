@@ -46,8 +46,8 @@ export default async function syncwait(ctx: Ctx) {
   await sleep(300)
   await openSync(p)
   const waiting = await p.locator('.sync-wait').waitFor({ timeout: 5000 }).then(() => true, () => false)
-  const hidden = (await p.locator('.sync-big').count()) === 0
-  check('기다리기: 창 밖에서 올리는 중이면 창 내용을 가리고 기다리게 한다', waiting && hidden, JSON.stringify({ waiting, hidden }))
+  const hidden = (await p.locator('.sync-go').count()) === 0 && (await p.locator('.sync-body.dim[inert]').count()) === 1
+  check('기다리기: 창 밖에서 올리는 중이면 버튼을 거두고 목록을 흐리게(누를 수 없게) 둔 채 기다린다', waiting && hidden, JSON.stringify({ waiting, hidden }))
 
   // 그 사이 일괄 올리기가 불리면(다른 경로) 아무 일 없이 끝나지 않고 알린다
   await p.evaluate(async () => (await import('/src/sync/sync.ts')).pushNow())
@@ -55,19 +55,18 @@ export default async function syncwait(ctx: Ctx) {
   check('기다리기: 잠금에 막힌 일괄 올리기는 알린다', told)
 
   release()
-  const back = await p.locator('.sync-big').first().waitFor({ timeout: 10000 }).then(() => true, () => false)
+  const back = await p.locator('.sync-cta [data-act]').first().waitFor({ timeout: 10000 }).then(() => true, () => false)
   const gone = (await p.locator('.sync-wait').count()) === 0
-  await p.waitForFunction(() => document.querySelector('.sync-big.g-push small')?.textContent === '올릴 것 없음', null, { timeout: 10000 }).catch(() => {})
-  const pushSub = await p.locator('.sync-big.g-push small').innerText()
+  await p.waitForFunction(() => (document.querySelector('.sync-cta [data-act]') as HTMLElement | null)?.dataset.push === '0', null, { timeout: 10000 }).catch(() => {})
+  const pushSub = (await p.locator('.sync-cta [data-act]').first().getAttribute('data-push')) === '0' ? '올릴 것 없음' : '올릴 것 있음'
   check('기다리기: 끝나면 창 내용이 돌아오고 목록을 새로 읽는다', back && gone && pushSub === '올릴 것 없음', JSON.stringify({ back, gone, pushSub }))
 
   // 이 창이 시작한 올리기는 기다리지 않는다 — 평소의 '동기화 중' 상태 카드
   await closeSync(p)
   await addStroke(p, docId, 's3')
   await openSync(p)
-  await p.locator('.sync-big.g-push:not([disabled])').waitFor({ timeout: 10000 })
-  await p.waitForFunction(() => document.querySelector('.sync-big.g-push small')?.textContent !== '올릴 것 없음', null, { timeout: 10000 }).catch(() => {})
-  await p.locator('.sync-big.g-push').click()
+  await p.locator('.sync-go[data-act="push"]:not([disabled])').waitFor({ timeout: 10000 })
+  await p.locator('.sync-go[data-act="push"]').click()
   const confirm = p.locator('.modal-backdrop .primary-btn', { hasText: '올리기' }).last()
   const previewShown = await confirm.waitFor({ timeout: 5000 }).then(() => true, () => false)
   release = hold() // 미리보기를 본 뒤 붙잡는다 — 올리는 동안을 본다

@@ -29,14 +29,14 @@
 .seg button,
 .paper-option,
 .hidden-cat-chip,
-.cloud-chip,
+.cloud-cat-btn,
 .cloud-bulk,
 .cloud-act-main,
 .cloud-icon-btn,
 .store-btn,
 .store-tab,
-.sync-big,
-.sync-mini {
+.sync-go,
+.sync-sub {
   transition: scale .5s var(--spring-pop), background-color .2s, box-shadow .3s var(--ft-ease);
 }
 /* 누름 영역 넓히기 — 보이는 크기는 촘촘하게 두고 손가락이 닿는 영역은 32px 이상 (docs/ui-plan.md 4단계).
@@ -45,7 +45,7 @@
 .text-btn.small,
 .merge-layer > .text-btn,
 .grid-subhead button,
-.cloud-chip,
+.cloud-cat-btn,
 .cloud-bulk,
 .icon-mini,
 .tab-close,
@@ -56,7 +56,7 @@
 .text-btn.small::after,
 .merge-layer > .text-btn::after,
 .grid-subhead button::after,
-.cloud-chip::after,
+.cloud-cat-btn::after,
 .cloud-bulk::after { content: ''; position: absolute; inset: -3px -1px; }
 .doc-more::after,
 .icon-mini::after,
@@ -77,14 +77,14 @@
 .seg button.is-pressed,
 .paper-option.is-pressed,
 .hidden-cat-chip.is-pressed,
-.cloud-chip.is-pressed,
+.cloud-cat-btn.is-pressed,
 .cloud-bulk.is-pressed,
 .cloud-act-main.is-pressed,
 .cloud-icon-btn.is-pressed,
 .store-btn.is-pressed,
 .store-tab.is-pressed,
-.sync-big.is-pressed,
-.sync-mini.is-pressed {
+.sync-go.is-pressed,
+.sync-sub.is-pressed {
   scale: .93;
   transition-duration: var(--dur-fast);
 }
@@ -106,7 +106,7 @@
 .text-btn:active { background: var(--surface); }
 .icon-mini:active { background: transparent; }
 .menu-item:active { background: transparent; }
-.sync-big:active:not(:disabled) { transform: none; }
+.sync-go:active:not(:disabled) { transform: none; }
 
 /* 포커스는 키보드(:focus-visible)일 때만 표시한다 */
 :focus-visible {
