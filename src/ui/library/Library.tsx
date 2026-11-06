@@ -45,7 +45,21 @@ import { createDocumentFromPdf, ImportError, pdfNeedsFit, readPdf } from '../../
 import { closePdf } from '../../engine/pdf/pdfjs'
 import { exportInkpad, importInkpad } from '../../io/inkpadFormat'
 import { routeFiles } from '../../io/fileRoute'
-import { CLOUD_STATES_EVENT, REMOTE_EVENT, cardSyncStates, onSyncStatus, pushOneNote, syncSummary, type CardSyncState, type SyncSummary } from '../../sync/sync'
+import {
+  CLOUD_STATES_EVENT,
+  REMOTE_EVENT,
+  cardSyncStates,
+  deleteCloudNote,
+  downloadCloudNote,
+  forgetCloudOnly,
+  listCloudOnlyNotes,
+  onSyncStatus,
+  pushOneNote,
+  syncSummary,
+  type CardSyncState,
+  type CloudOnlyNote,
+  type SyncSummary
+} from '../../sync/sync'
 import { MERGE_DONE_EVENT } from '../merge/MergeView'
 import { SheetEmpty } from '../sheetParts'
 import { openChanges } from '../ChangesView'
@@ -76,7 +90,7 @@ const RETURN_SETTLE_MS = 450
 /** 사이드바에서 펼친 카테고리 묶음 — 하나만. 앱이 떠 있는 동안만 기억한다(편집 화면에 다녀와도 그대로, 새로고침·다시 켜면 모두 접힘) */
 let openGroupMem: string | null = null
 /** 카드의 [태그] (묶음 화면의 소제목) */
-const itemTag = (i: Item) => splitCategory((i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f).category ?? '').group ?? ''
+const itemTag = (i: Item) => splitCategory(itemMeta(i).category ?? '').group ?? ''
 /** 카테고리 c가 묶음 name("[태그] name")에 드는가 */
 const inCatGroup = (c: string | null | undefined, name: string) => {
   if (!c) return false
@@ -95,7 +109,10 @@ const RADIAL_ITEMS: { pick: Mark | 'clear'; at: 'up' | 'right' | 'down' | 'left'
   { pick: 'clear', at: 'left' }
 ]
 
-type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
+type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow } | { kind: 'cloud'; c: CloudOnlyNote }
+/** 카드 종류와 상관없이 정렬·묶음에 쓰는 값 — 클라우드에만 있는 노트는 만든 날을 모르므로 고친 날로 */
+const itemMeta = (i: Item): { title: string; category?: string | null; updatedAt: number; createdAt: number } =>
+  i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.kind === 'file' ? i.f : { ...i.c, createdAt: i.c.updatedAt }
 
 /** 같은 사이드바 항목인지 — 같으면 '한 번 더 누른' 것으로 보고 최근 열람을 토글한다 */
 function sameSection(a: Section, b: Section): boolean {
@@ -171,6 +188,10 @@ export function Library() {
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
   const [appMenu, setAppMenu] = useState<{ app: HtmlApp; x: number; y: number } | null>(null)
+  // 클라우드에만 있는 노트(이 기기에 받은 적 없는 새 노트) — 마지막 클라우드 확인의 캐시에서. 카드로 함께 보인다
+  const [cloudOnly, setCloudOnly] = useState<CloudOnlyNote[]>([])
+  const [cloudMenu, setCloudMenu] = useState<{ c: CloudOnlyNote; x: number; y: number } | null>(null)
+  const [cloudBusy, setCloudBusy] = useState<string | null>(null)
   const [categorizingApp, setCategorizingApp] = useState<HtmlApp | null>(null)
   const [fileMenu, setFileMenu] = useState<{ file: FileRow; x: number; y: number } | null>(null)
   const [categorizingFile, setCategorizingFile] = useState<FileRow | null>(null)
@@ -257,7 +278,18 @@ export function Library() {
 
   const refresh = useCallback(async () => {
     const seq = ++thumbSeq.current // 미리보기 읽기 시작 순번 — 읽는 도중 저장되면 THUMBS_EVENT 쪽이 이긴다
-    const [d, t, f, th, hid, ap, fls, st, mk] = await Promise.all([listDocuments(), listDocuments({ trash: true }), listFolders(), loadThumbRows(), getHiddenCategories(), listApps(), listFiles(), cardSyncStates(), getMarks()])
+    const [d, t, f, th, hid, ap, fls, st, mk, co] = await Promise.all([
+      listDocuments(),
+      listDocuments({ trash: true }),
+      listFolders(),
+      loadThumbRows(),
+      getHiddenCategories(),
+      listApps(),
+      listFiles(),
+      cardSyncStates(),
+      getMarks(),
+      listCloudOnlyNotes().catch(() => [] as CloudOnlyNote[])
+    ])
     setDocs(d)
     setTrash(t)
     setFolders(f)
@@ -266,6 +298,7 @@ export function Library() {
     setFiles(fls)
     void syncItemThumbs(fls) // 원본이 있는데 미리보기가 없는 파일만 그리고, 사라진 항목의 미리보기는 지운다
     setSyncStates(st)
+    setCloudOnly(co)
     // 마킹 — 영구 삭제된 항목의 마킹은 여기서 정리한다(휴지통 노트는 되살릴 수 있으니 남긴다)
     const keep = new Set([...d.map((x) => 'doc:' + x.id), ...t.map((x) => 'doc:' + x.id), ...ap.map((x) => 'app:' + x.id), ...fls.map((x) => 'file:' + x.id)])
     setMarkMap(Object.keys(mk).some((k) => !keep.has(k)) ? await setMarks([], null, keep) : mk)
@@ -362,7 +395,7 @@ export function Library() {
     })
     return true
   }
-  const cardKeyOf = (i: Item) => (i.kind === 'app' ? 'app:' + i.a.id : i.kind === 'file' ? 'file:' + i.f.id : 'doc:' + i.d.id)
+  const cardKeyOf = (i: Item) => (i.kind === 'app' ? 'app:' + i.a.id : i.kind === 'file' ? 'file:' + i.f.id : i.kind === 'cloud' ? 'cloud:' + i.c.docId : 'doc:' + i.d.id)
   // 섹션을 바꾸면 선택 모드를 끝낸다
   useEffect(() => setSelected(null), [section])
   useEffect(() => {
@@ -608,6 +641,113 @@ export function Library() {
     )
   }
 
+  /**
+   * 클라우드에만 있는 노트 받기 — 카드를 누르거나 ⋯ 메뉴의 받기. 받은 뒤 열기(openAfter)까지.
+   * 그 사이 다른 기기가 클라우드에서 지웠으면 카드를 빼고 알린다
+   */
+  const receiveCloud = async (c: CloudOnlyNote, openAfter: boolean) => {
+    if (cloudBusy) return
+    setCloudBusy(c.docId)
+    try {
+      const r = await downloadCloudNote(c)
+      if (r === 'notfound') {
+        await forgetCloudOnly(c.docId)
+        toast('클라우드에서 그 노트를 찾지 못했습니다. 다른 기기에서 지웠을 수 있습니다.', 'info')
+        return
+      }
+      if (r === 'skipped') {
+        toast('지금은 받을 수 없습니다. 동기화 창에서 다시 시도해 주세요.', 'info')
+        return
+      }
+      await refresh()
+      const d = openAfter ? (await listDocuments()).find((x) => x.id === c.docId) : undefined
+      if (d) openIn(d, false)
+      else toast(`"${c.title}"을(를) 받았습니다.`)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '받지 못했습니다.', 'error')
+    } finally {
+      setCloudBusy(null)
+    }
+  }
+
+  const deleteCloudOnly = async (c: CloudOnlyNote) => {
+    if (!(await confirmDialog('클라우드에서 삭제', { message: `"${c.title}"을(를) 클라우드에서 지웁니다. 다른 기기에 받아 둔 사본은 그대로 남습니다.`, ok: '삭제', danger: true })))
+      return
+    setCloudBusy(c.docId)
+    try {
+      await deleteCloudNote(c)
+      await forgetCloudOnly(c.docId)
+      toast('클라우드에서 지웠습니다.')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '삭제하지 못했습니다.', 'error')
+    } finally {
+      setCloudBusy(null)
+    }
+  }
+
+  /**
+   * 클라우드에만 있는 노트 카드 — 이 기기에 받은 적 없는 새 노트(이 기기에서 지운 것은 아니다).
+   * 미리보기가 없어 점선 테두리 + 클라우드 아이콘, 꼬리표 '클라우드에만 있음 · 기기'. 누르면 받아서 연다(격자는 오버레이를 거쳐).
+   * 고르기(여러 장 선택)·마킹 대상이 아니다
+   */
+  const cloudCard = (c: CloudOnlyNote, idx: number) => {
+    const key = 'cloud:' + c.docId
+    const busy = cloudBusy === c.docId
+    const where = c.device ? `클라우드에만 있음 · ${c.device}` : '클라우드에만 있음'
+    // 꼬리표는 다른 카드의 동기화 꼬리표(1비트 꼬리표)와 같은 모양 — 격자는 미리보기 위, 목록은 끝
+    const cloudTag = (overlay: boolean) => (
+      <span className={'sync-tag t-remote-new' + (overlay ? ' is-overlay' : '')} title={where} aria-label={where}>
+        <b aria-hidden="true">↓</b>클라우드
+      </span>
+    )
+    return (
+      <article
+        key={key}
+        className={'doc-card cloud-card' + (revealKey === key ? ' is-revealed' : '') + (busy ? ' is-busy' : '') + (selected ? ' is-unselectable' : '')}
+        data-flip-key={key}
+        data-reveal-key={key}
+        data-cloud-id={c.docId}
+        aria-busy={busy || undefined}
+        style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
+        onClick={() => {
+          if (selected || busy) return
+          cardTap(key, () => void receiveCloud(c, true))
+        }}
+      >
+        <div className="doc-thumb">
+          {busy ? <span className="spinner" role="status" aria-label="받는 중" /> : <Icon name="cloudDown" size={32} />}
+          {prefs.view === 'grid' && cloudTag(true)}
+          {prefs.view === 'grid' &&
+            !busy &&
+            openPanel(c.device ? `${c.device} · ${formatDate(c.updatedAt)}` : formatDate(c.updatedAt), { icon: 'download', label: '받아서 열기', aria: '받아서 열기 — 이 기기로 받은 뒤 편집모드로 연다', run: () => void receiveCloud(c, true) })}
+        </div>
+        <div className="doc-info">
+          <h3 className="doc-title">{c.title}</h3>
+          {prefs.view === 'grid' ? (
+            <div className="doc-cap">
+              <p className="doc-cat-line">
+                {catLine(c.category)}
+                {c.device && <span className="cloud-card-dev">{c.device}</span>}
+              </p>
+              {moreButton((x, y) => setCloudMenu({ c, x, y }))}
+            </div>
+          ) : (
+            <p className="doc-sub">
+              <span>{catLine(c.category)}</span>
+              <span>{c.device ? `${c.device} · ${formatDate(c.updatedAt)}` : formatDate(c.updatedAt)}</span>
+            </p>
+          )}
+        </div>
+        {prefs.view === 'list' && (
+          <div className="doc-tail">
+            {cloudTag(false)}
+            {moreButton((x, y) => setCloudMenu({ c, x, y }))}
+          </div>
+        )}
+      </article>
+    )
+  }
+
   // HTML 앱 변경 반영 (추가·업데이트·삭제는 곧바로 클라우드 반영을 시도한다)
   useEffect(() => {
     const onApps = () => void refresh()
@@ -726,15 +866,34 @@ export function Library() {
     return list
   }, [recentActive, files, folders, hiddenCats, section, dq])
 
+  /** 사이드바 개수에 함께 세는 클라우드 카드 — 숨긴 카테고리는 빼고(카드로도 보이지 않는다) */
+  const cloudShown = useMemo(() => cloudOnly.filter((c) => !c.category || !hiddenCats.has(c.category)), [cloudOnly, hiddenCats])
+
+  /** 클라우드에만 있는 노트 — 노트와 같은 필터 규칙(휴지통·모든 앱·기타 파일·최근 열람에는 없다) */
+  const visibleCloud = useMemo(() => {
+    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'files') return []
+    let list = cloudShown
+    if (section.kind === 'folder') {
+      const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
+      list = list.filter((c) => c.category != null && cats.has(c.category))
+    } else if (section.kind === 'category') list = list.filter((c) => c.category === section.name)
+    else if (section.kind === 'catgroup') list = list.filter((c) => inCatGroup(c.category, section.name))
+    else if (section.kind === 'uncategorized') list = list.filter((c) => c.category == null)
+    const q = dq.trim().toLowerCase()
+    if (q) list = list.filter((c) => c.title.toLowerCase().includes(q))
+    return list
+  }, [recentActive, cloudShown, folders, section, dq])
+
   /** 노트 + 앱 + 파일을 한 목록으로 합쳐 정렬한다 (노트만 있으면 기존 노트 정렬을 그대로 쓴다) */
   const items = useMemo<Item[]>(() => {
     const list: Item[] = [
       ...visible.map((d) => ({ kind: 'doc' as const, d })),
       ...visibleApps.map((a) => ({ kind: 'app' as const, a })),
-      ...visibleFiles.map((f) => ({ kind: 'file' as const, f }))
+      ...visibleFiles.map((f) => ({ kind: 'file' as const, f })),
+      ...visibleCloud.map((c) => ({ kind: 'cloud' as const, c }))
     ]
-    const m = (i: Item) => (i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f)
-    if (visibleApps.length || visibleFiles.length) {
+    const m = itemMeta
+    if (visibleApps.length || visibleFiles.length || visibleCloud.length) {
       if (prefs.sort === 'title') list.sort((x, y) => m(x).title.localeCompare(m(y).title, 'ko'))
       else if (prefs.sort === 'created') list.sort((x, y) => m(y).createdAt - m(x).createdAt)
       else list.sort((x, y) => m(y).updatedAt - m(x).updatedAt)
@@ -742,7 +901,9 @@ export function Library() {
     // 묶음 화면 — 태그 순으로 모은다(태그 안은 위의 정렬 그대로, sort는 안정 정렬). 최근 열람(한 번 더 누름)은 나누지 않고 최근 순
     if (section.kind === 'catgroup' && !recentActive) list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
     return list
-  }, [visible, visibleApps, visibleFiles, prefs.sort, section, recentActive])
+  }, [visible, visibleApps, visibleFiles, visibleCloud, prefs.sort, section, recentActive])
+  /** 고를 수 있는 카드 — 클라우드에만 있는 노트는 이 기기에 없어 옮기기·지우기 대상이 아니다 */
+  const selectable = useMemo(() => items.filter((i) => i.kind !== 'cloud'), [items])
   // 검색 등으로 보이지 않게 된 카드는 선택에서 뺀다
   useEffect(() => {
     if (!selected) return
@@ -757,8 +918,9 @@ export function Library() {
     for (const a of apps) if (a.category) s.add(a.category)
     for (const f of files) if (f.category) s.add(f.category)
     for (const f of folders) for (const c of f.categories ?? []) s.add(c)
+    for (const c of cloudOnly) if (c.category) s.add(c.category) // 아직 받지 않은 노트의 카테고리도 사이드바에서 고를 수 있게
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [docs, apps, files, folders])
+  }, [docs, apps, files, folders, cloudOnly])
 
   /** 카테고리 색 — 이 기기의 카테고리 전체(휴지통 노트 포함)를 보고 겹치지 않게 배정한다 */
   const catColors = useMemo(() => assignCategoryColors([...allCategories, ...trash.map((d) => d.category)]), [allCategories, trash])
@@ -891,7 +1053,7 @@ export function Library() {
   }, [ready])
 
   // 목록 변화 FLIP (ui/motion/useFlip)
-  const flipSig = items.map((i) => (i.kind === 'doc' ? i.d.id : i.kind === 'app' ? i.a.id : i.f.id)).join('|')
+  const flipSig = items.map(cardKeyOf).join('|')
   useFlip(gridRef, [treeActiveKey, dq, prefs.sort, prefs.view, flipSig])
 
   // 틸트 + 광택 — mouse/pen hover에서만, 목록 보기·모션 끄기에서는 안 함
@@ -1321,7 +1483,7 @@ export function Library() {
     if (section.kind !== 'catgroup' || recentActive) return null // 최근 열람은 소제목 없이 최근 순
     const tag = itemTag(i)
     if (idx > 0 && itemTag(items[idx - 1]) === tag) return null
-    const cat = (i.kind === 'doc' ? i.d : i.kind === 'app' ? i.a : i.f).category
+    const cat = itemMeta(i).category
     const n = items.filter((x) => itemTag(x) === tag).length
     return (
       <h3 key={'subhead:' + tag} className="grid-subhead">
@@ -1334,7 +1496,8 @@ export function Library() {
     )
   }
   /** 카테고리에 든 노트·앱·파일 수 */
-  const catCount = (c: string) => docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length
+  const catCount = (c: string) =>
+    docs.filter((d) => d.category === c).length + apps.filter((a) => a.category === c).length + files.filter((f) => f.category === c).length + cloudShown.filter((x) => x.category === c).length
   /** 사이드바 카테고리 한 줄 — label은 보이는 이름([묶음] 아래면 그 부분을 뗀 이름) */
   const categoryItem = (c: string, label: string) => (
     <button
@@ -1439,7 +1602,7 @@ export function Library() {
               >
                 <Icon name="grid" size={18} /> 전체 {section.kind === 'all' && recentActive && recentTag}
                 <span className="count">
-                  <CountUp value={docs.length + apps.length + files.length} />
+                  <CountUp value={docs.length + apps.length + files.length + cloudShown.length} />
                 </span>
               </button>
               <button
@@ -1448,7 +1611,7 @@ export function Library() {
                 onClick={() => pickSection({ kind: 'notes' })}
               >
                 <Icon name="notebook" size={18} /> 모든 노트 {section.kind === 'notes' && recentActive && recentTag}{' '}
-                <span className="count"><CountUp value={docs.length} /></span>
+                <span className="count"><CountUp value={docs.length + cloudShown.length} /></span>
               </button>
               <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
                 <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
@@ -1505,7 +1668,7 @@ export function Library() {
                 <span className="tree-cat-dot" style={{ background: catColor(null) }} aria-hidden="true" />
                 <span className="tree-name">미분류</span>
                 {section.kind === 'uncategorized' && recentActive && recentTag}
-                <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length}</span>
+                <span className="count">{docs.filter((d) => d.category == null).length + apps.filter((a) => a.category == null).length + files.filter((f) => f.category == null).length + cloudShown.filter((x) => x.category == null).length}</span>
               </button>
               <div className="tree-label">
                 폴더
@@ -1553,10 +1716,10 @@ export function Library() {
                 </h1>
                 <button
                   className="sel-btn"
-                  onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map(cardKeyOf)))}
-                  disabled={!items.length}
+                  onClick={() => setSelected(selected.size === selectable.length ? new Set() : new Set(selectable.map(cardKeyOf)))}
+                  disabled={!selectable.length}
                 >
-                  {selected.size && selected.size === items.length ? '모두 해제' : '전체 선택'}
+                  {selected.size && selected.size === selectable.length ? '모두 해제' : '전체 선택'}
                 </button>
                 <div className="mark-bar" role="group" aria-label="마킹 (이 기기에만 저장)">
                   {MARKS.map((m) => (
@@ -1815,6 +1978,8 @@ export function Library() {
                       onPlay: () => navigate({ name: 'app', appId: i.a.id }),
                       onMenu: (x, y) => setAppMenu({ app: i.a, x, y })
                     })
+                  ) : i.kind === 'cloud' ? (
+                    cloudCard(i.c, idx)
                   ) : i.kind === 'file' ? (
                     itemCard({
                       key: 'file:' + i.f.id,
@@ -1980,6 +2145,39 @@ export function Library() {
           <MenuItem icon="tag" label="카테고리 지정" onClick={() => appAction('category', appMenu.app)} />
           <MenuItem icon="download" label=".html로 내보내기" onClick={() => appAction('export', appMenu.app)} />
           <MenuItem icon="trash" label="이 기기에서 제거" danger onClick={() => appAction('remove', appMenu.app)} />
+        </Menu>
+      )}
+
+      {cloudMenu && (
+        <Menu x={cloudMenu.x} y={cloudMenu.y} onClose={() => setCloudMenu(null)}>
+          <MenuItem
+            icon="download"
+            label="받아서 열기"
+            onClick={() => {
+              const c = cloudMenu.c
+              setCloudMenu(null)
+              void receiveCloud(c, true)
+            }}
+          />
+          <MenuItem
+            icon="cloudDown"
+            label="받기만"
+            onClick={() => {
+              const c = cloudMenu.c
+              setCloudMenu(null)
+              void receiveCloud(c, false)
+            }}
+          />
+          <MenuItem
+            icon="trash"
+            label="클라우드에서 삭제"
+            danger
+            onClick={() => {
+              const c = cloudMenu.c
+              setCloudMenu(null)
+              void deleteCloudOnly(c)
+            }}
+          />
         </Menu>
       )}
 

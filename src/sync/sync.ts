@@ -267,17 +267,48 @@ if (cloudStatesChannel) cloudStatesChannel.onmessage = () => window.dispatchEven
 /** 라이브러리 카드 점의 상태 — cloud-deleted·deleted-local은 'new'(회색)로 뭉갠다. diverged는 갈라짐(머지 필요) */
 export type CardSyncState = 'new' | 'pending' | 'same' | 'remote-new' | 'diverged'
 
-/** 동기화창이 클라우드 노트 목록을 새로고침하면 그 판정을 캐시해 둔다 — 라이브러리 점이 함께 읽는다 */
+/** 라이브러리에 카드로 보이는 '클라우드에만 있는 노트' — 받기에 필요한 것과 카드에 쓰는 것만 */
+export type CloudOnlyNote = Pick<CloudNoteInfo, 'docId' | 'title' | 'device' | 'category' | 'updatedAt' | 'fileId' | 'version' | 'enc'>
+
+/**
+ * 동기화창이 클라우드 노트 목록을 새로고침하면(또는 앱을 열 때 확인하면) 그 판정을 캐시해 둔다 — 라이브러리 점이 함께 읽는다.
+ * 이 기기에 없는 노트(받을 수 있는 새 노트, 이 기기에서 지운 것 제외)는 카드로 그릴 수 있게 제목·카테고리까지 남긴다
+ */
 async function cacheCloudStates(infos: CloudNoteInfo[]): Promise<void> {
   const states: Record<string, CloudNoteState> = {}
   const versions: Record<string, string> = {}
+  const cloudOnly: CloudOnlyNote[] = []
   for (const i of infos) {
     states[i.docId] = i.state
     if (i.version) versions[i.docId] = i.version
+    if (i.cloudOnly && i.state === 'remote-new' && i.fileId)
+      cloudOnly.push({ docId: i.docId, title: i.title, device: i.device, category: i.category ?? null, updatedAt: i.updatedAt, fileId: i.fileId, version: i.version, enc: i.enc })
   }
-  await putSync('cloudStates', { at: Date.now(), states, versions })
-  window.dispatchEvent(new Event(CLOUD_STATES_EVENT))
-  cloudStatesChannel?.postMessage(Date.now())
+  await putSync('cloudStates', { at: Date.now(), states, versions, cloudOnly })
+  notifySyncChanged()
+}
+
+/**
+ * 클라우드에만 있는 노트 — 라이브러리 카드용. 네트워크 없이 마지막으로 본 목록(캐시)만 읽는다.
+ * 그 뒤 받았거나(이 기기에 생김) 지운 표식이 생긴 노트는 뺀다 — 다음 확인을 기다리지 않고 카드가 바로 사라지게
+ */
+export async function listCloudOnlyNotes(): Promise<CloudOnlyNote[]> {
+  const cache = await getCloudStatesCache()
+  const out: CloudOnlyNote[] = []
+  for (const n of cache?.cloudOnly ?? []) {
+    if (await db.documents.get(n.docId)) continue
+    if (await getSync(`gone:${n.docId}`)) continue
+    out.push(n)
+  }
+  return out
+}
+
+/** 클라우드에만 있는 노트를 캐시에서 뺀다 — 클라우드에서 지웠거나 받으려는데 클라우드에 없을 때 */
+export async function forgetCloudOnly(docId: ID): Promise<void> {
+  const cache = await getCloudStatesCache()
+  if (!cache?.cloudOnly?.some((n) => n.docId === docId)) return
+  await putSync('cloudStates', { ...cache, cloudOnly: cache.cloudOnly.filter((n) => n.docId !== docId) })
+  notifySyncChanged()
 }
 
 /**
@@ -295,7 +326,7 @@ export async function cardSyncStates(): Promise<Map<ID, CardSyncState>> {
   return out
 }
 
-type CloudStatesCache = { at: number; states: Record<string, CloudNoteState>; versions: Record<string, string> }
+type CloudStatesCache = { at: number; states: Record<string, CloudNoteState>; versions: Record<string, string>; cloudOnly?: CloudOnlyNote[] }
 const getCloudStatesCache = () => getSync<CloudStatesCache>('cloudStates')
 
 /** 노트 하나의 카드 상태 (편집 화면의 노트 칩) — 네트워크 없음 */
@@ -855,6 +886,8 @@ export interface CloudNoteInfo {
   version: string
   enc?: string
   state: CloudNoteState
+  /** 이 기기에 한 번도 받은 적 없는 노트(다른 기기가 새로 만든 것) — 이 기기에서 지운 노트(deleted-local)는 아니다 */
+  cloudOnly?: boolean
 }
 
 const SYNC_TO_STATE: Record<NoteSync, CloudNoteState> = { same: 'same', pull: 'remote-new', push: 'pending', diverged: 'diverged' }
@@ -917,7 +950,8 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       fileId: remote.id,
       version: remote.version,
       enc: remote.appProperties?.enc,
-      state: gone ? 'deleted-local' : SYNC_TO_STATE[sync]
+      state: gone ? 'deleted-local' : SYNC_TO_STATE[sync],
+      ...(!local && !gone ? { cloudOnly: true } : {})
     })
   }
 
