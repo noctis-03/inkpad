@@ -15,8 +15,9 @@ import { OPEN_SYNC_EVENT } from '../../app/syncReminders'
 import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
+import { NoteAssetsSheet } from './NoteAssetsSheet'
 import { Menu, MenuItem } from '../Menu'
-import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, noteAssetRows, saveNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
+import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, noteAssetRows, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { assignCategoryColors, categoryColor, formatDate, splitCategory } from '../../shared/util'
@@ -185,8 +186,9 @@ export function Library() {
   const [searchOpen, setSearchOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [menu, setMenu]= useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
-  // 노트 카드 ⋯ 메뉴의 「원본 파일 저장」 — 메뉴를 열 때 그 노트가 쓰는 원본 수를 본다(네트워크 없음). null = 확인 중
-  const [menuAssets, setMenuAssets] = useState<{ docId: ID; count: number; kinds: string } | null>(null)
+  // 노트 카드 ⋯ 메뉴의 「원본 파일 받기」 — 메뉴를 열 때 그 노트가 쓰는 원본 수·빠진 수를 본다(네트워크 없음). null = 확인 중
+  const [menuAssets, setMenuAssets] = useState<{ docId: ID; count: number; missing: number; kinds: string } | null>(null)
+  const [assetsOf, setAssetsOf] = useState<DocumentMeta | null>(null) // 원본 파일 받기 창
   useEffect(() => {
     setMenuAssets(null)
     if (!menu || section.kind === 'trash') return
@@ -196,7 +198,7 @@ export function Library() {
       if (!alive) return
       const pdf = rows.filter((r) => r.kind === 'pdf').length
       const img = rows.length - pdf
-      setMenuAssets({ docId: id, count: rows.length, kinds: [pdf && `PDF ${pdf}`, img && `이미지 ${img}`].filter(Boolean).join(' · ') })
+      setMenuAssets({ docId: id, count: rows.length, missing: rows.filter((r) => !r.blob).length, kinds: [pdf && `PDF ${pdf}`, img && `이미지 ${img}`].filter(Boolean).join(' · ') })
     })
     return () => {
       alive = false
@@ -2147,18 +2149,22 @@ export function Library() {
               <MenuItem icon="tag" label="카테고리 지정" onClick={() => docAction('category', menu.doc)} />
               <MenuItem icon="share" label=".inkpad로 내보내기" onClick={() => docAction('export', menu.doc)} />
               {(() => {
-                // 원본 파일 저장 — 이 노트가 쓰는 PDF·이미지 원본을 기기 파일로(여럿이면 zip 하나). 쓰는 원본이 없으면 까닭을 적고 누를 수 없게
+                // 원본 파일 받기 — 이 노트가 쓰는 PDF·이미지 원본을 보여 주는 창에서 골라 받는다. 쓰는 원본이 없으면 까닭을 적고 누를 수 없게
                 const st = menuAssets?.docId === menu.doc.id ? menuAssets : null
-                const label = !st ? '원본 파일 저장' : !st.count ? '원본 파일 저장 · 쓰는 원본 없음' : `원본 파일 저장 · ${st.kinds}${st.count > 1 ? ' (zip)' : ''}`
+                const label = !st
+                  ? '원본 파일 받기'
+                  : !st.count
+                    ? '원본 파일 받기 · 쓰는 원본 없음'
+                    : `원본 파일 받기 · ${st.kinds}${st.missing ? ` (받을 것 ${st.missing})` : ' (모두 있음)'}`
                 return (
                   <MenuItem
-                    icon="download"
+                    icon="cloudDown"
                     label={label}
                     disabled={!st || !st.count}
                     onClick={() => {
                       const d = menu.doc
                       setMenu(null)
-                      void saveNoteAssets(d)
+                      setAssetsOf(d)
                     }}
                   />
                 )
@@ -2304,6 +2310,7 @@ export function Library() {
       {showApps && <AppsSheet onClose={() => setShowApps(false)} />}
       {showFiles && <FilesSheet onClose={() => setShowFiles(false)} />}
       {showAssets && <AssetsSheet onClose={() => setShowAssets(false)} />}
+      {assetsOf && <NoteAssetsSheet doc={assetsOf} onClose={() => setAssetsOf(null)} />}
     </div>
   )
 }

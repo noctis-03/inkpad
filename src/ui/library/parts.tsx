@@ -12,12 +12,7 @@ import type { CardSyncState } from '../../sync/sync'
 import { db, type AssetRow, type FileRow } from '../../storage/db'
 import type { Mark } from '../../storage/repo'
 import { collectAssetUsage, listDocuments } from '../../storage/repo'
-import { downloadMissing, fetchAssetBlob, listMissingAssets } from '../../sync/assets'
-import { assetFileName } from '../../sync/pack'
-import { saveFile } from '../../io/download'
-import { trackActivity } from '../../shared/activity'
-import { zip } from 'fflate'
-import { formatBytes } from '../../shared/util'
+import { downloadMissing, listMissingAssets } from '../../sync/assets'
 import { confirmTransfer } from '../../sync/transfer'
 
 /**
@@ -278,68 +273,6 @@ export async function noteAssetRows(docId: ID): Promise<AssetRow[]> {
   const usage = await collectAssetUsage()
   const ids = [...usage].filter(([, docs]) => docs.has(docId)).map(([id]) => id)
   return (await db.assets.bulkGet(ids)).filter((r): r is AssetRow => !!r)
-}
-
-/** 원본 파일 이름 — 가져올 때의 이름, 없으면 내용 주소 이름(sha256.pdf 등) */
-const assetName = (r: AssetRow) => r.name || assetFileName(r.sha256, r.mime).split('/').pop()!
-
-/** 같은 이름이 겹치면 '이름 (2).pdf'처럼 — 압축 파일 안에서 덮이지 않게 */
-function uniqueName(name: string, used: Set<string>): string {
-  if (!used.has(name)) return used.add(name), name
-  const dot = name.lastIndexOf('.')
-  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
-  for (let i = 2; ; i++) {
-    const n = `${stem} (${i})${ext}`
-    if (!used.has(n)) return used.add(n), n
-  }
-}
-
-let assetSaveBusy = false
-/**
- * 노트 원본 파일 저장 — 그 노트가 쓰는 PDF·이미지 원본을 앱 저장소가 아니라 **기기 파일로** 저장한다(노트 카드 ⋯ 메뉴).
- * 하나면 그 파일 그대로, 여럿이면 「노트 제목 원본.zip」 하나로(이미 압축된 형식이라 다시 압축하지 않는다).
- * 이 기기에 없는 원본은 클라우드에서 받아 저장만 하고 앱에는 남기지 않는다 — 원본 관리 시트의 '기기에 저장'과 같은 규칙.
- * 받을 것이 있으면 큰 전송 확인을 다른 받기와 같은 기준으로 묻는다
- */
-export async function saveNoteAssets(doc: DocumentMeta) {
-  if (assetSaveBusy) return
-  assetSaveBusy = true
-  const { toast } = useUI.getState()
-  try {
-    const rows = await noteAssetRows(doc.id)
-    if (!rows.length) return toast('이 노트는 PDF·이미지 원본을 쓰지 않습니다.', 'info')
-    const missing = rows.filter((r) => !r.blob)
-    if (missing.length) {
-      if (!navigator.onLine) return toast('오프라인이라 이 기기에 없는 원본을 받을 수 없습니다. 연결한 뒤 다시 시도해 주세요.', 'error')
-      const bytes = missing.reduce((n, r) => n + (r.size || 0), 0)
-      if (!(await confirmTransfer('down', bytes, missing.length, '노트 원본'))) return
-    }
-    const zipName = `${doc.title} 원본.zip`
-    const out = await trackActivity(
-      'export',
-      rows.length === 1 ? assetName(rows[0]) : zipName,
-      async (a) => {
-        if (rows.length === 1) return { blob: await fetchAssetBlob(rows[0]), name: assetName(rows[0]) }
-        const used = new Set<string>()
-        const files: Record<string, [Uint8Array, { level: 0 }]> = {}
-        let i = 0
-        for (const r of rows) {
-          a.update({ progress: i / rows.length, detail: `${i + 1}/${rows.length}` })
-          files[uniqueName(assetName(r), used)] = [new Uint8Array(await (await fetchAssetBlob(r)).arrayBuffer()), { level: 0 }]
-          i++
-        }
-        const data = await new Promise<Uint8Array>((res, rej) => zip(files, (e, d) => (e ? rej(e) : res(d))))
-        return { blob: new Blob([data as BlobPart], { type: 'application/zip' }), name: zipName }
-      },
-      (r) => formatBytes(r.blob.size)
-    )
-    await saveFile(out.blob, out.name)
-    toast(rows.length === 1 ? `"${out.name}"을(를) 기기에 저장했습니다.` : `원본 ${rows.length}개를 "${out.name}"(으)로 저장했습니다.`, 'success')
-  } catch (e) {
-    toast(`원본을 저장하지 못했습니다: ${(e as Error).message}`, 'error')
-  } finally {
-    assetSaveBusy = false
-  }
 }
 
 /** 마킹 종류 — 버튼 순서대로. cls는 CSS 클래스 꼬리(!는 클래스 이름에 못 쓴다) */
