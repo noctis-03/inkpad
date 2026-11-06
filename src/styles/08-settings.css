@@ -85,16 +85,480 @@
   border-style: dashed;
 }
 
-/* ── 카테고리 지정 모달: 새 카테고리 입력 행 (기본 .field.inline의 90px를 쓰지 않는다) ── */
-.cat-new-row {
+/* ── 카테고리 지정 창 (ui/library/CategoryPicker) ──
+   입력 하나로 검색·새로 만들기, 사이드바와 같은 색 점·[태그] 묶음, 색 점을 누르면 그 자리에서 색 고르기.
+   좁은 화면(600px 이하)에서는 아래에서 올라오는 시트 */
+.modal.cp {
+  width: min(420px, 100%);
+  max-height: min(680px, calc(100dvh - 32px));
+  padding: 0;
   display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 16px 12px;
+  flex-direction: column;
+  overflow: hidden;
 }
-.cat-new-row input {
+.cp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 10px 10px 18px;
+}
+.cp-head-text {
   flex: 1;
+  min-width: 0;
+}
+.cp-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+.cp-target {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin: 0 14px 10px;
+  padding: 0 6px 0 12px;
+  border: 1.5px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.cp-search:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.cp-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: var(--fs-md);
+  color: var(--ink);
+}
+.cp-clear {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.cp-recent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+.cp-recent-label {
+  margin-right: 2px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  cursor: pointer;
+}
+.cp-chip:hover {
+  background: var(--hover);
+}
+.cp-list {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--line);
+}
+.cp-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+/* 한 줄: [색 점 버튼 36px][이름 … 개수 ✓] — 점을 누르면 색, 나머지를 누르면 지정 */
+.cp-row,
+.cp-cat {
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-height: 44px;
+  border-radius: var(--r-sm);
+  position: relative;
+}
+.cp-row {
+  gap: 8px;
+  padding: 0 12px 0 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-md);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.cp-cat > .cp-row {
+  flex: 1;
+  min-width: 0;
+  padding-left: 2px;
+}
+.cp-row:hover,
+.cp-row.is-active,
+.cp-cat.is-active {
+  background: var(--hover);
+}
+.cp-row.is-current,
+.cp-cat.is-current {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.cp-row.is-current .cp-name,
+.cp-cat.is-current .cp-name {
+  font-weight: 600;
+}
+.cp-cat.is-current > .cp-row {
+  color: var(--accent-ink);
+}
+.cp-cat.is-current > .cp-row:hover {
+  background: transparent;
+}
+.cp-cat.is-child {
+  margin-left: 22px;
+  width: calc(100% - 22px);
+}
+.cp-cat.is-child::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--line-2);
+}
+.cp-cat.is-confirm {
+  box-shadow: inset 0 0 0 1.5px var(--warn-line);
+  background: var(--warn-soft);
+}
+.cp-dot-hit {
+  flex: none;
+  width: 36px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+button.cp-dot-hit {
+  cursor: pointer;
+}
+button.cp-dot-hit:hover .cp-dot {
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 4.5px currentColor;
+}
+.cp-dot-hit.is-open .cp-dot {
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px currentColor;
+}
+.cp-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+}
+.cp-dot.is-small,
+.cp-chip .cp-dot {
+  width: 8px;
+  height: 8px;
+}
+/* 카테고리 없음 — 색이 아니라 모양(속이 빈 링)으로 '없음' */
+.cp-ring {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--muted-2);
+  border-radius: var(--r-pill);
+}
+.cp-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-name.is-hidden {
+  opacity: .55;
+}
+.cp-name b {
+  font-weight: 600;
+}
+.cp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+.cp-count {
+  min-width: 14px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--muted);
+  text-align: right;
+}
+.cp-part {
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  font-size: var(--fs-xs);
+  color: var(--accent-ink);
+}
+.cp-check {
+  width: 18px;
+  display: flex;
+  justify-content: center;
+  color: var(--accent);
+}
+.cp-dash {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.cp-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.cp-group:hover:not(:disabled) {
+  background: var(--hover);
+}
+.cp-group:disabled {
+  cursor: default;
+  color: var(--ink-2);
+}
+.cp-chev {
+  display: flex;
+  transition: transform .15s;
+}
+.cp-chev.is-open {
+  transform: rotate(90deg);
+}
+.cp-group-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.cp-group-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+}
+.cp-group-cur {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--accent);
+}
+/* 색 고르기 — 그 줄 바로 아래에 펼친다 */
+.cp-pop {
+  margin: 2px 4px 8px 4px;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e2);
+}
+.cp-pop.is-child {
+  margin-left: 26px;
+}
+.cp-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 8px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.cp-swatches {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  justify-items: center;
+}
+.cp-swatch {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.cp-swatch svg {
+  color: #fff;
+}
+.cp-swatch.is-on {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px currentColor;
+}
+/* 다른 카테고리가 쓰는 색 — 골라도 되지만 겹친다는 표시 */
+.cp-swatch.is-used::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 2.5px solid currentColor;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+}
+.cp-pop-note {
+  margin-top: 10px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.cp-suggest {
+  background: var(--warn-soft);
+}
+.cp-create {
+  min-height: 52px;
+  color: var(--accent);
+}
+.cp-plus {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-create-title {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-create-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.cp-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: var(--fs-base);
+  color: var(--muted);
+  line-height: 1.6;
+}
+.cp-empty-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: var(--fs-sm);
+}
+.cp-empty code {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: inherit;
+}
+.cp-confirm {
+  margin: 0 12px 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+}
+.cp-confirm-text {
+  font-size: var(--fs-base);
+  line-height: 1.55;
+}
+.cp-confirm-text b {
+  font-weight: 600;
+}
+.cp-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cp-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+/* 키보드 안내는 마우스·키보드 기기에서만 */
+@media (pointer: coarse) {
+  .cp-keys {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .cp-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal.cp {
+    width: 100%;
+    max-height: 85dvh;
+    border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+.sel-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* ───────── 디버그: 네트워크 사용량 ───────── */

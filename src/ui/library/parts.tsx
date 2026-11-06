@@ -4,10 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useUI } from '../../app/store'
 import { SPRING, dur } from '../motion/motion'
 import { Icon } from '../Icon'
-import { useEscClose } from '../sheetParts'
 import { refreshAllThumbnailsWithToast } from '../../io/docThumb'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
-import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import type { CardSyncState } from '../../sync/sync'
 import { db, type AssetRow, type FileRow } from '../../storage/db'
 import type { Mark } from '../../storage/repo'
@@ -164,61 +162,6 @@ export function FolderTree(props: {
         </div>
       ))}
     </>
-  )
-}
-
-export function CategoryPicker({
-  current,
-  categories,
-  onPick,
-  onClose
-}: {
-  current: string | null
-  categories: string[]
-  onPick: (category: string | null) => void
-  onClose: () => void
-}) {
-  const [name, setName] = useState('')
-  const submit = () => {
-    const c = normalizeCategory(name)
-    if (!c) return
-    onPick(c)
-  }
-  useEscClose(onClose)
-  return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <h2 className="modal-title">카테고리 지정</h2>
-        <div className="picker-list">
-          <button className={'menu-item' + (current === null ? ' is-current' : '')} onClick={() => onPick(null)}>
-            <Icon name="notebook" size={18} /> 미분류
-          </button>
-          {categories.map((c) => (
-            <button key={c} className={'menu-item' + (current === c ? ' is-current' : '')} onClick={() => onPick(c)}>
-              <Icon name="tag" size={18} /> {c}
-            </button>
-          ))}
-        </div>
-        <div className="cat-new-row">
-          <input
-            value={name}
-            maxLength={MAX_CATEGORY_CHARS}
-            placeholder="새 카테고리 만들기"
-            aria-label="새 카테고리 이름"
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && name.trim() && submit()}
-          />
-          <button className="text-btn small" disabled={!name.trim()} onClick={submit}>
-            추가
-          </button>
-        </div>
-        <div className="modal-actions">
-          <button className="text-btn" onClick={onClose}>
-            취소
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 

@@ -22,11 +22,35 @@ const CATEGORY_COLORS = [
 
 const UNCATEGORIZED = '#64748b' // 미분류 — 중립 회색
 
-/** 색을 정하는 이름 — [태그]로 시작하면 태그만("[과제] 디지털 시스템"·"[과제] 회로 실습"은 모두 "과제") */
-function colorLabel(name: string | null | undefined): string {
+/** 카테고리 지정 창에서 직접 고를 수 있는 색 — 팔레트에서 점 크기로도 서로 구분되는 10색
+ *  (주황·겨자, 파랑·남보라는 OKLab 거리 0.07 아래라 8px 점에서 같은 색으로 보여 고르는 칸에서는 뺀다) */
+export const CATEGORY_SWATCHES: { name: string; hex: string }[] = [
+  { name: '파랑', hex: '#2563eb' },
+  { name: '분홍', hex: '#db2777' },
+  { name: '초록', hex: '#059669' },
+  { name: '주황', hex: '#d97706' },
+  { name: '보라', hex: '#7c3aed' },
+  { name: '청록', hex: '#0891b2' },
+  { name: '빨강', hex: '#dc2626' },
+  { name: '올리브', hex: '#4d7c0f' },
+  { name: '자홍', hex: '#c026d3' },
+  { name: '갈색', hex: '#a0522d' }
+]
+
+/** 색을 정하는 이름 — [태그]로 시작하면 태그만("[과제] 디지털 시스템"·"[과제] 회로 실습"은 모두 "과제").
+ *  사용자가 고른 색(categoryColors)도 이 이름 단위로 저장한다 — 같은 태그는 한 번에 바뀐다 */
+export function colorLabel(name: string | null | undefined): string {
   const trimmed = name?.trim()
   return trimmed ? (splitCategory(trimmed).group ?? trimmed) : ''
 }
+
+/** 사용자가 고른 색 (색 이름 → #rrggbb). storage/categoryColors가 DB에서 읽어 넣는다 — 배정보다 먼저 쓴다 */
+let colorOverrides: ReadonlyMap<string, string> = new Map()
+export function setCategoryColorOverrides(m: ReadonlyMap<string, string>) {
+  colorOverrides = m
+}
+/** 이 카테고리(의 색 이름)에 사용자가 고른 색이 있는가 */
+export const hasCategoryColorOverride = (name: string | null | undefined) => colorOverrides.has(colorLabel(name))
 
 /** 이름 → 팔레트 칸. 같은 이름은 언제나 같은 칸 — 배정에서 '원래 색'으로 먼저 지킨다 */
 function hashIndex(label: string): number {
@@ -89,7 +113,16 @@ export function assignCategoryColors(names: Iterable<string | null | undefined>)
   const out = new Map<string, string>()
   const taken = new Set<number>()
   const rest: string[] = []
+  // 0) 사용자가 고른 색이 먼저 — 그 색의 팔레트 칸은 다른 카테고리가 원래 색으로 가져가지 않는다
   for (const label of labels) {
+    const own = colorOverrides.get(label)
+    if (!own) continue
+    out.set(label, own)
+    const i = CATEGORY_COLORS.indexOf(own)
+    if (i >= 0) taken.add(i)
+  }
+  for (const label of labels) {
+    if (out.has(label)) continue
     const i = hashIndex(label)
     if (taken.has(i)) rest.push(label)
     else {
@@ -132,7 +165,7 @@ export function assignCategoryColors(names: Iterable<string | null | undefined>)
 export function categoryColor(name: string | null | undefined, assigned?: Map<string, string>): string {
   const label = colorLabel(name)
   if (!label) return UNCATEGORIZED
-  return assigned?.get(label) ?? CATEGORY_COLORS[hashIndex(label)]
+  return colorOverrides.get(label) ?? assigned?.get(label) ?? CATEGORY_COLORS[hashIndex(label)]
 }
 
 /**

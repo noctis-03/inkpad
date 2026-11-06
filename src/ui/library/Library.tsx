@@ -16,8 +16,10 @@ import { AppsSheet } from '../AppsSheet'
 import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import { NoteAssetsSheet } from './NoteAssetsSheet'
+import { CategoryPicker, categoryDisplay } from './CategoryPicker'
+import { useCategoryColorVersion } from '../../storage/categoryColors'
 import { Menu, MenuItem } from '../Menu'
-import { CategoryPicker, FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
+import { FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
 import { assignCategoryColors, categoryColor, formatDate, splitCategory } from '../../shared/util'
@@ -126,6 +128,14 @@ function sameSection(a: Section, b: Section): boolean {
 
 const WIDE_QUERY = '(min-width: 901px)'
 
+/** 카테고리 지정 창이 다루는 항목 하나 */
+interface CatItem {
+  key: string
+  title: string
+  category: string | null
+}
+const RECENT_CATS_KEY = 'inkpad.recentCategories'
+
 export function Library() {
   const navigate = useUI((s) => s.navigate)
   const prefs = useUI((s) => s.library)
@@ -188,15 +198,14 @@ export function Library() {
   const [menu, setMenu]= useState<{ doc: DocumentMeta; x: number; y: number } | null>(null)
   const [assetsOf, setAssetsOf] = useState<DocumentMeta | null>(null) // 원본 파일 저장 창 — 노트 카드 ⋯ 메뉴
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
-  const [categorizing, setCategorizing] = useState<DocumentMeta | null>(null)
+  /** 카테고리 지정 창의 대상 — 카드 키('doc:'·'app:'·'file:' + id). 하나(⋯ 메뉴) 또는 여럿(선택 모드) */
+  const [catTarget, setCatTarget] = useState<string[] | null>(null)
   const [appMenu, setAppMenu] = useState<{ app: HtmlApp; x: number; y: number } | null>(null)
   // 클라우드에만 있는 노트(이 기기에 받은 적 없는 새 노트) — 마지막 클라우드 확인의 캐시에서. 카드로 함께 보인다
   const [cloudOnly, setCloudOnly] = useState<CloudOnlyNote[]>([])
   const [cloudMenu, setCloudMenu] = useState<{ c: CloudOnlyNote; x: number; y: number } | null>(null)
   const [cloudBusy, setCloudBusy] = useState<string | null>(null)
-  const [categorizingApp, setCategorizingApp] = useState<HtmlApp | null>(null)
   const [fileMenu, setFileMenu] = useState<{ file: FileRow; x: number; y: number } | null>(null)
-  const [categorizingFile, setCategorizingFile] = useState<FileRow | null>(null)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [ready, setReady] = useState(false) // 첫 데이터 로드가 끝났는지 — 복원한 섹션 가드가 빈 목록으로 판정하지 않게 한다
   const [treeOpen, setTreeOpen] = useState(() => window.innerWidth >= 900)
@@ -925,8 +934,88 @@ export function Library() {
   }, [docs, apps, files, folders, cloudOnly])
 
   /** 카테고리 색 — 이 기기의 카테고리 전체(휴지통 노트 포함)를 보고 겹치지 않게 배정한다 */
-  const catColors = useMemo(() => assignCategoryColors([...allCategories, ...trash.map((d) => d.category)]), [allCategories, trash])
+  const colorVersion = useCategoryColorVersion() // 카테고리 지정 창에서 색을 고르면 다시 배정한다
+  const catColors = useMemo(
+    () => assignCategoryColors([...allCategories, ...trash.map((d) => d.category)]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allCategories, trash, colorVersion]
+  )
   const catColor = (c: string | null | undefined) => categoryColor(c, catColors)
+
+  /** 카테고리별 항목 수 (노트·앱·파일, 휴지통 제외) — 카테고리 지정 창의 개수 */
+  const categoryCounts = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const x of [...docs, ...apps, ...files]) if (x.category) m.set(x.category, (m.get(x.category) ?? 0) + 1)
+    return m
+  }, [docs, apps, files])
+
+  /** 최근에 지정한 카테고리 — 이 기기 브라우저에만 (카테고리 지정 창의 '최근' 칩) */
+  const [recentCats, setRecentCats] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(RECENT_CATS_KEY) ?? '[]')
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    } catch {
+      return []
+    }
+  })
+  const rememberCategory = (c: string) => {
+    const next = [c, ...recentCats.filter((x) => x !== c)].slice(0, 5)
+    setRecentCats(next)
+    try {
+      localStorage.setItem(RECENT_CATS_KEY, JSON.stringify(next))
+    } catch {
+      /* 저장할 수 없는 환경 — 이번 화면에서만 기억한다 */
+    }
+  }
+
+  /** 카테고리 지정 창의 대상 — 카드 키를 지금 목록의 항목으로 (사라진 항목은 뺀다) */
+  const catTargetInfo = useMemo(() => {
+    if (!catTarget) return null
+    const items: CatItem[] = []
+    for (const key of catTarget) {
+      const id = key.slice(key.indexOf(':') + 1)
+      if (key.startsWith('doc:')) {
+        const d = docs.find((x) => x.id === id)
+        if (d) items.push({ key, title: d.title, category: d.category ?? null })
+      } else if (key.startsWith('app:')) {
+        const a = apps.find((x) => x.id === id)
+        if (a) items.push({ key, title: a.title, category: a.category ?? null })
+      } else if (key.startsWith('file:')) {
+        const f = files.find((x) => x.id === id)
+        if (f) items.push({ key, title: f.title, category: f.category ?? null })
+      }
+    }
+    if (!items.length) return null
+    const current = new Map<string | null, number>()
+    for (const i of items) current.set(i.category, (current.get(i.category) ?? 0) + 1)
+    return { items, current, title: items.length === 1 ? items[0].title : `${items.length}개 항목` }
+  }, [catTarget, docs, apps, files])
+
+  /** 카테고리를 지정한다 — 노트는 이 기기에, 앱·파일은 바로 클라우드에(sync.ts 규칙 12). 토스트의 되돌리기로 원래대로 */
+  const setItemCategory = async (key: string, cat: string | null) => {
+    const id = key.slice(key.indexOf(':') + 1)
+    if (key.startsWith('doc:')) await updateDocument(id, { category: cat })
+    else if (key.startsWith('app:')) await updateAppMeta(id, { category: cat })
+    else if (key.startsWith('file:')) await updateFileMeta(id, { category: cat })
+  }
+  const applyCategory = async (items: CatItem[], cat: string | null) => {
+    setCatTarget(null)
+    const changed = items.filter((i) => i.category !== cat)
+    if (!changed.length) return
+    await Promise.all(changed.map((i) => setItemCategory(i.key, cat)))
+    if (cat) rememberCategory(cat)
+    await refresh()
+    const n = changed.length
+    const text = cat ? `${n > 1 ? `${n}개를 ` : ''}‘${categoryDisplay(cat)}’(으)로 옮겼습니다` : `${n > 1 ? `${n}개의 ` : ''}카테고리를 해제했습니다`
+    toast(text, 'success', {
+      label: '되돌리기',
+      run: () =>
+        void (async () => {
+          await Promise.all(changed.map((i) => setItemCategory(i.key, i.category)))
+          await refresh()
+        })()
+    })
+  }
 
   /** 사이드바에 보일 카테고리 — 숨긴 것은 이 기기에서 미사용 */
   const shownCategories = useMemo(() => allCategories.filter((c) => !hiddenCats.has(c)), [allCategories, hiddenCats])
@@ -1255,7 +1344,7 @@ export function Library() {
         break
       }
       case 'category':
-        setCategorizingApp(a)
+        setCatTarget(['app:' + a.id])
         return
       case 'update': {
         const [f] = await pickFiles('.html,.htm,text/html')
@@ -1346,7 +1435,7 @@ export function Library() {
         break
       }
       case 'category':
-        setCategorizingFile(f)
+        setCatTarget(['file:' + f.id])
         return
       case 'export':
         try {
@@ -1384,7 +1473,7 @@ export function Library() {
         }, () => '복제함')
         break
       case 'category':
-        setCategorizing(d)
+        setCatTarget(['doc:' + d.id])
         return
       case 'export':
         try {
@@ -1722,6 +1811,14 @@ export function Library() {
                   disabled={!selectable.length}
                 >
                   {selected.size && selected.size === selectable.length ? '모두 해제' : '전체 선택'}
+                </button>
+                <button
+                  className="sel-btn sel-cat"
+                  disabled={![...selected].some((k) => !k.startsWith('cloud:'))}
+                  onClick={() => setCatTarget([...selected].filter((k) => !k.startsWith('cloud:')))}
+                >
+                  <Icon name="tag" size={16} />
+                  <span className="sel-cat-long">카테고리</span>
                 </button>
                 <div className="mark-bar" role="group" aria-label="마킹 (이 기기에만 저장)">
                   {MARKS.map((m) => (
@@ -2210,42 +2307,18 @@ export function Library() {
         </Menu>
       )}
 
-      {categorizing && (
+      {catTarget && catTargetInfo && (
         <CategoryPicker
-          current={categorizing.category ?? null}
+          title={catTargetInfo.title}
+          current={catTargetInfo.current}
+          total={catTargetInfo.items.length}
           categories={allCategories}
-          onClose={() => setCategorizing(null)}
-          onPick={async (cat) => {
-            await updateDocument(categorizing.id, { category: cat })
-            setCategorizing(null)
-            await refresh()
-          }}
-        />
-      )}
-
-      {categorizingApp && (
-        <CategoryPicker
-          current={categorizingApp.category ?? null}
-          categories={allCategories}
-          onClose={() => setCategorizingApp(null)}
-          onPick={async (cat) => {
-            await updateAppMeta(categorizingApp.id, { category: cat })
-            setCategorizingApp(null)
-            await refresh()
-          }}
-        />
-      )}
-
-      {categorizingFile && (
-        <CategoryPicker
-          current={categorizingFile.category ?? null}
-          categories={allCategories}
-          onClose={() => setCategorizingFile(null)}
-          onPick={async (cat) => {
-            await updateFileMeta(categorizingFile.id, { category: cat })
-            setCategorizingFile(null)
-            await refresh()
-          }}
+          counts={categoryCounts}
+          hidden={hiddenCats}
+          colorOf={catColor}
+          recent={recentCats}
+          onClose={() => setCatTarget(null)}
+          onPick={(cat) => void applyCategory(catTargetInfo.items, cat)}
         />
       )}
 

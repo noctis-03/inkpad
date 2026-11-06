@@ -117,7 +117,8 @@
   .library-header .mark-bar {
     gap: 4px;
   }
-  .mark-clear-long {
+  .mark-clear-long,
+  .sel-cat-long {
     display: none;
   }
 }
