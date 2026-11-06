@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
@@ -28,7 +28,7 @@ import {
 import { onAssetProgress } from '../sync/assets'
 import { isSyncLockHeld } from '../sync/lock'
 import { db } from '../storage/db'
-import { formatDate, formatBytes } from '../shared/util'
+import { formatDate, formatBytes, assignCategoryColors, categoryColor } from '../shared/util'
 import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
 import { MERGE_DONE_EVENT, openMergeView } from './merge/MergeView'
@@ -46,60 +46,57 @@ function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
 const CAT_ALL = '__all__'
 const CAT_NONE = '__none__'
 
-/**
- * 상태 표시의 단일 출처 — 문구·톤·아이콘을 한곳에 모았다.
- * 오프라인은 회색, 오류만 빨강으로 나눠 단순 오프라인이 오류처럼 보이지 않게 한다.
- */
-type StatusTone = 'idle' | 'syncing' | 'offline' | 'error'
-const STATUS_META: Record<SyncStatus, { label: string; tone: StatusTone; icon: string }> = {
-  idle: { label: '동기화됨', tone: 'idle', icon: 'checkCircle' },
-  syncing: { label: '동기화 중…', tone: 'syncing', icon: '' }, // 스피너
-  offline: { label: '오프라인', tone: 'offline', icon: 'wifiOff' },
-  'auth-required': { label: '로그인 필요', tone: 'error', icon: 'lock' },
-  error: { label: '동기화 오류', tone: 'error', icon: 'alert' },
-  disabled: { label: '서버 미설정', tone: 'offline', icon: 'cloud' }
-}
+/** 기기 이름이 바뀌면 시트 머리의 기기 알약도 따라 바뀌게 알린다 */
+const DEVICE_NAME_EVENT = 'inkpad:device-name'
+
+/** 좁은 화면(휴대폰) — 최신 그룹을 접어 두고, 카테고리 고르기를 아래 시트로 연다 */
+const isNarrow = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches
 
 // ───────────────── 클라우드 노트 목록 ─────────────────
 
 type GroupKey = 'split' | 'recv' | 'push' | 'fresh' | 'gone'
 type RowAction = 'download' | 'pushOne' | 'repush' | 'restore' | 'merge' | null
+/** 상태별 보기 — 전체 · 처리 필요(갈라짐·받을 것·올릴 것) · 최신 */
+type ViewFilter = 'all' | 'todo' | 'fresh'
 
 /**
- * 행 표시의 단일 출처 — 배지·아이콘·그룹과 행의 주 동작까지 데이터로 둔다.
+ * 행 표시의 단일 출처 — 배지·그룹과 행의 주 동작까지 데이터로 둔다.
  * action이 있는 행만 오른쪽에 주 동작 버튼을 렌더한다 — 숨은 "행 탭 = 즉시 실행"은 없다.
  * pending/new의 올리기는 onPush()(전체 미리보기)가 아니라 pushOneNote로 그 노트만 올린다.
  */
-const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; icon: string; action: RowAction }> = {
-  'remote-new': { group: 'recv', badge: '새 버전', icon: 'cloudDown', action: 'download' },
-  new: { group: 'push', badge: '새 파일', icon: 'plus', action: 'pushOne' },
-  pending: { group: 'push', badge: '변경됨', icon: 'edit', action: 'pushOne' },
-  // 갈라짐 — 이 기기 변경은 이 기기 브랜치에 올라가 있다. 받기로 덮지 않고, 머지 관리에서 합친다
-  diverged: { group: 'split', badge: '갈라짐', icon: 'alert', action: 'merge' },
-  'cloud-deleted': { group: 'push', badge: '클라우드에 없음', icon: 'alert', action: 'repush' },
-  same: { group: 'fresh', badge: '최신', icon: 'check', action: null },
-  'deleted-local': { group: 'gone', badge: '이 기기에서 삭제', icon: 'trash', action: 'restore' }
+const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; action: RowAction }> = {
+  'remote-new': { group: 'recv', badge: '새 버전', action: 'download' },
+  new: { group: 'push', badge: '새 파일', action: 'pushOne' },
+  pending: { group: 'push', badge: '변경됨', action: 'pushOne' },
+  // 갈라짐 — 이 기기 변경은 이 기기 브랜치에 올라가 있다. 받기로 덮지 않고, 머지 화면에서 합친다
+  diverged: { group: 'split', badge: '갈라짐', action: 'merge' },
+  'cloud-deleted': { group: 'push', badge: '클라우드에 없음', action: 'repush' },
+  same: { group: 'fresh', badge: '최신', action: null },
+  'deleted-local': { group: 'gone', badge: '이 기기에서 삭제', action: 'restore' }
 }
 
-/** 행 주 동작 버튼의 문구·아이콘 */
-const ACTION_UI: Record<Exclude<RowAction, null>, { label: string; icon: string }> = {
-  download: { label: '받기', icon: 'download' },
-  pushOne: { label: '올리기', icon: 'upload' },
-  repush: { label: '다시 올리기', icon: 'upload' },
-  restore: { label: '되살리기', icon: 'restore' },
-  merge: { label: '머지', icon: 'swap' }
+/** 행 주 동작 버튼의 문구 */
+const ACTION_LABEL: Record<Exclude<RowAction, null>, string> = {
+  download: '받기',
+  pushOne: '올리기',
+  repush: '다시 올리기',
+  restore: '되살리기',
+  merge: '머지하기'
 }
 
-/** 목록 그룹 — 갈라짐 → 받을 것 → 올릴 것(새 파일·변경·클라우드 삭제 포함) → 최신(접힘) → 이 기기에서 삭제됨(접힘) */
-const GROUPS: { key: GroupKey; title: string; chip: string; states: CloudNoteState[]; startCollapsed: boolean }[] = [
-  { key: 'split', title: '갈라짐 — 머지 필요', chip: '갈라짐', states: ['diverged'], startCollapsed: false },
-  { key: 'recv', title: '받을 것', chip: '받을 것', states: ['remote-new'], startCollapsed: false },
-  { key: 'push', title: '올릴 것', chip: '올릴 것', states: ['new', 'pending', 'cloud-deleted'], startCollapsed: false },
-  { key: 'fresh', title: '최신', chip: '최신', states: ['same'], startCollapsed: true },
-  { key: 'gone', title: '이 기기에서 삭제됨', chip: '삭제됨', states: ['deleted-local'], startCollapsed: true }
+/**
+ * 목록 그룹 — 처리할 것(머지 필요 → 받을 것 → 올릴 것)이 먼저, 최신·이 기기에서 삭제됨은 뒤에.
+ * 같은 노트를 두 번 보이지 않는다 — 머지할 것(다른 기기 브랜치 포함)은 「머지 필요」 그룹 하나에 모은다.
+ */
+const GROUPS: { key: GroupKey; title: string; desc?: string; todo: boolean; collapsible: boolean }[] = [
+  { key: 'split', title: '머지 필요', desc: '두 기기가 각각 고친 노트', todo: true, collapsible: false },
+  { key: 'recv', title: '받을 것', todo: true, collapsible: false },
+  { key: 'push', title: '올릴 것', todo: true, collapsible: false },
+  { key: 'fresh', title: '최신', todo: false, collapsible: true },
+  { key: 'gone', title: '이 기기에서 삭제됨', todo: false, collapsible: true }
 ]
 
-/** 요약 칸과 그룹 헤더가 같은 숫자를 두 번 보여 주던 것을 정리 — 건수는 한 곳에서 계산해 버튼·칩·헤더가 나눠 쓴다 */
+/** 건수는 한 곳에서 계산해 머리 카드·버튼·그룹 머리가 나눠 쓴다 */
 interface CloudCounts extends Record<GroupKey, number> {
   pending: number
   new: number
@@ -119,19 +116,23 @@ function countCloud(cloud: CloudNoteInfo[]): CloudCounts {
   return c
 }
 
+/** 머지할 것 중 클라우드 목록의 갈라짐 행에 묶이지 않는 것 — 다른 기기 브랜치 등. 「머지 필요」 그룹에 따로 행을 낸다 */
+function extraMerges(cloud: CloudNoteInfo[] | null, queue: MergeQueueEntry[]): MergeQueueEntry[] {
+  const split = new Set((cloud ?? []).filter((n) => n.state === 'diverged').map((n) => n.docId))
+  return queue.filter((e) => !split.has(e.docId))
+}
+
 /** 목록 로딩 중 — 같은 골격의 스켈레톤 */
 function CloudSkeleton() {
   return (
-    <div className="cloud-panel">
-      <div className="cloud-items">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="cloud-skel">
-            <span className="bar t" />
-            <span className="bar m" />
-            <span className="bar s" />
-          </div>
-        ))}
-      </div>
+    <div className="cloud-items">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="cloud-skel">
+          <span className="bar t" />
+          <span className="bar m" />
+          <span className="bar s" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -140,6 +141,7 @@ function CloudRow({
   c,
   busy,
   busyId,
+  draft,
   onPrimary,
   onDelete,
   onExclude,
@@ -148,6 +150,7 @@ function CloudRow({
   c: CloudNoteInfo
   busy: boolean
   busyId: string | null
+  draft: boolean
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
   onExclude: (info: CloudNoteInfo) => void
@@ -156,7 +159,9 @@ function CloudRow({
   const [openMenu, setOpenMenu] = useState(false)
   const m = STATE_META[c.state]
   const rowBusy = busyId === c.docId
-  const act = m.action ? ACTION_UI[m.action] : null
+  const act = m.action
+  const compact = m.group === 'fresh'
+  const split = m.group === 'split'
   // 클라우드에 실제 파일이 있는 행(변경됨·새 버전·갈라짐)은 '클라우드에 맞추기'도 제공한다 —
   // 이 기기 노트를 클라우드 버전으로 덮는다 (받기와 달리 수정 대기가 있거나 갈라져도 진행). 이 기기 변경은 브랜치에 남는다
   const canAlign = c.state === 'pending' || c.state === 'remote-new' || c.state === 'diverged'
@@ -200,31 +205,38 @@ function CloudRow({
     </>
   )
   return (
-    <div className={'cloud-row g-' + m.group}>
-      <span className="cloud-ico" aria-hidden="true">
-        <Icon name={m.icon} size={15} />
-      </span>
+    <div className={'cloud-row g-' + m.group + (compact ? ' compact' : '') + (split ? ' merge-queue-row' : '')}>
+      {split && (
+        <span className="cloud-ico" aria-hidden="true">
+          <Icon name="swap" size={16} />
+        </span>
+      )}
+      {compact && <Icon name="check" size={16} className="cloud-ok" />}
       <div className="cloud-body">
-        <div className="cloud-name">{c.title}</div>
+        <div className="cloud-name">
+          {c.title}
+          {draft && <span className="cloud-draft">작업 중</span>}
+        </div>
         <div className="cloud-meta">
-          <span className="bdg">{m.badge}</span>
-          {c.category && <span>{c.category}</span>}
-          {c.device && <span>{c.device}</span>}
+          {!compact && <span className="bdg">{m.badge}</span>}
+          {split && <span>이 기기 ↔ {c.device || '클라우드'}</span>}
+          {!split && c.category && <span>{c.category}</span>}
+          {!split && c.device && <span>{c.device}</span>}
           <span>{formatDate(c.updatedAt)}</span>
           {c.state === 'cloud-deleted' && <span className="note">일괄 올리기에서 제외</span>}
-          {c.state === 'diverged' && <span className="note">이 기기 변경은 브랜치에 보관됨</span>}
+          {split && <span className="wide-only">이 기기 변경은 브랜치에 안전하게 보관됨</span>}
         </div>
       </div>
 
       {act && (
-        <button className="cloud-act-main" disabled={busy || rowBusy} onClick={() => onPrimary(c)}>
-          {rowBusy ? <span className="spinner sm" /> : <Icon name={act.icon} size={14} />}
-          <span>{rowBusy ? '처리 중' : act.label}</span>
+        <button className={'cloud-act-main' + (split ? ' strong' : '')} disabled={busy || rowBusy} onClick={() => onPrimary(c)}>
+          {rowBusy && <span className="spinner sm" />}
+          <span>{rowBusy ? '처리 중' : ACTION_LABEL[act]}</span>
         </button>
       )}
 
       <button className="cloud-more" aria-label="더보기" aria-expanded={openMenu} disabled={busy} onClick={() => setOpenMenu((v) => !v)}>
-        <Icon name="more" size={16} />
+        <Icon name="more" size={18} />
       </button>
       {openMenu && (
         <>
@@ -238,11 +250,113 @@ function CloudRow({
   )
 }
 
+/** 클라우드 목록의 갈라짐 행에 묶이지 않는 머지할 것(다른 기기 브랜치 등) — 「머지 필요」 그룹의 행 */
+function MergeExtraRow({ e, draft }: { e: MergeQueueEntry; draft: boolean }) {
+  return (
+    <div className="cloud-row g-split merge-queue-row">
+      <span className="cloud-ico" aria-hidden="true">
+        <Icon name="swap" size={16} />
+      </span>
+      <div className="cloud-body">
+        <div className="cloud-name">
+          {e.title}
+          {draft && <span className="cloud-draft">작업 중</span>}
+        </div>
+        <div className="cloud-meta">
+          <span className="bdg">갈라짐</span>
+          <span>
+            {e.mine ? '이 기기' : e.device} 브랜치 → main({e.mainDevice ?? '클라우드'})
+          </span>
+          <span>{formatDate(e.branchAt)}</span>
+        </div>
+      </div>
+      <button className="cloud-act-main strong" onClick={() => openMergeView(e)}>
+        <span>머지하기</span>
+      </button>
+    </div>
+  )
+}
+
+/**
+ * 카테고리 고르기 — 카테고리가 2개 이상일 때만 목록 도구 줄 끝에 붙는다.
+ * 항목마다 처리할 건수를 보여 어느 카테고리부터 볼지 알게 한다. 좁은 화면에서는 아래 시트로 열린다(CSS)
+ */
+function CategorySelect({
+  cats,
+  value,
+  total,
+  onChange
+}: {
+  cats: { key: string; name: string; count: number; todo: number; color: string }[]
+  value: string
+  total: number
+  onChange: (key: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const cur = cats.find((c) => c.key === value)
+  const pick = (k: string) => {
+    onChange(k)
+    setOpen(false)
+  }
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation() // 고르기만 닫는다 — 시트는 닫지 않는다
+      setOpen(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open])
+  return (
+    <div className="cloud-cat">
+      <button
+        className={'cloud-cat-btn' + (cur ? ' on' : '')}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={cur ? `카테고리: ${cur.name}` : '카테고리 고르기'}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {cur && <i className="dot" style={{ background: cur.color }} />}
+        <span>{cur ? cur.name : '카테고리'}</span>
+        <Icon name="chevronDown" size={14} />
+      </button>
+      {open && (
+        <>
+          <button className="cloud-menu-bg cloud-cat-bg" aria-label="카테고리 고르기 닫기" onClick={() => setOpen(false)} />
+          <div className="cloud-cat-menu" role="listbox" aria-label="카테고리">
+            <b className="cloud-cat-title">카테고리</b>
+            <button role="option" aria-selected={!cur} className={!cur ? 'on' : ''} onClick={() => pick(CAT_ALL)}>
+              <span className="nm">모든 카테고리</span>
+              <span className="n">{total}</span>
+            </button>
+            <div className="sep" aria-hidden="true" />
+            {cats.map((c) => (
+              <button key={c.key} role="option" aria-selected={c.key === value} className={c.key === value ? 'on' : ''} onClick={() => pick(c.key)}>
+                <i className="dot" style={{ background: c.color }} />
+                <span className="nm">{c.name}</span>
+                {c.todo > 0 && <span className="todo">처리 {c.todo}</span>}
+                <span className="n">{c.count}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function CloudList({
   cloud,
+  queue,
+  drafts,
   counts,
   busy,
   busyId,
+  loading,
+  checked,
+  onRefresh,
   onPrimary,
   onDelete,
   onExclude,
@@ -252,9 +366,14 @@ function CloudList({
   onPushPreview
 }: {
   cloud: CloudNoteInfo[] | null
+  queue: MergeQueueEntry[]
+  drafts: Set<string>
   counts: CloudCounts
   busy: boolean
   busyId: string | null
+  loading: boolean
+  checked: string | null
+  onRefresh: () => void
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
   onExclude: (info: CloudNoteInfo) => void
@@ -264,125 +383,146 @@ function CloudList({
   onPushPreview: () => void
 }) {
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<GroupKey | 'all'>('all')
+  const [view, setView] = useState<ViewFilter>('all')
   const [catFilter, setCatFilter] = useState<string>(CAT_ALL)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ fresh: true, gone: true })
+  // 최신은 많으면(또는 휴대폰에서는) 접어 둔다 — 처리할 것이 먼저 보이게
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => ({ fresh: isNarrow(), gone: true }))
+  const [freshAuto, setFreshAuto] = useState(false)
+  useEffect(() => {
+    if (freshAuto || !cloud) return
+    setFreshAuto(true)
+    if (counts.fresh > 5) setCollapsed((m) => ({ ...m, fresh: true }))
+  }, [cloud, counts.fresh, freshAuto])
 
-  // 카테고리 목록 — 클라우드 노트의 category (없으면 미분류). 가나다순, 미분류는 맨 뒤
+  const extra = useMemo(() => extraMerges(cloud, queue), [cloud, queue])
+  const mineDraft = (docId: string) => [...drafts].some((k) => k.startsWith(docId + '@'))
+
+  // 카테고리 목록 — 클라우드 노트의 category (없으면 미분류). 가나다순, 미분류는 맨 뒤. 처리할 건수도 함께
   const cats = useMemo(() => {
-    const m = new Map<string, number>()
+    const m = new Map<string, { count: number; todo: number }>()
     for (const n of cloud ?? []) {
       const k = n.category || CAT_NONE
-      m.set(k, (m.get(k) ?? 0) + 1)
+      const v = m.get(k) ?? { count: 0, todo: 0 }
+      v.count++
+      if (GROUPS.find((g) => g.key === STATE_META[n.state].group)?.todo) v.todo++
+      m.set(k, v)
     }
-    const out: { key: string; name: string; cat: string | null; count: number }[] = [...m.keys()]
-      .filter((k) => k !== CAT_NONE)
+    // 색은 라이브러리·일정과 같은 배정 규칙(assignCategoryColors) — 목록 전체를 보고 겹치지 않게 고른다
+    const names = [...m.keys()].filter((k) => k !== CAT_NONE)
+    const colors = assignCategoryColors(names)
+    const out = names
       .sort((a, b) => a.localeCompare(b, 'ko'))
-      .map((k) => ({ key: k, name: k, cat: k, count: m.get(k) ?? 0 }))
-    if (m.has(CAT_NONE)) out.push({ key: CAT_NONE, name: '미분류', cat: null, count: m.get(CAT_NONE) ?? 0 })
+      .map((k) => ({ key: k, name: k, color: categoryColor(k, colors), ...m.get(k)! }))
+    if (m.has(CAT_NONE)) out.push({ key: CAT_NONE, name: '미분류', color: categoryColor(null), ...m.get(CAT_NONE)! })
     return out
   }, [cloud])
+  // 고른 카테고리가 목록에서 사라지면(마지막 노트를 지웠다 등) 필터를 푼다
+  const catValue = cats.some((c) => c.key === catFilter) ? catFilter : CAT_ALL
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return (cloud ?? []).filter((n) => {
-      if (filter !== 'all' && STATE_META[n.state].group !== filter) return false
-      if (catFilter !== CAT_ALL && (n.category || CAT_NONE) !== catFilter) return false
-      if (!q) return true
-      return `${n.title} ${n.category ?? ''} ${n.device ?? ''}`.toLowerCase().includes(q)
-    })
-  }, [cloud, filter, catFilter, query])
+  const q = query.trim().toLowerCase()
+  const inCat = (n: CloudNoteInfo) => catValue === CAT_ALL || (n.category || CAT_NONE) === catValue
+  const inQuery = (text: string) => !q || text.toLowerCase().includes(q)
+  const inView = (g: GroupKey) => view === 'all' || (view === 'todo' ? g === 'split' || g === 'recv' || g === 'push' : g === 'fresh')
+  const visible = (cloud ?? []).filter((n) => inView(STATE_META[n.state].group) && inCat(n) && inQuery(`${n.title} ${n.category ?? ''} ${n.device ?? ''}`))
+  // 머지할 것(다른 기기 브랜치)은 카테고리를 모른다 — 카테고리를 고르지 않았을 때만 보인다
+  const visibleExtra = extra.filter(() => catValue === CAT_ALL && inView('split')).filter((e) => inQuery(`${e.title} ${e.device ?? ''}`))
 
   // 아직 못 받아 온 상태 — 빈 공간 대신 같은 골격의 스켈레톤
+  const head = (
+    <div className="cloud-lhead">
+      <h3 className="tt">클라우드 노트</h3>
+      <small>
+        {cloud ? (catValue === CAT_ALL ? `${cloud.length}` : `${cats.find((c) => c.key === catValue)?.name} ${cats.find((c) => c.key === catValue)?.count} / 전체 ${cloud.length}`) : ''}
+        {cloud && (loading || checked) ? ' · ' : ''}
+        {loading ? '확인 중…' : (checked ?? '')}
+      </small>
+      <button className={'cloud-icon-btn' + (loading ? ' spinning' : '')} onClick={onRefresh} disabled={loading || busy} aria-label="새로 고침">
+        <Icon name="replace" size={18} />
+      </button>
+    </div>
+  )
+
   if (cloud === null) {
     return (
-      <div className="cloud-panel">
-        <div className="cloud-toolbar">
-          <span className="cloud-search">
-            <Icon name="search" size={16} />
-            <input value="" placeholder="노트 검색" aria-label="클라우드 노트 검색" disabled readOnly />
-          </span>
-        </div>
+      <section className="cloud-panel" aria-label="클라우드 노트">
+        {head}
         <CloudSkeleton />
-      </div>
+      </section>
     )
   }
 
-  if (!cloud.length) {
+  if (!cloud.length && !extra.length) {
     return (
-      // 빈 상태는 앱 전체 공용 모양(SheetEmpty) — 전에는 제목·설명이 한 줄로 붙어 '…없습니다노트를…'로 보였다
-      <div className="cloud-empty">
-        <SheetEmpty icon="cloud" title="클라우드에 노트가 없습니다" desc="노트를 만든 뒤 위의 올리기를 눌러 주세요." />
-      </div>
+      <section className="cloud-panel" aria-label="클라우드 노트">
+        {head}
+        {/* 빈 상태는 앱 전체 공용 모양(SheetEmpty) */}
+        <div className="cloud-empty">
+          <SheetEmpty icon="cloud" title="클라우드에 노트가 없습니다" desc="노트를 만든 뒤 위의 「지금 동기화」를 눌러 주세요." />
+        </div>
+      </section>
     )
   }
 
-  const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => STATE_META[n.state].group === g.key) })).filter((g) => g.items.length > 0)
-  // 고른 카테고리 안의 "받을 것" — 카테고리 단위 받기 버튼이 쓴다
-  const catValue = catFilter === CAT_NONE ? null : catFilter
-  const catName = cats.find((c) => c.key === catFilter)?.name ?? '카테고리'
-  const recvCatCount = (cloud ?? []).filter((n) => n.state === 'remote-new' && (n.category || CAT_NONE) === catFilter).length
+  const todoTotal = counts.split + counts.recv + counts.push + extra.length
+  // 보기 칸의 건수는 고른 카테고리 안에서 센다 — 머리의 「수학 3 / 전체 8」과 맞게
+  const catCounts = catValue === CAT_ALL ? counts : countCloud(cloud.filter(inCat))
+  const catExtra = catValue === CAT_ALL ? extra.length : 0
+  const groups = GROUPS.map((g) => ({ ...g, items: visible.filter((n) => STATE_META[n.state].group === g.key), extra: g.key === 'split' ? visibleExtra : [] })).filter(
+    (g) => g.items.length + g.extra.length > 0
+  )
+  const shownTodo = groups.filter((g) => g.todo).reduce((n, g) => n + g.items.length + g.extra.length, 0)
+  const hiddenTodo = todoTotal - shownTodo
+  // 걸러져 안 보이는 처리할 것 — 카테고리 이름별로 알린다(놓치지 않게)
+  const hiddenByCat =
+    catValue !== CAT_ALL && !q && view !== 'fresh'
+      ? cats
+          .filter((c) => c.key !== catValue && c.todo > 0)
+          .map((c) => `${c.name} ${c.todo}`)
+          .join(' · ')
+      : ''
+  const catName = cats.find((c) => c.key === catValue)?.name ?? ''
+  const recvCatCount = cloud.filter((n) => n.state === 'remote-new' && inCat(n)).length
+  const reset = () => {
+    setView('all')
+    setCatFilter(CAT_ALL)
+    setQuery('')
+  }
 
   return (
-    <div className="cloud-panel">
-      {/* 가로 스크롤 칩 한 줄로 필터 — 요약 칸 + 접히는 헤더의 이중 체계를 정리했다 */}
-      <div className="cloud-chips" role="group" aria-label="상태별 필터">
-        <button className={'cloud-chip' + (filter === 'all' ? ' on' : '')} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
-          전체<span>{cloud.length}</span>
-        </button>
-        {GROUPS.map((g) => {
-          const on = filter === g.key
-          // 0개인 상태는 칩을 내지 않는다 — 흐린 '갈라짐 0 · 받을 것 0 · 삭제됨 0'이 줄을 채우지 않게
-          if (counts[g.key] === 0 && !on) return null
-          return (
-            <button
-              key={g.key}
-              className={'cloud-chip g-' + g.key + (on ? ' on' : '')}
-              aria-pressed={on}
-              title={on ? '필터 해제' : `${g.title}만 보기`}
-              onClick={() => setFilter(on ? 'all' : g.key)}
-            >
-              <i className="dot" />
-              {g.chip}
-              <span>{counts[g.key]}</span>
+    <section className="cloud-panel" aria-label="클라우드 노트">
+      {head}
+      <div className="cloud-toolbar">
+        <label className="cloud-search">
+          <Icon name="search" size={16} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="노트 검색" aria-label="클라우드 노트 검색" />
+          {query && (
+            <button className="cloud-clear" aria-label="검색어 지우기" onClick={() => setQuery('')}>
+              <Icon name="close" size={12} />
             </button>
-          )
-        })}
+          )}
+        </label>
+        <Segmented
+          className="cloud-view"
+          label="상태별 보기"
+          value={view}
+          options={[
+            ['all', `전체 ${catCounts.split + catCounts.recv + catCounts.push + catCounts.fresh + catCounts.gone + catExtra}`],
+            ['todo', `처리 필요 ${catCounts.split + catCounts.recv + catCounts.push + catExtra}`],
+            ['fresh', `최신 ${catCounts.fresh}`]
+          ]}
+          onChange={setView}
+        />
+        {/* 카테고리가 2개 이상일 때만 — 하나뿐이면 고를 것이 없다 */}
+        {cats.length >= 2 && <CategorySelect cats={cats} value={catValue} total={cloud.length} onChange={setCatFilter} />}
       </div>
-
-      {/* 카테고리별 필터 — 고르면 목록이 그 카테고리로 좇혀 보이고, 받을 것 머리글의 받기도 카테고리 단위가 된다 */}
-      {cats.length > 0 && (
-        <div className="cloud-chips" role="group" aria-label="카테고리별 필터">
-          {cats.map((c) => (
-            <button
-              key={c.key}
-              className={'cloud-chip cat' + (catFilter === c.key ? ' on' : '')}
-              aria-pressed={catFilter === c.key}
-              title={catFilter === c.key ? '카테고리 필터 해제' : `${c.name} 카테고리만 보기`}
-              onClick={() => setCatFilter(catFilter === c.key ? CAT_ALL : c.key)}
-            >
-              <i className="dot" />
-              {c.name}
-              <span>{c.count}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {groups.length === 0 && (
         <div className="cloud-empty">
           <SheetEmpty
             icon="search"
-            title="조건에 맞는 노트가 없습니다"
+            title={view === 'todo' && !q && catValue === CAT_ALL ? '처리할 노트가 없습니다' : '조건에 맞는 노트가 없습니다'}
             action={
-              <button
-                className="text-btn small"
-                onClick={() => {
-                  setFilter('all')
-                  setCatFilter(CAT_ALL)
-                  setQuery('')
-                }}
-              >
+              <button className="text-btn small" onClick={reset}>
                 필터·검색 지우기
               </button>
             }
@@ -391,35 +531,44 @@ function CloudList({
       )}
 
       {groups.map((g) => {
-        // 칩을 골랐거나 검색 중이면 접힌 그룹도 자동으로 펼친다
-        const isOpen = filter !== 'all' || !!query.trim() || !collapsed[g.key]
+        // 보기를 골랐거나 검색 중이면 접힌 그룹도 자동으로 펼친다
+        const isOpen = !g.collapsible || view !== 'all' || !!q || !collapsed[g.key]
+        const n = g.items.length + g.extra.length
         return (
-          <section className={'cloud-group g-' + g.key} key={g.key}>
+          <section className={'cloud-group g-' + g.key} key={g.key} aria-label={g.title}>
             <div className="cloud-ghead">
-              <button className="cloud-gtoggle" onClick={() => setCollapsed((m) => ({ ...m, [g.key]: !m[g.key] }))} aria-expanded={isOpen}>
-                <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} />
-                <span>{g.title}</span>
-                <b>{g.items.length}</b>
-              </button>
+              {g.collapsible ? (
+                <button className="cloud-gtoggle" onClick={() => setCollapsed((m) => ({ ...m, [g.key]: !m[g.key] }))} aria-expanded={isOpen}>
+                  <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} />
+                  <span>{g.title}</span>
+                  <b>{n}</b>
+                </button>
+              ) : (
+                <h4 className="cloud-gtitle">
+                  <span>{g.title}</span>
+                  <b>{n}</b>
+                  {g.desc && <small>{g.desc}</small>}
+                </h4>
+              )}
               {/* 그룹 자리에서 바로 처리하는 일괄 동작 */}
               {g.key === 'recv' &&
-                (catFilter === CAT_ALL ? (
+                (catValue === CAT_ALL ? (
                   <button className="cloud-bulk" disabled={busy} onClick={onPullAll}>
-                    <Icon name="download" size={13} /> 모두 받기
+                    <Icon name="download" size={14} /> 모두 받기
                   </button>
                 ) : (
                   <button
                     className="cloud-bulk"
                     disabled={busy || recvCatCount === 0}
-                    onClick={() => onPullCategory(catValue)}
+                    onClick={() => onPullCategory(catValue === CAT_NONE ? null : catValue)}
                     title={`${catName} 카테고리의 받을 것을 한 번에 내려받습니다`}
                   >
-                    <Icon name="download" size={13} /> {catName} 받기 ({recvCatCount})
+                    <Icon name="download" size={14} /> {catName} {recvCatCount}개 받기
                   </button>
                 ))}
               {g.key === 'push' && counts.bulkPush > 0 && (
-                <button className="cloud-bulk" disabled={busy} onClick={onPushPreview}>
-                  <Icon name="upload" size={13} /> 미리보기
+                <button className="cloud-link" disabled={busy} onClick={onPushPreview}>
+                  미리보기
                 </button>
               )}
             </div>
@@ -427,18 +576,91 @@ function CloudList({
             {isOpen && (
               <div className="cloud-items">
                 {g.items.map((c) => (
-                  <CloudRow key={c.docId} c={c} busy={busy} busyId={busyId} onPrimary={onPrimary} onDelete={onDelete} onExclude={onExclude} onAlign={onAlign} />
+                  <CloudRow
+                    key={c.docId}
+                    c={c}
+                    busy={busy}
+                    busyId={busyId}
+                    draft={g.key === 'split' && mineDraft(c.docId)}
+                    onPrimary={onPrimary}
+                    onDelete={onDelete}
+                    onExclude={onExclude}
+                    onAlign={onAlign}
+                  />
+                ))}
+                {g.extra.map((e) => (
+                  <MergeExtraRow key={e.branchFileId} e={e} draft={drafts.has(`${e.docId}@${e.deviceId}`)} />
                 ))}
               </div>
             )}
           </section>
         )
       })}
-    </div>
+
+      {/* 걸러진 바깥에 처리할 것이 남아 있으면 알린다 — 놓친 것이 없게 */}
+      {groups.length > 0 && hiddenTodo > 0 && (
+        <div className="cloud-hidden-todo">
+          <span>{hiddenByCat ? `다른 카테고리에도 처리할 노트가 있습니다 — ${hiddenByCat}` : `필터 밖에 처리할 노트 ${hiddenTodo}개가 있습니다`}</span>
+          <button className="cloud-link" onClick={reset}>
+            {hiddenByCat ? '모든 카테고리 보기' : '모두 보기'}
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
 
 // ───────────────── 섹션 ─────────────────
+
+/**
+ * 머리 카드 — 상태의 단일 출처. 제목은 「지금 무엇을 해야 하나」, 버튼은 그 상태에서 할 수 있는 단 하나의 일.
+ * 색은 아이콘 칸에만 쓴다 — 오프라인은 회색, 오류만 빨강.
+ */
+type HeroTone = 'idle' | 'todo' | 'syncing' | 'offline' | 'error' | 'wait'
+
+function SyncHero({
+  tone,
+  icon,
+  title,
+  sub,
+  progress,
+  children,
+  help
+}: {
+  tone: HeroTone
+  icon: string | null
+  title: string
+  sub: string
+  progress?: number | null // 0–1, null = 끝을 모름, undefined = 막대 없음
+  children?: ReactNode
+  help?: boolean
+}) {
+  return (
+    <div className={'sync-hero sync-status tone-' + tone + (tone === 'wait' ? ' sync-wait' : '')}>
+      <div className="sync-hero-head" role="status" aria-live="polite">
+        <span className="sync-status-ic" aria-hidden="true">
+          {icon ? <Icon name={icon} size={20} /> : <span className="spinner" />}
+        </span>
+        <span className="sync-status-txt">
+          <b>{title}</b>
+          <small>{sub}</small>
+        </span>
+      </div>
+      {progress !== undefined && (
+        <div className="bar sync-hero-bar" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress == null ? undefined : Math.round(progress * 100)}>
+          {progress == null ? <i className="indet" /> : <i style={{ width: `${Math.min(100, progress * 100)}%` }} />}
+        </div>
+      )}
+      {children && <div className="sync-cta">{children}</div>}
+      {help && (
+        <details className="sync-help">
+          <summary>무엇이 주고받아지나요?</summary>
+          <p>받기·올리기는 노트만 주고받습니다. 앱·기타 파일·보드 프리셋은 추가하거나 고칠 때 그 항목만 바로 올라가고, 못 올린 것은 각 메뉴에서 다시 올립니다.</p>
+        </details>
+      )}
+    </div>
+  )
+}
 
 export function SyncSection() {
   const [status, setStatus] = useState<SyncStatus>('idle')
@@ -459,9 +681,9 @@ export function SyncSection() {
   const [selfBusy, setSelfBusy] = useState(false) // 이 창의 일괄 받기·올리기 — 잠금을 쥐기 전부터 표시
   const [outside, setOutside] = useState<boolean | null>(null) // 창 밖의 동기화가 잠금을 쥐고 있는가 (null = 확인 전)
 
-  // 창 밖(편집 화면의 노트 칩, 다른 탭 등)에서 시작한 올리기·받기가 잠금을 쥐고 있으면 창 내용을 가리고 끝나기를 기다린다.
-  // 그 사이 목록은 반쯤 바뀐 상태라 믿을 수 없고, 받기·올리기를 눌러도 잠금에 막힌다. 끝나면 목록을 새로 읽는다.
-  // 이 창이 한 일이 쥔 잠금은 기다리지 않는다. 잠금 목록만 보므로 네트워크는 쓰지 않는다
+  // 창 밖(편집 화면의 노트 칩, 다른 탭 등)에서 시작한 올리기·받기가 잠금을 쥐고 있으면 끝나기를 기다린다.
+  // 그 사이 목록은 반쯤 바뀐 상태라 믿을 수 없고, 받기·올리기를 눌러도 잠금에 막힌다 — 목록은 흐리게 두고 누를 수 없게 한다.
+  // 끝나면 목록을 새로 읽는다. 이 창이 한 일이 쥔 잠금은 기다리지 않는다. 잠금 목록만 보므로 네트워크는 쓰지 않는다
   const ownBusy = selfBusy || status === 'syncing' || busyId !== null || pullCat !== null
   useEffect(() => {
     if (ownBusy) {
@@ -616,7 +838,7 @@ export function SyncSection() {
     else void downloadOne(info)
   }
 
-  /** 갈라진 노트의 '머지' — 이 기기 브랜치(없으면 그 노트의 다른 브랜치)를 머지 화면으로 연다 */
+  /** 갈라진 노트의 '머지하기' — 이 기기 브랜치(없으면 그 노트의 다른 브랜치)를 머지 화면으로 연다 */
   const openMergeFor = (info: CloudNoteInfo) => {
     const mine = queue.filter((e) => e.docId === info.docId)
     const target = mine.find((e) => e.mine) ?? mine[0]
@@ -717,89 +939,90 @@ export function SyncSection() {
 
   if (status === 'auth-required' || status === 'disabled') {
     return (
-      <section className="panel-section" id="sync-settings">
-        <h3>동기화 · Google Drive</h3>
+      <section className="panel-section sync-sec" id="sync-settings">
         {status === 'auth-required' ? (
-          <div className="btn-row">
-            <button className="primary-btn" onClick={() => login()}>
-              <Icon name="upload" size={18} /> Google로 로그인
+          <SyncHero tone="offline" icon="lock" title="Google로 로그인하세요" sub="기기 사이에서 노트를 주고받습니다">
+            <button className="sync-go" data-act="login" onClick={() => login()}>
+              Google로 로그인
             </button>
-          </div>
+          </SyncHero>
         ) : (
-          <p className="hint warn">서버에 OAuth 설정이 없습니다. 로컬 저장은 계속 동작합니다.</p>
+          <SyncHero tone="offline" icon="cloud" title="서버 미설정" sub="서버에 OAuth 설정이 없습니다. 로컬 저장은 계속 동작합니다." />
         )}
       </section>
     )
   }
 
+  const extraN = extraMerges(cloud, queue).length
+  const mergeN = counts.split + extraN
+  const todoN = counts.push + counts.recv + mergeN
+  const lastText = last ? `마지막 동기화 ${formatDate(last)}${device ? ` · ${device}` : ''}` : '아직 동기화 전'
+  const busyAll = status === 'syncing' || status === 'offline' || !!pullCat || selfBusy
+
+  // 머리 카드 — 상태마다 제목·설명·버튼을 하나로 정한다
+  let hero: ReactNode
   if (outside) {
-    return (
-      <section className="panel-section" id="sync-settings">
-        <h3>동기화 · Google Drive</h3>
-        <div className="sync-wait" role="status" aria-live="polite">
-          <span className="spinner" aria-hidden="true" />
-          <b>다른 곳에서 동기화가 진행 중입니다</b>
-          <small>편집 화면의 노트 칩이나 다른 탭에서 시작한 올리기·받기가 끝날 때까지 기다려 주세요. 끝나면 목록을 새로 읽어 보여 드립니다.</small>
-        </div>
-      </section>
+    hero = <SyncHero tone="wait" icon={null} title="다른 곳에서 동기화 중" sub="노트 칩이나 다른 탭에서 시작한 올리기·받기가 끝나면 목록을 새로 읽습니다" />
+  } else if (status === 'syncing') {
+    const t = prog ? `${prog.phase === 'push' ? '올리는' : '받는'} 중 · ${prog.done}/${prog.total}` : '동기화 중…'
+    hero = <SyncHero tone="syncing" icon={null} title={t} sub="Drive와 맞추는 중 · 창을 닫아도 계속됩니다" progress={prog && prog.total ? prog.done / prog.total : null} />
+  } else if (status === 'offline') {
+    hero = (
+      <SyncHero
+        tone="offline"
+        icon="wifiOff"
+        title="오프라인"
+        sub={'필기는 이 기기에 계속 저장됩니다' + (counts.bulkPush ? ` · 올릴 것 ${counts.bulkPush} — 연결되면 올릴 수 있습니다` : '')}
+      />
     )
-  }
-
-  const m = STATUS_META[status]
-  // 받기·올리기 중에는 "노트 2/5 올리는 중" 같은 진행 문구를 보여 준다
-  const syncMsg = prog ? (prog.phase === 'push' ? `노트 ${prog.done}/${prog.total} 올리는 중` : `노트 ${prog.done}/${prog.total} 받는 중`) : ''
-  const pushSub =
-    [counts.pending ? `변경 ${counts.pending}` : '', counts.new ? `새 파일 ${counts.new}` : ''].filter(Boolean).join(' · ') || '올릴 것 없음'
-
-  return (
-    <section className="panel-section" id="sync-settings">
-      {/* 제목은 감싼 시트·패널 머리('동기화')가 맡는다 — 같은 말을 두 번 쓰지 않는다. Google Drive는 맨 아래 계정 줄에 */}
-
-      {/* 상태 카드 — 색만으로 전달하지 않게 톤·아이콘·설명을 갖춘다 */}
-      <div className={'sync-status tone-' + m.tone} role="status" aria-live="polite">
-        <span className="sync-status-ic" aria-hidden="true">
-          {status === 'syncing' ? <span className="spinner" /> : <Icon name={m.icon} size={18} />}
-        </span>
-        <span className="sync-status-txt">
-          <b>{m.label}</b>
-          <small>
-            {status === 'idle' && (last ? `마지막 동기화 ${formatDate(last)}${device ? ` · ${device}` : ''}` : '아직 동기화 전')}
-            {status === 'syncing' && (syncMsg || 'Drive와 맞추는 중')}
-            {status === 'offline' && '연결되면 받기·올리기를 할 수 있습니다. 필기는 이 기기에 계속 저장됩니다.'}
-            {status === 'error' && 'Drive 응답을 받지 못했습니다'}
-          </small>
-        </span>
-        {status === 'error' && (
-          <button className="sync-mini" onClick={() => void syncNow()}>
-            다시 시도
+  } else if (status === 'error') {
+    hero = (
+      <SyncHero tone="error" icon="alert" title="동기화하지 못했습니다" sub="Drive 응답을 받지 못했습니다">
+        <button className="sync-go" data-act="retry" onClick={() => void syncNow()}>
+          다시 시도
+        </button>
+      </SyncHero>
+    )
+  } else {
+    const parts = [counts.push ? `올릴 것 ${counts.push}` : '', counts.recv ? `받을 것 ${counts.recv}` : '', mergeN ? `머지 ${mergeN}` : ''].filter(Boolean)
+    // 주 버튼 하나 — 올릴 것이 있으면 올리고 받기(미리보기), 받을 것만 있으면 받기, 없으면 다시 확인
+    const act = counts.bulkPush > 0 ? 'push' : counts.recv > 0 ? 'pull' : 'check'
+    hero = (
+      <SyncHero
+        tone={todoN ? 'todo' : 'idle'}
+        icon={todoN ? 'swap' : 'checkCircle'}
+        title={cloud === null ? '클라우드 확인 중…' : todoN ? `확인할 노트 ${todoN}개` : '모두 최신입니다'}
+        sub={[...parts, lastText].join(' · ')}
+        help
+      >
+        {act === 'push' && (
+          <>
+            <button className="sync-go" data-act="push" data-push={counts.bulkPush} disabled={busyAll} onClick={() => void doPush()}>
+              <Icon name="swap" size={18} /> 지금 동기화 · {counts.bulkPush}건<span className="wide-only"> 올리고 받기</span>
+            </button>
+            <button className="sync-sub" disabled={busyAll} onClick={() => void doPull()}>
+              <Icon name="download" size={16} /> 받기만
+            </button>
+          </>
+        )}
+        {act === 'pull' && (
+          <button className="sync-go" data-act="pull" data-push={0} disabled={busyAll} onClick={() => void doPull()}>
+            <Icon name="download" size={18} /> {counts.recv}건 받기
           </button>
         )}
-      </div>
+        {act === 'check' && (
+          <button className="sync-sub wide" data-act="check" data-push={0} disabled={busyAll || loading} onClick={() => void loadCloud()}>
+            다시 확인
+          </button>
+        )}
+      </SyncHero>
+    )
+  }
 
-      {/* 받기·올리기 — 건수 배지와 내용을 버튼 안으로 옮겨 눌러 보기 전에 알게 한다 */}
-      <div className="sync-actions">
-        <button className={'sync-big g-recv' + (counts.recv ? ' hot' : '')} onClick={() => void doPull()} disabled={status === 'syncing' || status === 'offline'}>
-          <span className="sync-big-ic" aria-hidden="true">
-            <Icon name="download" size={18} />
-          </span>
-          <span className="sync-big-txt">
-            <b>받기</b>
-            <small>{counts.recv ? `새 버전 ${counts.recv}개` : '받을 것 없음'}</small>
-          </span>
-          {counts.recv > 0 && <span className="cnt">{counts.recv}</span>}
-        </button>
-        <button className={'sync-big g-push' + (counts.bulkPush ? ' hot' : '')} onClick={() => void doPush()} disabled={status === 'syncing' || status === 'offline'}>
-          <span className="sync-big-ic" aria-hidden="true">
-            <Icon name="upload" size={18} />
-          </span>
-          <span className="sync-big-txt">
-            <b>올리기</b>
-            <small>{pushSub}</small>
-          </span>
-          {counts.bulkPush > 0 && <span className="cnt">{counts.bulkPush}</span>}
-        </button>
-      </div>
-      <p className="hint">받기·올리기는 노트만 주고받습니다. 앱·기타 파일·보드 프리셋은 추가하거나 고칠 때 그 항목만 바로 올라가고, 못 올린 것은 각 메뉴에서 다시 올립니다.</p>
+  return (
+    <section className="panel-section sync-sec" id="sync-settings">
+      {/* 제목은 감싼 시트·패널 머리('동기화')가 맡는다 — 같은 말을 두 번 쓰지 않는다 */}
+      {hero}
 
       {/* 원본(PDF·이미지) 받기 진행 바 */}
       {fetching && (
@@ -819,56 +1042,40 @@ export function SyncSection() {
         </div>
       )}
 
-      {/* 머지할 것 — 갈라진 브랜치(다른 기기 것 포함). 행을 누르면 머지 화면 */}
-      <MergeQueueCard queue={queue} drafts={drafts} />
+      {/* 창 밖의 동기화를 기다리는 동안 — 목록은 흐리게 두고 누를 수 없게 한다 */}
+      <div className={'sync-body' + (outside ? ' dim' : '')} inert={outside ? true : undefined}>
+        <CloudList
+          cloud={cloud}
+          queue={queue}
+          drafts={drafts}
+          counts={counts}
+          busy={loading || status === 'syncing' || !!pullCat}
+          busyId={busyId}
+          loading={loading}
+          checked={checked}
+          onRefresh={() => void loadCloud()}
+          onPrimary={onPrimary}
+          onDelete={(c) => void deleteOne(c)}
+          onExclude={(c) => void excludeOne(c)}
+          onAlign={(c) => void alignOne(c)}
+          onPullAll={() => void doPull()}
+          onPullCategory={(c) => void pullCategory(c)}
+          onPushPreview={() => void doPush()}
+        />
 
-      {/* 목록 머리 — 새로 고침이 눌리는 동안 회전과 "확인 중…"으로 반응을 보여 준다 */}
-      <div className="cloud-lhead">
-        <span className="tt">
-          클라우드 노트<span>{cloud?.length ?? 0}</span>
-        </span>
-        <small>{loading ? '확인 중…' : (checked ?? '')}</small>
-        <button
-          className={'cloud-icon-btn' + (loading ? ' spinning' : '')}
-          onClick={() => void loadCloud()}
-          disabled={loading || status === 'syncing'}
-          aria-label="새로 고침"
-        >
-          <Icon name="replace" size={16} />
-        </button>
+        {/* 보관함 · 이 기기 · 계정 — 한 덩어리로 맨 아래 */}
+        <DeviceFoot
+          device={device}
+          onSave={async (next) => {
+            await setDeviceName(next)
+            setDevice(next)
+            window.dispatchEvent(new CustomEvent(DEVICE_NAME_EVENT, { detail: next }))
+            // setDeviceName이 반영된 값을 바로 보여 준다 — 저장 전 옛 이름을 보여 주던 버그를 막는다
+            toast(`기기 이름을 "${next}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
+          }}
+          onLogout={() => void logout().then(() => void syncNow())}
+        />
       </div>
-
-      <CloudList
-        cloud={cloud}
-        counts={counts}
-        busy={loading || status === 'syncing' || !!pullCat}
-        busyId={busyId}
-        onPrimary={onPrimary}
-        onDelete={(c) => void deleteOne(c)}
-        onExclude={(c) => void excludeOne(c)}
-        onAlign={(c) => void alignOne(c)}
-        onPullAll={() => void doPull()}
-        onPullCategory={(c) => void pullCategory(c)}
-        onPushPreview={() => void doPush()}
-      />
-
-      {/* 보관함 관리 — 기기 브랜치·옛 백업·스냅샷·자동 고정 정리 */}
-      <button className="cloud-archive-btn" onClick={openArchive}>
-        <Icon name="files" size={16} /> 보관함 관리
-        <small>브랜치·옛 백업·스냅샷·자동 고정 정리</small>
-      </button>
-
-      {/* 이 기기 · 계정 — 입력칸이 받기·올리기와 목록 사이를 가르지 않게 맨 아래로 옮겼다 */}
-      <DeviceFoot
-        device={device}
-        onSave={async (next) => {
-          await setDeviceName(next)
-          setDevice(next)
-          // setDeviceName이 반영된 값을 바로 보여 준다 — 저장 전 옛 이름을 보여 주던 버그를 막는다
-          toast(`기기 이름을 "${next}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
-        }}
-        onLogout={() => void logout().then(() => void syncNow())}
-      />
 
       {preview && <PushPreview plan={preview} pull={pullPlan} busy={status === 'syncing'} onConfirm={() => void confirmPush()} onClose={() => setPreview(null)} />}
       {pullPreview && <PullPreview plan={pullPreview} busy={status === 'syncing'} onConfirm={(c) => void confirmPull(c)} onClose={() => setPullPreview(null)} />}
@@ -876,7 +1083,7 @@ export function SyncSection() {
   )
 }
 
-/** 이 기기 · 계정 정보 블록 — 「변경」을 눌러 이름을 고친다 */
+/** 보관함 · 이 기기 · 계정 블록 — 「이름 변경」을 눌러 기기 이름을 고친다 */
 function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (next: string) => Promise<void>; onLogout: () => void }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
@@ -889,6 +1096,13 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
   }
   return (
     <div className="sync-foot">
+      {/* 보관함 관리 — 기기 브랜치·옛 백업·스냅샷·자동 고정 정리 */}
+      <button className="sync-foot-row cloud-archive-btn" onClick={openArchive}>
+        <Icon name="files" size={18} />
+        <span className="v">보관함 관리</span>
+        <small>브랜치 · 옛 백업 · 스냅샷</small>
+        <Icon name="chevronRight" size={16} />
+      </button>
       <div className="sync-foot-row">
         <span className="k">이 기기</span>
         {editing ? (
@@ -924,7 +1138,7 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
                 setEditing(true)
               }}
             >
-              변경
+              이름 변경
             </button>
           </>
         )}
@@ -937,6 +1151,23 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
         </button>
       </div>
     </div>
+  )
+}
+
+/** 시트·패널 머리의 기기 알약 — 어느 기기에서 무엇과 맞추는지 늘 보이게 */
+function DevicePill() {
+  const [name, setName] = useState('')
+  useEffect(() => {
+    void getDeviceName().then(setName)
+    const on = (e: Event) => setName(String((e as CustomEvent).detail ?? ''))
+    window.addEventListener(DEVICE_NAME_EVENT, on)
+    return () => window.removeEventListener(DEVICE_NAME_EVENT, on)
+  }, [])
+  return (
+    <span className="sync-device-pill" title="이 기기 · 동기화 계정">
+      <Icon name="page" size={14} />
+      <span>{name ? `${name} · Google Drive` : 'Google Drive'}</span>
+    </span>
   )
 }
 
@@ -1022,33 +1253,6 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
         </div>
       </div>
     </div>
-  )
-}
-
-/** 머지 관리 — main에 아직 들어가지 않은 기기 브랜치 목록. 하나씩 머지 화면에서 합친다 */
-function MergeQueueCard({ queue, drafts }: { queue: MergeQueueEntry[]; drafts: Set<string> }) {
-  if (!queue.length) return null
-  return (
-    <section className="merge-queue" aria-label="머지 관리">
-      <h4 className="merge-queue-head">
-        <Icon name="swap" size={15} /> 머지 관리 <b>{queue.length}</b>
-        <small>양쪽이 각각 고친 노트 — 직접 확인하고 합칩니다</small>
-      </h4>
-      {queue.map((e) => (
-        <button key={e.branchFileId} className="merge-queue-row" onClick={() => openMergeView(e)}>
-          <span className="merge-queue-name">
-            {e.title}
-            {drafts.has(`${e.docId}@${e.deviceId}`) && <span className="merge-queue-draft">작업 중</span>}
-          </span>
-          <span className="merge-queue-meta">
-            {e.mine ? '이 기기' : e.device} 브랜치 → main({e.mainDevice ?? '클라우드'}) · {formatDate(e.branchAt)}
-          </span>
-          <span className="merge-queue-go">
-            머지 <Icon name="chevronRight" size={14} />
-          </span>
-        </button>
-      ))}
-    </section>
   )
 }
 
@@ -1164,8 +1368,9 @@ export function SyncPanel() {
   const close = useUI((s) => s.setPanel)
   return (
     <aside id="sync-panel" className="side-panel" aria-label="동기화">
-      <header className="panel-header">
+      <header className="panel-header sync-head">
         <h2>동기화</h2>
+        <DevicePill />
         <button className="tb-btn" onClick={() => close('sync')} aria-label="닫기">
           <Icon name="close" />
         </button>
@@ -1180,9 +1385,10 @@ export function SyncSheet({ onClose }: { onClose: () => void }) {
   useEscClose(onClose)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet" role="dialog" aria-label="동기화">
-        <header className="sheet-header">
+      <div className="sheet sync-sheet" role="dialog" aria-label="동기화">
+        <header className="sheet-header sync-head">
           <h2>동기화</h2>
+          <DevicePill />
           <button className="tb-btn" onClick={onClose} aria-label="닫기">
             <Icon name="close" />
           </button>

@@ -20,14 +20,14 @@ const TARGETS = [
   '.seg button',
   '.paper-option',
   '.hidden-cat-chip',
-  '.cloud-chip',
+  '.cloud-cat-btn',
   '.cloud-bulk',
   '.cloud-act-main',
   '.cloud-icon-btn',
   '.store-btn',
   '.store-tab',
-  '.sync-big',
-  '.sync-mini'
+  '.sync-go',
+  '.sync-sub'
 ].join(',')
 
 // 필기 캔버스와 그 하위, 블록 레이어, 플로팅 도구바/팝오버는 제외한다.

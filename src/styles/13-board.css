@@ -973,8 +973,6 @@
 /* 작은 스피너 (받기 버튼 안) */
 .spinner.sm { width: 14px; height: 14px; border-width: 2px; }
 
-/* 동기화 클라우드 목록의 카테고리 칩 */
-.cloud-chip.cat .dot { background: var(--app); }
 
 
 /* ── 작업보드: 그룹 캡슐 바 (보기 모드) ── */

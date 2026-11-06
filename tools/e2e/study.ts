@@ -78,7 +78,7 @@ export default async function study(ctx: Ctx) {
   // ── 화면: 받기 미리보기 → 비교 → 덮기 ──
   await openEditor(A, base, D)
   await A.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setPanel('sync'))
-  await A.locator('#sync-panel .sync-big.g-recv').click()
+  await A.locator('#sync-panel .sync-cta').locator('.sync-sub, .sync-go[data-act="pull"]').first().click() // 올릴 것이 있으면 「받기만」, 받을 것만 있으면 「n건 받기」
   const row = A.locator('.pull-local-row', { hasText: '공부 노트' })
   await row.waitFor({ timeout: 15000 })
   check('화면: 이 기기에서 바꾼 노트 행 — 쓴 획 +1', (await row.innerText()).includes('+1'))
