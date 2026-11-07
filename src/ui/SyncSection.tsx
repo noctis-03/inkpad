@@ -76,6 +76,14 @@ const STATE_META: Record<CloudNoteState, { group: GroupKey; badge: string; actio
   'deleted-local': { group: 'gone', badge: '이 기기에서 삭제', action: 'restore' }
 }
 
+/** 행 왼쪽 타일 아이콘 — 그룹(무엇을 해야 하는지)마다 하나. 최신 행은 타일 없이 체크만 */
+const GROUP_ICON: Record<Exclude<GroupKey, 'fresh'>, string> = {
+  split: 'swap',
+  recv: 'download',
+  push: 'upload',
+  gone: 'restore'
+}
+
 /** 행 주 동작 버튼의 문구 */
 const ACTION_LABEL: Record<Exclude<RowAction, null>, string> = {
   download: '받기',
@@ -207,12 +215,13 @@ function CloudRow({
   )
   return (
     <div className={'cloud-row g-' + m.group + (compact ? ' compact' : '') + (split ? ' merge-queue-row' : '')}>
-      {split && (
+      {compact ? (
+        <Icon name="check" size={16} className="cloud-ok" />
+      ) : (
         <span className="cloud-ico" aria-hidden="true">
-          <Icon name="swap" size={16} />
+          <Icon name={GROUP_ICON[m.group as Exclude<GroupKey, 'fresh'>]} size={18} />
         </span>
       )}
-      {compact && <Icon name="check" size={16} className="cloud-ok" />}
       <div className="cloud-body">
         <div className="cloud-name">
           {c.title}
@@ -236,6 +245,7 @@ function CloudRow({
         </div>
       </div>
 
+      {act && <span className="cloud-sep" aria-hidden="true" />}
       {act && (
         <button className={'cloud-act-main' + (split ? ' strong' : '')} disabled={busy || rowBusy} onClick={() => onPrimary(c)}>
           {rowBusy && <span className="spinner sm" />}
@@ -243,6 +253,7 @@ function CloudRow({
         </button>
       )}
 
+      <span className="cloud-sep" aria-hidden="true" />
       <button className="cloud-more" aria-label="더보기" aria-expanded={openMenu} disabled={busy} onClick={() => setOpenMenu((v) => !v)}>
         <Icon name="more" size={18} />
       </button>
@@ -263,7 +274,7 @@ function MergeExtraRow({ e, draft }: { e: MergeQueueEntry; draft: boolean }) {
   return (
     <div className="cloud-row g-split merge-queue-row">
       <span className="cloud-ico" aria-hidden="true">
-        <Icon name="swap" size={16} />
+        <Icon name="swap" size={18} />
       </span>
       <div className="cloud-body">
         <div className="cloud-name">
@@ -278,6 +289,7 @@ function MergeExtraRow({ e, draft }: { e: MergeQueueEntry; draft: boolean }) {
           <span>{formatDate(e.branchAt)}</span>
         </div>
       </div>
+      <span className="cloud-sep" aria-hidden="true" />
       <button className="cloud-act-main strong" onClick={() => openMergeView(e)}>
         <span>머지하기</span>
       </button>
