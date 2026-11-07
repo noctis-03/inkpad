@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="berry"><style>
+  .pet{animation:bob 3.2s ease-in-out 2.2199999999999998s infinite;transform-origin:60px 110px}
+  .eye{animation:blink 4.8s 2.2199999999999998s infinite;transform-box:fill-box;transform-origin:center}
+  @keyframes bob{0%,100%{transform:scale(1,1)}50%{transform:scale(1.03,.97)}}
+  @keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+  @media (prefers-reduced-motion:reduce){.pet,.eye{animation:none}}
+</style><g class="pet"><path d="M60 12C68 12 74 18 80 28L110 84C118 100 106 112 90 112H30C14 112 2 100 10 84L40 28C46 18 52 12 60 12Z" fill="#FF2F92"/><g class="eyes"><g transform="rotate(0 54 70)"><rect class="eye" x="50.5" y="64" width="7" height="12" rx="3.5" fill="#fff"/></g><g transform="rotate(0 68 70)"><rect class="eye" x="64.5" y="64" width="7" height="12" rx="3.5" fill="#fff"/></g></g></g></svg>

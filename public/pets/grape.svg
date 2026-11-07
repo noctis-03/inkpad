@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="grape"><style>
+  .pet{animation:bob 3.2s ease-in-out 1.1099999999999999s infinite;transform-origin:60px 110px}
+  .eye{animation:blink 4.8s 1.1099999999999999s infinite;transform-box:fill-box;transform-origin:center}
+  @keyframes bob{0%,100%{transform:scale(1,1)}50%{transform:scale(1.03,.97)}}
+  @keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+  @media (prefers-reduced-motion:reduce){.pet,.eye{animation:none}}
+</style><g class="pet"><rect x="16" y="18" width="88" height="86" rx="26" fill="#9D5CFF" transform="rotate(-10 60 61)"/><g class="eyes"><g transform="rotate(-10 52 60)"><rect class="eye" x="48" y="53" width="8" height="14" rx="4" fill="#fff"/></g><g transform="rotate(-10 68 58)"><rect class="eye" x="64" y="51" width="8" height="14" rx="4" fill="#fff"/></g></g></g></svg>

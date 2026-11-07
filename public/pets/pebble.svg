@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="pebble"><style>
+  .pet{animation:bob 3.2s ease-in-out 2.59s infinite;transform-origin:60px 110px}
+  .eye{animation:blink 4.8s 2.59s infinite;transform-box:fill-box;transform-origin:center}
+  @keyframes bob{0%,100%{transform:scale(1,1)}50%{transform:scale(1.03,.97)}}
+  @keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+  @media (prefers-reduced-motion:reduce){.pet,.eye{animation:none}}
+</style><g class="pet"><path d="M64 12C64 12 100 54 100 80C100 100 84 112 62 112C40 112 24 100 24 80C24 56 64 12 64 12Z" fill="#7A7A7A"/><g class="eyes"><circle class="eye" cx="54" cy="74" r="9" fill="#fff"/><circle class="eye" cx="42" cy="92" r="5" fill="#fff"/></g></g></svg>
