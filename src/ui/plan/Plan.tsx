@@ -8,7 +8,6 @@ import { Segmented } from '../Segmented'
 import { useIndicator } from '../motion/useIndicator'
 import type { DocumentMeta, ID, Task } from '../../shared/model'
 import { assignCategoryColors, categoryColor } from '../../shared/util'
-import { useCategoryColorVersion } from '../../storage/categoryColors'
 import { db } from '../../storage/db'
 import { TASKS_EVENT, createTask, listTasks, setTaskDone, updateTask } from '../../storage/tasks'
 import { REMOTE_EVENT, onSyncStatus } from '../../sync/sync'
@@ -202,9 +201,7 @@ export function Plan() {
     for (const t of tasks ?? []) if (t.category) s.add(t.category)
     return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
   }, [cats, tasks])
-  const colorVersion = useCategoryColorVersion() // 라이브러리에서 고른 카테고리 색
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const colors = useMemo(() => assignCategoryColors([...allCats, ...docs.map((d) => d.category)]), [allCats, docs, colorVersion])
+  const colors = useMemo(() => assignCategoryColors([...allCats, ...docs.map((d) => d.category)]), [allCats, docs])
   const catColor = useCallback((c: string | null) => categoryColor(c, colors), [colors])
   /** 사이드바의 카테고리 — 안 끝낸 할 일이 있는 것만(노트에만 쓰는 카테고리로 목록이 길어지지 않게) */
   const sideCats = useMemo(() => {

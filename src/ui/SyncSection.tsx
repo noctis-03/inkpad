@@ -29,7 +29,6 @@ import { onAssetProgress } from '../sync/assets'
 import { isSyncLockHeld } from '../sync/lock'
 import { db } from '../storage/db'
 import { formatDate, formatBytes, assignCategoryColors, categoryColor } from '../shared/util'
-import { useCategoryColorVersion } from '../storage/categoryColors'
 import { confirmDialog } from '../app/dialogs'
 import { Icon } from './Icon'
 import { MERGE_DONE_EVENT, openMergeView } from './merge/MergeView'
@@ -396,7 +395,6 @@ function CloudList({
   const mineDraft = (docId: string) => [...drafts].some((k) => k.startsWith(docId + '@'))
 
   // 카테고리 목록 — 클라우드 노트의 category (없으면 미분류). 가나다순, 미분류는 맨 뒤. 처리할 건수도 함께
-  const colorVersion = useCategoryColorVersion() // 사용자가 고른 카테고리 색이 바뀌면 다시 배정
   const cats = useMemo(() => {
     const m = new Map<string, { count: number; todo: number }>()
     for (const n of cloud ?? []) {
@@ -414,8 +412,7 @@ function CloudList({
       .map((k) => ({ key: k, name: k, color: categoryColor(k, colors), ...m.get(k)! }))
     if (m.has(CAT_NONE)) out.push({ key: CAT_NONE, name: '미분류', color: categoryColor(null), ...m.get(CAT_NONE)! })
     return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloud, colorVersion])
+  }, [cloud])
   // 고른 카테고리가 목록에서 사라지면(마지막 노트를 지웠다 등) 필터를 푼다
   const catValue = cats.some((c) => c.key === catFilter) ? catFilter : CAT_ALL
 

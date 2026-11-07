@@ -1,14 +1,13 @@
 // 카테고리 지정 창 — 노트·앱·파일 ⋯ 메뉴의 「카테고리 지정」과 선택 모드의 일괄 지정이 함께 쓴다.
 //  - 입력 칸 하나로 검색과 새로 만들기: 입력하면 목록이 걸러지고, 같은 이름이 없으면 맨 아래 「새로 만들기」
-//  - 사이드바와 같은 모습: 색 점, "[태그] 이름"은 '이름' 묶음 아래 [태그]로, 카테고리별 개수
-//  - 카테고리 없음은 속이 빈 링(색이 아니라 모양으로 '없음') — 목록과 구분선으로 나눈다
+//  - 사이드바와 같은 묶음: "[태그] 이름"은 '이름' 묶음 아래 [태그]로, 카테고리별 개수.
+//    색 점은 두지 않는다 — 이름만으로 고르는 창이라 글자가 먼저 읽히게
+//  - 카테고리 없음은 목록과 구분선으로 나눈다
 //  - 숨긴 카테고리는 흐리게 + 「숨김」. 고르면 목록에서 사라진다는 것을 먼저 알린다
-//  - 색 점을 누르면 그 자리에서 색을 고른다 (storage/categoryColors — 노트는 다시 올리지 않는다)
 //  - ↑↓로 고르고 Enter로 지정, Esc로 닫기. 좁은 화면에서는 아래에서 올라오는 시트
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
-import { CATEGORY_SWATCHES, colorLabel, hasCategoryColorOverride, splitCategory } from '../../shared/util'
-import { setCategoryColor, useCategoryColorVersion } from '../../storage/categoryColors'
+import { splitCategory } from '../../shared/util'
 import { Icon } from '../Icon'
 import { useEscClose } from '../sheetParts'
 
@@ -24,7 +23,6 @@ export interface CategoryPickerProps {
   /** 카테고리별 항목 수 */
   counts: Map<string, number>
   hidden: Set<string>
-  colorOf: (c: string | null) => string
   /** 최근에 지정한 카테고리 (앞이 최근) */
   recent: string[]
   onPick: (c: string | null) => void
@@ -36,7 +34,6 @@ type Row =
   | { t: 'sep' }
   | { t: 'group'; name: string; items: string[]; open: boolean }
   | { t: 'cat'; name: string; label: string; child: boolean }
-  | { t: 'pop'; name: string; child: boolean }
   | { t: 'suggest'; name: string }
   | { t: 'create'; name: string }
 
@@ -49,9 +46,7 @@ export const categoryDisplay = (c: string) => {
 }
 
 export function CategoryPicker(p: CategoryPickerProps) {
-  useCategoryColorVersion() // 색을 고르면 다시 그린다
   const [q, setQ] = useState('')
-  const [pop, setPop] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<string | null>(null)
   const [active, setActive] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -81,10 +76,7 @@ export function CategoryPicker(p: CategoryPickerProps) {
   const rows = useMemo(() => {
     const out: Row[] = []
     const match = (s: string) => s.toLowerCase().includes(lq)
-    const cat = (name: string, label: string, child: boolean) => {
-      out.push({ t: 'cat', name, label, child })
-      if (pop === name) out.push({ t: 'pop', name, child })
-    }
+    const cat = (name: string, label: string, child: boolean) => out.push({ t: 'cat', name, label, child })
     if (!lq) out.push({ t: 'none' }, { t: 'sep' })
     for (const g of groups) {
       const items = !lq || match(g.name) ? g.items : g.items.filter(match)
@@ -100,7 +92,7 @@ export function CategoryPicker(p: CategoryPickerProps) {
       if (!p.categories.includes(created)) out.push({ t: 'create', name: created })
     }
     return out
-  }, [groups, plain, lq, open, pop, created, p.categories])
+  }, [groups, plain, lq, open, created, p.categories])
 
   // ↑↓·Enter가 고를 수 있는 줄
   const pickable = rows.map((r, i) => (r.t === 'none' || r.t === 'cat' || r.t === 'suggest' || r.t === 'create' ? i : -1)).filter((i) => i >= 0)
@@ -121,10 +113,7 @@ export function CategoryPicker(p: CategoryPickerProps) {
   }, [])
 
   const choose = (c: string | null) => {
-    if (c && p.hidden.has(c) && confirm !== c) {
-      setPop(null)
-      return setConfirm(c)
-    }
+    if (c && p.hidden.has(c) && confirm !== c) return setConfirm(c)
     p.onPick(c)
   }
   const runRow = (r: Row) => {
@@ -201,7 +190,6 @@ export function CategoryPicker(p: CategoryPickerProps) {
             aria-activedescendant={active >= 0 ? `cp-row-${active}` : undefined}
             onChange={(e) => {
               setQ(e.target.value)
-              setPop(null)
               setConfirm(null)
             }}
           />
@@ -217,7 +205,6 @@ export function CategoryPicker(p: CategoryPickerProps) {
             <span className="cp-recent-label">최근</span>
             {recent.map((c) => (
               <button key={c} className="cp-chip" onClick={() => choose(c)}>
-                <i className="cp-dot" style={{ background: p.colorOf(c) }} aria-hidden="true" />
                 {categoryDisplay(c)}
               </button>
             ))}
@@ -233,16 +220,12 @@ export function CategoryPicker(p: CategoryPickerProps) {
               const s = state(null)
               return (
                 <button key="none" {...rowProps} aria-selected={s.full} className={'cp-row' + (s.full ? ' is-current' : '') + act} onClick={() => choose(null)}>
-                  <span className="cp-dot-hit" aria-hidden="true">
-                    <i className="cp-ring" />
-                  </span>
                   <span className="cp-name">카테고리 없음</span>
                   {mark(null)}
                 </button>
               )
             }
             if (r.t === 'group') {
-              const dots = [...new Set(r.items.map((c) => p.colorOf(c)))]
               const n = r.items.reduce((a, c) => a + (p.counts.get(c) ?? 0), 0)
               const holdsCurrent = !r.open && r.items.some((c) => state(c).full || state(c).part)
               return (
@@ -264,13 +247,6 @@ export function CategoryPicker(p: CategoryPickerProps) {
                     <Icon name="chevronRight" size={14} />
                   </span>
                   <span className="cp-name">{r.name}</span>
-                  {!r.open && (
-                    <span className="cp-group-dots" aria-hidden="true">
-                      {dots.map((c) => (
-                        <i key={c} style={{ background: c }} />
-                      ))}
-                    </span>
-                  )}
                   {holdsCurrent && <span className="cp-group-cur">현재</span>}
                   {!r.open && <span className="cp-count">{n}</span>}
                 </button>
@@ -279,21 +255,8 @@ export function CategoryPicker(p: CategoryPickerProps) {
             if (r.t === 'cat') {
               const s = state(r.name)
               const hidden = p.hidden.has(r.name)
-              const color = p.colorOf(r.name)
               return (
                 <div key={'c:' + r.name} className={'cp-cat' + (r.child ? ' is-child' : '') + (s.full ? ' is-current' : '') + (confirm === r.name ? ' is-confirm' : '') + act}>
-                  <button
-                    className={'cp-dot-hit' + (pop === r.name ? ' is-open' : '')}
-                    aria-label={`${r.label} 색 바꾸기`}
-                    aria-expanded={pop === r.name}
-                    title="색 바꾸기"
-                    onClick={() => {
-                      setConfirm(null)
-                      setPop((x) => (x === r.name ? null : r.name))
-                    }}
-                  >
-                    <i className="cp-dot" style={{ background: color, color }} />
-                  </button>
                   <button {...rowProps} aria-selected={s.full} className="cp-row" onClick={() => choose(r.name)}>
                     <span className={'cp-name' + (hidden ? ' is-hidden' : '')}>{r.label}</span>
                     {hidden && (
@@ -308,52 +271,9 @@ export function CategoryPicker(p: CategoryPickerProps) {
                 </div>
               )
             }
-            if (r.t === 'pop') {
-              const key = colorLabel(r.name)
-              const color = p.colorOf(r.name)
-              const tagged = !!splitCategory(r.name).group
-              const usedByOthers = new Set(p.categories.filter((c) => colorLabel(c) !== key).map((c) => p.colorOf(c)))
-              return (
-                <div key={'p:' + r.name} className={'cp-pop' + (r.child ? ' is-child' : '')} role="group" aria-label={`‘${key}’ 색`}>
-                  <div className="cp-pop-head">
-                    <span>
-                      ‘{key}’ 색{tagged ? ` · [${key}] 카테고리 모두` : ''}
-                    </span>
-                    {hasCategoryColorOverride(r.name) && (
-                      <button className="text-btn small" onClick={() => void setCategoryColor(r.name, null)}>
-                        자동으로
-                      </button>
-                    )}
-                  </div>
-                  <div className="cp-swatches">
-                    {CATEGORY_SWATCHES.map((s) => {
-                      const on = s.hex === color
-                      const used = !on && usedByOthers.has(s.hex)
-                      return (
-                        <button
-                          key={s.hex}
-                          className={'cp-swatch' + (on ? ' is-on' : '') + (used ? ' is-used' : '')}
-                          style={{ background: s.hex, color: s.hex }}
-                          aria-label={s.name + (on ? ' (지금 색)' : used ? ' (다른 카테고리가 쓰는 색)' : '')}
-                          aria-pressed={on}
-                          title={s.name}
-                          onClick={() => void setCategoryColor(r.name, s.hex)}
-                        >
-                          {on && <Icon name="check" size={14} />}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div className="cp-pop-note">모든 기기에 같은 색으로 보입니다 · 노트는 다시 올리지 않아요</div>
-                </div>
-              )
-            }
             if (r.t === 'suggest')
               return (
                 <button key="suggest" {...rowProps} className={'cp-row cp-suggest' + act} onClick={() => choose(r.name)}>
-                  <span className="cp-dot-hit" aria-hidden="true">
-                    <i className="cp-dot" style={{ background: p.colorOf(r.name) }} />
-                  </span>
                   <span className="cp-name">
                     혹시 <b>‘{r.name}’</b>?
                   </span>
@@ -364,16 +284,12 @@ export function CategoryPicker(p: CategoryPickerProps) {
             const s = splitCategory(r.name)
             return (
               <button key="create" {...rowProps} className={'cp-row cp-create' + act} onClick={() => choose(r.name)}>
-                <span className="cp-dot-hit" aria-hidden="true">
-                  <span className="cp-plus">
-                    <Icon name="plus" size={12} />
-                  </span>
+                <span className="cp-plus" aria-hidden="true">
+                  <Icon name="plus" size={12} />
                 </span>
                 <span className="cp-name">
                   <span className="cp-create-title">‘{r.name}’ 새로 만들기</span>
-                  <span className="cp-create-sub">
-                    <i className="cp-dot is-small" style={{ background: p.colorOf(r.name) }} aria-hidden="true" />
-                    {s.group ? `‘${s.label}’ 묶음 안 [${s.group}]` : '새 카테고리 · 색은 나중에 바꿀 수 있어요'}
+                  <span className="cp-create-sub">{s.group ? `‘${s.label}’ 묶음 안 [${s.group}]` : '새 카테고리'}
                   </span>
                 </span>
                 {r.name.length > MAX_CATEGORY_CHARS - 10 && <span className="cp-count">{`${r.name.length}/${MAX_CATEGORY_CHARS}`}</span>}
@@ -409,7 +325,6 @@ export function CategoryPicker(p: CategoryPickerProps) {
 
         <div className="cp-foot">
           <span className="cp-keys">↑↓ 이동 · Enter 지정 · Esc 닫기</span>
-          <span>색 점을 누르면 색을 바꿀 수 있어요</span>
         </div>
       </div>
     </div>
