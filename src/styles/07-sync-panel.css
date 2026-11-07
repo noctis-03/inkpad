@@ -1237,35 +1237,36 @@
   }
 }
 
-/* ── 올리기 미리보기 모달 ── */
+/* ── 올리기 · 받기 미리보기 모달 — 동기화 창과 같은 행·그룹 머리. 머리 · 목록 · 바닥 세 칸 ── */
 .push-modal {
-  width: min(440px, 100%);
-  max-height: 80vh;
+  width: min(560px, 100%);
+  max-height: 84vh;
+  padding: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
-.push-head {
+.pv-head {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 12px;
+  gap: 10px;
+  padding: 14px 10px 12px 22px;
+  border-bottom: 1px solid var(--line);
 }
-.push-count {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-lg);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: var(--fs-title);
-  font-weight: 800;
+.pv-htxt {
+  flex: 1;
+  min-width: 0;
+}
+.pv-hrow {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
 }
 .push-modal .modal-title {
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-title);
+  white-space: nowrap;
 }
 .push-sub {
   margin: 2px 0 0;
@@ -1276,88 +1277,115 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border: 0;
-  margin: 0;
-  padding: 2px 0;
+  padding: 8px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-.push-group {
-  margin-bottom: 10px;
-}
-.push-group-label {
+.pv-ghead {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin: 0 0 4px;
+  gap: 6px;
+  min-height: 34px;
   padding: 0 4px;
-  font-size: var(--fs-sm);
+}
+.pv-ghead h4 {
+  margin: 0;
+  font-size: var(--fs-base);
   font-weight: 600;
-  color: var(--muted);
-}
-.push-group-label b {
   color: var(--ink);
-}
-.push-group-label svg {
-  color: var(--muted);
-}
-.push-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 10px 0 0;
-  border: 0;
-  border-radius: var(--r-md);
-  background: var(--paper);
-  font-size: var(--fs-md);
-}
-.push-row + .push-row {
-  margin-top: 4px;
-}
-.push-stripe {
-  flex-shrink: 0;
-  width: 3px;
-  height: 22px;
-  border-radius: 2px;
-  background: var(--line);
-}
-.push-stripe.add {
-  background: var(--success);
-}
-.push-stripe.modify {
-  background: var(--accent);
-}
-.push-stripe.delete {
-  background: var(--danger);
-}
-.push-stripe.recv {
-  background: var(--accent);
-}
-.push-stripe.split {
-  background: var(--danger);
-}
-.push-note {
-  margin: 0 0 6px;
-  font-size: var(--fs-sm);
-  color: var(--muted);
-}
-.push-device {
-  flex-shrink: 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
   white-space: nowrap;
 }
-.push-name {
+.pv-ghead b {
+  font-size: var(--fs-base);
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pv-gline {
   flex: 1;
+  min-width: 8px;
+  height: 1px;
+  margin-left: 2px;
+  background: var(--line);
+}
+.pv-gsize {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* 행 — 아이콘 칸 · 제목/배지·정보 · 용량 */
+.pv-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 4px 8px;
+}
+.pv-row + .pv-row::before,
+.pull-local-row + .pull-local-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 54px;
+  right: 4px;
+  height: 1px;
+  background: var(--line);
+}
+.pv-ico {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  display: grid;
+  place-items: center;
+}
+.pv-ico.t-push,
+.pv-bdg.t-push {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+.pv-ico.t-recv,
+.pv-bdg.t-recv {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.pv-body {
+  flex: 1;
+  min-width: 0;
+}
+.pv-name {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pv-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pv-meta > span:not(.pv-bdg) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.push-ico {
-  flex-shrink: 0;
-  color: var(--muted);
+.pv-bdg {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 18px;
 }
-/* 올리기 미리보기의 용량 표시 — 행 오른쪽, 하단 합계 */
 .push-size {
   flex-shrink: 0;
   margin-left: auto;
@@ -1365,13 +1393,54 @@
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
-.push-row .push-ico {
-  margin-left: 0;
+.pv-note {
+  margin: 2px 4px 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+/* 올린 뒤 이어서 받을 것 — 올리기가 끝난 다음 일이라 점선 상자로 나눈다 */
+.pv-later-box {
+  padding: 2px 0;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-lg);
+}
+.pv-later .pv-note {
+  margin-top: 8px;
+}
+/* 받기 미리보기 「한 번에」 */
+.pv-all {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.pv-all select {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+/* 바닥 — 무엇이 몇 건인지 요약 · 취소 · 주 버튼 */
+.pv-foot {
+  flex: none;
+  align-items: center;
+  margin: 0;
+  padding: 12px 16px 14px 22px;
+  border-top: 1px solid var(--line);
+  background: var(--paper-2);
 }
 .push-total {
   margin-right: auto;
+  min-width: 0;
   color: var(--muted);
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2102,30 +2171,59 @@
   border-top: 1px solid var(--line);
 }
 
-/* 받기 미리보기 — 이 기기 내용이 덮이는 노트 한 행 */
+/* 받기 미리보기 — 이 기기에서 바꾼 노트 한 행: 아이콘 · 제목/정보 · 비교 · 덮기·올리기·건너뛰기. 좁으면 선택은 아랫줄 전체 폭 */
 .pull-local-row {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  gap: 8px;
+  padding: 10px 8px;
 }
-.pull-local-row + .pull-local-row {
-  margin-top: 6px;
+.pull-local-row > .pv-ico {
+  margin-right: 4px;
 }
-.pull-local-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.pull-local-meta {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+.pv-cmp {
+  flex: 0 0 auto;
 }
 .pull-local-seg {
+  flex: 0 0 auto;
+}
+.pv-result {
   flex-basis: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding-left: 46px; /* 제목 칸에 맞춘다 */
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--warn-ink);
+}
+.pv-result svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+@media (max-width: 560px) {
+  .pull-local-seg {
+    flex: 1 0 100%;
+  }
+  .pull-local-seg button {
+    flex: 1;
+  }
+  .pv-result {
+    padding-left: 0;
+  }
+  .pv-foot {
+    flex-wrap: wrap;
+    padding-left: 16px;
+  }
+  .pv-foot .push-total {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .pv-foot .primary-btn {
+    flex: 1;
+    justify-content: center;
+  }
 }
