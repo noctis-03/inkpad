@@ -18,6 +18,8 @@ import { AssetsSheet } from '../AssetsSheet'
 import { NoteAssetsSheet } from './NoteAssetsSheet'
 import { CategoryPicker, categoryDisplay } from './CategoryPicker'
 import { Menu, MenuItem } from '../Menu'
+import { NO_MANY, NO_NOTE, showEdgeZones, type Side } from '../edgeDrop'
+import { SPLIT_QUERY } from '../TabBar'
 import { FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
 import { TRASH_RETENTION_DAYS, extOf } from '../../shared/model'
@@ -517,7 +519,7 @@ export function Library() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [radial?.key, radial?.x, radial?.y])
   // 카드를 집은 동안: 카드 모습이 손가락을 따라오고, 탭 바 위에서는 작아지며 들어갈 자리에 선이 뜬다.
-  // 탭 바에 놓으면 탭을 넣고(열지 않는다), 다른 곳에 놓으면 제자리로 돌아간다
+  // 탭 바에 놓으면 탭을 넣고(열지 않는다), 화면 왼쪽·오른쪽 끝에 놓으면 그쪽 옆 칸(듀얼)에 열고, 다른 곳에 놓으면 제자리로 돌아간다
   useEffect(() => {
     if (!cardDrag) return
     const { el: src, routes, x: x0, y: y0 } = cardDrag
@@ -544,6 +546,10 @@ export function Library() {
     document.body.classList.add('is-card-dragging')
     navigator.vibrate?.(8)
     let drop: ReturnType<typeof tabDropAt> = null
+    // 옆 칸은 앱·파일 하나만 — 아니면 놓는 자리에 까닭을 보이고 놓아도 열지 않는다
+    const noSide = routes.length > 1 ? NO_MANY : routes[0].name === 'editor' ? NO_NOTE : null
+    const zones = window.matchMedia(SPLIT_QUERY).matches ? showEdgeZones(noSide) : null
+    let side: Side | null = null
     let lastX = x0
     let lastY = y0
     let raf = 0
@@ -551,7 +557,9 @@ export function Library() {
     const update = () => {
       wrap.style.transform = `translate(${lastX - x0}px, ${lastY - y0}px)`
       drop = tabDropAt(lastX, lastY)
-      ghost.classList.toggle('is-over', !!drop)
+      side = drop ? null : zones?.update(lastX, lastY) ?? null
+      if (drop) zones?.update(-1, -1)
+      ghost.classList.toggle('is-over', !!drop || (!!side && !noSide))
       document.querySelector('.tabbar')?.classList.toggle('is-drop-target', !!drop)
       if (drop) {
         line.style.cssText = `left:${drop.lineX}px;top:${drop.bar.top + 6}px;height:${drop.bar.height - 12}px`
@@ -577,10 +585,13 @@ export function Library() {
       done = true
       cancelAnimationFrame(raf)
       line.remove()
+      zones?.remove()
       document.querySelector('.tabbar')?.classList.remove('is-drop-target')
       document.body.classList.remove('is-card-dragging')
-      const target = dropped && drop
-      if (target) useUI.getState().addTabs(routes, target.at)
+      const toSide = dropped && !drop && !noSide && side
+      const target = (dropped && drop) || toSide
+      if (dropped && drop) useUI.getState().addTabs(routes, drop.at)
+      else if (toSide && routes[0].name !== 'editor') useUI.getState().openSplit(routes[0], toSide)
       // 놓은 뒤 따라오는 클릭이 탭·카드를 열지 않게 한 번 삼킨다
       const eat = (e: MouseEvent) => {
         e.stopPropagation()
@@ -624,6 +635,7 @@ export function Library() {
         cancelAnimationFrame(raf)
         wrap.remove()
         line.remove()
+        zones?.remove()
         src.classList.remove('is-drag-source')
         document.body.classList.remove('is-card-dragging')
         document.querySelector('.tabbar')?.classList.remove('is-drop-target')
