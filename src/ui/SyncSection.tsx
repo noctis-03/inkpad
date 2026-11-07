@@ -1219,79 +1219,107 @@ function SyncHelp() {
   )
 }
 
+/** 미리보기 행 — 동기화 창의 행과 같은 모양: 아이콘 칸 · 제목/배지·정보 · 용량 */
+function PvRow({ icon, tone, title, badge, meta, bytes }: { icon: string; tone: 'push' | 'recv'; title: string; badge?: string; meta?: string; bytes?: number }) {
+  return (
+    <div className="pv-row">
+      <span className={'pv-ico t-' + tone} aria-hidden="true">
+        <Icon name={icon} size={16} />
+      </span>
+      <div className="pv-body">
+        <div className="pv-name">{title}</div>
+        {(badge || meta) && (
+          <div className="pv-meta">
+            {badge && <span className={'pv-bdg t-' + tone}>{badge}</span>}
+            {meta && <span>{meta}</span>}
+          </div>
+        )}
+      </div>
+      {bytes != null && <span className="push-size">{formatBytes(bytes)}</span>}
+    </div>
+  )
+}
+
+/** 미리보기 그룹 — 머리는 제목 · 건수 · 가는 선 · 용량(또는 오른쪽 도구) */
+function PvGroup({ title, n, bytes, right, className, children }: { title: string; n: number; bytes?: number; right?: ReactNode; className?: string; children: ReactNode }) {
+  return (
+    <section className={'pv-group' + (className ? ' ' + className : '')} aria-label={title}>
+      <div className="pv-ghead">
+        <h4>{title}</h4>
+        <b>{n}</b>
+        <span className="pv-gline" aria-hidden="true" />
+        {right ?? (bytes != null && bytes > 0 && <span className="pv-gsize">{formatBytes(bytes)}</span>)}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** 미리보기 머리 — 제목 · 건수/용량 알약 · 한 줄 설명 · 닫기 */
+function PvHead({ title, pill, sub, onClose }: { title: string; pill: string; sub: string; onClose: () => void }) {
+  return (
+    <header className="pv-head">
+      <div className="pv-htxt">
+        <div className="pv-hrow">
+          <h2 className="modal-title">{title}</h2>
+          <span className="sync-pill">{pill}</span>
+        </div>
+        <p className="push-sub">{sub}</p>
+      </div>
+      <button className="tb-btn" onClick={onClose} aria-label="닫기">
+        <Icon name="close" />
+      </button>
+    </header>
+  )
+}
+
 /** 올리기 미리보기 — 이번 올리기에 클라우드로 올라갈 변경과, 올린 뒤 받아올 다른 기기의 변경 */
 function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan; pull: PullPlan | null; busy: boolean; onConfirm: () => void; onClose: () => void }) {
   // 삭제한 노트는 Drive에 올라가는 게 없어 미리보기에 세지 않는다 (삭제는 이 기기의 일)
-  const groups = [
-    { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
-    { key: 'modify' as const, label: '수정한 노트', icon: 'edit', items: plan.docs.filter((d) => d.change === 'modify') }
-  ].filter((g) => g.items.length > 0)
   const total = plan.docs.length + plan.assets.count
+  const docBytes = plan.docs.reduce((n, d) => n + d.bytes, 0)
   // 이번 올리기 전체 예상 용량 — 노트(gzip 청크 기준) + 새로 올릴 원본
-  const totalBytes = plan.docs.reduce((n, d) => n + d.bytes, 0) + plan.assets.bytes
+  const totalBytes = docBytes + plan.assets.bytes
+  const later = pull?.docs ?? []
+  const laterBytes = later.reduce((n, d) => n + d.bytes, 0)
   useEscClose(onClose, !busy)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="올리기 미리보기">
-        <header className="push-head">
-          <span className="push-count">{total}</span>
-          <div>
-            <h2 className="modal-title">올리기 미리보기</h2>
-            <p className="push-sub">
-              클라우드에 이렇게 올라갑니다{totalBytes > 0 ? ` · 약 ${formatBytes(totalBytes)}` : ''} · 올린 뒤 다른 기기의 변경도 받아옵니다
-            </p>
-          </div>
-        </header>
-
+        <PvHead
+          title="올리기 미리보기"
+          pill={`${total}건` + (totalBytes > 0 ? ` · 약 ${formatBytes(totalBytes)}` : '')}
+          sub="이 기기에서 바꾼 것을 클라우드에 올립니다"
+          onClose={onClose}
+        />
         <div className="push-list">
-          {pull && pull.docs.length > 0 && (
-            <section className="push-group">
-              <h4 className="push-group-label">
-                <Icon name="cloudDown" size={13} /> 받을 것 — 다른 기기의 변경 <b>{pull.docs.length}</b>
-              </h4>
-              {pull.docs.map((d) => (
-                <div key={d.docId} className="push-row">
-                  <span className={'push-stripe ' + (d.change === 'add' ? 'add' : 'recv')} />
-                  <span className="push-name">{d.title}</span>
-                  {d.device && <span className="push-device">{d.device}</span>}
-                  <span className="push-size">{formatBytes(d.bytes)}</span>
-                  <Icon name={d.change === 'add' ? 'plus' : 'cloudDown'} size={14} className="push-ico" />
-                </div>
+          {plan.docs.length > 0 && (
+            <PvGroup title="올릴 노트" n={plan.docs.length} bytes={docBytes}>
+              {plan.docs.map((d) => (
+                <PvRow key={d.docId} icon="file" tone="push" title={d.title} badge={d.change === 'add' ? '새 노트' : '수정'} bytes={d.bytes} />
               ))}
-            </section>
+            </PvGroup>
           )}
-          {groups.map((g) => (
-            <section key={g.key} className="push-group">
-              <h4 className="push-group-label">
-                <Icon name={g.icon} size={13} /> {g.label} <b>{g.items.length}</b>
-              </h4>
-              {g.items.map((d) => (
-                <div key={d.docId} className="push-row">
-                  <span className={'push-stripe ' + g.key} />
-                  <span className="push-name">{d.title}</span>
-                  <span className="push-size">{formatBytes(d.bytes)}</span>
-                  <Icon name={g.key === 'add' ? 'upload' : 'edit'} size={14} className="push-ico" />
-                </div>
-              ))}
-            </section>
-          ))}
           {plan.assets.count > 0 && (
-            <section className="push-group">
-              <h4 className="push-group-label">
-                <Icon name="file" size={13} /> 원본 (PDF·이미지) <b>{plan.assets.count}</b>
-              </h4>
-              <div className="push-row">
-                <span className="push-stripe add" />
-                <span className="push-name">새로 올릴 원본 {plan.assets.count}개</span>
-                <span className="push-size">{formatBytes(plan.assets.bytes)}</span>
-                <Icon name="upload" size={14} className="push-ico" />
+            <PvGroup title="원본 (PDF·이미지)" n={plan.assets.count} bytes={plan.assets.bytes}>
+              <PvRow icon="photo" tone="recv" title={`새로 올릴 원본 ${plan.assets.count}개`} bytes={plan.assets.bytes} />
+            </PvGroup>
+          )}
+          {later.length > 0 && (
+            <PvGroup title="올린 뒤 이어서 받을 것" n={later.length} bytes={laterBytes} className="pv-later">
+              <div className="pv-later-box">
+                {later.map((d) => (
+                  <PvRow key={d.docId} icon="file" tone="recv" title={d.title} badge={d.change === 'add' ? '새 노트' : '새 버전'} meta={d.device} bytes={d.bytes} />
+                ))}
               </div>
-            </section>
+              <p className="pv-note">다른 기기가 올린 변경입니다 — 올리기가 끝나면 이어서 받습니다.</p>
+            </PvGroup>
           )}
         </div>
-
-        <div className="modal-actions">
-          <span className="push-total">예상 용량 {totalBytes > 0 ? `약 ${formatBytes(totalBytes)}` : '0 B'}</span>
+        <div className="modal-actions pv-foot">
+          <span className="push-total">
+            {[`올리기 ${total}`, later.length ? `받기 ${later.length}` : '', totalBytes + laterBytes > 0 ? `합계 약 ${formatBytes(totalBytes + laterBytes)}` : ''].filter(Boolean).join(' · ')}
+          </span>
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
@@ -1305,20 +1333,26 @@ function PushPreview({ plan, pull, busy, onConfirm, onClose }: { plan: PushPlan;
 }
 
 type LocalChoice = 'overwrite' | 'push' | 'skip'
+const LOCAL_CHOICES: [LocalChoice, string][] = [
+  ['overwrite', '덮기'],
+  ['push', '올리기'],
+  ['skip', '건너뛰기']
+]
 
 /**
  * 받기 미리보기 — 받기는 클라우드로 완전 동기화다. 다른 기기가 올린 변경은 그대로 받고,
  * 이 기기 변경이 있는 노트는 행마다 덮기·올리기·건너뛰기(기본 — 이 기기 내용 그대로)를 고른다. '비교'로 지금 쓴 것을 확인한다.
+ * 바꾼 노트가 많으면 그룹 머리의 「한 번에」로 모두 같은 처리를 고른다.
  */
 function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy: boolean; onConfirm: (c: PullChoices) => void; onClose: () => void }) {
   const [choice, setChoice] = useState<Record<string, LocalChoice>>(() => Object.fromEntries(plan.local.map((d) => [d.docId, 'skip' as LocalChoice])))
-  const groups = [
-    { key: 'add' as const, label: '새 노트', icon: 'plus', items: plan.docs.filter((d) => d.change === 'add') },
-    { key: 'remote-new' as const, label: '새 버전', icon: 'cloudDown', items: plan.docs.filter((d) => d.change === 'remote-new') }
-  ].filter((g) => g.items.length > 0)
   const overwrite = plan.local.filter((d) => choice[d.docId] === 'overwrite').map((d) => d.docId)
   const push = plan.local.filter((d) => choice[d.docId] === 'push').map((d) => d.docId)
+  const skip = plan.local.length - overwrite.length - push.length
   const count = plan.docs.length + overwrite.length + push.length
+  // 「한 번에」 — 모두 같은 처리면 그 값, 섞여 있으면 빈 값(골라서)
+  const picked = new Set(plan.local.map((d) => choice[d.docId]))
+  const allValue = picked.size === 1 ? [...picked][0] : ''
   const changeText = (d: LocalChangedDoc) =>
     !d.changes
       ? '비교 기록 없음'
@@ -1326,84 +1360,97 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
         ? d.sync === 'diverged'
           ? '바꾼 것 없음 · 올려 둔 이 기기 브랜치가 머지 대기에서 빠짐'
           : '바꾼 것 없음'
-        : `이 기기에서 쓴 것 획 +${d.changes.added}` + (d.changes.removed ? ` · 지운 것 −${d.changes.removed}` : '') + (d.changes.modified ? ` · 고친 것 ${d.changes.modified}` : '') + (d.changes.other ? ` · 그 밖 ${d.changes.other}` : '')
+        : `획 +${d.changes.added}` + (d.changes.removed ? ` · 지운 것 −${d.changes.removed}` : '') + (d.changes.modified ? ` · 고친 것 ${d.changes.modified}` : '') + (d.changes.other ? ` · 그 밖 ${d.changes.other}` : '')
+  const summary = [
+    plan.docs.length ? `받기 ${plan.docs.length}` : '',
+    overwrite.length ? `덮기 ${overwrite.length}` : '',
+    push.length ? `올리기 ${push.length}` : '',
+    skip ? `건너뛰기 ${skip}` : ''
+  ].filter(Boolean)
   useEscClose(onClose, !busy)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal push-modal" role="dialog" aria-label="받기 미리보기">
-        <header className="push-head">
-          <span className="push-count">{count}</span>
-          <div>
-            <h2 className="modal-title">받기 미리보기</h2>
-            <p className="push-sub">
-              클라우드와 똑같이 맞춥니다{plan.bytes > 0 ? ` · 최대 ${formatBytes(plan.bytes)}` : ''}
-            </p>
-          </div>
-        </header>
-
+        <PvHead
+          title="받기 미리보기"
+          pill={`${plan.docs.length}건` + (plan.bytes > 0 ? ` · 최대 ${formatBytes(plan.bytes)}` : '')}
+          sub="다른 기기가 올린 변경을 받아 클라우드와 맞춥니다"
+          onClose={onClose}
+        />
         <div className="push-list">
-          {groups.map((g) => (
-            <section key={g.key} className="push-group">
-              <h4 className="push-group-label">
-                <Icon name={g.icon} size={13} /> {g.label} <b>{g.items.length}</b>
-              </h4>
-              {g.items.map((d) => (
-                <div key={d.docId} className="push-row">
-                  <span className={'push-stripe ' + (g.key === 'add' ? 'add' : 'recv')} />
-                  <span className="push-name">{d.title}</span>
-                  {d.device && <span className="push-device">{d.device}</span>}
-                  <span className="push-size">{formatBytes(d.bytes)}</span>
-                  <Icon name={g.key === 'add' ? 'plus' : 'cloudDown'} size={14} className="push-ico" />
-                </div>
+          {plan.docs.length > 0 && (
+            <PvGroup title="받을 것" n={plan.docs.length} bytes={plan.bytes}>
+              {plan.docs.map((d) => (
+                <PvRow key={d.docId} icon="file" tone="recv" title={d.title} badge={d.change === 'add' ? '새 노트' : '새 버전'} meta={d.device} bytes={d.bytes} />
               ))}
-            </section>
-          ))}
+            </PvGroup>
+          )}
           {plan.local.length > 0 && (
-            <section className="push-group">
-              <h4 className="push-group-label">
-                <Icon name="alert" size={13} /> 이 기기에서 바꾼 노트 <b>{plan.local.length}</b>
-              </h4>
-              <p className="push-note">
-                기본은 건너뛰기 — 이 기기 내용을 그대로 둡니다. 덮으면 클라우드와 같아지고 지금 내용은 이 기기 스냅샷으로만 남습니다(버전 기록에서 되돌릴 수 있음). 진짜 필기라면 '올리기'를 고르세요.
-              </p>
+            <PvGroup
+              title="이 기기에서 바꾼 노트"
+              n={plan.local.length}
+              right={
+                plan.local.length > 1 ? (
+                  <label className="pv-all">
+                    <span>한 번에</span>
+                    <select
+                      value={allValue}
+                      onChange={(e) => {
+                        const v = e.target.value as LocalChoice
+                        if (v) setChoice(Object.fromEntries(plan.local.map((d) => [d.docId, v])))
+                      }}
+                    >
+                      {!allValue && <option value="">골라서</option>}
+                      {LOCAL_CHOICES.map(([k, label]) => (
+                        <option key={k} value={k}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : undefined
+              }
+            >
+              <p className="pv-note">기본은 건너뛰기 — 이 기기 내용을 그대로 둡니다.</p>
               {plan.local.map((d) => (
                 <div key={d.docId} className="pull-local-row">
-                  <div className="pull-local-main">
-                    <span className="push-name">{d.title}</span>
-                    <span className="pull-local-meta">
-                      {changeText(d)}
-                      {d.remoteChanged ? ' · 클라우드도 바뀜' : ''}
-                    </span>
+                  <span className="pv-ico t-push" aria-hidden="true">
+                    <Icon name="edit" size={16} />
+                  </span>
+                  <div className="pv-body">
+                    <div className="pv-name">{d.title}</div>
+                    <div className="pv-meta">
+                      <span>{changeText(d)}</span>
+                      {d.remoteChanged && <span className="pv-bdg t-push">클라우드도 바뀜</span>}
+                    </div>
                   </div>
-                  <button className="text-btn small" onClick={() => openChanges({ docId: d.docId, title: d.title, actions: [] })}>
+                  <button className="text-btn small pv-cmp" onClick={() => openChanges({ docId: d.docId, title: d.title, actions: [] })}>
                     비교
                   </button>
                   <Segmented
                     className="pull-local-seg"
                     label={`${d.title} 처리`}
                     value={choice[d.docId]}
-                    options={[
-                      ['overwrite', '덮기'],
-                      ['push', '올리기'],
-                      ['skip', '건너뛰기']
-                    ]}
+                    options={LOCAL_CHOICES}
                     onChange={(v) => setChoice((c) => ({ ...c, [d.docId]: v }))}
                   />
+                  {choice[d.docId] === 'overwrite' && (
+                    <p className="pv-result">
+                      <Icon name="restore" size={14} /> 클라우드 내용으로 바뀝니다. 지금 쓴 것은 스냅샷으로 남아 버전 기록에서 되돌릴 수 있어요.
+                    </p>
+                  )}
                 </div>
               ))}
-            </section>
+            </PvGroup>
           )}
         </div>
-
-        <div className="modal-actions">
-          <span className="push-total">
-            {!count && plan.local.length ? '받을 것이 없습니다 — 덮거나 올릴 노트를 고르세요' : `예상 용량 ${plan.bytes > 0 ? `약 ${formatBytes(plan.bytes)}` : '0 B'}`}
-          </span>
+        <div className="modal-actions pv-foot">
+          <span className="push-total">{!count && plan.local.length ? '받을 것이 없습니다 — 덮거나 올릴 노트를 고르세요' : summary.join(' · ')}</span>
           <button className="text-btn" onClick={onClose}>
             취소
           </button>
           <button className="primary-btn" onClick={() => onConfirm({ overwrite, push })} disabled={busy || !count}>
-            <Icon name="download" size={18} /> {count}건 맞추기
+            <Icon name="download" size={18} /> {push.length ? `${count}건 진행` : `${count}건 받기`}
           </button>
         </div>
       </div>
