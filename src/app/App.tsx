@@ -19,6 +19,8 @@ import { isStandalone } from '../shared/util'
 import { purgeExpiredTrash } from '../storage/repo'
 import { purgeExpiredTasks } from '../storage/tasks'
 import { installTaskUpload } from '../sync/tasks'
+import { installCategoryColorUpload } from '../sync/categoryColors'
+import { initCategoryColors } from '../storage/categoryColors'
 import { installDueReminder } from './dueReminder'
 import { installPress } from '../ui/motion/press'
 import { dur } from '../ui/motion/motion'
@@ -35,6 +37,11 @@ export function App() {
   useEffect(() => installSyncReminders(), [])
   // 할 일은 고치면 바로 올린다(동기화를 설정한 기기에서만) — sync/tasks 규칙 1
   useEffect(() => installTaskUpload(), [])
+  // 카테고리 색 — 이 기기 DB의 고른 색을 화면 배정에 넣고, 고치면 그 파일 하나만 바로 올린다 (sync/categoryColors)
+  useEffect(() => {
+    void initCategoryColors()
+    return installCategoryColorUpload()
+  }, [])
   // 마감 알림 — 하루 한 번, 오늘·지난 마감 할 일이 있으면 (이 기기 DB만)
   useEffect(() => installDueReminder(), [])
 
