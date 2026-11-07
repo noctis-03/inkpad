@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="t">
+  <title id="t">잉키 — inkpad 마스코트</title>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b7bf5"/>
+      <stop offset="1" stop-color="#1d4fd8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 바닥 그림자 -->
+  <ellipse cx="128" cy="230" rx="62" ry="8" fill="#1f1f1d" opacity=".12"/>
+
+  <!-- 꼬리: 앱 아이콘의 물결 획 -->
+  <path d="M176 196c14 4 22-4 28-14s14-14 24-8" fill="none" stroke="#2563eb" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- 몸통: 잉크 방울 -->
+  <path d="M128 26c10 22 66 76 66 128 0 40-30 70-66 70s-66-30-66-70c0-52 56-106 66-128z" fill="url(#body)"/>
+  <!-- 윤기 -->
+  <path d="M96 96c-10 16-16 32-16 48" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" opacity=".45"/>
+  <circle cx="92" cy="166" r="5" fill="#fff" opacity=".45"/>
+
+  <!-- 배: 줄 노트 -->
+  <rect x="98" y="160" width="60" height="46" rx="10" fill="#fff"/>
+  <path d="M106 174h44M106 186h44M106 198h30" stroke="#d9dde8" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M108 194c6-10 12-12 18-4s12 6 18-4" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- 눈 -->
+  <ellipse cx="108" cy="130" rx="9" ry="11" fill="#1f1f1d"/>
+  <ellipse cx="148" cy="130" rx="9" ry="11" fill="#1f1f1d"/>
+  <circle cx="111" cy="126" r="3.5" fill="#fff"/>
+  <circle cx="151" cy="126" r="3.5" fill="#fff"/>
+  <!-- 볼 -->
+  <ellipse cx="94" cy="148" rx="8" ry="5" fill="#ff8fa3" opacity=".7"/>
+  <ellipse cx="162" cy="148" rx="8" ry="5" fill="#ff8fa3" opacity=".7"/>
+  <!-- 입 -->
+  <path d="M120 146c4 5 12 5 16 0" fill="none" stroke="#1f1f1d" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- 왼팔 -->
+  <path d="M66 160c-12 4-18 12-18 20" fill="none" stroke="#1d4fd8" stroke-width="11" stroke-linecap="round"/>
+  <!-- 오른팔 + 펜 -->
+  <g transform="rotate(-35 196 150)">
+    <rect x="186" y="96" width="14" height="58" rx="3" fill="#f5c542"/>
+    <rect x="186" y="96" width="14" height="10" rx="3" fill="#ff8fa3"/>
+    <path d="M186 154h14l-7 14z" fill="#f3e3c3"/>
+    <path d="M190.5 163h5l-2.5 5z" fill="#1f1f1d"/>
+  </g>
+  <path d="M190 160c10-2 16-8 18-16" fill="none" stroke="#1d4fd8" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- 반짝 -->
+  <path d="M60 64l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" fill="#f5c542"/>
+  <path d="M206 60l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#2563eb" opacity=".5"/>
+</svg>
