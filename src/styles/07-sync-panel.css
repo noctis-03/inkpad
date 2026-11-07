@@ -190,9 +190,18 @@
 }
 
 /* 처리할 것이 있을 때 — 머리 줄은 작은 알약 + 마지막 동기화 한 줄, 아래에 숫자 타일 줄 */
+/* 처리할 것이 있을 때의 요약 띠 — 둥근 상자가 아니라 창 폭을 다 쓰는 띠(아래 가는 선으로 목록과 나눈다) */
 .sync-hero.has-stats {
+  margin: -16px -20px 0;
+  padding: 16px 20px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   background: var(--paper-2);
-  border-color: var(--line);
+}
+#sync-panel .sync-hero.has-stats {
+  margin: -12px -16px 0;
+  padding: 14px 16px;
 }
 .sync-hero.has-stats .sync-hero-head {
   align-items: center;
