@@ -46,9 +46,6 @@ function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
 const CAT_ALL = '__all__'
 const CAT_NONE = '__none__'
 
-/** 기기 이름이 바뀌면 시트 머리의 기기 알약도 따라 바뀌게 알린다 */
-const DEVICE_NAME_EVENT = 'inkpad:device-name'
-
 /** 좁은 화면(휴대폰) — 최신 그룹을 접어 두고, 카테고리 고르기를 아래 시트로 연다 */
 const isNarrow = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches
 
@@ -81,7 +78,16 @@ const ACTION_LABEL: Record<Exclude<RowAction, null>, string> = {
   pushOne: '올리기',
   repush: '다시 올리기',
   restore: '되살리기',
-  merge: '머지하기'
+  merge: '머지'
+}
+
+/** 행 주 동작 버튼의 아이콘 — 받기는 아래, 올리기는 위. 글자를 읽기 전에 방향이 보이게 */
+const ACTION_ICON: Record<Exclude<RowAction, null>, string> = {
+  download: 'download',
+  pushOne: 'upload',
+  repush: 'upload',
+  restore: 'restore',
+  merge: 'swap'
 }
 
 /**
@@ -95,9 +101,6 @@ const GROUPS: { key: GroupKey; title: string; desc?: string; todo: boolean; coll
   { key: 'fresh', title: '최신', todo: false, collapsible: true },
   { key: 'gone', title: '이 기기에서 삭제됨', todo: false, collapsible: true }
 ]
-
-/** 그룹 머리 줄 아이콘 — 무엇을 해야 하는 묶음인지(머지·받기·올리기). 접히는 그룹은 꺾쇠가 대신한다 */
-const GROUP_HEAD_ICON: Partial<Record<GroupKey, string>> = { split: 'swap', recv: 'download', push: 'upload' }
 
 /** 건수는 한 곳에서 계산해 머리 카드·버튼·그룹 머리가 나눠 쓴다 */
 interface CloudCounts extends Record<GroupKey, number> {
@@ -209,9 +212,9 @@ function CloudRow({
   )
   return (
     <div className={'cloud-row g-' + m.group + (compact ? ' compact' : '') + (split ? ' merge-queue-row' : '')}>
-      {split && (
+      {!compact && (
         <span className="cloud-ico" aria-hidden="true">
-          <Icon name="swap" size={16} />
+          <Icon name="file" size={16} />
         </span>
       )}
       {compact && <Icon name="check" size={16} className="cloud-ok" />}
@@ -240,7 +243,7 @@ function CloudRow({
 
       {act && (
         <button className={'cloud-act-main' + (split ? ' strong' : '')} disabled={busy || rowBusy} onClick={() => onPrimary(c)}>
-          {rowBusy && <span className="spinner sm" />}
+          {rowBusy ? <span className="spinner sm" /> : <Icon name={ACTION_ICON[act]} size={15} />}
           <span>{rowBusy ? '처리 중' : ACTION_LABEL[act]}</span>
         </button>
       )}
@@ -265,7 +268,7 @@ function MergeExtraRow({ e, draft }: { e: MergeQueueEntry; draft: boolean }) {
   return (
     <div className="cloud-row g-split merge-queue-row">
       <span className="cloud-ico" aria-hidden="true">
-        <Icon name="swap" size={16} />
+        <Icon name="file" size={16} />
       </span>
       <div className="cloud-body">
         <div className="cloud-name">
@@ -281,7 +284,8 @@ function MergeExtraRow({ e, draft }: { e: MergeQueueEntry; draft: boolean }) {
         </div>
       </div>
       <button className="cloud-act-main strong" onClick={() => openMergeView(e)}>
-        <span>머지하기</span>
+        <Icon name={ACTION_ICON.merge} size={15} />
+        <span>{ACTION_LABEL.merge}</span>
       </button>
     </div>
   )
@@ -353,9 +357,8 @@ function CloudList({
   counts,
   busy,
   busyId,
-  loading,
-  checked,
-  onRefresh,
+  focus,
+  onFocus,
   onPrimary,
   onDelete,
   onExclude,
@@ -370,9 +373,9 @@ function CloudList({
   counts: CloudCounts
   busy: boolean
   busyId: string | null
-  loading: boolean
-  checked: string | null
-  onRefresh: () => void
+  /** 머리 띠의 숫자 타일로 고른 그룹 — 그 그룹만 보인다 (null = 고르지 않음) */
+  focus: GroupKey | null
+  onFocus: (g: GroupKey | null) => void
   onPrimary: (info: CloudNoteInfo) => void
   onDelete: (info: CloudNoteInfo) => void
   onExclude: (info: CloudNoteInfo) => void
@@ -421,30 +424,15 @@ function CloudList({
   const q = query.trim().toLowerCase()
   const inCat = (n: CloudNoteInfo) => catValue === CAT_ALL || (n.category || CAT_NONE) === catValue
   const inQuery = (text: string) => !q || text.toLowerCase().includes(q)
-  const inView = (g: GroupKey) => view === 'all' || (view === 'todo' ? g === 'split' || g === 'recv' || g === 'push' : g === 'fresh')
+  const inView = (g: GroupKey) => (focus ? g === focus : view === 'all' || (view === 'todo' ? g === 'split' || g === 'recv' || g === 'push' : g === 'fresh'))
   const visible = (cloud ?? []).filter((n) => inView(STATE_META[n.state].group) && inCat(n) && inQuery(`${n.title} ${n.category ?? ''} ${n.device ?? ''}`))
   // 머지할 것(다른 기기 브랜치)은 카테고리를 모른다 — 카테고리를 고르지 않았을 때만 보인다
   const visibleExtra = extra.filter(() => catValue === CAT_ALL && inView('split')).filter((e) => inQuery(`${e.title} ${e.device ?? ''}`))
 
   // 아직 못 받아 온 상태 — 빈 공간 대신 같은 골격의 스켈레톤
-  const head = (
-    <div className="cloud-lhead">
-      <h3 className="tt">클라우드 노트</h3>
-      <small>
-        {cloud ? (catValue === CAT_ALL ? `${cloud.length}` : `${cats.find((c) => c.key === catValue)?.name} ${cats.find((c) => c.key === catValue)?.count} / 전체 ${cloud.length}`) : ''}
-        {cloud && (loading || checked) ? ' · ' : ''}
-        {loading ? '확인 중…' : (checked ?? '')}
-      </small>
-      <button className={'cloud-icon-btn' + (loading ? ' spinning' : '')} onClick={onRefresh} disabled={loading || busy} aria-label="새로 고침">
-        <Icon name="replace" size={18} />
-      </button>
-    </div>
-  )
-
   if (cloud === null) {
     return (
       <section className="cloud-panel" aria-label="클라우드 노트">
-        {head}
         <CloudSkeleton />
       </section>
     )
@@ -453,7 +441,6 @@ function CloudList({
   if (!cloud.length && !extra.length) {
     return (
       <section className="cloud-panel" aria-label="클라우드 노트">
-        {head}
         {/* 빈 상태는 앱 전체 공용 모양(SheetEmpty) */}
         <div className="cloud-empty">
           <SheetEmpty icon="cloud" title="클라우드에 노트가 없습니다" desc="노트를 만든 뒤 위의 「지금 동기화」를 눌러 주세요." />
@@ -474,11 +461,11 @@ function CloudList({
     setView('all')
     setCatFilter(CAT_ALL)
     setQuery('')
+    onFocus(null)
   }
 
   return (
     <section className="cloud-panel" aria-label="클라우드 노트">
-      {head}
       <div className="cloud-toolbar">
         <label className="cloud-search">
           <Icon name="search" size={16} />
@@ -492,13 +479,16 @@ function CloudList({
         <Segmented
           className="cloud-view"
           label="상태별 보기"
-          value={view}
+          value={focus ? 'todo' : view}
           options={[
             ['all', `전체 ${catCounts.split + catCounts.recv + catCounts.push + catCounts.fresh + catCounts.gone + catExtra}`],
             ['todo', `처리 필요 ${catCounts.split + catCounts.recv + catCounts.push + catExtra}`],
             ['fresh', `최신 ${catCounts.fresh}`]
           ]}
-          onChange={setView}
+          onChange={(v) => {
+            setView(v)
+            onFocus(null) // 보기를 직접 고르면 숫자 타일 필터는 푼다
+          }}
         />
         {/* 카테고리가 2개 이상일 때만 — 하나뿐이면 고를 것이 없다 */}
         {cats.length >= 2 && <CategorySelect cats={cats} value={catValue} total={cloud.length} onChange={setCatFilter} />}
@@ -508,7 +498,7 @@ function CloudList({
         <div className="cloud-empty">
           <SheetEmpty
             icon="search"
-            title={view === 'todo' && !q && catValue === CAT_ALL ? '처리할 노트가 없습니다' : '조건에 맞는 노트가 없습니다'}
+            title={(view === 'todo' || focus) && !q && catValue === CAT_ALL ? '처리할 노트가 없습니다' : '조건에 맞는 노트가 없습니다'}
             action={
               <button className="text-btn small" onClick={reset}>
                 필터·검색 지우기
@@ -520,30 +510,30 @@ function CloudList({
 
       {groups.map((g) => {
         // 보기를 골랐거나 검색 중이면 접힌 그룹도 자동으로 펼친다
-        const isOpen = !g.collapsible || view !== 'all' || !!q || !collapsed[g.key]
+        const isOpen = !g.collapsible || view !== 'all' || !!focus || !!q || !collapsed[g.key]
         const n = g.items.length + g.extra.length
         return (
-          <section className={'cloud-group g-' + g.key} key={g.key} aria-label={g.title}>
+          <section className={'cloud-group g-' + g.key + (g.collapsible ? ' is-fold' : '') + (isOpen ? ' is-open' : '')} key={g.key} aria-label={g.title}>
             <div className="cloud-ghead">
               {g.collapsible ? (
                 <button className="cloud-gtoggle" onClick={() => setCollapsed((m) => ({ ...m, [g.key]: !m[g.key] }))} aria-expanded={isOpen}>
-                  <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} />
                   <span>{g.title}</span>
                   <b>{n}</b>
+                  <small>{isOpen ? '접기' : '펼치기'}</small>
+                  <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} />
                 </button>
               ) : (
-                <h4 className="cloud-gtitle">
-                  {GROUP_HEAD_ICON[g.key] && <Icon name={GROUP_HEAD_ICON[g.key]!} size={16} />}
+                <h4 className="cloud-gtitle" title={g.desc}>
                   <span>{g.title}</span>
                   <b>{n}</b>
-                  {g.desc && <small>{g.desc}</small>}
                 </h4>
               )}
+              {!g.collapsible && <span className="cloud-gline" aria-hidden="true" />}
               {/* 그룹 자리에서 바로 처리하는 일괄 동작 */}
               {g.key === 'recv' &&
                 (catValue === CAT_ALL ? (
                   <button className="cloud-bulk" disabled={busy} onClick={onPullAll}>
-                    <Icon name="download" size={14} /> 모두 받기
+                    모두 받기
                   </button>
                 ) : (
                   <button
@@ -552,7 +542,7 @@ function CloudList({
                     onClick={() => onPullCategory(catValue === CAT_NONE ? null : catValue)}
                     title={`${catName} 카테고리의 받을 것을 한 번에 내려받습니다`}
                   >
-                    <Icon name="download" size={14} /> {catName} {recvCatCount}개 받기
+                    {catName} {recvCatCount}개 받기
                   </button>
                 ))}
               {g.key === 'push' && counts.bulkPush > 0 && (
@@ -603,6 +593,8 @@ function SyncHero({
   title,
   sub,
   progress,
+  aside,
+  stats,
   children
 }: {
   tone: HeroTone
@@ -610,19 +602,32 @@ function SyncHero({
   title: string
   sub: string
   progress?: number | null // 0–1, null = 끝을 모름, undefined = 막대 없음
+  aside?: ReactNode // 머리 줄 오른쪽 — 다시 확인 아이콘 버튼
+  stats?: ReactNode // 처리할 것이 있을 때 — 숫자 타일 줄. 있으면 머리는 작은 알약 + 마지막 동기화 한 줄로 줄인다
   children?: ReactNode
 }) {
   return (
-    <div className={'sync-hero sync-status tone-' + tone + (tone === 'wait' ? ' sync-wait' : '')}>
+    <div className={'sync-hero sync-status tone-' + tone + (tone === 'wait' ? ' sync-wait' : '') + (stats ? ' has-stats' : '')}>
       <div className="sync-hero-head" role="status" aria-live="polite">
-        <span className="sync-status-ic" aria-hidden="true">
-          {icon ? <Icon name={icon} size={17} /> : <span className="spinner" />}
-        </span>
-        <span className="sync-status-txt">
-          <b>{title}</b>
-          <small>{sub}</small>
-        </span>
+        {stats ? (
+          <span className="sync-status-txt">
+            <span className="sync-pill">{title}</span>
+            <small>{sub}</small>
+          </span>
+        ) : (
+          <>
+            <span className="sync-status-ic" aria-hidden="true">
+              {icon ? <Icon name={icon} size={17} /> : <span className="spinner" />}
+            </span>
+            <span className="sync-status-txt">
+              <b>{title}</b>
+              <small>{sub}</small>
+            </span>
+          </>
+        )}
+        {aside}
       </div>
+      {stats}
       {progress !== undefined && (
         <div className="bar sync-hero-bar" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress == null ? undefined : Math.round(progress * 100)}>
           {progress == null ? <i className="indet" /> : <i style={{ width: `${Math.min(100, progress * 100)}%` }} />}
@@ -651,6 +656,7 @@ export function SyncSection() {
   const [pullCat, setPullCat] = useState<string | null>(null)
   const [selfBusy, setSelfBusy] = useState(false) // 이 창의 일괄 받기·올리기 — 잠금을 쥐기 전부터 표시
   const [outside, setOutside] = useState<boolean | null>(null) // 창 밖의 동기화가 잠금을 쥐고 있는가 (null = 확인 전)
+  const [focus, setFocus] = useState<GroupKey | null>(null) // 숫자 타일로 고른 그룹 — 목록을 그 그룹만 보이게 거른다
 
   // 창 밖(편집 화면의 노트 칩, 다른 탭 등)에서 시작한 올리기·받기가 잠금을 쥐고 있으면 끝나기를 기다린다.
   // 그 사이 목록은 반쯤 바뀐 상태라 믿을 수 없고, 받기·올리기를 눌러도 잠금에 막힌다 — 목록은 흐리게 두고 누를 수 없게 한다.
@@ -929,6 +935,8 @@ export function SyncSection() {
   const todoN = counts.push + counts.recv + mergeN
   const lastText = last ? `마지막 동기화 ${formatDate(last)}${device ? ` · ${device}` : ''}` : '아직 동기화 전'
   const busyAll = status === 'syncing' || status === 'offline' || !!pullCat || selfBusy
+  // 고른 그룹이 다 처리돼 비면 필터를 저절로 푼다
+  const focusOn = focus && (focus === 'split' ? mergeN : counts[focus]) > 0 ? focus : null
 
   // 머리 카드 — 상태마다 제목·설명·버튼을 하나로 정한다
   let hero: ReactNode
@@ -955,15 +963,58 @@ export function SyncSection() {
       </SyncHero>
     )
   } else {
-    const parts = [counts.push ? `올릴 것 ${counts.push}` : '', counts.recv ? `받을 것 ${counts.recv}` : '', mergeN ? `머지 ${mergeN}` : ''].filter(Boolean)
-    // 주 버튼 하나 — 올릴 것이 있으면 올리고 받기(미리보기), 받을 것만 있으면 받기, 없으면 다시 확인
+    // 주 버튼 하나 — 올릴 것이 있으면 올리고 받기(미리보기), 받을 것만 있으면 받기, 없으면 다시 확인(머리 줄 아이콘)
     const act = counts.bulkPush > 0 ? 'push' : counts.recv > 0 ? 'pull' : 'check'
+    const refresh = (extra: { [k: string]: string | number }, cls: string) => (
+      <button
+        className={cls + (loading ? ' spinning' : '')}
+        {...extra}
+        disabled={busyAll || loading}
+        onClick={() => void loadCloud()}
+        aria-label="다시 확인"
+        title={checked ? `다시 확인 · ${checked}` : '다시 확인'}
+      >
+        <Icon name="replace" size={18} />
+      </button>
+    )
+    // 숫자 타일 — 누르면 목록이 그 그룹만 보인다. 한 번 더 누르면 푼다
+    const tiles: { key: GroupKey; label: string; n: number }[] = [
+      { key: 'split', label: '머지 필요', n: mergeN },
+      { key: 'recv', label: '받을 것', n: counts.recv },
+      { key: 'push', label: '올릴 것', n: counts.push }
+    ]
     hero = (
       <SyncHero
         tone={todoN ? 'todo' : 'idle'}
         icon={todoN ? 'swap' : 'checkCircle'}
-        title={cloud === null ? '클라우드 확인 중…' : todoN ? `확인할 노트 ${todoN}개` : '모두 최신입니다'}
-        sub={[...parts, lastText].join(' · ')}
+        title={cloud === null ? '클라우드 확인 중…' : todoN ? `${todoN}개 확인` : '모두 최신입니다'}
+        sub={lastText}
+        aside={
+          act === 'check' ? (
+            // 처리할 것이 없을 때의 유일한 동작 — 버튼 줄(.sync-cta) 자리를 머리 줄 오른쪽 아이콘으로 옮긴다
+            <div className="sync-cta inline">{refresh({ 'data-act': 'check', 'data-push': 0 }, 'cloud-icon-btn sync-refresh')}</div>
+          ) : (
+            refresh({}, 'cloud-icon-btn sync-refresh')
+          )
+        }
+        stats={
+          todoN > 0 ? (
+            <div className="sync-tiles" role="group" aria-label="처리할 것만 보기">
+              {tiles.map((t) => (
+                <button
+                  key={t.key}
+                  className={'sync-tile' + (focusOn === t.key ? ' on' : '')}
+                  aria-pressed={focusOn === t.key}
+                  disabled={!t.n}
+                  onClick={() => setFocus(focusOn === t.key ? null : t.key)}
+                >
+                  <b>{t.n}</b>
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
       >
         {act === 'push' && (
           <>
@@ -981,11 +1032,6 @@ export function SyncSection() {
         {act === 'pull' && (
           <button className="sync-go" data-act="pull" data-push={0} disabled={busyAll} onClick={() => void doPull()}>
             <Icon name="download" size={16} /> {counts.recv}건 받기
-          </button>
-        )}
-        {act === 'check' && (
-          <button className="sync-sub wide" data-act="check" data-push={0} disabled={busyAll || loading} onClick={() => void loadCloud()}>
-            다시 확인
           </button>
         )}
       </SyncHero>
@@ -1024,9 +1070,8 @@ export function SyncSection() {
           counts={counts}
           busy={loading || status === 'syncing' || !!pullCat}
           busyId={busyId}
-          loading={loading}
-          checked={checked}
-          onRefresh={() => void loadCloud()}
+          focus={focusOn}
+          onFocus={setFocus}
           onPrimary={onPrimary}
           onDelete={(c) => void deleteOne(c)}
           onExclude={(c) => void excludeOne(c)}
@@ -1036,13 +1081,12 @@ export function SyncSection() {
           onPushPreview={() => void doPush()}
         />
 
-        {/* 보관함 · 이 기기 · 계정 — 한 덩어리로 맨 아래 */}
+        {/* 이 기기 · 계정 · 데이터 설정 — 창 바닥 한 줄 */}
         <DeviceFoot
           device={device}
           onSave={async (next) => {
             await setDeviceName(next)
             setDevice(next)
-            window.dispatchEvent(new CustomEvent(DEVICE_NAME_EVENT, { detail: next }))
             // setDeviceName이 반영된 값을 바로 보여 준다 — 저장 전 옛 이름을 보여 주던 버그를 막는다
             toast(`기기 이름을 "${next}"(으)로 정했습니다. 다음 올리기부터 적용됩니다.`)
           }}
@@ -1056,7 +1100,7 @@ export function SyncSection() {
   )
 }
 
-/** 보관함 · 이 기기 · 계정 블록 — 「이름 변경」을 눌러 기기 이름을 고친다 */
+/** 이 기기 · 계정 · 데이터 설정 줄 — 「이름 변경」을 눌러 기기 이름을 고친다 */
 function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (next: string) => Promise<void>; onLogout: () => void }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
@@ -1068,41 +1112,34 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
     setName('')
   }
   return (
+    // 이 기기 · 계정 · 데이터 설정 — 창 바닥에 붙는 한 줄 (휴대폰에서는 목록 끝)
     <div className="sync-foot">
-      {/* 보관함 관리 — 기기 브랜치·옛 백업·스냅샷·자동 고정 정리 */}
-      <button className="sync-foot-row cloud-archive-btn" onClick={openArchive}>
-        <Icon name="files" size={18} />
-        <span className="v">보관함 관리</span>
-        <small>브랜치 · 옛 백업 · 스냅샷</small>
-        <Icon name="chevronRight" size={16} />
-      </button>
-      <div className="sync-foot-row">
-        <span className="k">이 기기</span>
-        {editing ? (
-          <>
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={device || '기기 이름'}
-              aria-label="기기 이름"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void save()
-                else if (e.key === 'Escape') {
-                  e.preventDefault() // 이름 고치기만 취소 — 시트는 닫지 않는다
-                  setEditing(false)
-                }
-              }}
-            />
-            <button className="sync-link" disabled={!name.trim()} onClick={() => void save()}>
-              저장
-            </button>
-            <button className="sync-link muted" onClick={() => setEditing(false)}>
-              취소
-            </button>
-          </>
-        ) : (
-          <>
+      {editing ? (
+        <div className="sync-foot-edit">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={device || '기기 이름'}
+            aria-label="기기 이름"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void save()
+              else if (e.key === 'Escape') {
+                e.preventDefault() // 이름 고치기만 취소 — 시트는 닫지 않는다
+                setEditing(false)
+              }
+            }}
+          />
+          <button className="sync-link" disabled={!name.trim()} onClick={() => void save()}>
+            저장
+          </button>
+          <button className="sync-link muted" onClick={() => setEditing(false)}>
+            취소
+          </button>
+        </div>
+      ) : (
+        <>
+          <span className="sync-foot-item" title="이 기기">
             <span className="v">{device || '이름 없음'}</span>
             <button
               className="sync-link"
@@ -1113,16 +1150,21 @@ function DeviceFoot({ device, onSave, onLogout }: { device: string; onSave: (nex
             >
               이름 변경
             </button>
-          </>
-        )}
-      </div>
-      <div className="sync-foot-row">
-        <span className="k">계정</span>
-        <span className="v">Google Drive</span>
-        <button className="sync-link muted" onClick={onLogout}>
-          로그아웃
-        </button>
-      </div>
+          </span>
+          <span className="sync-foot-item" title="동기화 계정">
+            <Icon name="cloud" size={15} />
+            <span className="v">Google Drive</span>
+            <button className="sync-link muted" onClick={onLogout}>
+              로그아웃
+            </button>
+          </span>
+          {/* 데이터 설정 — 기기 브랜치·옛 백업·스냅샷·자동 고정 정리(보관함) */}
+          <button className="sync-foot-item cloud-archive-btn" onClick={openArchive} title="브랜치 · 옛 백업 · 스냅샷">
+            <Icon name="files" size={15} />
+            <span className="v">데이터 설정</span>
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -1150,27 +1192,10 @@ function SyncHelp() {
           <b>무엇이 주고받아지나요?</b>
           <p>「지금 동기화」는 이 기기에서 바꾼 노트를 올리고, 다른 기기가 올린 노트를 받습니다. 「받기만」은 받기만 합니다.</p>
           <p>앱·기타 파일·보드 프리셋은 노트와 따로 — 추가하거나 고칠 때 그 항목만 바로 올라가고, 못 올린 것은 각 메뉴에서 다시 올립니다.</p>
-          <p>두 기기가 같은 노트를 각각 고치면 덮지 않고 「머지 필요」에 둡니다. 머지하기로 직접 합칩니다.</p>
+          <p>두 기기가 같은 노트를 각각 고치면 덮지 않고 「머지 필요」에 둡니다. 「머지」로 직접 합칩니다.</p>
         </div>
       </Popover>
     </>
-  )
-}
-
-/** 시트·패널 머리의 기기 알약 — 어느 기기에서 무엇과 맞추는지 늘 보이게 */
-function DevicePill() {
-  const [name, setName] = useState('')
-  useEffect(() => {
-    void getDeviceName().then(setName)
-    const on = (e: Event) => setName(String((e as CustomEvent).detail ?? ''))
-    window.addEventListener(DEVICE_NAME_EVENT, on)
-    return () => window.removeEventListener(DEVICE_NAME_EVENT, on)
-  }, [])
-  return (
-    <span className="sync-device-pill" title="이 기기 · 동기화 계정">
-      <Icon name="page" size={12} />
-      <span>{name ? `${name} · Google Drive` : 'Google Drive'}</span>
-    </span>
   )
 }
 
@@ -1374,7 +1399,6 @@ export function SyncPanel() {
       <header className="panel-header sync-head">
         <h2>동기화</h2>
         <SyncHelp />
-        <DevicePill />
         <button className="tb-btn" onClick={() => close('sync')} aria-label="닫기">
           <Icon name="close" />
         </button>
@@ -1396,8 +1420,7 @@ export function SyncSheet({ onClose }: { onClose: () => void }) {
         <header className="sheet-header sync-head">
           <h2>동기화</h2>
           <SyncHelp />
-          <DevicePill />
-          <button className="tb-btn" onClick={onClose} aria-label="닫기">
+            <button className="tb-btn" onClick={onClose} aria-label="닫기">
             <Icon name="close" />
           </button>
         </header>
