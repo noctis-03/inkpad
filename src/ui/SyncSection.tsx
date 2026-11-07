@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Children, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
@@ -637,7 +637,8 @@ function SyncHero({
           {progress == null ? <i className="indet" /> : <i style={{ width: `${Math.min(100, progress * 100)}%` }} />}
         </div>
       )}
-      {children && <div className="sync-cta">{children}</div>}
+      {/* 버튼이 하나도 없으면(false만 있으면) 빈 버튼 줄을 그리지 않는다 — 띠 아래 빈 공간이 생기지 않게 */}
+      {Children.toArray(children).length > 0 && <div className="sync-cta">{children}</div>}
     </div>
   )
 }

@@ -132,18 +132,31 @@
 }
 
 /* ── 머리 카드 ── */
+/* 상태 띠 — 둥근 상자가 아니라 창 폭을 다 쓰는 띠. 아래 가는 선으로 목록과 나눈다 (모든 상태 공통) */
 .sync-hero {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--tb);
-  border-radius: var(--r-xl); /* 목록 카드와 같은 모서리 */
+  margin: -16px -20px 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-2);
+}
+#sync-panel .sync-hero {
+  margin: -12px -16px 0;
+  padding: 14px 16px;
+}
+/* 오류만 띠 전체를 붉게 */
+.sync-hero.tone-error {
+  background: var(--danger-soft);
+  border-bottom-color: var(--danger-line);
+}
+.sync-hero.tone-error .sync-status-ic {
   background: var(--surface);
 }
 .sync-hero-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center; /* 아이콘 칸과 두 줄 글자를 띠 가운데 줄에 맞춘다 */
   gap: 12px;
 }
 .sync-status-ic {
@@ -190,19 +203,6 @@
 }
 
 /* 처리할 것이 있을 때 — 머리 줄은 작은 알약 + 마지막 동기화 한 줄, 아래에 숫자 타일 줄 */
-/* 처리할 것이 있을 때의 요약 띠 — 둥근 상자가 아니라 창 폭을 다 쓰는 띠(아래 가는 선으로 목록과 나눈다) */
-.sync-hero.has-stats {
-  margin: -16px -20px 0;
-  padding: 16px 20px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--paper-2);
-}
-#sync-panel .sync-hero.has-stats {
-  margin: -12px -16px 0;
-  padding: 14px 16px;
-}
 .sync-hero.has-stats .sync-hero-head {
   align-items: center;
 }
