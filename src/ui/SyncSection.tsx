@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
@@ -36,8 +36,7 @@ import { mergeDraftKeys } from '../sync/mergeDraft'
 import { openArchive } from './ArchiveSheet'
 import { openChanges } from './ChangesView'
 import { Segmented } from './Segmented'
-import { Popover, SheetEmpty, useEscClose } from './sheetParts'
-import { EASE, dur } from './motion/motion'
+import { Popover, SheetEmpty, useEscClose, useSheetHeightMotion } from './sheetParts'
 
 function toast(text: string, kind: 'info' | 'success' | 'error' = 'success') {
   void import('../app/store').then(({ useUI }) => useUI.getState().toast(text, kind))
@@ -1156,36 +1155,6 @@ function SyncHelp() {
       </Popover>
     </>
   )
-}
-
-/**
- * 시트 높이가 바뀔 때(목록을 다시 읽음·접기·필터 등) 뚝 바뀌지 않고 늘거나 줄게 한다.
- * 내용(첫 자식)을 지켜보다 바뀌면, 바뀌기 전 높이에서 새 높이로 시트의 height를 애니메이션한다. 모션을 끄면 바로 바뀐다
- */
-function useSheetHeightMotion(sheet: RefObject<HTMLElement | null>, content: RefObject<HTMLElement | null>) {
-  useLayoutEffect(() => {
-    const el = sheet.current
-    const inner = content.current
-    if (!el || !inner || typeof ResizeObserver === 'undefined') return
-    let last = el.getBoundingClientRect().height
-    let anim: Animation | null = null
-    const ro = new ResizeObserver(() => {
-      const from = anim ? el.getBoundingClientRect().height : last
-      anim?.cancel()
-      anim = null
-      const to = el.getBoundingClientRect().height
-      last = to
-      const ms = dur(280)
-      if (!ms || Math.abs(to - from) < 2) return
-      anim = el.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: ms, easing: EASE })
-      anim.onfinish = () => (anim = null)
-    })
-    ro.observe(inner)
-    return () => {
-      ro.disconnect()
-      anim?.cancel()
-    }
-  }, [sheet, content])
 }
 
 /** 시트·패널 머리의 기기 알약 — 어느 기기에서 무엇과 맞추는지 늘 보이게 */

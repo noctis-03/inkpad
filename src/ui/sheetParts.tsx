@@ -1,6 +1,7 @@
-import { Component, useEffect, useLayoutEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, useState, type ErrorInfo, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
+import { EASE, dur } from './motion/motion'
 
 /** 시트에서 난 오류가 화면 전체를 지우지 않도록 막는다 */
 export class SheetErrorBoundary extends Component<{ children: ReactNode; onClose: () => void }, { error: Error | null }> {
@@ -32,6 +33,51 @@ export class SheetErrorBoundary extends Component<{ children: ReactNode; onClose
     }
     return this.props.children
   }
+}
+
+/**
+ * 창 높이가 바뀔 때(목록을 다시 읽음·검색·필터·접기 등) 뚝 바뀌지 않고 늘거나 줄게 한다 — 모든 시트·작은 창 공용.
+ * body(스크롤 칸이나 내용 감싸개)의 자식들을 지켜보다 크기가 바뀌거나 자식이 바뀌면,
+ * 바뀌기 전 높이에서 새 높이로 창(sheet)의 height를 애니메이션한다. 모션을 끄면 바로 바뀐다.
+ * body의 자식은 내용 크기를 그대로 가져야 한다(flex로 늘어나는 칸이면 애니메이션 중 크기가 따라 바뀌어 되먹임이 생긴다)
+ */
+export function useSheetHeightMotion(sheet: RefObject<HTMLElement | null>, body: RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const el = sheet.current
+    const box = body.current
+    if (!el || !box || typeof ResizeObserver === 'undefined') return
+    // offsetHeight — 등장 애니메이션의 scale(transform)에 흔들리지 않는 레이아웃 높이
+    let last = el.offsetHeight
+    let anim: Animation | null = null
+    const check = () => {
+      const from = anim ? el.offsetHeight : last
+      anim?.cancel()
+      anim = null
+      const to = el.offsetHeight
+      last = to
+      const ms = dur(280)
+      if (!ms || Math.abs(to - from) < 2) return
+      anim = el.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: ms, easing: EASE })
+      anim.onfinish = () => (anim = null)
+    }
+    const ro = new ResizeObserver(check)
+    const watch = () => {
+      ro.disconnect()
+      for (const c of Array.from(box.children)) ro.observe(c)
+    }
+    watch()
+    // 자식이 통째로 바뀌는 경우(빈 상태 ↔ 목록 등)
+    const mo = new MutationObserver(() => {
+      watch()
+      check()
+    })
+    mo.observe(box, { childList: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+      anim?.cancel()
+    }
+  }, [sheet, body])
 }
 
 /** 열린 모달·시트 — 나중에 열린 것이 맨 뒤 */

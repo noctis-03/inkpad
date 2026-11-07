@@ -1,6 +1,6 @@
 // 보관함 관리 — 기기 브랜치·옛 머지 백업·이 기기 스냅샷·자동 고정·안 쓰는 노트 조각을 한눈에 보고 정리한다 (sync/archive.ts).
 // 동기화 패널의 '보관함 관리'로 연다. 클라우드 파일은 Drive 휴지통으로 옮긴다(30일 보관).
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
@@ -8,7 +8,7 @@ import { formatBytesShort, formatDate } from '../shared/util'
 import { cleanObjects, loadArchive, releaseAutoPins, scanObjects, trashBranches, trashFiles, type ArchiveReport, type ObjectScan } from '../sync/archive'
 import { clearSnapshots, pruneSnapshots } from '../sync/snapshots'
 import { Icon } from './Icon'
-import { useEscClose } from './sheetParts'
+import { useEscClose, useSheetHeightMotion } from './sheetParts'
 
 const useArchive = create<{ open: boolean }>(() => ({ open: false }))
 export const openArchive = () => useArchive.setState({ open: true })
@@ -86,17 +86,20 @@ function ArchiveSheet() {
   const orphanCount = (report?.branches.filter((b) => b.orphan).length ?? 0) + (report?.backups.filter((b) => b.orphan).length ?? 0)
   const backupBytes = report?.backups.reduce((n, b) => n + b.size, 0) ?? 0
   useEscClose(closeArchive)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, bodyRef)
 
   return (
     <div className="modal-backdrop archive-host" onPointerDown={(e) => e.target === e.currentTarget && closeArchive()}>
-      <div className="sheet c-sheet archive-sheet" role="dialog" aria-label="보관함 관리">
+      <div className="sheet c-sheet archive-sheet" role="dialog" aria-label="보관함 관리" ref={sheetRef}>
         <header className="sheet-header">
           <h2>보관함 관리</h2>
           <button className="sheet-close" onClick={closeArchive} aria-label="닫기">
             <Icon name="close" size={16} />
           </button>
         </header>
-        <div className="sheet-scroll">
+        <div className="sheet-scroll" ref={bodyRef}>
           {error && (
             <section className="archive-section">
               <p className="hint warn">{error}</p>

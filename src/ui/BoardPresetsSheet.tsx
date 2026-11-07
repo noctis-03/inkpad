@@ -1,7 +1,7 @@
 // 작업보드 프리셋 목록 — 앱 · 기타 파일 시트와 같은 규칙의 전용 창.
 // 이 기기의 프리셋과 Drive(Inkpad/boards)에 올라간 프리셋을 한 목록으로 보여 주고
 // 저장 · 불러오기(적용) · 업로드 · 받기 · 삭제를 항목별로 한다.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useUI } from '../app/store'
 import { confirmDialog, promptDialog } from '../app/dialogs'
 import { formatDate } from '../shared/util'
@@ -25,7 +25,7 @@ import {
   type CloudPresetState
 } from '../sync/board'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline, useSheetHeightMotion } from './sheetParts'
 
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
 type Primary = 'apply' | 'upload' | 'reupload' | 'receive'
@@ -239,11 +239,14 @@ export function BoardPresetsSheet({
   }
 
   useEscClose(onClose)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, bodyRef)
 
   return (
     <SheetErrorBoundary onClose={onClose}>
       <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="store-sheet" role="dialog" aria-label="작업보드 프리셋">
+        <div className="store-sheet" role="dialog" aria-label="작업보드 프리셋" ref={sheetRef}>
           <SheetHeader
             icon="board"
             title="작업보드 프리셋"
@@ -256,7 +259,7 @@ export function BoardPresetsSheet({
               </button>
             }
           />
-          <div className="store-body">
+          <div className="store-body" ref={bodyRef}>
             {status === 'auth-required' ? (
               <SheetEmpty
                 icon="lock"

@@ -1450,10 +1450,13 @@
   color: var(--muted);
   text-align: center;
 }
-.note-assets-list {
+/* 스크롤 칸 — 안의 목록·빈 상태는 내용 높이 그대로(창 높이 애니메이션이 이 자식들을 지켜본다) */
+.note-assets-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+.note-assets-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
