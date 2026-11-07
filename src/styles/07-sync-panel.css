@@ -156,7 +156,7 @@
 }
 .sync-hero-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center; /* 아이콘 칸과 두 줄 글자를 띠 가운데 줄에 맞춘다 */
   gap: 12px;
 }
 .sync-status-ic {
