@@ -76,7 +76,8 @@ import type { FileRow } from '../../storage/db'
 
 type Section =
   | { kind: 'all' }
-  | { kind: 'notes' }
+  | { kind: 'notes' } // 필기 노트(페이지·무한 캔버스) — 문서(text)는 '모든 문서'로 따로
+  | { kind: 'texts' } // 문서(키보드로 쓰는 블록 문서, mode 'text')
   | { kind: 'apps' }
   | { kind: 'files' }
   | { kind: 'category'; name: string }
@@ -232,7 +233,7 @@ export function Library() {
   const [recentOnly, setRecentOnly] = useState(false)
   // 최근 열람 항목을 펼칠 수 있는 곳 — 노트를 담는 항목에서만 (모든 앱·기타 파일·휴지통에는 없다)
   const recentScope =
-    section.kind === 'all' || section.kind === 'notes' || section.kind === 'category' || section.kind === 'catgroup' || section.kind === 'uncategorized' || section.kind === 'folder'
+    section.kind === 'all' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'category' || section.kind === 'catgroup' || section.kind === 'uncategorized' || section.kind === 'folder'
   const recentActive = recentOnly && recentScope
   // 사이드바 선택 항목 슬라이딩 인디케이터 (세로)
   const treeRef = useRef<HTMLElement>(null)
@@ -793,6 +794,8 @@ export function Library() {
    * 폴더는 폴더에 매핑된 카테고리의 노트만 보여 준다.
    */
   const scopedRecentDocs = useMemo(() => {
+    if (section.kind === 'notes') return recentDocs.filter((d) => d.mode !== 'text')
+    if (section.kind === 'texts') return recentDocs.filter((d) => d.mode === 'text')
     if (section.kind === 'category') return recentDocs.filter((d) => d.category === section.name)
     if (section.kind === 'catgroup') return recentDocs.filter((d) => inCatGroup(d.category, section.name))
     if (section.kind === 'uncategorized') return recentDocs.filter((d) => d.category == null)
@@ -836,6 +839,10 @@ export function Library() {
       list = list.filter((d) => inCatGroup(d.category, section.name))
     } else if (section.kind === 'uncategorized') {
       list = list.filter((d) => d.category == null) // 카테고리가 아예 없는 노트만 — 매핑 안 된 카테고리는 사이드바의 카테고리 항목으로 보인다
+    } else if (section.kind === 'notes') {
+      list = list.filter((d) => d.mode !== 'text') // 모든 노트 — 필기 노트만
+    } else if (section.kind === 'texts') {
+      list = list.filter((d) => d.mode === 'text') // 모든 문서 — 블록 문서만
     }
     const q = dq.trim().toLowerCase()
     if (q) list = list.filter((d) => d.title.toLowerCase().includes(q))
@@ -846,9 +853,9 @@ export function Library() {
     return sorted
   }, [recentActive, scopedRecentDocs, docs, trash, folders, hiddenCats, section, dq, prefs.sort])
 
-  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·기타 파일에는 표시하지 않는다) */
+  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·모든 문서·기타 파일에는 표시하지 않는다) */
   const visibleApps = useMemo(() => {
-    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'files') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'files') return []
     let list = apps.filter((a) => !a.category || !hiddenCats.has(a.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -861,9 +868,9 @@ export function Library() {
     return list
   }, [recentActive, apps, folders, hiddenCats, section, dq])
 
-  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 앱에는 표시하지 않는다) */
+  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 문서·모든 앱에는 표시하지 않는다) */
   const visibleFiles = useMemo(() => {
-    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'apps') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'apps') return []
     let list = files.filter((f) => !f.category || !hiddenCats.has(f.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -876,12 +883,16 @@ export function Library() {
     return list
   }, [recentActive, files, folders, hiddenCats, section, dq])
 
+  /** 사이드바 개수 — 필기 노트(모든 노트)와 문서(모든 문서)를 나눠 센다 */
+  const noteCount = useMemo(() => docs.filter((d) => d.mode !== 'text').length, [docs])
+
   /** 사이드바 개수에 함께 세는 클라우드 카드 — 숨긴 카테고리는 빼고(카드로도 보이지 않는다) */
   const cloudShown = useMemo(() => cloudOnly.filter((c) => !c.category || !hiddenCats.has(c.category)), [cloudOnly, hiddenCats])
 
-  /** 클라우드에만 있는 노트 — 노트와 같은 필터 규칙(휴지통·모든 앱·기타 파일·최근 열람에는 없다) */
+  /** 클라우드에만 있는 노트 — 노트와 같은 필터 규칙(휴지통·모든 앱·기타 파일·최근 열람에는 없다).
+   *  받기 전에는 노트인지 문서인지 모르므로 '모든 문서'에도 넣지 않는다(모든 노트·전체·카테고리에는 보인다) */
   const visibleCloud = useMemo(() => {
-    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'files') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'files' || section.kind === 'texts') return []
     let list = cloudShown
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -1557,7 +1568,9 @@ export function Library() {
             ? breadcrumb.at(-1)?.name ?? '폴더'
             : section.kind === 'notes'
               ? '모든 노트'
-              : section.kind === 'apps'
+              : section.kind === 'texts'
+                ? '모든 문서'
+                : section.kind === 'apps'
                 ? '모든 앱'
                 : section.kind === 'files'
                   ? '기타 파일'
@@ -1623,6 +1636,7 @@ export function Library() {
   const chips: { key: string; label: string; color?: string; on: boolean; go: () => void }[] = [
     { key: 'all', label: '전체', on: section.kind === 'all', go: () => pickSection({ kind: 'all' }) },
     { key: 'notes', label: '모든 노트', on: section.kind === 'notes', go: () => pickSection({ kind: 'notes' }) },
+    { key: 'texts', label: '모든 문서', on: section.kind === 'texts', go: () => pickSection({ kind: 'texts' }) },
     ...categoryLayout.groups.map((g) => ({
       key: 'catgroup:' + g.name,
       label: g.name,
@@ -1696,7 +1710,15 @@ export function Library() {
                 onClick={() => pickSection({ kind: 'notes' })}
               >
                 <Icon name="notebook" size={18} /> 모든 노트 {section.kind === 'notes' && recentActive && recentTag}{' '}
-                <span className="count"><CountUp value={docs.length + cloudShown.length} /></span>
+                <span className="count"><CountUp value={noteCount + cloudShown.length} /></span>
+              </button>
+              <button
+                data-indicator-key="texts"
+                className={'tree-item' + (section.kind === 'texts' ? ' is-active' : '')}
+                onClick={() => pickSection({ kind: 'texts' })}
+              >
+                <Icon name="textDoc" size={18} /> 모든 문서 {section.kind === 'texts' && recentActive && recentTag}{' '}
+                <span className="count"><CountUp value={docs.length - noteCount} /></span>
               </button>
               <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
                 <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
@@ -1993,6 +2015,19 @@ export function Library() {
                         </button>
                         <button className="text-btn" onClick={() => void onAddApp()}>
                           <Icon name="plus" size={18} /> 앱 추가
+                        </button>
+                      </div>
+                    }
+                  />
+                ) : section.kind === 'texts' && !query ? (
+                  <SheetEmpty
+                    icon="textDoc"
+                    title="아직 문서가 없습니다"
+                    desc="새로 만들기에서 '문서'를 고르면 키보드로 쓰는 블록 문서를 만들 수 있습니다."
+                    action={
+                      <div className="btn-row center">
+                        <button className="text-btn" onClick={() => setShowNew(true)}>
+                          <Icon name="plus" size={18} /> 새로 만들기
                         </button>
                       </div>
                     }
