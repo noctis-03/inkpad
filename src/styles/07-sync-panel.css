@@ -20,14 +20,50 @@
   padding: 12px 16px 16px;
 }
 
-/* 머리 — 제목 · 도움말 · (빈칸) · 닫기. 기기·계정은 창 바닥 줄(.sync-foot)이 맡는다 */
+/* 머리 — 윗줄: 제목 · 처리할 것 알약 · (빈칸) · 다시 확인 · 도움말 · 닫기 / 아랫줄: 마지막 동기화.
+   알약·마지막 동기화·다시 확인은 SyncSection이 .sync-head-slot으로 그려 넣는다. 기기·계정은 창 바닥 줄(.sync-foot) */
+.sheet-header.sync-head,
+.panel-header.sync-head {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    'title pill . refresh help close'
+    'sub sub sub refresh help close';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
 .sync-head h2 {
-  flex: 0 0 auto;
+  grid-area: title;
+}
+.sync-head-slot {
+  display: contents;
+}
+.sync-head .sync-pill {
+  grid-area: pill;
+}
+.sync-head-sub {
+  grid-area: sub;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-head-refresh {
+  grid-area: refresh;
+}
+.sync-head .sync-refresh {
+  margin: 0;
+}
+.sync-head > .tb-btn {
+  grid-area: close;
 }
 .sync-help-btn {
-  flex: 0 0 auto;
-  margin-right: auto; /* 제목 바로 옆에 붙고, 남는 자리는 닫기 앞으로 */
-  margin-left: -6px;
+  grid-area: help;
   width: var(--sy-c);
   height: var(--sy-c);
   display: grid;
