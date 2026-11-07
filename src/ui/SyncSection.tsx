@@ -323,6 +323,7 @@ function CategorySelect({
         aria-haspopup="listbox"
         aria-expanded={!!anchor}
         aria-label={cur ? `카테고리: ${cur.name}` : '카테고리 고르기'}
+        title={cur?.name}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget.getBoundingClientRect())}
       >
         {cur && <i className="dot" style={{ background: cur.color }} />}
