@@ -253,6 +253,8 @@ interface UIState {
   closeOtherTabs: (r: TabRoute) => void
   /** 탭 순서 바꾸기 — r을 to 자리로 (탭 바에서 끌기·단축키) */
   moveTab: (r: TabRoute, to: number) => void
+  /** 탭을 at 자리에 넣기만 한다(열지 않는다) — 라이브러리 카드를 탭 바로 끌어 놓을 때. 이미 있는 탭은 그 자리로 옮긴다 */
+  addTabs: (rs: TabRoute[], at: number) => void
   /** 앱·파일을 옆 칸으로 — 가운데에는 그 전에 보던 화면이 온다 */
   openSplit: (r: SplitRoute) => void
   closeSplit: () => void
@@ -379,6 +381,17 @@ export const useUI = create<UIState>((set, get) => ({
     if (from < 0 || at === from) return
     const next = tabs.filter((_, i) => i !== from)
     next.splice(at, 0, tabs[from])
+    set({ tabs: next })
+  },
+  addTabs: (rs, at) => {
+    const add = rs.filter((r, i) => rs.findIndex((x) => sameTab(x, r)) === i)
+    if (!add.length) return
+    const tabs = get().tabs
+    const has = (t: TabRoute) => add.some((r) => sameTab(r, t))
+    // at은 지금 탭 목록 기준 — 옮겨 갈 탭을 빼고 나면 그 앞에 남는 수만큼이 들어갈 자리
+    const pos = tabs.slice(0, Math.max(0, at)).filter((t) => !has(t)).length
+    const next = tabs.filter((t) => !has(t))
+    next.splice(pos, 0, ...add)
     set({ tabs: next })
   },
   closeOtherTabs: (r) => {
