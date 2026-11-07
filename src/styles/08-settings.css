@@ -89,18 +89,18 @@
    입력 하나로 검색·새로 만들기, 사이드바와 같은 [태그] 묶음. 색 점은 두지 않는다(이름으로 고르는 창).
    좁은 화면(600px 이하)에서는 아래에서 올라오는 시트 */
 .modal.cp {
-  width: min(420px, 100%);
+  width: min(440px, 100%);
   max-height: min(680px, calc(100dvh - 32px));
   padding: 0;
+  border-radius: var(--r-2xl);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 .cp-head {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 16px 10px 10px 18px;
+  padding: 20px 16px 12px 20px;
 }
 .cp-head-text {
   flex: 1;
@@ -108,12 +108,13 @@
 }
 .cp-title {
   margin: 0;
-  font-size: var(--fs-title);
-  font-weight: 600;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .cp-target {
-  margin-top: 2px;
-  font-size: var(--fs-sm);
+  margin-top: 4px;
+  font-size: var(--fs-base);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -124,10 +125,10 @@
   align-items: center;
   gap: 8px;
   height: 40px;
-  margin: 0 14px 10px;
+  margin: 0 16px 10px;
   padding: 0 6px 0 12px;
   border: 1.5px solid transparent;
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface-2);
   color: var(--muted);
 }
@@ -166,7 +167,8 @@
 }
 .cp-recent-label {
   margin-right: 2px;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  font-weight: 600;
   color: var(--muted);
 }
 .cp-chip {
@@ -174,12 +176,14 @@
   align-items: center;
   gap: 6px;
   height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
+  padding: 0 12px;
+  border: 0;
   border-radius: var(--r-pill);
-  background: transparent;
-  font-size: var(--fs-sm);
+  background: var(--surface-2);
+  font-size: var(--fs-base);
+  font-weight: 500;
   color: var(--ink);
+  white-space: nowrap;
   cursor: pointer;
 }
 .cp-chip:hover {
@@ -189,13 +193,13 @@
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
-  padding: 6px 8px 8px;
-  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 16px 16px;
 }
 .cp-sep {
-  height: 1px;
-  margin: 6px 4px;
-  background: var(--line);
+  height: 4px; /* 카드 사이 간격이 이미 나누므로 선 대신 조금 더 띄운다 */
 }
 /* 한 줄: [이름 … 개수 ✓] */
 .cp-row,
@@ -221,6 +225,16 @@
 .cp-cat > .cp-row {
   flex: 1;
   min-width: 0;
+  min-height: 52px;
+  border-radius: inherit;
+}
+/* 행 카드(C 스타일) — '카테고리 없음'과 카테고리 하나하나가 옅은 카드 */
+.cp-list > .cp-row,
+.cp-cat {
+  flex: 0 0 auto;
+  min-height: 52px;
+  border-radius: var(--r-lg);
+  background: var(--card-soft);
 }
 .cp-row:hover,
 .cp-row.is-active,

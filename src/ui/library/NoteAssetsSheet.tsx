@@ -53,8 +53,15 @@ export function NoteAssetsSheet({ doc, onClose }: { doc: DocumentMeta; onClose: 
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && !saving && onClose()}>
       <div className="modal note-assets" role="dialog" aria-label="원본 파일 저장">
-        <h2 className="modal-title">원본 파일 저장</h2>
-        <p className="note-assets-sub">「{doc.title}」에 쓰인 원본을 기기에 저장합니다.</p>
+        <header className="note-assets-head">
+          <div className="note-assets-head-text">
+            <h2>원본 파일 저장</h2>
+            <p className="note-assets-sub">「{doc.title}」에 쓰인 원본을 기기에 저장합니다.</p>
+          </div>
+          <button className="sheet-close" onClick={onClose} disabled={!!saving} aria-label="닫기">
+            <Icon name="close" size={16} />
+          </button>
+        </header>
 
         {rows && rows.length === 0 ? (
           <p className="note-assets-empty">이 노트는 PDF·이미지 원본을 쓰지 않습니다.</p>
@@ -63,10 +70,12 @@ export function NoteAssetsSheet({ doc, onClose }: { doc: DocumentMeta; onClose: 
             {rows === null && <div className="note-assets-row skel" aria-hidden="true" />}
             {rows?.map((r) => (
               <div key={r.id} className="note-assets-row" role="listitem">
-                <Icon name={r.kind === 'pdf' ? 'filePdf' : 'photo'} size={16} />
+                <span className={'note-assets-ico ' + r.kind} aria-hidden="true">
+                  <Icon name={r.kind === 'pdf' ? 'filePdf' : 'photo'} size={18} />
+                </span>
                 <span className="nm">{titleOf(r)}</span>
                 <span className="sz">{formatBytes(r.size || 0)}</span>
-                <button className="note-assets-save" disabled={!!saving} onClick={() => void saveToDevice(r)} title={r.blob ? '이 기기에 있는 원본을 저장합니다' : '클라우드에서 받아 저장합니다(앱에는 남기지 않습니다)'}>
+                <button className="row-act note-assets-save" disabled={!!saving} onClick={() => void saveToDevice(r)} title={r.blob ? '이 기기에 있는 원본을 저장합니다' : '클라우드에서 받아 저장합니다(앱에는 남기지 않습니다)'}>
                   {saving === r.id ? <span className="spinner sm" /> : <Icon name="download" size={14} />}
                   기기에 저장
                 </button>
@@ -74,12 +83,6 @@ export function NoteAssetsSheet({ doc, onClose }: { doc: DocumentMeta; onClose: 
             ))}
           </div>
         )}
-
-        <div className="modal-actions">
-          <button className="text-btn" onClick={onClose} disabled={!!saving}>
-            닫기
-          </button>
-        </div>
       </div>
     </div>
   )

@@ -78,9 +78,11 @@ export function useOnline() {
   return online
 }
 
-/** 시트 헤더 — 32px 아이콘, 제목, 부제(● Google Drive · 경로 / ● 오프라인), 오른쪽 동작·닫기 */
+/**
+ * 시트 헤더(C 스타일) — 큰 제목, 부제(● Google Drive · 경로 / ● 오프라인), 오른쪽 동작·원형 닫기.
+ * icon은 예전 머리 아이콘 칸용 — 지금은 그리지 않는다(호출부 호환을 위해 받기만 한다)
+ */
 export function SheetHeader({
-  icon,
   title,
   subtitle,
   offline,
@@ -96,9 +98,6 @@ export function SheetHeader({
 }) {
   return (
     <header className="store-head">
-      <span className="store-head-icon">
-        <Icon name={icon} size={18} />
-      </span>
       <div className="store-head-text">
         <h2>{title}</h2>
         <p className={'store-sub' + (offline ? ' off' : '')}>
@@ -108,8 +107,8 @@ export function SheetHeader({
       </div>
       <div className="store-head-actions">
         {action}
-        <button className="tb-btn" onClick={onClose} aria-label="닫기">
-          <Icon name="close" />
+        <button className="sheet-close" onClick={onClose} aria-label="닫기">
+          <Icon name="close" size={16} />
         </button>
       </div>
     </header>

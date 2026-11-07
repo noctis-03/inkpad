@@ -89,11 +89,11 @@ function ArchiveSheet() {
 
   return (
     <div className="modal-backdrop archive-host" onPointerDown={(e) => e.target === e.currentTarget && closeArchive()}>
-      <div className="sheet archive-sheet" role="dialog" aria-label="보관함 관리">
+      <div className="sheet c-sheet archive-sheet" role="dialog" aria-label="보관함 관리">
         <header className="sheet-header">
           <h2>보관함 관리</h2>
-          <button className="tb-btn" onClick={closeArchive} aria-label="닫기">
-            <Icon name="close" />
+          <button className="sheet-close" onClick={closeArchive} aria-label="닫기">
+            <Icon name="close" size={16} />
           </button>
         </header>
         <div className="sheet-scroll">
@@ -135,7 +135,7 @@ function ArchiveSheet() {
                         </div>
                         {!d.mine && (
                           <button
-                            className="text-btn danger"
+                            className="row-act danger"
                             disabled={!!busy}
                             onClick={() =>
                               void run(

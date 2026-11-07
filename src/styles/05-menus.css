@@ -169,6 +169,89 @@
     white-space: nowrap;
   }
 }
+/* ── C 스타일 창 (에셋 원본·기타 파일·앱·프리셋·보관함·카테고리 지정·원본 파일 저장) ──
+   흰 시트 · 모서리 --r-2xl · 머리 구분선 없음 · 제목 --fs-xl · 원형 닫기 · 목록 행은 --card-soft 카드 */
+.sheet-close {
+  position: relative;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.sheet-close:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.sheet-close::after {
+  content: '';
+  position: absolute;
+  inset: -6px; /* 누름 영역 44px */
+}
+.sheet.c-sheet {
+  border-radius: var(--r-2xl);
+}
+.c-sheet .sheet-header {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 20px 16px 12px 20px;
+  border-bottom: 0;
+}
+.c-sheet .sheet-header h2 {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* 행 안의 동작 — 상자 없이 짧은 세로선 뒤 글자 버튼 (.row-act) */
+.row-act {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-control);
+  margin-left: 9px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.row-act:hover:not(:disabled) {
+  background: var(--hover);
+}
+.row-act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.row-act.danger {
+  color: var(--danger-ink);
+}
+.row-act.muted {
+  color: var(--muted);
+}
+.row-act::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 1px;
+  height: 16px;
+  margin-top: -8px;
+  background: var(--line-2);
+  pointer-events: none;
+}
+
 /* 그릇 머리의 아이콘 버튼(닫기 등) — 편집 화면 크롬의 44px 대신 컨트롤 높이 */
 .sheet-header .tb-btn,
 .store-head .tb-btn {

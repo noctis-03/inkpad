@@ -97,6 +97,9 @@ const GROUPS: { key: GroupKey; title: string; desc?: string; todo: boolean; coll
   { key: 'gone', title: '이 기기에서 삭제됨', todo: false, collapsible: true }
 ]
 
+/** 그룹 머리 줄 아이콘 — 무엇을 해야 하는 묶음인지(머지·받기·올리기). 접히는 그룹은 꺾쇠가 대신한다 */
+const GROUP_HEAD_ICON: Partial<Record<GroupKey, string>> = { split: 'swap', recv: 'download', push: 'upload' }
+
 /** 건수는 한 곳에서 계산해 머리 카드·버튼·그룹 머리가 나눠 쓴다 */
 interface CloudCounts extends Record<GroupKey, number> {
   pending: number
@@ -531,6 +534,7 @@ function CloudList({
                 </button>
               ) : (
                 <h4 className="cloud-gtitle">
+                  {GROUP_HEAD_ICON[g.key] && <Icon name={GROUP_HEAD_ICON[g.key]!} size={16} />}
                   <span>{g.title}</span>
                   <b>{n}</b>
                   {g.desc && <small>{g.desc}</small>}
