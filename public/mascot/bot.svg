@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>inkpad — 잉키 봇</title>
+  <defs>
+    <mask id="face">
+      <rect width="256" height="256" fill="#fff"/>
+      <rect x="84" y="94" width="24" height="44" rx="12" fill="#000"/>
+      <rect x="148" y="94" width="24" height="44" rx="12" fill="#000"/>
+      <path d="M90 160c8 14 20 18 30 10s20-8 30 0 22 4 30-10" fill="none" stroke="#000" stroke-width="11" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <rect x="28" y="44" width="200" height="168" rx="56" fill="currentColor" mask="url(#face)"/>
+</svg>

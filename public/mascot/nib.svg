@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>inkpad — 펜촉</title>
+  <path fill="currentColor" fill-rule="evenodd" d="M128 20a108 108 0 1 1 0 216a108 108 0 0 1 0-216zM128 58l-46 62 46 82 46-82z"/>
+  <circle cx="128" cy="128" r="12" fill="currentColor"/>
+  <path d="M128 140v58" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+</svg>
