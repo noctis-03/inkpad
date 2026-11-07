@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useUI } from '../../app/store'
+import { useUI, type TabRoute } from '../../app/store'
 import { useIndicator } from '../motion/useIndicator'
 import { useFlip } from '../motion/useFlip'
 import { settle } from '../motion/settle'
@@ -104,6 +104,30 @@ const inCatGroup = (c: string | null | undefined, name: string) => {
 const RADIAL_DEAD = 26
 const RADIAL_OUT = 170
 type RadialPick = Mark | 'clear' | 'out'
+/** 원형 메뉴가 뜬 뒤 가운데에서 이만큼 더 누르고 있으면 카드를 집어 끈다(탭 바에 놓으면 탭 추가) */
+const DRAG_HOLD_MS = 450
+/** 탭 바 위·아래로 이만큼 벗어나도 탭 바에 놓은 것으로 본다 (손가락이 탭 바를 가린다) */
+const TAB_DROP_SLOP = 20
+/** 카드 열쇠('doc:ID'·'app:ID'·'file:ID') → 탭 — 클라우드에만 있는 노트 등은 null */
+const tabRouteOf = (key: string): TabRoute | null => {
+  const i = key.indexOf(':')
+  const kind = key.slice(0, i)
+  const id = key.slice(i + 1)
+  return kind === 'doc' ? { name: 'editor', docId: id } : kind === 'app' ? { name: 'app', appId: id } : kind === 'file' ? { name: 'file', fileId: id } : null
+}
+/** 탭 바에서 (x, y)에 놓으면 들어갈 자리와 표시선의 x — 탭 바 밖이면 null */
+function tabDropAt(x: number, y: number): { at: number; lineX: number; bar: DOMRect } | null {
+  const scroll = document.querySelector<HTMLElement>('.tabbar .tabbar-scroll')
+  const nav = scroll?.closest<HTMLElement>('.tabbar')
+  if (!scroll || !nav) return null
+  const b = nav.getBoundingClientRect()
+  if (x < b.left || x > b.right || y < b.top - TAB_DROP_SLOP || y > b.bottom + TAB_DROP_SLOP) return null
+  const sr = scroll.getBoundingClientRect()
+  const tabs = [...scroll.querySelectorAll<HTMLElement>('.tab[data-tab]')].map((e) => e.getBoundingClientRect())
+  const at = tabs.filter((r) => r.left + r.width / 2 < x).length
+  const raw = at < tabs.length ? tabs[at].left : tabs.length ? tabs[tabs.length - 1].right : sr.left
+  return { at, lineX: Math.min(Math.max(raw, sr.left + 1), sr.right - 1), bar: b }
+}
 /** 원형 메뉴 항목 — 위 ○ · 오른쪽 ✕ · 아래 ! · 왼쪽 지우기 */
 const RADIAL_ITEMS: { pick: Mark | 'clear'; at: 'up' | 'right' | 'down' | 'left' }[] = [
   { pick: 'o', at: 'up' },
@@ -355,9 +379,12 @@ export function Library() {
 
   // ── 선택 모드 ── 카드를 꾹 누르면 들어가고(누른 카드가 선택된다), 탭은 열지 않고 선택/해제만 한다
   const press = useRef<{ x: number; y: number; timer: number } | null>(null)
+  const pressEl = useRef<HTMLElement | null>(null) // 꾹 누른 카드 — 끌 때 이 모습을 띄운다
+  // 카드 끌기 — 원형 메뉴 가운데에서 더 누르고 있으면 집힌다. 탭 바에 놓으면 그 자리에 탭을 넣는다(열지는 않는다)
+  const [cardDrag, setCardDrag] = useState<{ el: HTMLElement; routes: TabRoute[]; x: number; y: number } | null>(null)
   const pressFired = useRef(false) // 꾹 누름이 방금 원형 메뉴를 열었다 — 손을 떼며 오는 클릭은 삼킨다
   // 원형 메뉴 — 꾹 누른 채로 위·오른쪽·아래·왼쪽으로 밀어 떼면 ○·✕·!·지우기, 가운데서 떼면 선택 모드
-  const [radial, setRadial] = useState<{ key: string; x: number; y: number; hot: RadialPick | null } | null>(null)
+  const [radial, setRadial] = useState<{ key: string; x: number; y: number; hot: RadialPick | null; noHold?: boolean } | null>(null)
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer)
     press.current = null
@@ -372,7 +399,9 @@ export function Library() {
             cancelPress()
             const x = e.clientX
             const y = e.clientY
+            const el = e.currentTarget as HTMLElement
             const timer = window.setTimeout(() => {
+              pressEl.current = el
               press.current = null
               pressFired.current = true
               setRevealKey(null)
@@ -439,6 +468,16 @@ export function Library() {
   useEffect(() => {
     if (!radial) return
     const { key, x, y } = radial
+    // 가운데에서 움직이지 않고 더 누르고 있으면 카드를 집는다 (방향으로 밀었으면 그 뒤로는 집지 않는다)
+    const routes = radialKeys(key).map(tabRouteOf).filter((r): r is TabRoute => !!r)
+    const el = pressEl.current
+    let hold =
+      routes.length && el
+        ? window.setTimeout(() => {
+            setRadial(null)
+            setCardDrag({ el, routes, x, y })
+          }, DRAG_HOLD_MS)
+        : 0
     const pick = (e: PointerEvent): RadialPick | null => {
       const dx = e.clientX - x
       const dy = e.clientY - y
@@ -449,7 +488,11 @@ export function Library() {
     }
     const onMove = (e: PointerEvent) => {
       const hot = pick(e)
-      setRadial((r) => (r && r.hot !== hot ? { ...r, hot } : r))
+      if (hot !== null && hold) {
+        window.clearTimeout(hold)
+        hold = 0
+      }
+      setRadial((r) => (r && r.hot !== hot ? { ...r, hot, noHold: r.noHold || !hold } : r))
     }
     const onUp = (e: PointerEvent) => {
       const hot = pick(e)
@@ -465,6 +508,7 @@ export function Library() {
     window.addEventListener('pointercancel', onCancel)
     window.addEventListener('touchmove', noScroll, { passive: false })
     return () => {
+      window.clearTimeout(hold)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onCancel)
@@ -472,6 +516,120 @@ export function Library() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [radial?.key, radial?.x, radial?.y])
+  // 카드를 집은 동안: 카드 모습이 손가락을 따라오고, 탭 바 위에서는 작아지며 들어갈 자리에 선이 뜬다.
+  // 탭 바에 놓으면 탭을 넣고(열지 않는다), 다른 곳에 놓으면 제자리로 돌아간다
+  useEffect(() => {
+    if (!cardDrag) return
+    const { el: src, routes, x: x0, y: y0 } = cardDrag
+    const r = src.getBoundingClientRect()
+    const wrap = document.createElement('div')
+    wrap.className = 'card-drag'
+    wrap.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`
+    const ghost = src.cloneNode(true) as HTMLElement
+    for (const a of ['data-flip-key', 'data-reveal-key', 'data-doc-id', 'style']) ghost.removeAttribute(a)
+    ghost.classList.remove('is-revealed')
+    ghost.classList.add('card-drag-ghost')
+    ghost.style.transformOrigin = `${x0 - r.left}px ${y0 - r.top}px`
+    wrap.appendChild(ghost)
+    if (routes.length > 1) {
+      const n = document.createElement('span')
+      n.className = 'card-drag-count'
+      n.textContent = String(routes.length)
+      ghost.appendChild(n)
+    }
+    const line = document.createElement('div')
+    line.className = 'tab-drop-line'
+    document.body.append(wrap, line)
+    src.classList.add('is-drag-source')
+    document.body.classList.add('is-card-dragging')
+    navigator.vibrate?.(8)
+    let drop: ReturnType<typeof tabDropAt> = null
+    let lastX = x0
+    let lastY = y0
+    let raf = 0
+    const scroller = document.querySelector<HTMLElement>('.tabbar .tabbar-scroll')
+    const update = () => {
+      wrap.style.transform = `translate(${lastX - x0}px, ${lastY - y0}px)`
+      drop = tabDropAt(lastX, lastY)
+      ghost.classList.toggle('is-over', !!drop)
+      document.querySelector('.tabbar')?.classList.toggle('is-drop-target', !!drop)
+      if (drop) {
+        line.style.cssText = `left:${drop.lineX}px;top:${drop.bar.top + 6}px;height:${drop.bar.height - 12}px`
+        line.classList.add('is-on')
+        // 탭 바 끝에 가까이 가면 바를 민다
+        const sr = scroller?.getBoundingClientRect()
+        if (scroller && sr) {
+          if (lastX < sr.left + 28) scroller.scrollLeft -= 8
+          else if (lastX > sr.right - 28) scroller.scrollLeft += 8
+          if (lastX < sr.left + 28 || lastX > sr.right - 28) raf = requestAnimationFrame(update)
+        }
+      } else line.classList.remove('is-on')
+    }
+    const onMove = (e: PointerEvent) => {
+      lastX = e.clientX
+      lastY = e.clientY
+      cancelAnimationFrame(raf)
+      update()
+    }
+    let done = false
+    const finish = (dropped: boolean) => {
+      if (done) return
+      done = true
+      cancelAnimationFrame(raf)
+      line.remove()
+      document.querySelector('.tabbar')?.classList.remove('is-drop-target')
+      document.body.classList.remove('is-card-dragging')
+      const target = dropped && drop
+      if (target) useUI.getState().addTabs(routes, target.at)
+      // 놓은 뒤 따라오는 클릭이 탭·카드를 열지 않게 한 번 삼킨다
+      const eat = (e: MouseEvent) => {
+        e.stopPropagation()
+        e.preventDefault()
+      }
+      window.addEventListener('click', eat, { capture: true, once: true })
+      window.setTimeout(() => window.removeEventListener('click', eat, { capture: true }), 400)
+      const end = () => {
+        wrap.remove()
+        src.classList.remove('is-drag-source')
+        setCardDrag(null)
+      }
+      const anim = target
+        ? ghost.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(.2)' }], { duration: dur(180), easing: 'ease-in', fill: 'forwards' })
+        : wrap.animate([{ transform: wrap.style.transform || 'none' }, { transform: 'none' }], { duration: dur(220), easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' })
+      anim.onfinish = end
+      anim.oncancel = end
+    }
+    const onUp = (e: PointerEvent) => {
+      lastX = e.clientX
+      lastY = e.clientY
+      update()
+      finish(true)
+    }
+    const onCancel = () => finish(false)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && finish(false)
+    const noScroll = (e: TouchEvent) => e.preventDefault()
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('touchmove', noScroll, { passive: false })
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('touchmove', noScroll)
+      if (!done) {
+        // 화면을 떠나는 등 — 흔적 없이 치운다
+        cancelAnimationFrame(raf)
+        wrap.remove()
+        line.remove()
+        src.classList.remove('is-drag-source')
+        document.body.classList.remove('is-card-dragging')
+        document.querySelector('.tabbar')?.classList.remove('is-drop-target')
+      }
+    }
+  }, [cardDrag])
   /** 카드 미리보기 한가운데의 마킹 표시(크게) */
   const markBadge = (key: string) => {
     const m = marks[key]
@@ -2210,7 +2368,7 @@ export function Library() {
                 </span>
               )
             })}
-            <span className={'radial-center' + (radial.hot === null ? ' is-hot' : '')}>선택</span>
+            <span className={'radial-center' + (radial.hot === null ? ' is-hot' : '') + (!radial.noHold && radialKeys(radial.key).some((k) => tabRouteOf(k)) ? ' can-hold' : '')}>선택</span>
           </div>
         )
       })()}
