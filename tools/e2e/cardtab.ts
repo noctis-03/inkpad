@@ -1,5 +1,6 @@
 // 카드를 탭 바로 끌기: 꾹 누르면 원형 메뉴, 가운데서 더 누르고 있으면 카드가 집힌다.
-// 탭 바에 놓으면 그 자리에 탭이 생긴다(열리지 않는다). 다른 곳에 놓으면 아무것도 바뀌지 않는다
+// 탭 바에 놓으면 그 자리에 탭이 생긴다(열리지 않는다). 화면 왼쪽·오른쪽 끝에 놓으면 그쪽 옆 칸(듀얼)에 연다(앱·파일만).
+// 다른 곳에 놓으면 아무것도 바뀌지 않는다
 import type { Page } from 'playwright'
 import { createDoc, device, sleep, type Ctx } from './lib.ts'
 
@@ -73,4 +74,36 @@ export default async function cardtab(ctx: Ctx) {
   await A.mouse.up()
   await sleep(250)
   check('그대로 가운데서 떼면 선택 모드', (await A.locator('.library-header.is-selecting').count()) === 1)
+
+  await A.keyboard.press('Escape')
+  await sleep(250)
+
+  // ── 화면 끝에 놓아 옆 칸(듀얼) ──
+  await A.evaluate(async () => {
+    const files = await import('/src/sync/files.ts')
+    await files.addFile(new File(['참고 자료 내용'], '자료.txt', { type: 'text/plain' }), null, { upload: false })
+  })
+  await A.waitForSelector('.doc-card:has-text("자료")')
+  await sleep(300)
+  const W = A.viewportSize()!.width
+  const split = () => A.evaluate(async () => { const s = (await import('/src/app/store.ts')).useUI.getState(); return { split: s.split?.name ?? null, side: s.splitSide, route: s.route.name } })
+  let midZones = 0
+  let midOn = ''
+  await dragCard(A, '자료', W - 20, 600, async () => {
+    midZones = await A.locator('.edge-drop').count()
+    midOn = (await A.locator('.edge-drop.is-on').textContent()) ?? ''
+  })
+  await A.waitForSelector('.panes.is-split .pane-side .file-runner')
+  const s1 = await split()
+  check('끝에 놓기: 카드를 집으면 양 끝에 놓는 자리', midZones === 2 && midOn.includes('오른쪽'), JSON.stringify({ midZones, midOn }))
+  check('끝에 놓기: 파일 카드를 오른쪽 끝에 놓으면 오른쪽 옆 칸에 — 가운데는 라이브러리 그대로', s1.split === 'file' && s1.side === 'right' && s1.route === 'library', JSON.stringify(s1))
+  check('끝에 놓기: 놓은 뒤 놓는 자리·끌던 모습이 남지 않는다', (await A.locator('.edge-drop, .card-drag, .doc-card.is-drag-source').count()) === 0)
+  await A.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().closeSplit())
+  await sleep(300)
+  // 노트 카드는 옆 칸에 열 수 없다 — 까닭을 보이고 제자리로
+  let noText = ''
+  await dragCard(A, '다 노트', 20, 600, async () => {
+    noText = (await A.locator('.edge-drop.is-on.is-no').textContent()) ?? ''
+  })
+  check('끝에 놓기: 노트 카드는 "열 수 없어요"를 보이고 옆 칸을 열지 않는다', noText.includes('노트는') && (await split()).split === null && (await A.locator('.edge-drop, .card-drag').count()) === 0, noText)
 }

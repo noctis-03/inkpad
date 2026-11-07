@@ -11,6 +11,7 @@ import { FILES_EVENT, getFile } from '../sync/files'
 import { Icon } from './Icon'
 import { Menu, MenuItem } from './Menu'
 import { StatusDock } from './dock/StatusDock'
+import { NO_NOTE, edgeZone, showEdgeZones, type EdgeZones } from './edgeDrop'
 
 const ICON: Record<TabRoute['name'], string> = { editor: 'notebook', app: 'app', file: 'file' }
 
@@ -24,26 +25,10 @@ const TOUCH_SLOP_PX = 8
 const EDGE_PX = 28
 /** 탭 바 아래로 이만큼 내려가면 탭을 바에서 떼어 화면 위로 끈다 (옆 칸에 놓기) */
 const DETACH_PX = 28
-/** 화면 끝 놓는 자리의 폭 — 칸 폭의 이 비율, 최대 EDGE_ZONE_MAX */
-const EDGE_ZONE_FRAC = 0.22
-const EDGE_ZONE_MAX = 180
-
-type Side = 'left' | 'right'
-/** 탭 바 밖으로 끄는 중 — 손가락 자리와 놓을 쪽 */
+/** 탭 바 밖으로 끄는 중 — 따라오는 탭의 자리 */
 interface Out {
   x: number
   y: number
-  zone: Side | null
-}
-/** 칸 영역(.panes)에서 화면 끝 놓는 자리 */
-function edgeZone(x: number, y: number): Side | null {
-  const r = document.querySelector('.panes')?.getBoundingClientRect()
-  if (!r || y < r.top || y > r.bottom) return null
-  const w = Math.min(EDGE_ZONE_MAX, r.width * EDGE_ZONE_FRAC)
-  return x < r.left + w ? 'left' : x > r.right - w ? 'right' : null
-}
-function panesRect() {
-  return document.querySelector('.panes')?.getBoundingClientRect() ?? null
 }
 
 interface Drag {
@@ -115,6 +100,13 @@ export function TabBar() {
   const drag = useRef<Drag | null>(null)
   const [dragKey, setDragKey] = useState<string | null>(null)
   const [out, setOut] = useState<Out | null>(null)
+  /** 화면 끝 놓는 자리 (탭을 떼어 끄는 동안) */
+  const zones = useRef<EdgeZones | null>(null)
+  const dropZones = () => {
+    zones.current?.remove()
+    zones.current = null
+  }
+  useEffect(() => dropZones, [])
   /** 끌기를 마친 뒤 따라오는 click은 탭 열기가 아니다 */
   const swallowClick = useRef(false)
   /** 자리를 바꾸기 전 다른 탭들의 자리 — 바뀐 뒤 미끄러지듯 옮긴다 */
@@ -213,6 +205,7 @@ export function TabBar() {
     swallowClick.current = !cancelled
     setDragKey(null)
     setOut(null)
+    dropZones()
     if (d.out) {
       // 화면 끝에 놓았다 — 그쪽 옆 칸에 연다 (노트는 옆 칸에 열 수 없다)
       const zone = cancelled ? null : edgeZone(d.lastX, d.lastY)
@@ -261,10 +254,15 @@ export function TabBar() {
     d.out = splitAllowed && e.clientY > r.bottom + DETACH_PX
     if (d.out) {
       if (!wasOut) place()
-      setOut({ x: e.clientX, y: e.clientY, zone: edgeZone(e.clientX, e.clientY) })
+      zones.current ??= showEdgeZones(d.tab.name === 'editor' ? NO_NOTE : null)
+      zones.current.update(e.clientX, e.clientY)
+      setOut({ x: e.clientX, y: e.clientY })
       return
     }
-    if (wasOut) setOut(null)
+    if (wasOut) {
+      setOut(null)
+      dropZones()
+    }
     if (e.clientX < r.left + EDGE_PX) b.scrollLeft -= 10
     else if (e.clientX > r.right - EDGE_PX) b.scrollLeft += 10
     place()
@@ -355,7 +353,14 @@ export function TabBar() {
         })}
       </div>
       <StatusDock />
-      {out && dragKey && <EdgeDrop out={out} title={titles.get(dragKey) ?? ''} note={dragKey.startsWith('doc:')} />}
+      {out &&
+        dragKey &&
+        createPortal(
+          <div className="tab-ghost" style={{ left: out.x, top: out.y }}>
+            {titles.get(dragKey) ?? ''}
+          </div>,
+          document.body
+        )}
 
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
@@ -413,30 +418,3 @@ export function TabBar() {
   )
 }
 
-/** 탭을 떼어 끄는 동안 — 손가락을 따라오는 탭과 화면 왼쪽·오른쪽 끝의 놓는 자리 */
-function EdgeDrop({ out, title, note }: { out: Out; title: string; note: boolean }) {
-  const r = panesRect()
-  if (!r) return null
-  const w = Math.min(EDGE_ZONE_MAX, r.width * EDGE_ZONE_FRAC)
-  const zone = (side: Side) => (
-    <div
-      className={'edge-drop' + (out.zone === side ? ' is-on' : '') + (note ? ' is-no' : '')}
-      style={{ left: side === 'left' ? r.left : r.right - w, top: r.top, width: w, height: r.height }}
-    >
-      <span className="edge-drop-label">
-        <Icon name={note ? 'close' : 'sidebar'} size={18} />
-        {note ? '노트는 옆 칸에 열 수 없어요' : side === 'left' ? '왼쪽 칸에 열기' : '오른쪽 칸에 열기'}
-      </span>
-    </div>
-  )
-  return createPortal(
-    <>
-      {zone('left')}
-      {zone('right')}
-      <div className="tab-ghost" style={{ left: out.x, top: out.y }}>
-        {title}
-      </div>
-    </>,
-    document.body
-  )
-}
