@@ -31,12 +31,14 @@
     'sub sub sub refresh help close';
   align-items: center;
   column-gap: 8px;
-  row-gap: 0;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  row-gap: 2px;
+  padding-top: 14px; /* 캔버스 개선안과 같은 세로 폭 — 제목 줄 + 마지막 동기화 줄 */
+  padding-bottom: 12px;
 }
 .sync-head h2 {
   grid-area: title;
+  font-size: var(--fs-title);
+  line-height: 1.3;
 }
 .sync-head-slot {
   display: contents;
