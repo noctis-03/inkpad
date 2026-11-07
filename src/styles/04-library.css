@@ -1411,46 +1411,80 @@
   color: var(--muted-2);
 }
 
-/* ── 원본 파일 저장 창 — 노트 카드 ⋯ 메뉴. 그 노트가 쓰는 원본을 줄마다 「기기에 저장」 ── */
+/* ── 원본 파일 저장 창 — 노트 카드 ⋯ 메뉴. 그 노트가 쓰는 원본을 줄마다 「기기에 저장」 (C 스타일 작은 창) ── */
 .modal.note-assets {
-  max-height: 80vh; /* 너비는 작은 창 규칙(.modal 420px) 그대로 */
+  width: min(440px, 100%);
+  max-height: 80vh;
+  padding: 20px 16px 16px;
+  border-radius: var(--r-2xl);
   display: flex;
   flex-direction: column;
 }
+.note-assets-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 0 16px 4px;
+}
+.note-assets-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.note-assets-head h2 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 .note-assets-sub {
-  margin: 4px 0 12px;
+  margin: 4px 0 0;
   font-size: var(--fs-base);
   color: var(--muted);
 }
 .note-assets-empty {
-  margin: 8px 0;
-  font-size: var(--fs-md);
+  margin: 0;
+  padding: 32px 16px;
+  border-radius: var(--r-lg);
+  background: var(--card-soft);
+  font-size: var(--fs-base);
   color: var(--muted);
+  text-align: center;
 }
 .note-assets-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .note-assets-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: calc(var(--h-control) + 12px);
+  gap: 12px;
+  min-height: 64px;
   padding: 0 8px 0 12px;
+  border-radius: var(--r-lg);
+  background: var(--card-soft);
   font-size: var(--fs-md);
-}
-.note-assets-row + .note-assets-row {
-  border-top: 1px solid var(--line);
+  font-weight: 600;
 }
 .note-assets-row.skel {
   background: var(--surface-2);
 }
-.note-assets-row > svg {
+.note-assets-ico {
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
-  color: var(--muted);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--raise);
+  color: var(--danger-ink);
+  display: grid;
+  place-items: center;
+}
+.note-assets-ico.image {
+  color: var(--accent-ink);
 }
 .note-assets-row .nm {
   flex: 1;
@@ -1462,27 +1496,7 @@
 .note-assets-row .sz {
   flex: 0 0 auto;
   font-size: var(--fs-sm);
+  font-weight: 400;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-.note-assets-save {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--h-control);
-  padding: 0 12px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--fs-base);
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.note-assets-save:disabled {
-  opacity: 0.5;
-  cursor: default;
 }

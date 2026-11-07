@@ -135,6 +135,7 @@
   --scrim: #0000004d;       /* 모달·진행 뒤 어둡게 */
   --tint: color-mix(in srgb, var(--ink) 6%, transparent);   /* 옅은 채움·머리카락 선 */
   --tint-2: color-mix(in srgb, var(--ink) 13%, transparent); /* 한 단계 진하게 */
+  --card-soft: color-mix(in srgb, var(--ink) 4%, var(--surface)); /* 목록 행 카드(C 스타일) — 흰 시트 위 옅은 면, 다크에서도 시트와 구분된다 */
 
   /* ── 머지·변경 표시 — main(이 기기 밖 기준) · 브랜치 · 고침 · 지움 ── */
   --merge-main: #e8890c;

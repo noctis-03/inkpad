@@ -171,8 +171,8 @@ export function CategoryPicker(p: CategoryPickerProps) {
             <div className="cp-target">{p.title}</div>
             {summary && <div className="cp-target">{summary}</div>}
           </div>
-          <button className="icon-mini cp-close" aria-label="닫기" onClick={p.onClose}>
-            <Icon name="close" size={18} />
+          <button className="sheet-close cp-close" aria-label="닫기" onClick={p.onClose}>
+            <Icon name="close" size={16} />
           </button>
         </div>
 
