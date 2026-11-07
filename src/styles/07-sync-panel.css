@@ -454,7 +454,7 @@
   gap: 8px;
 }
 .cloud-search {
-  flex: 1 1 220px; /* 넓으면 검색 · 보기 · 카테고리가 한 줄, 좁으면 검색이 위 줄을 다 쓴다 */
+  flex: 1 1 140px; /* 넓으면 검색 · 보기 · 카테고리가 한 줄, 좁으면 검색이 위 줄을 다 쓴다 */
   min-width: 0;
   display: flex;
   align-items: center;
@@ -492,6 +492,7 @@
   cursor: pointer;
 }
 .cloud-view {
+  flex: 0 0 auto;
   flex-wrap: nowrap;
   border-radius: var(--r-md);
 }
@@ -509,6 +510,9 @@
 /* 카테고리 고르기 — 다음 줄 오른쪽 끝. 목록은 body에 띄운 팝오버라 시트에 잘리지 않는다 */
 .cloud-cat-btn {
   margin-left: auto;
+  flex: 0 1 auto; /* 카테고리 이름이 길면 줄어들며 말줄임 — 다음 줄로 밀려 내려가지 않게 */
+  min-width: 0;
+  max-width: 200px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -526,6 +530,14 @@
 .cloud-cat-btn.on {
   border-color: var(--ink);
   font-weight: 600;
+}
+.cloud-cat-btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cloud-cat-btn > svg {
+  flex: 0 0 auto;
 }
 .cloud-cat-btn .dot,
 .cloud-cat-menu .dot {
