@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useUI } from '../app/store'
 import { login, logout, getDeviceName, setDeviceName } from '../sync/token'
 import {
@@ -595,6 +596,7 @@ function SyncHero({
   progress,
   aside,
   stats,
+  bare,
   children
 }: {
   tone: HeroTone
@@ -604,11 +606,12 @@ function SyncHero({
   progress?: number | null // 0–1, null = 끝을 모름, undefined = 막대 없음
   aside?: ReactNode // 머리 줄 오른쪽 — 다시 확인 아이콘 버튼
   stats?: ReactNode // 처리할 것이 있을 때 — 숫자 타일 줄. 있으면 머리는 작은 알약 + 마지막 동기화 한 줄로 줄인다
+  bare?: boolean // 머리 줄 없이 — 알약·마지막 동기화·다시 확인을 창 머리(headSlot)가 맡을 때
   children?: ReactNode
 }) {
   return (
     <div className={'sync-hero sync-status tone-' + tone + (tone === 'wait' ? ' sync-wait' : '') + (stats ? ' has-stats' : '')}>
-      <div className="sync-hero-head" role="status" aria-live="polite">
+      {!bare && <div className="sync-hero-head" role="status" aria-live="polite">
         {stats ? (
           <span className="sync-status-txt">
             <span className="sync-pill">{title}</span>
@@ -626,7 +629,7 @@ function SyncHero({
           </>
         )}
         {aside}
-      </div>
+      </div>}
       {stats}
       {progress !== undefined && (
         <div className="bar sync-hero-bar" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress == null ? undefined : Math.round(progress * 100)}>
@@ -638,7 +641,10 @@ function SyncHero({
   )
 }
 
-export function SyncSection() {
+/**
+ * headSlot — 감싼 창 머리의 자리. 주면 처리할 것 알약 · 마지막 동기화 · 다시 확인을 창 머리(제목 옆·아래)로 옮긴다
+ */
+export function SyncSection({ headSlot = null }: { headSlot?: HTMLElement | null } = {}) {
   const [status, setStatus] = useState<SyncStatus>('idle')
   const [last, setLast] = useState<number | null>(null)
   const [cloud, setCloud] = useState<CloudNoteInfo[] | null>(null)
@@ -940,6 +946,7 @@ export function SyncSection() {
 
   // 머리 카드 — 상태마다 제목·설명·버튼을 하나로 정한다
   let hero: ReactNode
+  let head: ReactNode = null // 창 머리로 옮겨 그릴 것 (headSlot이 있을 때만)
   if (outside) {
     hero = <SyncHero tone="wait" icon={null} title="다른 곳에서 동기화 중" sub="노트 칩이나 다른 탭에서 시작한 올리기·받기가 끝나면 목록을 새로 읽습니다" />
   } else if (status === 'syncing') {
@@ -983,20 +990,31 @@ export function SyncSection() {
       { key: 'recv', label: '받을 것', n: counts.recv },
       { key: 'push', label: '올릴 것', n: counts.push }
     ]
+    // 처리할 것이 없을 때의 유일한 동작 — 버튼 줄(.sync-cta) 자리를 머리 줄 오른쪽 아이콘으로 옮긴다
+    const refreshNode =
+      act === 'check' ? (
+        <div className="sync-cta inline sync-head-refresh">{refresh({ 'data-act': 'check', 'data-push': 0 }, 'cloud-icon-btn sync-refresh')}</div>
+      ) : (
+        refresh({}, 'cloud-icon-btn sync-refresh sync-head-refresh')
+      )
+    if (headSlot)
+      head = (
+        <>
+          {todoN > 0 && <span className="sync-pill">{todoN}개 확인</span>}
+          <small className="sync-head-sub" role="status" aria-live="polite">
+            {cloud === null ? '클라우드 확인 중…' : lastText + (checked ? ` · ${checked}` : '')}
+          </small>
+          {refreshNode}
+        </>
+      )
     hero = (
       <SyncHero
         tone={todoN ? 'todo' : 'idle'}
         icon={todoN ? 'swap' : 'checkCircle'}
         title={cloud === null ? '클라우드 확인 중…' : todoN ? `${todoN}개 확인` : '모두 최신입니다'}
-        sub={lastText}
-        aside={
-          act === 'check' ? (
-            // 처리할 것이 없을 때의 유일한 동작 — 버튼 줄(.sync-cta) 자리를 머리 줄 오른쪽 아이콘으로 옮긴다
-            <div className="sync-cta inline">{refresh({ 'data-act': 'check', 'data-push': 0 }, 'cloud-icon-btn sync-refresh')}</div>
-          ) : (
-            refresh({}, 'cloud-icon-btn sync-refresh')
-          )
-        }
+        sub={headSlot ? (cloud ? `클라우드 노트 ${cloud.length}` : '') : lastText}
+        aside={headSlot ? undefined : refreshNode}
+        bare={!!headSlot && todoN > 0}
         stats={
           todoN > 0 ? (
             <div className="sync-tiles" role="group" aria-label="처리할 것만 보기">
@@ -1041,6 +1059,7 @@ export function SyncSection() {
   return (
     <section className="panel-section sync-sec" id="sync-settings">
       {/* 제목은 감싼 시트·패널 머리('동기화')가 맡는다 — 같은 말을 두 번 쓰지 않는다 */}
+      {headSlot && head && createPortal(head, headSlot)}
       {hero}
 
       {/* 원본(PDF·이미지) 받기 진행 바 */}
@@ -1394,16 +1413,18 @@ function PullPreview({ plan, busy, onConfirm, onClose }: { plan: PullPlan; busy:
 /** 동기화 전용 사이드 패널 — 설정 패널에서 분리되어 툴바의 동기화 버튼으로 연다 */
 export function SyncPanel() {
   const close = useUI((s) => s.setPanel)
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
   return (
     <aside id="sync-panel" className="side-panel" aria-label="동기화">
       <header className="panel-header sync-head">
         <h2>동기화</h2>
+        <span className="sync-head-slot" ref={setSlot} />
         <SyncHelp />
         <button className="tb-btn" onClick={() => close('sync')} aria-label="닫기">
           <Icon name="close" />
         </button>
       </header>
-      <SyncSection />
+      <SyncSection headSlot={slot} />
     </aside>
   )
 }
@@ -1414,19 +1435,21 @@ export function SyncSheet({ onClose }: { onClose: () => void }) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   useSheetHeightMotion(sheetRef, bodyRef)
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet sync-sheet" role="dialog" aria-label="동기화" ref={sheetRef}>
         <header className="sheet-header sync-head">
           <h2>동기화</h2>
+          <span className="sync-head-slot" ref={setSlot} />
           <SyncHelp />
-            <button className="tb-btn" onClick={onClose} aria-label="닫기">
+          <button className="tb-btn" onClick={onClose} aria-label="닫기">
             <Icon name="close" />
           </button>
         </header>
         <div className="sheet-scroll">
           <div ref={bodyRef}>
-            <SyncSection />
+            <SyncSection headSlot={slot} />
           </div>
         </div>
       </div>
