@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { pickFiles } from '../io/download'
@@ -21,7 +21,7 @@ import {
   type CloudAppState
 } from '../sync/apps'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline, useSheetHeightMotion } from './sheetParts'
 
 // 앱 시트. 모든 항목에 ⋯ 메뉴가 있고, 상태에 맞는 대표 버튼 하나를 바로 보여 준다.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
@@ -317,11 +317,14 @@ export function AppsSheet({ onClose }: { onClose: () => void }) {
   }
 
   useEscClose(onClose)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, bodyRef)
 
   return (
     <SheetErrorBoundary onClose={onClose}>
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="store-sheet" role="dialog" aria-label="앱">
+      <div className="store-sheet" role="dialog" aria-label="앱" ref={sheetRef}>
         <SheetHeader
           icon="grid"
           title="앱"
@@ -334,7 +337,7 @@ export function AppsSheet({ onClose }: { onClose: () => void }) {
             </button>
           }
         />
-        <div className="store-body">
+        <div className="store-body" ref={bodyRef}>
           {status === 'auth-required' ? (
             <SheetEmpty
               icon="lock"

@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_CATEGORY_CHARS, normalizeCategory } from '../../shared/model'
 import { splitCategory } from '../../shared/util'
 import { Icon } from '../Icon'
-import { useEscClose } from '../sheetParts'
+import { useEscClose, useSheetHeightMotion } from '../sheetParts'
 
 export interface CategoryPickerProps {
   /** 무엇에 지정하는가 — 노트 제목, 또는 'n개 항목' */
@@ -52,6 +52,8 @@ export function CategoryPicker(p: CategoryPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   useEscClose(p.onClose)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, listRef)
 
   // "[태그] 이름" → 이름 묶음. 사이드바와 같은 순서: 묶음 → [태그] 없는 카테고리
   const { groups, plain } = useMemo(() => {
@@ -162,7 +164,7 @@ export function CategoryPicker(p: CategoryPickerProps) {
 
   return (
     <div className="modal-backdrop cp-backdrop" onPointerDown={(e) => e.target === e.currentTarget && p.onClose()}>
-      <div className="modal cp" role="dialog" aria-modal="true" aria-labelledby="cp-title" onKeyDown={onKey}>
+      <div className="modal cp" ref={sheetRef} role="dialog" aria-modal="true" aria-labelledby="cp-title" onKeyDown={onKey}>
         <div className="cp-head">
           <div className="cp-head-text">
             <h2 className="cp-title" id="cp-title">

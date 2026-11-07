@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { extOf } from '../shared/model'
@@ -19,7 +19,7 @@ import {
   type CloudFileState
 } from '../sync/files'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetBanner, SheetEmpty, SheetErrorBoundary, SheetHeader, useEscClose, useOnline, useSheetHeightMotion } from './sheetParts'
 
 // 기타 파일 시트. 그룹 없이 리스트 하나, 정렬 탭과 저장 공간 카드.
 type Tone = 'push' | 'recv' | 'gone' | 'gray'
@@ -251,13 +251,16 @@ export function FilesSheet({ onClose }: { onClose: () => void }) {
   }
 
   useEscClose(onClose)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, bodyRef)
 
   return (
     <SheetErrorBoundary onClose={onClose}>
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="store-sheet" role="dialog" aria-label="기타 파일">
+      <div className="store-sheet" role="dialog" aria-label="기타 파일" ref={sheetRef}>
         <SheetHeader icon="folder" title="기타 파일" subtitle="Google Drive · Inkpad/files" offline={!online} onClose={onClose} />
-        <div className="store-body">
+        <div className="store-body" ref={bodyRef}>
           {status === 'auth-required' ? (
             <SheetEmpty
               icon="lock"

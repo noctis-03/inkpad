@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useUI } from '../app/store'
 import { confirmDialog } from '../app/dialogs'
 import { formatBytes, formatDate } from '../shared/util'
@@ -15,7 +15,7 @@ import { AssetUnavailableError, ensureAssetLocal, downloadAllMissing, onAssetPro
 import { refreshMissingThumbnailsWithToast } from '../io/docThumb'
 import { saveFile } from '../io/download'
 import { Icon } from './Icon'
-import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpty, SheetErrorBoundary, SheetHeader, SheetBanner, useEscClose, useOnline } from './sheetParts'
+import { FilterTabs, MenuItem, MenuSep, MenuTitle, Popover, SearchBox, SheetEmpty, SheetErrorBoundary, SheetHeader, SheetBanner, useEscClose, useOnline, useSheetHeightMotion } from './sheetParts'
 
 // 에셋 원본(PDF·이미지) 관리 시트. 동기화의 지연 로딩(asset.ts)과 같은 규칙을 따른다:
 //   - 이 기기(IndexedDB assets 테이블)의 원본과 클라우드(Drive · Inkpad/assets)의 원본을 합쳐서 보여준다.
@@ -539,11 +539,14 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
   }
 
   useEscClose(onClose)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useSheetHeightMotion(sheetRef, bodyRef)
 
   return (
     <SheetErrorBoundary onClose={onClose}>
       <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="store-sheet" role="dialog" aria-label="에셋 원본">
+        <div className="store-sheet" role="dialog" aria-label="에셋 원본" ref={sheetRef}>
           <SheetHeader
             icon="filePdf"
             title="에셋 원본"
@@ -556,7 +559,7 @@ export function AssetsSheet({ onClose }: { onClose: () => void }) {
             }
             onClose={onClose}
           />
-          <div className="store-body">
+          <div className="store-body" ref={bodyRef}>
             {!online ? (
               <SheetBanner tone="offline">오프라인입니다. 이 기기에 받아 둔 원본만 사용할 수 있고, 클라우드 목록은 보이지 않습니다.</SheetBanner>
             ) : cloudAuth ? (
