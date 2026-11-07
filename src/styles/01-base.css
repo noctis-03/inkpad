@@ -472,3 +472,52 @@ input[type='radio'] {
 .panes.is-resizing iframe {
   pointer-events: none;
 }
+
+/* 탭을 탭 바 아래로 떼어 끌 때 — 화면 끝 놓는 자리(옆 칸에 열기)와 손가락을 따라오는 탭 (ui/TabBar EdgeDrop) */
+.edge-drop {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border: 2px dashed var(--line);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  color: var(--muted);
+  font-size: var(--fs-base);
+  text-align: center;
+  pointer-events: none;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.edge-drop.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.edge-drop.is-no.is-on {
+  border-color: var(--muted-2);
+  background: color-mix(in srgb, var(--surface-2) 85%, transparent);
+  color: var(--muted);
+}
+.edge-drop-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.tab-ghost {
+  position: fixed;
+  z-index: 72;
+  max-width: 200px;
+  padding: 7px 12px;
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 6px 18px rgba(0, 0, 0, 0.18);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translate(-50%, -120%);
+  pointer-events: none;
+}

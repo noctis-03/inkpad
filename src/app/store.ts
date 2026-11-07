@@ -256,7 +256,8 @@ interface UIState {
   /** 탭을 at 자리에 넣기만 한다(열지 않는다) — 라이브러리 카드를 탭 바로 끌어 놓을 때. 이미 있는 탭은 그 자리로 옮긴다 */
   addTabs: (rs: TabRoute[], at: number) => void
   /** 앱·파일을 옆 칸으로 — 가운데에는 그 전에 보던 화면이 온다 */
-  openSplit: (r: SplitRoute) => void
+  /** side를 주면 옆 칸을 그쪽에 둔다 (탭을 화면 끝으로 끌어 놓을 때) */
+  openSplit: (r: SplitRoute, side?: 'left' | 'right') => void
   closeSplit: () => void
   setSplitRatio: (r: number) => void
   /** 좌우 바꾸기 — 옆 칸을 왼쪽↔오른쪽으로 (각 칸의 폭은 그대로) */
@@ -399,7 +400,8 @@ export const useUI = create<UIState>((set, get) => ({
     set({ tabs: get().tabs.filter((t) => sameTab(t, r)), split: sameTab(split, r) ? split : null })
     if (isTabRoute(route) && !sameTab(route, r)) get().navigate(r)
   },
-  openSplit: (r) => {
+  openSplit: (r, side) => {
+    if (side) set({ splitSide: side })
     const { route, returnRoute, tabs, home } = get()
     let tabsNext = withTab(tabs, r, route)
     if (sameTab(route, r)) {

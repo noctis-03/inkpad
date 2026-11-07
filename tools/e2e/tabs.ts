@@ -262,6 +262,69 @@ export default async function tabs(ctx: Ctx) {
   const reloaded = await tabKeys()
   check('바꾼 순서는 새로고침해도 남는다', JSON.stringify(reloaded) === JSON.stringify(await stored()) && reloaded.length === order0.length, JSON.stringify(reloaded))
 
+  // ── 탭을 화면 끝으로 끌어 놓아 옆 칸(듀얼) ──
+  {
+    await go({ name: 'editor', docId: A })
+    await p.waitForSelector('.pane-main .editor')
+    const ui = () => p.evaluate(async () => { const s = (await import('/src/app/store.ts')).useUI.getState(); return { split: s.split ? `${s.split.name}` : null, side: s.splitSide, route: s.route.name } })
+    // 마우스: 앱 탭을 아래로 내려 왼쪽 끝에
+    const a = await box(`app:${ids.app}`)
+    await p.mouse.move(a.x + 30, a.y + a.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(a.x + 30, a.y + 400, { steps: 5 }) // 먼저 아래로 (탭 바 안에서 옆으로 끌면 순서 바꾸기)
+    await p.mouse.move(20, a.y + 400, { steps: 6 })
+    const zones = await p.locator('.edge-drop').count()
+    const onLeft = await p.locator('.edge-drop.is-on').evaluate((e) => (e as HTMLElement).textContent)
+    const ghost = await p.locator('.tab-ghost').textContent()
+    await p.mouse.up()
+    await p.waitForSelector('.panes.is-split.side-left .pane-side iframe.app-runner-frame')
+    const s1 = await ui()
+    check('끌어 놓기(마우스): 탭을 아래로 내리면 화면 양 끝에 놓는 자리와 따라오는 탭', zones === 2 && (onLeft ?? '').includes('왼쪽') && ghost === '계산기', JSON.stringify({ zones, onLeft, ghost }))
+    check('…왼쪽 끝에 놓으면 왼쪽 옆 칸에 연다 — 가운데는 보던 노트, 순서 그대로', s1.split === 'app' && s1.side === 'left' && (await active()) === `doc:${A}` && JSON.stringify(await tabKeys()) === JSON.stringify(reloaded), JSON.stringify(s1))
+    check('…놓은 뒤 자리·따라오는 탭이 사라진다', (await p.locator('.edge-drop, .tab-ghost').count()) === 0)
+    // 손가락: 파일 탭을 길게 눌러 오른쪽 끝에
+    const f = await box(`file:${ids.file}`)
+    await p.evaluate(
+      async ([k, x0, y0]) => {
+        const el = document.querySelector(`.tabbar .tab[data-tab="${k}"]`)!
+        const ev = (type: string, x: number, y: number) => el.dispatchEvent(new PointerEvent(type, { pointerId: 8, pointerType: 'touch', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true }))
+        ev('pointerdown', x0, y0)
+        await new Promise((r) => setTimeout(r, 450))
+        const x1 = innerWidth - 20, y1 = y0 + 400
+        for (let i = 1; i <= 10; i++) {
+          ev('pointermove', i <= 5 ? x0 : x0 + ((x1 - x0) * (i - 5)) / 5, i <= 5 ? y0 + ((y1 - y0) * i) / 5 : y1)
+          await new Promise((r) => setTimeout(r, 16))
+        }
+        ev('pointerup', x1, y1)
+      },
+      [`file:${ids.file}`, f.x + 30, f.y + f.height / 2] as const
+    )
+    await p.waitForSelector('.panes.is-split:not(.side-left) .pane-side .file-runner')
+    check('끌어 놓기(손가락): 길게 눌러 오른쪽 끝에 놓으면 오른쪽 옆 칸에', (await ui()).side === 'right' && (await active()) === `doc:${A}`)
+    // 노트 탭은 옆 칸에 열 수 없다 — 놓아도 그대로
+    const n = await box(`doc:${A}`)
+    await p.mouse.move(n.x + 30, n.y + n.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(n.x + 30, n.y + 400, { steps: 5 })
+    await p.mouse.move(1190, n.y + 400, { steps: 6 })
+    const noLabel = await p.locator('.edge-drop.is-on.is-no').textContent()
+    await p.mouse.up()
+    await sleep(300)
+    check('끌어 놓기: 노트 탭은 "열 수 없어요"를 보이고, 놓아도 옆 칸은 그대로', (noLabel ?? '').includes('노트는') && (await ui()).split === 'file' && (await active()) === `doc:${A}`, String(noLabel))
+    // 다시 탭 바로 올리면 순서 바꾸기로 돌아온다 (옆 칸에 열지 않는다)
+    const a2 = await box(`app:${ids.app}`)
+    await p.mouse.move(a2.x + 30, a2.y + a2.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(a2.x + 20, a2.y + 400, { steps: 6 })
+    await p.mouse.move(10, a2.y + 400, { steps: 4 })
+    await p.mouse.move(a2.x + 20, a2.y + a2.height / 2, { steps: 6 })
+    const back = await p.locator('.edge-drop').count()
+    await p.mouse.up()
+    await sleep(300)
+    check('끌어 놓기: 탭 바로 다시 올리면 놓는 자리가 사라지고 옆 칸은 그대로', back === 0 && (await ui()).split === 'file')
+    await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().closeSplit())
+  }
+
   // ── 탭 닫기 ──
   await go({ name: 'editor', docId: A })
   await p.waitForSelector('.pane-main .editor')
