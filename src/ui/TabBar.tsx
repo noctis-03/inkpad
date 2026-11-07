@@ -1,7 +1,9 @@
 // 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일. 오른쪽 끝은 상태 칸(dock/StatusDock).
 // 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없어도 바(홈 탭)는 늘 그린다.
 // 탭은 끌어서 순서를 바꾼다 — 마우스·펜은 바로 끌고, 손가락은 길게 눌러 집는다(그냥 밀면 탭 바가 옆으로 넘어간다).
+// 끌던 탭을 탭 바 아래로 내려 화면 왼쪽·오른쪽 끝에 놓으면 그쪽 옆 칸(듀얼)에 연다.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { isHomeRoute, isTabRoute, routeKey, useUI, type TabRoute } from '../app/store'
 import { getDocument } from '../storage/repo'
 import { APPS_EVENT, getApp } from '../sync/apps'
@@ -20,6 +22,29 @@ const DRAG_START_PX = 6
 const TOUCH_SLOP_PX = 8
 /** 끌면서 탭 바 끝에 가까이 가면 바를 민다 */
 const EDGE_PX = 28
+/** 탭 바 아래로 이만큼 내려가면 탭을 바에서 떼어 화면 위로 끈다 (옆 칸에 놓기) */
+const DETACH_PX = 28
+/** 화면 끝 놓는 자리의 폭 — 칸 폭의 이 비율, 최대 EDGE_ZONE_MAX */
+const EDGE_ZONE_FRAC = 0.22
+const EDGE_ZONE_MAX = 180
+
+type Side = 'left' | 'right'
+/** 탭 바 밖으로 끄는 중 — 손가락 자리와 놓을 쪽 */
+interface Out {
+  x: number
+  y: number
+  zone: Side | null
+}
+/** 칸 영역(.panes)에서 화면 끝 놓는 자리 */
+function edgeZone(x: number, y: number): Side | null {
+  const r = document.querySelector('.panes')?.getBoundingClientRect()
+  if (!r || y < r.top || y > r.bottom) return null
+  const w = Math.min(EDGE_ZONE_MAX, r.width * EDGE_ZONE_FRAC)
+  return x < r.left + w ? 'left' : x > r.right - w ? 'right' : null
+}
+function panesRect() {
+  return document.querySelector('.panes')?.getBoundingClientRect() ?? null
+}
 
 interface Drag {
   key: string
@@ -33,6 +58,9 @@ interface Drag {
   on: boolean
   timer: number
   lastX: number
+  lastY: number
+  /** 탭 바 밖(칸 위)으로 끌고 있다 */
+  out: boolean
 }
 
 /** 문서(text 모드) 탭 — 아이콘만 다르다 */
@@ -86,6 +114,7 @@ export function TabBar() {
   const moveTab = useUI((s) => s.moveTab)
   const drag = useRef<Drag | null>(null)
   const [dragKey, setDragKey] = useState<string | null>(null)
+  const [out, setOut] = useState<Out | null>(null)
   /** 끌기를 마친 뒤 따라오는 click은 탭 열기가 아니다 */
   const swallowClick = useRef(false)
   /** 자리를 바꾸기 전 다른 탭들의 자리 — 바뀐 뒤 미끄러지듯 옮긴다 */
@@ -136,6 +165,10 @@ export function TabBar() {
     const d = drag.current
     const el = d && tabEl(d.key)
     if (!d || !el) return
+    if (d.out) {
+      el.style.transform = ''
+      return
+    }
     el.style.transform = `translateX(${contentX(d.lastX) - d.grab - el.offsetLeft}px)`
   }
   /** 끄는 탭의 가운데가 이웃 탭의 가운데를 넘으면 자리를 바꾼다 */
@@ -179,6 +212,13 @@ export function TabBar() {
     if (!d.on) return
     swallowClick.current = !cancelled
     setDragKey(null)
+    setOut(null)
+    if (d.out) {
+      // 화면 끝에 놓았다 — 그쪽 옆 칸에 연다 (노트는 옆 칸에 열 수 없다)
+      const zone = cancelled ? null : edgeZone(d.lastX, d.lastY)
+      if (zone && d.tab.name !== 'editor') openSplit(d.tab, zone)
+      return
+    }
     const el = tabEl(d.key)
     if (!el) return
     // 손을 떼면 제자리로 미끄러져 들어간다
@@ -191,7 +231,7 @@ export function TabBar() {
     if (e.button !== 0 || (e.target as HTMLElement).closest('.tab-close') || drag.current) return
     const el = e.currentTarget
     const touch = e.pointerType === 'touch'
-    const d: Drag = { key: routeKey(t), tab: t, id: e.pointerId, touch, x0: e.clientX, y0: e.clientY, grab: contentX(e.clientX) - el.offsetLeft, on: false, timer: 0, lastX: e.clientX }
+    const d: Drag = { key: routeKey(t), tab: t, id: e.pointerId, touch, x0: e.clientX, y0: e.clientY, grab: contentX(e.clientX) - el.offsetLeft, on: false, timer: 0, lastX: e.clientX, lastY: e.clientY, out: false }
     drag.current = d
     if (touch) d.timer = window.setTimeout(startDrag, TOUCH_HOLD_MS)
     try {
@@ -204,6 +244,7 @@ export function TabBar() {
     const d = drag.current
     if (!d || d.id !== e.pointerId) return
     d.lastX = e.clientX
+    d.lastY = e.clientY
     if (!d.on) {
       const dist = Math.hypot(e.clientX - d.x0, e.clientY - d.y0)
       if (d.touch) {
@@ -215,6 +256,15 @@ export function TabBar() {
     }
     const b = bar.current!
     const r = b.getBoundingClientRect()
+    // 탭 바 아래로 내리면 떼어 낸다 — 화면 끝에 놓으면 옆 칸. 다시 바로 올리면 순서 바꾸기로 돌아온다
+    const wasOut = d.out
+    d.out = splitAllowed && e.clientY > r.bottom + DETACH_PX
+    if (d.out) {
+      if (!wasOut) place()
+      setOut({ x: e.clientX, y: e.clientY, zone: edgeZone(e.clientX, e.clientY) })
+      return
+    }
+    if (wasOut) setOut(null)
     if (e.clientX < r.left + EDGE_PX) b.scrollLeft -= 10
     else if (e.clientX > r.right - EDGE_PX) b.scrollLeft += 10
     place()
@@ -305,6 +355,7 @@ export function TabBar() {
         })}
       </div>
       <StatusDock />
+      {out && dragKey && <EdgeDrop out={out} title={titles.get(dragKey) ?? ''} note={dragKey.startsWith('doc:')} />}
 
       {menu && (
         <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
@@ -359,5 +410,33 @@ export function TabBar() {
         </Menu>
       )}
     </nav>
+  )
+}
+
+/** 탭을 떼어 끄는 동안 — 손가락을 따라오는 탭과 화면 왼쪽·오른쪽 끝의 놓는 자리 */
+function EdgeDrop({ out, title, note }: { out: Out; title: string; note: boolean }) {
+  const r = panesRect()
+  if (!r) return null
+  const w = Math.min(EDGE_ZONE_MAX, r.width * EDGE_ZONE_FRAC)
+  const zone = (side: Side) => (
+    <div
+      className={'edge-drop' + (out.zone === side ? ' is-on' : '') + (note ? ' is-no' : '')}
+      style={{ left: side === 'left' ? r.left : r.right - w, top: r.top, width: w, height: r.height }}
+    >
+      <span className="edge-drop-label">
+        <Icon name={note ? 'close' : 'sidebar'} size={18} />
+        {note ? '노트는 옆 칸에 열 수 없어요' : side === 'left' ? '왼쪽 칸에 열기' : '오른쪽 칸에 열기'}
+      </span>
+    </div>
+  )
+  return createPortal(
+    <>
+      {zone('left')}
+      {zone('right')}
+      <div className="tab-ghost" style={{ left: out.x, top: out.y }}>
+        {title}
+      </div>
+    </>,
+    document.body
   )
 }
