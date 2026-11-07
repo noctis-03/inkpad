@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Inky, Inkpad mascot">
+  <ellipse cx="128" cy="236" rx="52" ry="7" fill="#161513" opacity=".08"/>
+  <path d="M128 26C128 26 58 104 58 158a70 70 0 0 0 140 0C198 104 128 26 128 26Z" fill="#2f62e0"/>
+  <path d="M84 150c2-22 16-46 30-64" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" opacity=".28"/>
+  <rect x="99" y="138" width="16" height="30" rx="8" fill="#f7f6f2"/>
+  <rect x="141" y="138" width="16" height="30" rx="8" fill="#f7f6f2"/>
+  <path d="M113 186q15 13 30 0" fill="none" stroke="#f7f6f2" stroke-width="6" stroke-linecap="round"/>
+</svg>
