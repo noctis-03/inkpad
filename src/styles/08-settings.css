@@ -86,7 +86,7 @@
 }
 
 /* ── 카테고리 지정 창 (ui/library/CategoryPicker) ──
-   입력 하나로 검색·새로 만들기, 사이드바와 같은 색 점·[태그] 묶음, 색 점을 누르면 그 자리에서 색 고르기.
+   입력 하나로 검색·새로 만들기, 사이드바와 같은 [태그] 묶음. 색 점은 두지 않는다(이름으로 고르는 창).
    좁은 화면(600px 이하)에서는 아래에서 올라오는 시트 */
 .modal.cp {
   width: min(420px, 100%);
@@ -197,7 +197,7 @@
   margin: 6px 4px;
   background: var(--line);
 }
-/* 한 줄: [색 점 버튼 36px][이름 … 개수 ✓] — 점을 누르면 색, 나머지를 누르면 지정 */
+/* 한 줄: [이름 … 개수 ✓] */
 .cp-row,
 .cp-cat {
   display: flex;
@@ -209,7 +209,7 @@
 }
 .cp-row {
   gap: 8px;
-  padding: 0 12px 0 0;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   font: inherit;
@@ -221,7 +221,6 @@
 .cp-cat > .cp-row {
   flex: 1;
   min-width: 0;
-  padding-left: 2px;
 }
 .cp-row:hover,
 .cp-row.is-active,
@@ -259,48 +258,6 @@
 .cp-cat.is-confirm {
   box-shadow: inset 0 0 0 1.5px var(--warn-line);
   background: var(--warn-soft);
-}
-.cp-dot-hit {
-  flex: none;
-  width: 36px;
-  height: 44px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: inherit;
-}
-button.cp-dot-hit {
-  cursor: pointer;
-}
-button.cp-dot-hit:hover .cp-dot {
-  box-shadow: 0 0 0 3px var(--surface), 0 0 0 4.5px currentColor;
-}
-.cp-dot-hit.is-open .cp-dot {
-  box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px currentColor;
-}
-.cp-dot {
-  display: inline-block;
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--r-pill);
-}
-.cp-dot.is-small,
-.cp-chip .cp-dot {
-  width: 8px;
-  height: 8px;
-}
-/* 카테고리 없음 — 색이 아니라 모양(속이 빈 링)으로 '없음' */
-.cp-ring {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  box-sizing: border-box;
-  border: 1.5px solid var(--muted-2);
-  border-radius: var(--r-pill);
 }
 .cp-name {
   flex: 1;
@@ -382,82 +339,10 @@ button.cp-dot-hit:hover .cp-dot {
 .cp-chev.is-open {
   transform: rotate(90deg);
 }
-.cp-group-dots {
-  display: inline-flex;
-  gap: 3px;
-}
-.cp-group-dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--r-pill);
-}
 .cp-group-cur {
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--accent);
-}
-/* 색 고르기 — 그 줄 바로 아래에 펼친다 */
-.cp-pop {
-  margin: 2px 4px 8px 4px;
-  padding: 12px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: var(--e2);
-}
-.cp-pop.is-child {
-  margin-left: 26px;
-}
-.cp-pop-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 28px;
-  margin-bottom: 8px;
-  font-size: var(--fs-sm);
-  color: var(--muted);
-}
-.cp-swatches {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-  justify-items: center;
-}
-.cp-swatch {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: var(--r-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.cp-swatch svg {
-  color: #fff;
-}
-.cp-swatch.is-on {
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px currentColor;
-}
-/* 다른 카테고리가 쓰는 색 — 골라도 되지만 겹친다는 표시 */
-.cp-swatch.is-used::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 10px;
-  height: 10px;
-  box-sizing: border-box;
-  border: 2.5px solid currentColor;
-  border-radius: var(--r-pill);
-  background: var(--surface);
-}
-.cp-pop-note {
-  margin-top: 10px;
-  font-size: var(--fs-xs);
-  color: var(--muted);
 }
 .cp-suggest {
   background: var(--warn-soft);
@@ -465,6 +350,9 @@ button.cp-dot-hit:hover .cp-dot {
 .cp-create {
   min-height: 52px;
   color: var(--accent);
+}
+.cp-create > .cp-plus {
+  flex: none;
 }
 .cp-plus {
   width: 18px;

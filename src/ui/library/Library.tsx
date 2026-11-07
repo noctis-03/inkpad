@@ -17,7 +17,6 @@ import { FilesSheet } from '../FilesSheet'
 import { AssetsSheet } from '../AssetsSheet'
 import { NoteAssetsSheet } from './NoteAssetsSheet'
 import { CategoryPicker, categoryDisplay } from './CategoryPicker'
-import { useCategoryColorVersion } from '../../storage/categoryColors'
 import { Menu, MenuItem } from '../Menu'
 import { FolderTree, SyncPill, refreshThumbnails, downloadNoteAssets, TitleText, MARKS, MarkGlyph, markInfo } from './parts'
 import type { DocumentMeta, Folder, HtmlApp, ID } from '../../shared/model'
@@ -934,12 +933,7 @@ export function Library() {
   }, [docs, apps, files, folders, cloudOnly])
 
   /** 카테고리 색 — 이 기기의 카테고리 전체(휴지통 노트 포함)를 보고 겹치지 않게 배정한다 */
-  const colorVersion = useCategoryColorVersion() // 카테고리 지정 창에서 색을 고르면 다시 배정한다
-  const catColors = useMemo(
-    () => assignCategoryColors([...allCategories, ...trash.map((d) => d.category)]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allCategories, trash, colorVersion]
-  )
+  const catColors = useMemo(() => assignCategoryColors([...allCategories, ...trash.map((d) => d.category)]), [allCategories, trash])
   const catColor = (c: string | null | undefined) => categoryColor(c, catColors)
 
   /** 카테고리별 항목 수 (노트·앱·파일, 휴지통 제외) — 카테고리 지정 창의 개수 */
@@ -2315,7 +2309,6 @@ export function Library() {
           categories={allCategories}
           counts={categoryCounts}
           hidden={hiddenCats}
-          colorOf={catColor}
           recent={recentCats}
           onClose={() => setCatTarget(null)}
           onPick={(cat) => void applyCategory(catTargetInfo.items, cat)}

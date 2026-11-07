@@ -18,8 +18,7 @@
 //     문서 JSON은 gzip으로 올린다(appProperties.enc 표식). appProperties에 제목·기기·카테고리와 main 표식
 //     (gen·mid·m.{기기}, sync/branch.ts)을 함께 넣어, 클라우드 노트 목록과 상태를 메타만으로 그린다
 //  9. 폴더·카테고리 매핑·숨김은 기기별 로컬 전용 — Drive로 주고받지 않는다.
-//     카테고리는 문서 파일의 category 필드로 동기화하고, 숨긴 카테고리의 노트는 받기에서 건너뛴다.
-//     사용자가 고른 카테고리 색은 노트와 따로 파일 하나로 오간다 — 고칠 때 바로 올리고, 받기 끝에 함께 받는다 (sync/categoryColors)
+//     카테고리는 문서 파일의 category 필드로 동기화하고, 숨긴 카테고리의 노트는 받기에서 건너뛴다
 //     앱·기타 파일은 노트 동기화와 분리 — 각 메뉴(sync/apps.ts, sync/files.ts)에서 관리
 // 10. 문서 위치 기록(doc:)의 version은 앞으로만 간다. Drive version은 실제보다 뒤처져 보일 수 있고
 //     (listFiles 인덱스 지연, 리비전 고정·해제 같은 메타데이터 전용 쓰기도 값을 올린다),
@@ -39,7 +38,6 @@ import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { DocBusyError, flushOpenDocs, withDocExclusive } from '../storage/docGuard'
 import { getHiddenCategories } from '../storage/repo'
-import { syncCategoryColors } from './categoryColors'
 import { applyDocFile } from './apply'
 import * as drive from './drive'
 import { indexAssets } from './assets'
@@ -760,8 +758,6 @@ export async function pullNow(choices: PullChoices = {}): Promise<PullResult | n
         }
       }
       const r = await pull(f)
-      // 사용자가 고른 카테고리 색도 함께 맞춘다 — 파일 하나라 실패해도 노트 받기는 그대로 끝낸다 (sync/categoryColors)
-      await syncCategoryColors().catch((e) => console.warn('[catColors] 카테고리 색을 맞추지 못했다', e))
       await db.syncState.put({ key: 'lastPullAt', value: Date.now() })
       setStatus('idle')
       act.done(syncDoneText(pushed, r.docs + overwritten))
