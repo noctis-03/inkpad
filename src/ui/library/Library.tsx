@@ -2175,6 +2175,7 @@ export function Library() {
                     aria-pressed={activeTag === t}
                     onClick={() => setTagFilter(activeTag === t ? null : t)}
                   >
+                    <i className="cat-dot" style={{ background: catColor(t) }} aria-hidden="true" />
                     {t}
                   </button>
                 ))}
