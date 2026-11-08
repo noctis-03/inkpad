@@ -597,6 +597,11 @@
   font-size: var(--fs-md);
   cursor: pointer;
 }
+.folder-chip.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
 /* 라이브러리 빈 상태 자리 — 안쪽 모양은 공용 .store-empty(아이콘 칸·제목·설명·동작) */
 .empty-state {
   display: flex;
