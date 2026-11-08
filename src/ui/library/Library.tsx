@@ -69,7 +69,8 @@ import { SheetEmpty } from '../sheetParts'
 import { openChanges } from '../ChangesView'
 import { THUMBS_EVENT } from '../../io/docThumb'
 import { fileThumbKey, getItemThumbRows, syncItemThumbs } from '../../io/itemThumb'
-import { APPS_EVENT, addApp, listApps, uninstallApp, updateAppHtml, updateAppMeta } from '../../sync/apps'
+import { APPS_EVENT, addApp, addWebShortcut, listApps, uninstallApp, updateAppHtml, updateAppMeta, updateWebShortcut } from '../../sync/apps'
+import { normalizeShortcutUrl, openShortcut, shortcutHost, shortcutUrlOf } from '../../shared/webShortcut'
 import { FILES_EVENT, addFile, fileToBlob, getFile, listFiles, removeFileLocal, updateFileMeta } from '../../sync/files'
 import { UPLOADING_EVENT, isUploading } from '../../sync/uploading'
 import { confirmTransfer, uploadChoice } from '../../sync/transfer'
@@ -767,6 +768,8 @@ export function Library() {
     key: string
     id: ID
     kind: 'app' | 'file'
+    /** 웹 바로가기 주소 — 있으면 링크 카드 (실행 대신 열기) */
+    url?: string | null
     title: string
     category: string | null | undefined
     updatedAt: number
@@ -775,7 +778,7 @@ export function Library() {
     onPlay: () => void
     onMenu: (x: number, y: number) => void
   }) => {
-    const kindLabel = o.kind === 'app' ? 'HTML 앱' : o.ext || '파일'
+    const kindLabel = o.url ? shortcutHost(o.url) : o.kind === 'app' ? 'HTML 앱' : o.ext || '파일'
     const date = formatDate(o.updatedAt)
     const thumb = o.kind === 'file' ? thumbs.get(fileThumbKey(o.id)) : undefined // HTML 앱은 늘 아이콘
     const busy = isUploading(o.id) ? <i className="item-busy" role="status" aria-label="올리는 중" title="올리는 중" /> : null
@@ -790,14 +793,14 @@ export function Library() {
         onClick={() => selectClick(o.key) || cardTap(o.key, o.onPlay)}
       >
         <div className="doc-thumb">
-          {thumb ? <img src={thumb} alt="" draggable={false} /> : <Icon name={o.kind} size={36} />}
+          {thumb ? <img src={thumb} alt="" draggable={false} /> : <Icon name={o.url ? 'link' : o.kind} size={36} />}
           <span className="doc-gloss" aria-hidden="true" />
           {selectCheck(o.key)}
           {markBadge(o.key)}
           {prefs.view === 'grid' &&
             openPanel(`${kindLabel} · ${date}`, {
-              icon: o.kind === 'app' ? 'play' : 'eye',
-              label: o.kind === 'app' ? '실행' : '열기',
+              icon: o.url ? 'external' : o.kind === 'app' ? 'play' : 'eye',
+              label: o.kind === 'app' && !o.url ? '실행' : '열기',
               run: () => o.onPlay()
             })}
         </div>
@@ -1517,12 +1520,51 @@ export function Library() {
     if (files.length) await addAppFiles(files)
   }
 
+  /** 웹 바로가기 추가 — 주소, 이름을 차례로 묻는다 */
+  const onAddShortcut = async () => {
+    let value = ''
+    let url: string | null = null
+    for (;;) {
+      const raw = await promptDialog('웹 바로가기', { message: '사이트 주소를 입력하세요. 예: naver.com', value, ok: '다음' })
+      if (raw === null || !raw.trim()) return
+      url = normalizeShortcutUrl(raw)
+      if (url) break
+      value = raw
+      toast('열 수 없는 주소입니다. http(s) 주소를 입력해 주세요.', 'error')
+    }
+    const title = await promptDialog('바로가기 이름', { value: shortcutHost(url), ok: '추가' })
+    if (title === null) return
+    try {
+      const r = await addWebShortcut(url, title.trim() || shortcutHost(url), defaultCategory())
+      toast(r.uploaded ? '바로가기를 추가하고 클라우드에 저장했습니다.' : '바로가기를 추가했습니다. 클라우드에는 다음 올리기 때 저장됩니다.', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '바로가기를 추가하지 못했습니다.', 'error')
+    }
+    await refresh()
+  }
+
   const appAction = async (action: string, a: HtmlApp) => {
     setAppMenu(null)
     switch (action) {
-      case 'run':
-        navigate({ name: 'app', appId: a.id })
+      case 'run': {
+        const url = shortcutUrlOf(a)
+        if (url) openShortcut(url)
+        else navigate({ name: 'app', appId: a.id })
         return
+      }
+      case 'url': {
+        const cur = shortcutUrlOf(a) ?? ''
+        const raw = await promptDialog('주소 바꾸기', { value: cur, ok: '저장' })
+        if (raw === null || !raw.trim() || raw.trim() === cur) return
+        const url = normalizeShortcutUrl(raw)
+        if (!url) {
+          toast('열 수 없는 주소입니다. http(s) 주소를 입력해 주세요.', 'error')
+          return
+        }
+        const up = await updateWebShortcut(a.id, url)
+        toast(up ? '주소를 바꿨습니다.' : '주소를 바꿨습니다. 클라우드에는 다음 올리기 때 저장됩니다.', 'success')
+        break
+      }
       case 'rename': {
         const t = await promptDialog('이름 바꾸기', { value: a.title, ok: '저장' })
         if (t?.trim()) await updateAppMeta(a.id, { title: t.trim() })
@@ -2285,12 +2327,17 @@ export function Library() {
                       key: 'app:' + i.a.id,
                       id: i.a.id,
                       kind: 'app',
+                      url: shortcutUrlOf(i.a),
                       title: i.a.title,
                       category: i.a.category,
                       updatedAt: i.a.updatedAt,
                       ext: '',
                       idx,
-                      onPlay: () => navigate({ name: 'app', appId: i.a.id }),
+                      onPlay: () => {
+                        const url = shortcutUrlOf(i.a)
+                        if (url) openShortcut(url)
+                        else navigate({ name: 'app', appId: i.a.id })
+                      },
                       onMenu: (x, y) => setAppMenu({ app: i.a, x, y })
                     })
                   ) : i.kind === 'cloud' ? (
@@ -2463,11 +2510,20 @@ export function Library() {
 
       {appMenu && (
         <Menu x={appMenu.x} y={appMenu.y} onClose={() => setAppMenu(null)}>
-          <MenuItem icon="play" label="실행" onClick={() => appAction('run', appMenu.app)} />
-          <MenuItem icon="upload" label="업데이트 (새 HTML 올리기)" onClick={() => appAction('update', appMenu.app)} />
+          {shortcutUrlOf(appMenu.app) ? (
+            <>
+              <MenuItem icon="external" label="열기" onClick={() => appAction('run', appMenu.app)} />
+              <MenuItem icon="link" label="주소 바꾸기" onClick={() => appAction('url', appMenu.app)} />
+            </>
+          ) : (
+            <>
+              <MenuItem icon="play" label="실행" onClick={() => appAction('run', appMenu.app)} />
+              <MenuItem icon="upload" label="업데이트 (새 HTML 올리기)" onClick={() => appAction('update', appMenu.app)} />
+            </>
+          )}
           <MenuItem icon="edit" label="이름 바꾸기" onClick={() => appAction('rename', appMenu.app)} />
           <MenuItem icon="tag" label="카테고리 지정" onClick={() => appAction('category', appMenu.app)} />
-          <MenuItem icon="download" label=".html로 내보내기" onClick={() => appAction('export', appMenu.app)} />
+          {!shortcutUrlOf(appMenu.app) && <MenuItem icon="download" label=".html로 내보내기" onClick={() => appAction('export', appMenu.app)} />}
           <MenuItem icon="trash" label="이 기기에서 제거" danger onClick={() => appAction('remove', appMenu.app)} />
         </Menu>
       )}
@@ -2557,6 +2613,10 @@ export function Library() {
           onAddApp={() => {
             setShowNew(false)
             void onAddApp()
+          }}
+          onAddShortcut={() => {
+            setShowNew(false)
+            void onAddShortcut()
           }}
           onAddFile={() => {
             setShowNew(false)

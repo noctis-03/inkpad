@@ -14,6 +14,7 @@ import { addApp, getApp, loadAppStorage, saveAppStorage } from '../../sync/apps'
 import { addFile } from '../../sync/files'
 import { uploadAsk, uploadChoice } from '../../sync/transfer'
 import { buildSrcDoc } from './bridge'
+import { openShortcut, shortcutUrlOf } from '../../shared/webShortcut'
 import { InkpadFilePicker } from './InkpadFilePicker'
 import { RunnerBack, RunnerSplit, type PaneSlot } from './RunnerNav'
 
@@ -212,6 +213,15 @@ export function AppRunner({ appId, pane = 'main' }: { appId: ID; pane?: PaneSlot
       {app === null ? (
         <div className="empty-state">
           <p>앱을 찾을 수 없습니다.</p>
+        </div>
+      ) : app && shortcutUrlOf(app) ? (
+        // 웹 바로가기 — 탭·앱 메뉴 등으로 들어온 경우. 팝업 차단 때문에 저절로 열지 않고 누르게 한다
+        <div className="empty-state">
+          <Icon name="link" size={36} />
+          <p>{shortcutUrlOf(app)}</p>
+          <button className="primary-btn" onClick={() => openShortcut(shortcutUrlOf(app)!)}>
+            <Icon name="external" size={18} /> 사이트 열기
+          </button>
         </div>
       ) : (
         app && (

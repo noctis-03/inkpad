@@ -33,6 +33,7 @@ export function NewDocumentSheet(props: {
   onImportPdf: () => void
   onImportInkpad: () => void
   onAddApp: () => void
+  onAddShortcut: () => void
   onAddFile: () => void
 }) {
   const [mode, setMode] = useState<DocMode>('paged')
@@ -209,6 +210,9 @@ export function NewDocumentSheet(props: {
             </button>
             <button className="import-btn" onClick={props.onAddApp}>
               <Icon name="app" size={20} /> HTML 앱
+            </button>
+            <button className="import-btn" onClick={props.onAddShortcut}>
+              <Icon name="link" size={20} /> 웹 바로가기
             </button>
             <button className="import-btn" onClick={props.onAddFile}>
               <Icon name="file" size={20} /> 파일

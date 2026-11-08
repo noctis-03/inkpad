@@ -4,6 +4,7 @@
 import { trackActivity } from '../shared/activity'
 import { MAX_APP_BYTES, MAX_APP_TITLE_CHARS, type HtmlApp, type ID } from '../shared/model'
 import { ulid } from '../shared/ulid'
+import { shortcutHtml, shortcutUrlOf } from '../shared/webShortcut'
 import { db } from '../storage/db'
 import * as drive from './drive'
 import { ensureStoreFolder, tryUpload } from './folders'
@@ -55,6 +56,27 @@ export async function addApp(file: File, category: string | null): Promise<{ app
   return { app, uploaded: await tryFlush(app.id) }
 }
 
+/** 웹 바로가기 추가 — 주소를 담은 작은 HTML 앱으로 저장한다 (shared/webShortcut). url은 normalizeShortcutUrl을 거친 값 */
+export async function addWebShortcut(url: string, title: string, category: string | null): Promise<{ app: HtmlApp; uploaded: boolean }> {
+  const t = title.slice(0, MAX_APP_TITLE_CHARS)
+  const html = shortcutHtml(url, t)
+  const now = Date.now()
+  const app: HtmlApp = { id: ulid(), title: t, category, html, size: new Blob([html]).size, createdAt: now, updatedAt: now, pending: 'upsert' }
+  await db.apps.add(app)
+  emit()
+  return { app, uploaded: await tryFlush(app.id) }
+}
+
+/** 바로가기 주소 바꾸기 (이름·카테고리 유지) */
+export async function updateWebShortcut(id: ID, url: string): Promise<boolean> {
+  const a = await db.apps.get(id)
+  if (!a) return false
+  const html = shortcutHtml(url, a.title)
+  await db.apps.update(id, { html, size: new Blob([html]).size, updatedAt: Date.now(), pending: 'upsert' })
+  emit()
+  return tryFlush(id)
+}
+
 /** 업데이트 = 새 HTML 파일로 교체 (이름·카테고리 유지) */
 export async function updateAppHtml(id: ID, file: File): Promise<boolean> {
   const html = await readHtml(file)
@@ -66,7 +88,11 @@ export async function updateAppHtml(id: ID, file: File): Promise<boolean> {
 export async function updateAppMeta(id: ID, patch: { title?: string; category?: string | null }): Promise<boolean> {
   const p = { ...patch }
   if (p.title) p.title = p.title.slice(0, MAX_APP_TITLE_CHARS)
-  await db.apps.update(id, { ...p, updatedAt: Date.now(), pending: 'upsert' })
+  // 바로가기는 본문 <title>도 같이 바꾼다 (예전 버전에서 실행했을 때 보이는 이름)
+  const a = p.title ? await db.apps.get(id) : undefined
+  const url = a && shortcutUrlOf(a)
+  const body = url && p.title ? (() => { const html = shortcutHtml(url, p.title); return { html, size: new Blob([html]).size } })() : {}
+  await db.apps.update(id, { ...p, ...body, updatedAt: Date.now(), pending: 'upsert' })
   emit()
   return tryFlush(id)
 }
