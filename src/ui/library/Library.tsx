@@ -257,6 +257,7 @@ export function Library() {
   // 고른 항목 바로 아래에 '최근 열람한 노트'가 펼쳐진다 — 항목마다 그 항목에 속한 최근 노트만 보여 준다
   const [recent, setRecent] = useState(() => loadRecentDocs())
   const [recentOnly, setRecentOnly] = useState(false)
+  const [tagFilter, setTagFilter] = useState<string | null>(null) // 카드 위 [태그] 칩으로 고른 태그
   // 최근 열람 항목을 펼칠 수 있는 곳 — 노트를 담는 항목에서만 (모든 앱·기타 파일·휴지통에는 없다)
   const recentScope =
     section.kind === 'all' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'category' || section.kind === 'catgroup' || section.kind === 'uncategorized' || section.kind === 'folder'
@@ -281,6 +282,7 @@ export function Library() {
   // 다른 항목을 고르면 최근 열람 모드를 끈다 (최근 열람은 고른 항목 바로 아래에서 다시 펼친다)
   useEffect(() => {
     setRecentOnly(false)
+    setTagFilter(null) // 카드 위 [태그] 칩 거르기도 풀린다
   }, [section])
 
   // 미리보기 지도 적용 순번 — 나중에 '시작한' 읽기만 적용한다.
@@ -1076,7 +1078,7 @@ export function Library() {
   }, [recentActive, cloudShown, folders, section, dq])
 
   /** 노트 + 앱 + 파일을 한 목록으로 합쳐 정렬한다 (노트만 있으면 기존 노트 정렬을 그대로 쓴다) */
-  const items = useMemo<Item[]>(() => {
+  const sectionItems = useMemo<Item[]>(() => {
     const list: Item[] = [
       ...visible.map((d) => ({ kind: 'doc' as const, d })),
       ...visibleApps.map((a) => ({ kind: 'app' as const, a })),
@@ -1093,6 +1095,19 @@ export function Library() {
     if (section.kind === 'catgroup' && !recentActive) list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
     return list
   }, [visible, visibleApps, visibleFiles, visibleCloud, prefs.sort, section, recentActive])
+  /** 카드 위 [태그] 칩 — '전체'에서는 모든 카테고리의 태그, 묶음에서는 그 묶음 안의 태그. 누르면 그 태그만 걸러 본다 */
+  const tagScope = (section.kind === 'all' || section.kind === 'catgroup') && !query
+  const tagChips = useMemo(() => {
+    if (!tagScope) return []
+    const s = new Set<string>()
+    for (const i of sectionItems) {
+      const t = itemTag(i)
+      if (t) s.add(t)
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [sectionItems, tagScope])
+  const activeTag = tagFilter && tagChips.includes(tagFilter) ? tagFilter : null
+  const items = useMemo(() => (activeTag ? sectionItems.filter((i) => itemTag(i) === activeTag) : sectionItems), [sectionItems, activeTag])
   /** 고를 수 있는 카드 — 클라우드에만 있는 노트는 이 기기에 없어 옮기기·지우기 대상이 아니다 */
   const selectable = useMemo(() => items.filter((i) => i.kind !== 'cloud'), [items])
   // 검색 등으로 보이지 않게 된 카드는 선택에서 뺀다
@@ -1241,11 +1256,6 @@ export function Library() {
     if (section.kind === 'category' && !shownCategories.includes(section.name)) setSection({ kind: 'all' })
     if (section.kind === 'catgroup' && !shownCategories.some((c) => inCatGroup(c, section.name))) setSection({ kind: 'all' })
   }, [ready, shownCategories, section])
-
-  const subfolders = useMemo(
-    () => (section.kind === 'trash' || query ? [] : folders.filter((f) => f.parentId === currentFolderId)),
-    [folders, section, currentFolderId, query]
-  )
 
   const breadcrumb = useMemo(() => {
     const out: Folder[] = []
@@ -2156,11 +2166,16 @@ export function Library() {
               </div>
             )}
 
-            {subfolders.length > 0 && (
-              <section className="folder-strip" aria-label="하위 폴더">
-                {subfolders.map((f) => (
-                  <button key={f.id} className="folder-chip" onClick={() => setSection({ kind: 'folder', id: f.id })}>
-                    <Icon name="folder" size={18} /> {f.name}
+            {tagChips.length > 0 && (
+              <section className="folder-strip" role="group" aria-label="태그">
+                {tagChips.map((t) => (
+                  <button
+                    key={t}
+                    className={'folder-chip' + (activeTag === t ? ' is-on' : '')}
+                    aria-pressed={activeTag === t}
+                    onClick={() => setTagFilter(activeTag === t ? null : t)}
+                  >
+                    {t}
                   </button>
                 ))}
               </section>
