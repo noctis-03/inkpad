@@ -565,6 +565,11 @@
   background: var(--success-soft);
   border: 1px solid var(--success-line);
 }
+/* 사이드바 아래 줄(설정 옆)에 둘 때도 같은 모양 — .lib-side-foot .tb-btn의 알약·회색 글자를 덮는다 */
+.lib-side-foot .tb-btn.sync-btn {
+  border-radius: var(--r-md);
+  color: var(--success-ink);
+}
 .tb-btn.sync-btn:active,
 .tb-btn.sync-btn.is-active {
   background: var(--success-soft);

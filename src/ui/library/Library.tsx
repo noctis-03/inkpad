@@ -1792,7 +1792,7 @@ export function Library() {
     </button>
   )
 
-  // 동기화(구름) — 사이드바를 열었든 닫았든 늘 상단 바에 둔다
+  // 동기화(구름) — 데스크톱에서 사이드바를 열면 아래 줄 설정 옆, 아니면 상단 바. 한 곳에만 둔다(sideTools)
   const syncButton = (
     <button
       className={'tb-btn sync-btn' + (syncing ? ' is-syncing' : '')}
@@ -1979,13 +1979,14 @@ export function Library() {
                 <Icon name="trash" size={18} /> 휴지통 <span className="count"><CountUp value={trash.length} /></span>
               </button>
             </nav>
-            {/* 아래 줄 — 이 기기 이름 · 설정 (동기화는 늘 상단 바) */}
+            {/* 아래 줄 — 이 기기 이름 · 설정 · 동기화 (사이드바가 서랍·듀얼이면 동기화는 상단 바) */}
             <div className="lib-side-foot">
               <span className="side-avatar" aria-hidden="true">{(deviceName.trim()[0] ?? 'i').toUpperCase()}</span>
               <span className="side-device">{deviceName || '이 기기'}</span>
               <button className="tb-btn settings-btn" onClick={() => setShowSettings(true)} aria-label="설정">
                 <Icon name="gear" />
               </button>
+              {sideTools && syncButton}
             </div>
           </aside>
         )}
@@ -2087,7 +2088,7 @@ export function Library() {
                     <Icon name="gear" />
                   </button>
                 )}
-                {syncButton}
+                {!sideTools && syncButton}
                 {!sideTools && section.kind !== 'trash' && (
                   <button id="new-doc-btn" className="primary-btn" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
                     <Icon name="plus" size={18} /> <span className="new-doc-label">새로 만들기</span>
