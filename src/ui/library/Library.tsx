@@ -2175,7 +2175,7 @@ export function Library() {
                     aria-pressed={activeTag === t}
                     onClick={() => setTagFilter(activeTag === t ? null : t)}
                   >
-                    [{t}]
+                    {t}
                   </button>
                 ))}
               </section>
