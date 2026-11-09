@@ -39,6 +39,7 @@ export const PATHS: Record<string, string> = {
   page: 'M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM8 7h8M8 11h8M8 15h5',
   textDoc: 'M5 4h14M5 9h9M5 14h14M5 19h10',
   copy: 'M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2ZM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+  refresh: 'M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.5 2.5L21 8M21 3v5h-5',
   restore: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5',
   edit: 'M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
   move: 'M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20',

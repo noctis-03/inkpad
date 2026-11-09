@@ -353,6 +353,9 @@ export function TabBar() {
         })}
       </div>
       <StatusDock />
+      <button className="tabbar-reload" onClick={() => location.reload()} aria-label="새로고침" title="새로고침">
+        <Icon name="refresh" size={17} />
+      </button>
       {out &&
         dragKey &&
         createPortal(

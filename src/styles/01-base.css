@@ -372,6 +372,28 @@ input[type='radio'] {
   justify-content: center;
   padding: 0;
 }
+.tabbar-reload {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  margin: 0 -2px 0 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tabbar-reload:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.tabbar-reload:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: -2px;
+}
 .tab-title {
   flex: 1;
   min-width: 0;
