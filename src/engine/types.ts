@@ -59,6 +59,8 @@ export interface Settings {
   // 꾹 눌러 도구창 부르기 — 펜·마우스로 캔버스를 누른 채 가만히 있으면 도구창이 그 곁으로 온다.
   // 누른 채 도구창 버튼으로 옮겨 가면 그 도구가 켜지고, 떼면 도구창은 제자리로 (ui/editor/FloatingToolbar.tsx)
   holdToolbar: boolean
+  // 부른 도구창 모양 — 원형(누른 점 둘레로 동그랗게 말린다, 방향으로 고른다) / 일자(바 그대로 곁으로)
+  holdToolbarShape: 'ring' | 'bar'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -92,7 +94,8 @@ export const DEFAULT_SETTINGS: Settings = {
   density: 'comfortable',
   lassoShape: 'free',
   minimap: true,
-  holdToolbar: true
+  holdToolbar: true,
+  holdToolbarShape: 'ring'
 }
 
 export interface PenStyle {

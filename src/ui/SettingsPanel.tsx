@@ -362,6 +362,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         <Row label="꾹 눌러 도구창 부르기" hint="펜·마우스로 캔버스를 누른 채 잠시 가만히 있으면 도구창이 그 곁으로 옵니다. 누른 채 도구 버튼으로 옮기면 그 도구가 켜지고, 떼면 도구창은 제자리로 돌아갑니다. 손가락은 해당하지 않습니다">
           <Toggle k="holdToolbar" />
         </Row>
+        <Row label="부른 도구창 모양" hint="원형은 누른 점 둘레로 동그랗게 말려 오고, 펜을 버튼 쪽으로 옮기기만 하면 고릅니다(가운데로 돌아와 떼면 취소). 일자는 도구창이 그대로 곁으로 옵니다">
+          <Select k="holdToolbarShape" options={[['ring', '원형'], ['bar', '일자']]} />
+        </Row>
       </section>
 
       <PressureSection />

@@ -12,6 +12,7 @@ export default async function holdbar(ctx: Ctx) {
   const p = await device(ctx)
   const D = await createDoc(p, '꾹 누르기 노트')
   await openEditor(p, base, D)
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setSettings({ holdToolbarShape: 'bar' }))
   await sleep(600)
   const home = await barBox(p)
   const box = (await p.locator('#canvas-root').boundingBox())!
@@ -80,15 +81,81 @@ export default async function holdbar(ctx: Ctx) {
   check('지우개로 꾹 누른 자리의 획은 되살린다', (await strokes(p, D)).length === 2)
   check('도구창 밖에서 떼면 도구는 그대로', (await toolOf(p)) === 'eraser')
 
+  // ── 원형: 누른 점 둘레로 동그랗게 말린다 ──
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setSettings({ holdToolbarShape: 'ring' }))
+  await p.locator('.ft-bar .ft-tool[aria-label="펜"]').click()
+  const before = (await strokes(p, D)).length
+  const rp = { x: pt.x - 150, y: pt.y + 40 }
+  const itemCenters = () =>
+    p.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('.ft-bar :is(.ft-tool, .ft-sw, .ft-wbtn, .ft-lasso-btn, .ft-k-undo, .ft-k-redo)')]
+        .filter((e) => e.getClientRects().length)
+        .map((e) => {
+          const r = e.getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, label: e.getAttribute('aria-label') ?? '' }
+        })
+    )
+  await p.mouse.move(rp.x, rp.y)
+  await p.mouse.down()
+  await sleep(450 + 150)
+  if (shot) await p.screenshot({ path: `${shot}/ring-1-curling.png` })
+  await sleep(500)
+  if (shot) await p.screenshot({ path: `${shot}/ring-2-open.png` })
+  check('원형: 불려 오면 원판이 보인다', (await p.locator('.ft-ring-disc[data-on]').count()) === 1 && (await p.locator('.ft-bar[data-ring]').count()) === 1)
+  const disc = (await p.locator('.ft-ring-disc').boundingBox())!
+  const dc = center(disc)
+  const pts = await itemCenters()
+  const ds = pts.map((q) => Math.hypot(q.x - dc.x, q.y - dc.y))
+  check('원형: 버튼이 한 원 위에 고르게', ds.length >= 6 && Math.max(...ds) - Math.min(...ds) < 2, JSON.stringify(ds.map(Math.round)))
+  check('원형: 원의 가운데가 누른 점', Math.hypot(dc.x - rp.x, dc.y - rp.y) < 2, JSON.stringify({ dc, rp }))
+  // 형광펜 쪽으로 펜을 옮기기만 해도(버튼 위까지 가지 않아도) 고른다
+  const hlp = pts.find((q) => q.label === '형광펜')!
+  const toward = (q: { x: number; y: number }, f: number) => ({ x: rp.x + (q.x - rp.x) * f, y: rp.y + (q.y - rp.y) * f })
+  const h1 = toward(hlp, 0.7)
+  await p.mouse.move(h1.x, h1.y, { steps: 5 })
+  await sleep(100)
+  check('원형: 방향으로 고른다 (강조)', (await p.locator('.ft-bar .ft-tool.is-hover[aria-label="형광펜"]').count()) === 1)
+  await sleep(250)
+  check('원형: 머물면 그 도구가 켜진다', (await toolOf(p)) === 'highlighter')
+  if (shot) await p.screenshot({ path: `${shot}/ring-3-pick.png` })
+  const pts2 = await itemCenters()
+  const ds2 = pts2.map((q) => Math.hypot(q.x - dc.x, q.y - dc.y))
+  check('원형: 도구가 바뀌어도 원 모양 그대로', Math.max(...ds2) - Math.min(...ds2) < 2, JSON.stringify(ds2.map(Math.round)))
+  // 가운데로 돌아와 떼면 취소
+  await p.mouse.move(rp.x + 3, rp.y + 2, { steps: 4 })
+  await p.mouse.up()
+  await sleep(450)
+  check('원형: 가운데에서 떼면 아무것도 바뀌지 않는다', (await toolOf(p)) === 'highlighter')
+  check(
+    '원형: 떼면 일자로 풀려 제자리',
+    !(await p.locator('.ft-bar[data-ring], .ft-bar[data-summoned], .ft-ring-disc[data-on]').count()) &&
+      (await p.evaluate(() => [...document.querySelectorAll<HTMLElement>('.ft-bar button')].every((b) => !b.style.transform)))
+  )
+  // 색 쪽으로 옮겨 떼면 그 색
+  await p.locator('.ft-bar .ft-tool[aria-label="펜"]').click()
+  await p.mouse.move(rp.x, rp.y)
+  await p.mouse.down()
+  await sleep(1000)
+  const sw = (await itemCenters()).filter((q) => q.label.startsWith('색상'))[2]
+  const s1 = toward(sw, 1.3) // 버튼을 지나쳐도 방향이 같으면 그 버튼
+  await p.mouse.move(s1.x, s1.y, { steps: 5 })
+  await p.mouse.up()
+  await sleep(450)
+  const penColor = await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().style.pen.color)
+  check('원형: 색 쪽으로 옮겨 떼면 그 색', sw.label.includes(penColor.slice(0, 7)) || (await p.locator('.ft-bar .ft-sw.is-active').getAttribute('aria-label')) === sw.label, `${sw.label} / ${penColor}`)
+  await sleep(600)
+  check('원형: 누른 자리에 획이 남지 않는다', (await strokes(p, D)).length === before)
+
   // ── 설정에서 끄면 ──
   await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setSettings({ holdToolbar: false }))
-  await p.locator('.ft-bar .ft-tool[aria-label="펜"]').click()
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setTool('pen'))
+  const n0 = (await strokes(p, D)).length
   await p.mouse.move(pt.x, pt.y + 100)
   await p.mouse.down()
   await sleep(800)
   check('끄면 불려 오지 않는다', !(await p.locator('.ft-bar[data-summoned]').count()))
   await p.mouse.up()
   await sleep(900)
-  check('끄면 꾹 누른 점이 그대로 찍힌다', (await strokes(p, D)).length === 3)
+  check('끄면 꾹 누른 점이 그대로 찍힌다', (await strokes(p, D)).length === n0 + 1, String((await strokes(p, D)).length - n0))
   await p.close()
 }
