@@ -37,6 +37,18 @@ export interface EngineCallbacks {
   onPageContentChanged?: (pageId: ID) => void
 }
 
+/** 꾹 누르기로 도구창을 부른 순간 — 이 포인터의 남은 움직임은 엔진이 쓰지 않는다(UI가 window에서 받는다) */
+export interface HoldInfo {
+  pointerId: number
+  clientX: number
+  clientY: number
+}
+
+/** 꾹 누르기 판정: 이만큼(ms) 누른 채 */
+const HOLD_MS = 450
+/** …처음 닿은 곳에서 이만큼(화면 px)도 벗어나지 않으면 */
+const HOLD_SLOP = 8
+
 export interface EngineOptions {
   settings: Settings
   style: ToolStyle
@@ -168,6 +180,11 @@ export class Engine {
   private touches = new Map<number, TouchInfo>()
   private gesture: Gesture | null = null
   private lastPenUp = -Infinity
+  /** 꾹 누르기 대기 — 펜·마우스 획이 시작되면 건다 */
+  private holdWait: { id: number; timer: number; sx: number; sy: number } | null = null
+  /** 꾹 눌러 도구창을 부른 포인터 — 뗄 때까지 그리지 않는다 */
+  private held: number | null = null
+  private holdListeners = new Set<(h: HoldInfo) => void>()
   private cursor: Cursor | null = null
   private rectLeft = 0
   private rectTop = 0
@@ -358,6 +375,7 @@ export class Engine {
     this.destroyed = true
     cancelAnimationFrame(this.raf)
     clearTimeout(this.settleTimer)
+    this.clearHoldWait()
     this.ro.disconnect()
     this.disposers.forEach((d) => d())
     await this.flush()
@@ -804,6 +822,14 @@ export class Engine {
 
   sheet(id: ID): Page | undefined {
     return this.layout.sheets.find((s) => s.id === id)
+  }
+
+  /** 꾹 눌러 도구창 부르기 (settings.holdToolbar) */
+  subscribeHold = (fn: (h: HoldInfo) => void): (() => void) => {
+    this.holdListeners.add(fn)
+    return () => {
+      this.holdListeners.delete(fn)
+    }
   }
 
   subscribeSheets = (fn: () => void): (() => void) => {
@@ -1572,16 +1598,67 @@ export class Engine {
       if (this.readOnly) return
       this.capture(e.pointerId)
       this.startStroke(e)
+      if (this.active && this.active.pointerId === e.pointerId) this.armHold(e)
       return
     }
     this.touchDown(e, true)
+  }
+
+  // ─────────────────────────── 꾹 눌러 도구창 부르기 ───────────────────────────
+  // 손가락은 제외 — 펜·마우스로 획(펜·형광펜·지우개·올가미)을 시작한 뒤 가만히 누르고 있을 때만.
+
+  private armHold(e: PointerEvent) {
+    this.clearHoldWait()
+    if (!this.settings.holdToolbar || !this.holdListeners.size) return
+    const id = e.pointerId
+    const timer = window.setTimeout(() => this.fireHold(id), HOLD_MS)
+    this.holdWait = { id, timer, sx: e.clientX, sy: e.clientY }
+  }
+
+  private clearHoldWait() {
+    if (this.holdWait) clearTimeout(this.holdWait.timer)
+    this.holdWait = null
+  }
+
+  private fireHold(id: number) {
+    const w = this.holdWait
+    this.holdWait = null
+    if (!w || w.id !== id || !this.active || this.active.pointerId !== id) return
+    // 누른 자리에 찍힌 점·지운 획은 없던 일로 — 도구창을 부르려던 것이지 그리려던 게 아니다
+    this.discardActive()
+    this.held = id
+    this.cursor = null
+    this.liveDirty = true
+    const info: HoldInfo = { pointerId: id, clientX: w.sx, clientY: w.sy }
+    for (const fn of [...this.holdListeners]) fn(info)
+  }
+
+  /** 쓰던 획을 남기지 않고 끝낸다 — 지우개는 이번에 지운 획을 되살린다 */
+  private discardActive() {
+    const a = this.active
+    if (!a) return
+    if (a.tool === 'eraser' && (a.removed.size || a.added.size)) {
+      for (const id of a.added.keys()) {
+        const rec = this.scene.remove(id)
+        if (rec) this.markDirty(rec.pageId, rec.key)
+      }
+      for (const e of a.removed.values()) {
+        this.scene.add(e)
+        this.markDirty(e.pageId, e.key)
+      }
+      a.removed.clear()
+      a.added.clear()
+      this.committedDirty = true
+      this.scheduleSave()
+    }
+    this.finishActive(false)
   }
 
   /** 손가락이 닿음. fromCanvas가 아니면(블록 위) 획을 시작하지 않고 pointer capture도 하지 않는다 — 블록의 탭·클릭은 그대로 둔다 */
   private touchDown(e: PointerEvent, fromCanvas: boolean) {
     const p = this.local(e)
     const t: TouchInfo = { id: e.pointerId, x: p.x, y: p.y, sx: p.x, sy: p.y, ignored: false }
-    const penBusy = !!this.active && this.active.pointerType !== 'touch'
+    const penBusy = (!!this.active && this.active.pointerType !== 'touch') || this.held !== null
     const inPalmWindow = performance.now() - this.lastPenUp < this.settings.palmWindowMs
     const bigContact = this.settings.palmMaxContact > 0 && Math.max(e.width, e.height) > this.settings.palmMaxContact
     if (penBusy || inPalmWindow || bigContact) {
@@ -1620,7 +1697,10 @@ export class Engine {
       return
     }
     if (this.isPenLike(e)) {
+      if (this.held === e.pointerId) return
       const a = this.active
+      const hw = this.holdWait
+      if (hw && hw.id === e.pointerId && Math.hypot(e.clientX - hw.sx, e.clientY - hw.sy) > HOLD_SLOP) this.clearHoldWait()
       if (a && a.pointerId === e.pointerId) {
         this.recordPointerStats(e)
         this.markEvent(e)
@@ -1662,6 +1742,11 @@ export class Engine {
       return
     }
     if (this.isPenLike(e)) {
+      if (this.held === e.pointerId) {
+        this.held = null
+        this.lastPenUp = performance.now()
+        return
+      }
       if (this.active && this.active.pointerId === e.pointerId) {
         this.finishActive(true)
         this.lastPenUp = performance.now()
@@ -1674,6 +1759,11 @@ export class Engine {
   private onPointerCancel = (e: PointerEvent) => {
     if (this.middlePan && this.middlePan.id === e.pointerId) {
       this.endMiddlePan()
+      return
+    }
+    if (this.held === e.pointerId) {
+      this.held = null
+      this.lastPenUp = performance.now()
       return
     }
     if (this.active && this.active.pointerId === e.pointerId) {
@@ -1904,6 +1994,7 @@ export class Engine {
   private finishActive(commit: boolean) {
     const a = this.active
     if (!a) return
+    if (this.holdWait && this.holdWait.id === a.pointerId) this.clearHoldWait()
     this.active = null
     this.liveDirty = true
     if (a.tool === 'eraser') {
