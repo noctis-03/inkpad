@@ -42,6 +42,7 @@ import {
   zoneRect,
   type Layout
 } from './floatingLayout'
+import { HoldRing } from './holdRing'
 
 const TOOLS: { id: Tool; label: string; icon: string }[] = [
   { id: 'pen', label: '펜', icon: 'pen' },
@@ -148,6 +149,9 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
   const moreRef = useRef<HTMLButtonElement>(null)
   /** 꾹 눌러 부른 동안 — 누른 점(.editor-area 기준) */
   const summonRef = useRef<{ x: number; y: number } | null>(null)
+  /** 원형으로 부른 동안 (settings.holdToolbarShape = 'ring') */
+  const ringRef = useRef<HoldRing | null>(null)
+  const discRef = useRef<HTMLDivElement>(null)
 
   // ── 현재 스타일 파생값 (기존 EditorToolbar 로직과 동일) ──
   const isHl = tool === 'highlighter'
@@ -260,11 +264,19 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
       const area = el?.parentElement
       if (!el || !area || !useUI.getState().settings.holdToolbar) return
       end?.()
-      const a = area.getBoundingClientRect()
-      summonRef.current = { x: h.clientX - a.left, y: h.clientY - a.top }
       setPop(null)
       el.dataset.summoned = ''
-      relayoutRef.current()
+      const disc = discRef.current
+      const ring = useUI.getState().settings.holdToolbarShape === 'ring' && disc ? new HoldRing(el, disc, { x: h.clientX, y: h.clientY }, SUMMON_TARGETS) : null
+      if (ring) {
+        // 원형: 바는 제자리에 두고 버튼만 누른 점 둘레로 말려 온다
+        ringRef.current = ring
+        ring.open()
+      } else {
+        const a = area.getBoundingClientRect()
+        summonRef.current = { x: h.clientX - a.left, y: h.clientY - a.top }
+        relayoutRef.current()
+      }
 
       let hover: HTMLButtonElement | null = null
       let dwell = 0
@@ -284,7 +296,9 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
       }
       const onMove = (e: PointerEvent) => {
         if (e.pointerId !== h.pointerId) return
-        const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLButtonElement>(SUMMON_TARGETS) ?? null
+        const hit = ring
+          ? (ring.pick(e.clientX, e.clientY) as HTMLButtonElement | null)
+          : (document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLButtonElement>(SUMMON_TARGETS) ?? null)
         setHover(hit && el.contains(hit) && !hit.disabled ? hit : null)
       }
       const onUp = (e: PointerEvent) => {
@@ -299,6 +313,11 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
         window.removeEventListener('pointerup', onUp, true)
         window.removeEventListener('pointercancel', onUp, true)
         end = null
+        if (ring) {
+          ringRef.current = null
+          ring.close(() => delete el.dataset.summoned)
+          return
+        }
         summonRef.current = null
         delete el.dataset.summoned
         relayoutRef.current()
@@ -311,8 +330,13 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
     return () => {
       unsub()
       end?.()
+      ringRef.current?.dispose()
+      ringRef.current = null
     }
   }, [engine])
+
+  // 원형인 채로 머물러 도구가 바뀌면 바 안 버튼이 달라진다(지우개는 색이 없고, 올가미는 모양 버튼) — 다시 늘어놓는다
+  useLayoutEffect(() => ringRef.current?.refresh(), [tool, settings.lassoShape, collapsed])
 
   // ── 드래그 ──
   const drag = useRef<null | {
@@ -448,6 +472,7 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
   return (
     <>
       <div ref={probeRef} className="ft-probe" aria-hidden="true" />
+      <div ref={discRef} className="ft-ring-disc" aria-hidden="true" />
 
       {snap && (
         <div className="ft-snap-layer" aria-hidden="true">
