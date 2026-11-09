@@ -6,8 +6,11 @@ import { clearNotices, getNotices, onNotices, unreadNotices, type Notice } from 
 import { formatBytes, formatDate } from '../../shared/util'
 import { db } from '../../storage/db'
 import { storageStats } from '../../storage/repo'
+import { useUI } from '../../app/store'
+import { getSharedTabsMoving, onSharedTabsMoving, pullSharedTabs, pushSharedTabs } from '../../sync/sharedTabs'
 import { CLOUD_STATES_EVENT, onSyncStatus, unsyncedNoteIds, type SyncStatus } from '../../sync/sync'
 import { Icon } from '../Icon'
+import { Segmented } from '../Segmented'
 
 export interface DockPage {
   id: string
@@ -391,9 +394,75 @@ function StorageDetail() {
   )
 }
 
+// ───────── 제어 센터 ─────────
+// 앱 전체를 다루는 버튼 — 새로고침, 탭 바 모드(기본/공유)와 공유 탭 올리기(↑)·불러오기(↓) (sync/sharedTabs)
+
+function ControlCompact() {
+  const shared = useUI((s) => s.tabMode) === 'shared'
+  return (
+    <div className="dock-line is-idle">
+      <span className="dock-ic">
+        <Icon name="gear" size={14} />
+      </span>
+      <span className="dock-text">제어 센터</span>
+      <span className="dock-meta">{shared ? '공유 탭' : '기본 탭'}</span>
+    </div>
+  )
+}
+
+function ControlDetail() {
+  const tabMode = useUI((s) => s.tabMode)
+  const setTabMode = useUI((s) => s.setTabMode)
+  const count = useUI((s) => s.tabs.length)
+  const moving = useSyncExternalStore(onSharedTabsMoving, getSharedTabsMoving)
+  const shared = tabMode === 'shared'
+  return (
+    <div className="dock-detail">
+      <section>
+        <h3 className="dock-h">앱</h3>
+        <div className="dock-ctl-grid">
+          <button className="dock-ctl" onClick={() => location.reload()}>
+            <Icon name="refresh" size={20} />
+            <span>새로고침</span>
+          </button>
+        </div>
+      </section>
+      <section>
+        <h3 className="dock-h">탭 바</h3>
+        <Segmented
+          className="dock-ctl-seg"
+          value={tabMode}
+          options={[
+            ['local', '기본'],
+            ['shared', '공유']
+          ]}
+          onChange={setTabMode}
+          label="탭 바 모드"
+        />
+        <div className="dock-ctl-grid">
+          <button className="dock-ctl" onClick={() => void pushSharedTabs()} disabled={!shared || !!moving} aria-label="공유 탭 올리기">
+            <Icon name="arrowUp" size={20} className={moving === 'up' ? 'is-busy' : undefined} />
+            <span>{moving === 'up' ? '올리는 중…' : '올리기'}</span>
+          </button>
+          <button className="dock-ctl" onClick={() => void pullSharedTabs()} disabled={!shared || !!moving} aria-label="공유 탭 불러오기">
+            <Icon name="arrowDown" size={20} className={moving === 'down' ? 'is-busy' : undefined} />
+            <span>{moving === 'down' ? '불러오는 중…' : '불러오기'}</span>
+          </button>
+        </div>
+        <p className="dock-note">
+          {shared
+            ? `공유 탭 ${count}개 — 올리기는 Drive의 공유 탭 파일을 이 탭으로 덮어쓰고, 불러오기는 그 파일의 탭으로 바꿉니다.`
+            : '기본 탭은 이 기기에만 남습니다. 공유로 바꾸면 기기끼리 올리고 불러올 수 있는 탭을 따로 씁니다.'}
+        </p>
+      </section>
+    </div>
+  )
+}
+
 export const DOCK_PAGES: DockPage[] = [
   { id: 'transfers', label: '전송', Compact: TransfersCompact, Detail: TransfersDetail },
   { id: 'notices', label: '알림', Compact: NoticesCompact, Detail: NoticesDetail },
   { id: 'sync', label: '동기화', Compact: SyncCompact, Detail: SyncDetail },
-  { id: 'storage', label: '저장 공간', Compact: StorageCompact, Detail: StorageDetail }
+  { id: 'storage', label: '저장 공간', Compact: StorageCompact, Detail: StorageDetail },
+  { id: 'control', label: '제어 센터', Compact: ControlCompact, Detail: ControlDetail }
 ]

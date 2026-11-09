@@ -1,8 +1,8 @@
 // 공유 탭 바: Drive의 파일 하나(Inkpad/shared-tabs.json)를 기기끼리 돌려 쓴다.
 // 올리기(↑)는 이 기기의 공유 탭으로 파일을 덮어쓰고, 불러오기(↓)는 파일의 탭으로 이 기기의 공유 탭을 바꾼다.
-// 둘 다 사용자가 탭 바의 버튼을 눌렀을 때만 네트워크를 쓴다 (sync.ts 규칙 12). 합치기는 없다 — 나중에 올린 쪽이 이긴다.
+// 둘 다 사용자가 제어 센터(탭 바 상태 칸)의 버튼을 눌렀을 때만 네트워크를 쓴다 (sync.ts 규칙 12). 합치기는 없다 — 나중에 올린 쪽이 이긴다.
 // 담기는 것은 탭의 자리(노트·앱·파일 id와 순서)뿐이고, 내용은 각자의 동기화 경로로 오간다.
-import { trackActivity } from '../shared/activity'
+import { errorText, trackActivity } from '../shared/activity'
 import { isTabValue, routeKey, useUI, type TabRoute } from '../app/store'
 import { getDocument } from '../storage/repo'
 import { getApp } from './apps'
@@ -78,4 +78,58 @@ function strip(t: TabRoute): TabRoute {
 async function existsHere(t: TabRoute): Promise<boolean> {
   const row = t.name === 'editor' ? await getDocument(t.docId) : t.name === 'app' ? await getApp(t.appId) : await getFile(t.fileId)
   return !!row && !row.deletedAt
+}
+
+// ───────── 누르는 동작 (제어 센터의 올리기·불러오기 버튼) ─────────
+
+type Moving = 'up' | 'down' | null
+let moving: Moving = null
+const listeners = new Set<() => void>()
+const setMoving = (m: Moving) => {
+  moving = m
+  listeners.forEach((f) => f())
+}
+/** 지금 올리거나 불러오는 중인지 — 겹쳐 누르지 않게 버튼을 막는다 */
+export const getSharedTabsMoving = () => moving
+export function onSharedTabsMoving(fn: () => void) {
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
+  }
+}
+
+/** 공유 탭 올리기 — 결과를 알림으로 */
+export async function pushSharedTabs(): Promise<void> {
+  if (moving) return
+  setMoving('up')
+  try {
+    const n = await uploadSharedTabs()
+    useUI.getState().toast(`공유 탭 ${n}개를 올렸습니다.`, 'success')
+  } catch (e) {
+    useUI.getState().toast(errorText(e, '공유 탭을 올리지 못했습니다.'), 'error')
+  } finally {
+    setMoving(null)
+  }
+}
+
+/** 공유 탭 불러오기 — 이 기기의 공유 탭을 바꾸고 결과를 알림으로 */
+export async function pullSharedTabs(): Promise<void> {
+  if (moving) return
+  setMoving('down')
+  try {
+    const r = await downloadSharedTabs()
+    const ui = useUI.getState()
+    // 불러오는 사이 기본 탭 바로 바꿨으면 기본 탭을 덮지 않는다
+    if (ui.tabMode !== 'shared') return
+    if (!r) return void ui.toast('아직 올린 공유 탭이 없습니다.', 'info')
+    ui.replaceTabs(r.tabs)
+    ui.toast(
+      `공유 탭 ${r.tabs.length}개를 불러왔습니다.` + (r.missing ? ` 이 기기에 없는 ${r.missing}개는 뺐습니다 — 받은 뒤 다시 불러오세요.` : ''),
+      r.missing ? 'info' : 'success'
+    )
+  } catch (e) {
+    useUI.getState().toast(errorText(e, '공유 탭을 불러오지 못했습니다.'), 'error')
+  } finally {
+    setMoving(null)
+  }
 }
