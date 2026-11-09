@@ -167,14 +167,14 @@
 .ft-bar[data-orient='v'] { flex-direction: column; }
 .ft-bar[data-summoned] { box-shadow: 0 2px 4px rgba(15, 23, 42, .08), 0 20px 44px -10px rgba(15, 23, 42, .3); }
 .ft-bar[data-summoned] .is-hover { background: var(--tint); box-shadow: inset 0 0 0 2px var(--accent); }
-/* 원형으로 부른 동안 — 바의 판은 사라지고(--ring-t: 0 일자 → 1 원) 버튼만 누른 점 둘레의 원판 위로 말려 간다 (holdRing.ts) */
+/* 원형으로 부른 동안 (holdRing.ts) — 바의 판은 같은 곡선을 따라 말리는 띠(.ft-ring-band)가 대신하고,
+   버튼은 그 위로 말려 간다. 다 말리면 가운데가 빈 고리. --ring-t: 0 일자 → 1 원 */
 .ft-bar[data-ring] {
   transition: none;
-  background: color-mix(in srgb, var(--surface) calc(84% * (1 - var(--ring-t, 0))), transparent);
-  border-color: color-mix(in srgb, var(--tint) calc(100% * (1 - var(--ring-t, 0))), transparent);
+  background: transparent; border-color: transparent;
   box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
 }
-.ft-bar[data-ring] :is(.ft-grip, .ft-sep, .ft-chip, .ft-more) { opacity: calc(1 - var(--ring-t, 0)); }
+.ft-bar[data-ring] :is(.ft-grip, .ft-sep, .ft-chip, .ft-more) { opacity: calc(1 - 2.5 * var(--ring-t, 0)); }
 /* transform은 holdRing.ts가 프레임마다 직접 준다 — CSS 전환이 끼면 뒤처지고, 다시 잴 때 옛 자리가 읽힌다 */
 .ft-bar[data-ring] :is(.ft-tool, .ft-sw, .ft-wbtn, .ft-lasso-btn, .ft-k-undo, .ft-k-redo, .ft-k-block) {
   position: relative; z-index: 1; will-change: transform; transition-property: background-color, color, box-shadow;
@@ -183,20 +183,16 @@
 .ft-bar[data-ring] .motion-ind { opacity: 0 !important; }
 .ft-bar[data-ring] .ft-tool.is-active { background: var(--btn-bg); color: var(--btn-fg); }
 .ft-bar[data-ring] .ft-wbtn.is-active { background: color-mix(in srgb, var(--ink) 7%, transparent); }
-.ft-ring-disc {
-  position: absolute; z-index: 6; display: none; pointer-events: none;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
-  backdrop-filter: blur(20px) saturate(1.8); -webkit-backdrop-filter: blur(20px) saturate(1.8);
-  border: 1px solid var(--tint);
-  box-shadow: 0 2px 4px rgba(15, 23, 42, .08), 0 20px 44px -10px rgba(15, 23, 42, .3);
+.ft-ring-band {
+  position: absolute; inset: 0; width: 100%; height: 100%; z-index: 6; display: none; pointer-events: none; overflow: visible;
+  filter: drop-shadow(0 12px 18px rgba(15, 23, 42, .2)) drop-shadow(0 1px 2px rgba(15, 23, 42, .06));
 }
-.ft-ring-disc[data-on] { display: block; }
+.ft-ring-band[data-on] { display: block; }
+.ft-ring-band path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ft-ring-band .b { stroke: var(--tint); }
+.ft-ring-band .f { stroke: color-mix(in srgb, var(--surface) 94%, transparent); }
 /* 가운데 — 누른 점. 여기로 돌아와 떼면 취소 */
-.ft-ring-disc::after {
-  content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
-  border-radius: 50%; background: var(--line);
-}
+.ft-ring-band .c { fill: var(--line); }
 .ft-bar[data-dragging] {
   transition: none; transform: scale(1.04);
   box-shadow: 0 2px 4px rgba(15, 23, 42, .08), 0 24px 48px -10px rgba(15, 23, 42, .32);

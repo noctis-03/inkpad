@@ -59,6 +59,8 @@ const SUMMON_GAP = 28
 const SUMMON_DWELL = 220
 /** 누른 채 떼서 누를 수 있는 버튼 — 팝오버를 여는 버튼(⋯·색 더 보기)과 손잡이는 빼고 */
 const SUMMON_TARGETS = '.ft-tool, .ft-sw, .ft-wbtn, .ft-lasso-btn, .ft-k-undo, .ft-k-redo, .ft-k-block'
+/** 원형 칸 수 — 펜일 때 바의 버튼 수(도구 + 색 5 + 굵기 3 + 되돌리기·다시). 고른 도구가 달라도 원 크기를 같게 둔다 */
+const RING_SLOTS = 4 + 5 + 3 + 2
 
 /** 누른 점(px, py) 곁 도구창 자리 — 가로 바는 점 위(모자라면 아래), 세로 바는 점 왼쪽(모자라면 오른쪽) */
 function summonXY(orient: 'h' | 'v', w: number, h: number, W: number, H: number, px: number, py: number, m: number): [number, number] {
@@ -151,7 +153,7 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
   const summonRef = useRef<{ x: number; y: number } | null>(null)
   /** 원형으로 부른 동안 (settings.holdToolbarShape = 'ring') */
   const ringRef = useRef<HoldRing | null>(null)
-  const discRef = useRef<HTMLDivElement>(null)
+  const bandRef = useRef<SVGSVGElement>(null)
 
   // ── 현재 스타일 파생값 (기존 EditorToolbar 로직과 동일) ──
   const isHl = tool === 'highlighter'
@@ -266,8 +268,11 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
       end?.()
       setPop(null)
       el.dataset.summoned = ''
-      const disc = discRef.current
-      const ring = useUI.getState().settings.holdToolbarShape === 'ring' && disc ? new HoldRing(el, disc, { x: h.clientX, y: h.clientY }, SUMMON_TARGETS) : null
+      const band = bandRef.current
+      const ring =
+        useUI.getState().settings.holdToolbarShape === 'ring' && band
+          ? new HoldRing(el, band, { x: h.clientX, y: h.clientY }, SUMMON_TARGETS, RING_SLOTS)
+          : null
       if (ring) {
         // 원형: 바는 제자리에 두고 버튼만 누른 점 둘레로 말려 온다
         ringRef.current = ring
@@ -472,7 +477,11 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
   return (
     <>
       <div ref={probeRef} className="ft-probe" aria-hidden="true" />
-      <div ref={discRef} className="ft-ring-disc" aria-hidden="true" />
+      <svg ref={bandRef} className="ft-ring-band" aria-hidden="true">
+        <path className="b" />
+        <path className="f" />
+        <circle className="c" r="4" />
+      </svg>
 
       {snap && (
         <div className="ft-snap-layer" aria-hidden="true">

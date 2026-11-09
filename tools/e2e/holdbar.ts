@@ -101,13 +101,28 @@ export default async function holdbar(ctx: Ctx) {
   if (shot) await p.screenshot({ path: `${shot}/ring-1-curling.png` })
   await sleep(500)
   if (shot) await p.screenshot({ path: `${shot}/ring-2-open.png` })
-  check('원형: 불려 오면 원판이 보인다', (await p.locator('.ft-ring-disc[data-on]').count()) === 1 && (await p.locator('.ft-bar[data-ring]').count()) === 1)
-  const disc = (await p.locator('.ft-ring-disc').boundingBox())!
-  const dc = center(disc)
+  check('원형: 불려 오면 판(띠)이 보인다', (await p.locator('.ft-ring-band[data-on]').count()) === 1 && (await p.locator('.ft-bar[data-ring]').count()) === 1)
+  const dc = center((await p.locator('.ft-ring-band circle.c').boundingBox())!)
+  const bandBox = (await p.locator('.ft-ring-band path.f').boundingBox())!
+  // 판이 버튼을 따라 고리로 말렸다 — 판의 크기가 원 지름 + 버튼 폭 정도이고, 가운데 둘레(가운데 점 주변)는 비어 있다
+  const pathHits = await p.evaluate(([x, y]) => {
+    const path = document.querySelector<SVGPathElement>('.ft-ring-band path.f')!
+    const svg = path.ownerSVGElement!
+    const r = svg.getBoundingClientRect()
+    const pt = svg.createSVGPoint()
+    const at = (dx: number, dy: number) => {
+      pt.x = x - r.left + dx
+      pt.y = y - r.top + dy
+      return path.isPointInStroke(pt)
+    }
+    return { center: at(0, 0) || at(20, 0) || at(0, -20), ring: [at(0, 100), at(-100, 0), at(100, 0)] }
+  }, [dc.x, dc.y] as const)
   const pts = await itemCenters()
   const ds = pts.map((q) => Math.hypot(q.x - dc.x, q.y - dc.y))
   check('원형: 버튼이 한 원 위에 고르게', ds.length >= 6 && Math.max(...ds) - Math.min(...ds) < 2, JSON.stringify(ds.map(Math.round)))
   check('원형: 원의 가운데가 누른 점', Math.hypot(dc.x - rp.x, dc.y - rp.y) < 2, JSON.stringify({ dc, rp }))
+  check('원형: 판도 고리로 말린다 (가운데가 빈다)', !pathHits.center && pathHits.ring.every(Boolean) && bandBox.width > 200 && Math.abs(bandBox.width - bandBox.height) < 30, JSON.stringify({ pathHits, bandBox }))
+  const R0 = ds[0]
   // 형광펜 쪽으로 펜을 옮기기만 해도(버튼 위까지 가지 않아도) 고른다
   const hlp = pts.find((q) => q.label === '형광펜')!
   const toward = (q: { x: number; y: number }, f: number) => ({ x: rp.x + (q.x - rp.x) * f, y: rp.y + (q.y - rp.y) * f })
@@ -121,6 +136,9 @@ export default async function holdbar(ctx: Ctx) {
   const pts2 = await itemCenters()
   const ds2 = pts2.map((q) => Math.hypot(q.x - dc.x, q.y - dc.y))
   check('원형: 도구가 바뀌어도 원 모양 그대로', Math.max(...ds2) - Math.min(...ds2) < 2, JSON.stringify(ds2.map(Math.round)))
+  check('원형: 도구가 바뀌어도 원 크기 그대로', Math.abs(ds2[0] - R0) < 1, `${R0} → ${ds2[0]}`)
+  const hl2 = pts2.find((q) => q.label === '형광펜')!
+  check('원형: 도구가 바뀌어도 도구 버튼 자리 그대로', Math.hypot(hl2.x - hlp.x, hl2.y - hlp.y) < 1)
   // 가운데로 돌아와 떼면 취소
   await p.mouse.move(rp.x + 3, rp.y + 2, { steps: 4 })
   await p.mouse.up()
@@ -145,6 +163,19 @@ export default async function holdbar(ctx: Ctx) {
   check('원형: 색 쪽으로 옮겨 떼면 그 색', sw.label.includes(penColor.slice(0, 7)) || (await p.locator('.ft-bar .ft-sw.is-active').getAttribute('aria-label')) === sw.label, `${sw.label} / ${penColor}`)
   await sleep(600)
   check('원형: 누른 자리에 획이 남지 않는다', (await strokes(p, D)).length === before)
+
+  // 버튼이 적은 도구(지우개)로 열어도 원 크기는 같다
+  await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setTool('eraser'))
+  await p.mouse.move(rp.x, rp.y)
+  await p.mouse.down()
+  await sleep(1000)
+  const ec = center((await p.locator('.ft-ring-band circle.c').boundingBox())!)
+  const eds = (await itemCenters()).map((q) => Math.hypot(q.x - ec.x, q.y - ec.y))
+  if (shot) await p.screenshot({ path: `${shot}/ring-4-eraser.png` })
+  check('원형: 지우개로 열어도 원 크기가 같다', eds.length < 14 && eds.every((d) => Math.abs(d - R0) < 1), JSON.stringify(eds.map(Math.round)))
+  await p.mouse.move(rp.x, rp.y + 2)
+  await p.mouse.up()
+  await sleep(450)
 
   // ── 설정에서 끄면 ──
   await p.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().setSettings({ holdToolbar: false }))
