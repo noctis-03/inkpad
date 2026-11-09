@@ -51,6 +51,29 @@ const TOOLS: { id: Tool; label: string; icon: string }[] = [
 ]
 const TOOL_NAME: Record<Tool, string> = { pen: '펜', highlighter: '형광펜', eraser: '지우개', lasso: '올가미' }
 const opaque = (c: string) => c.slice(0, 7)
+
+/** 꾹 눌러 부른 도구창이 누른 점에서 떨어지는 거리(px) — 펜 끝을 가리지 않고 바로 옮겨 갈 수 있게 */
+const SUMMON_GAP = 28
+/** 누른 채 도구 버튼 위에 이만큼(ms) 머물면 떼지 않아도 그 도구가 켜진다 */
+const SUMMON_DWELL = 220
+/** 누른 채 떼서 누를 수 있는 버튼 — 팝오버를 여는 버튼(⋯·색 더 보기)과 손잡이는 빼고 */
+const SUMMON_TARGETS = '.ft-tool, .ft-sw, .ft-wbtn, .ft-lasso-btn, .ft-k-undo, .ft-k-redo, .ft-k-block'
+
+/** 누른 점(px, py) 곁 도구창 자리 — 가로 바는 점 위(모자라면 아래), 세로 바는 점 왼쪽(모자라면 오른쪽) */
+function summonXY(orient: 'h' | 'v', w: number, h: number, W: number, H: number, px: number, py: number, m: number): [number, number] {
+  let x: number
+  let y: number
+  if (orient === 'h') {
+    x = px - w / 2
+    y = py - SUMMON_GAP - h
+    if (y < m) y = py + SUMMON_GAP
+  } else {
+    y = py - h / 2
+    x = px - SUMMON_GAP - w
+    if (x < m) x = px + SUMMON_GAP
+  }
+  return [clamp(x, m, Math.max(m, W - w - m)), clamp(y, m, Math.max(m, H - h - m))]
+}
 const clamp = (v: number, a: number, b: number) => Math.min(Math.max(v, a), b)
 
 /** 굵기 → 화면 표시 두께(px) */
@@ -123,6 +146,8 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
   const photoInput = useRef<HTMLInputElement>(null)
   const widthsRef = useRef<HTMLDivElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
+  /** 꾹 눌러 부른 동안 — 누른 점(.editor-area 기준) */
+  const summonRef = useRef<{ x: number; y: number } | null>(null)
 
   // ── 현재 스타일 파생값 (기존 EditorToolbar 로직과 동일) ──
   const isHl = tool === 'highlighter'
@@ -175,7 +200,8 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
           L = Lv
         } else L = fitLayout(el, 'h', availFor('h', W, H, ins, m)) // 세로도 안 되면 원래 가로로 되돌린다
       }
-      const [x, y] = anchorXY(p, L.w, L.h, W, H, ins, m)
+      const sp = summonRef.current
+      const [x, y] = sp ? summonXY(L.orient, L.w, L.h, W, H, sp.x, sp.y, m) : anchorXY(p, L.w, L.h, W, H, ins, m)
       const first = !('ready' in el.dataset)
       if (!animate || first) el.style.transition = 'none'
       el.dataset.pos = p
@@ -219,6 +245,74 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
 
   // 도구가 바뀌면 팝오버 닫기
   useEffect(() => setPop(null), [tool])
+
+  // ── 꾹 눌러 부르기 (settings.holdToolbar) ──
+  // 엔진이 펜·마우스로 가만히 누른 것을 알려 주면 도구창이 그 곁으로 온다. 포인터는 캔버스가 잡고 있으므로
+  // 남은 움직임은 window에서 받아 손가락(펜) 밑의 버튼을 찾는다. 도구 버튼은 머물면 바로, 다른 버튼은 뗄 때 눌린다.
+  // 떼면(또는 입력이 끊기면) 제자리로 돌아간다.
+  const relayoutRef = useRef(relayout)
+  relayoutRef.current = relayout
+  useEffect(() => {
+    if (!engine) return
+    let end: (() => void) | null = null
+    const unsub = engine.subscribeHold((h) => {
+      const el = barRef.current
+      const area = el?.parentElement
+      if (!el || !area || !useUI.getState().settings.holdToolbar) return
+      end?.()
+      const a = area.getBoundingClientRect()
+      summonRef.current = { x: h.clientX - a.left, y: h.clientY - a.top }
+      setPop(null)
+      el.dataset.summoned = ''
+      relayoutRef.current()
+
+      let hover: HTMLButtonElement | null = null
+      let dwell = 0
+      let fired: HTMLButtonElement | null = null
+      const setHover = (b: HTMLButtonElement | null) => {
+        if (b === hover) return
+        hover?.classList.remove('is-hover')
+        clearTimeout(dwell)
+        hover = b
+        if (!b) return
+        b.classList.add('is-hover')
+        if (b.classList.contains('ft-tool') && !b.classList.contains('is-active'))
+          dwell = window.setTimeout(() => {
+            fired = b
+            b.click()
+          }, SUMMON_DWELL)
+      }
+      const onMove = (e: PointerEvent) => {
+        if (e.pointerId !== h.pointerId) return
+        const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLButtonElement>(SUMMON_TARGETS) ?? null
+        setHover(hit && el.contains(hit) && !hit.disabled ? hit : null)
+      }
+      const onUp = (e: PointerEvent) => {
+        if (e.pointerId !== h.pointerId) return
+        const b = hover
+        finish()
+        if (e.type === 'pointerup' && b && b !== fired && !b.classList.contains('is-active')) b.click()
+      }
+      const finish = () => {
+        setHover(null)
+        window.removeEventListener('pointermove', onMove, true)
+        window.removeEventListener('pointerup', onUp, true)
+        window.removeEventListener('pointercancel', onUp, true)
+        end = null
+        summonRef.current = null
+        delete el.dataset.summoned
+        relayoutRef.current()
+      }
+      end = finish
+      window.addEventListener('pointermove', onMove, true)
+      window.addEventListener('pointerup', onUp, true)
+      window.addEventListener('pointercancel', onUp, true)
+    })
+    return () => {
+      unsub()
+      end?.()
+    }
+  }, [engine])
 
   // ── 드래그 ──
   const drag = useRef<null | {

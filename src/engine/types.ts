@@ -56,6 +56,9 @@ export interface Settings {
   lassoShape: 'free' | 'rect'
   // 미니맵 — 확대해 좌우가 화면 밖일 때 왼쪽 위에 지금 보는 줄의 전체 폭을 작게 (ui/editor/Minimap.tsx)
   minimap: boolean
+  // 꾹 눌러 도구창 부르기 — 펜·마우스로 캔버스를 누른 채 가만히 있으면 도구창이 그 곁으로 온다.
+  // 누른 채 도구창 버튼으로 옮겨 가면 그 도구가 켜지고, 떼면 도구창은 제자리로 (ui/editor/FloatingToolbar.tsx)
+  holdToolbar: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -88,7 +91,8 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
   density: 'comfortable',
   lassoShape: 'free',
-  minimap: true
+  minimap: true,
+  holdToolbar: true
 }
 
 export interface PenStyle {

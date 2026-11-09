@@ -359,6 +359,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         <Row label="외곽선 매끄럽게">
           <Slider k="smoothing" min={0} max={1} step={0.05} />
         </Row>
+        <Row label="꾹 눌러 도구창 부르기" hint="펜·마우스로 캔버스를 누른 채 잠시 가만히 있으면 도구창이 그 곁으로 옵니다. 누른 채 도구 버튼으로 옮기면 그 도구가 켜지고, 떼면 도구창은 제자리로 돌아갑니다. 손가락은 해당하지 않습니다">
+          <Toggle k="holdToolbar" />
+        </Row>
       </section>
 
       <PressureSection />
