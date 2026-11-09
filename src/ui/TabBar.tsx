@@ -1,4 +1,4 @@
-// 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일. 오른쪽 끝은 상태 칸(dock/StatusDock).
+// 크롬처럼 위에 뜨는 탭 — 맨 앞은 홈(라이브러리·작업보드), 그 뒤로 연 노트·앱·파일. 오른쪽 끝은 상태 칸(dock/StatusDock) — 새로고침·공유 탭 바는 그 안의 제어 센터 쪽에.
 // 탭 목록·옆 칸은 store(tabs·split)가 갖고 이 기기에만 기억한다. 열린 것이 없어도 바(홈 탭)는 늘 그린다.
 // 탭은 끌어서 순서를 바꾼다 — 마우스·펜은 바로 끌고, 손가락은 길게 눌러 집는다(그냥 밀면 탭 바가 옆으로 넘어간다).
 // 끌던 탭을 탭 바 아래로 내려 화면 왼쪽·오른쪽 끝에 놓으면 그쪽 옆 칸(듀얼)에 연다.
@@ -11,8 +11,6 @@ import { FILES_EVENT, getFile } from '../sync/files'
 import { Icon } from './Icon'
 import { Menu, MenuItem } from './Menu'
 import { StatusDock } from './dock/StatusDock'
-import { downloadSharedTabs, uploadSharedTabs } from '../sync/sharedTabs'
-import { errorText } from '../shared/activity'
 import { NO_NOTE, edgeZone, showEdgeZones, type EdgeZones } from './edgeDrop'
 
 const ICON: Record<TabRoute['name'], string> = { editor: 'notebook', app: 'app', file: 'file' }
@@ -88,40 +86,7 @@ export function TabBar() {
   const split = useUI((s) => s.split)
   const home = useUI((s) => s.home)
   const tabMode = useUI((s) => s.tabMode)
-  const setTabMode = useUI((s) => s.setTabMode)
   const shared = tabMode === 'shared'
-  /** 공유 탭 올리기·불러오기 중 — 겹쳐 누르지 않게 */
-  const [moving, setMoving] = useState<'up' | 'down' | null>(null)
-  const pushShared = async () => {
-    setMoving('up')
-    try {
-      const n = await uploadSharedTabs()
-      useUI.getState().toast(`공유 탭 ${n}개를 올렸습니다.`, 'success')
-    } catch (e) {
-      useUI.getState().toast(errorText(e, '공유 탭을 올리지 못했습니다.'), 'error')
-    } finally {
-      setMoving(null)
-    }
-  }
-  const pullShared = async () => {
-    setMoving('down')
-    try {
-      const r = await downloadSharedTabs()
-      const ui = useUI.getState()
-      // 불러오는 사이 기본 탭 바로 바꿨으면 기본 탭을 덮지 않는다
-      if (ui.tabMode !== 'shared') return
-      if (!r) return ui.toast('아직 올린 공유 탭이 없습니다.', 'info')
-      ui.replaceTabs(r.tabs)
-      ui.toast(
-        `공유 탭 ${r.tabs.length}개를 불러왔습니다.` + (r.missing ? ` 이 기기에 없는 ${r.missing}개는 뺐습니다 — 받은 뒤 다시 불러오세요.` : ''),
-        r.missing ? 'info' : 'success'
-      )
-    } catch (e) {
-      useUI.getState().toast(errorText(e, '공유 탭을 불러오지 못했습니다.'), 'error')
-    } finally {
-      setMoving(null)
-    }
-  }
   const saveState = useUI((s) => s.saveState)
   const navigate = useUI((s) => s.navigate)
   const closeTab = useUI((s) => s.closeTab)
@@ -389,31 +354,7 @@ export function TabBar() {
           )
         })}
       </div>
-      <div className="tabbar-share">
-        <button
-          className={'tabbar-btn' + (shared ? ' is-on' : '')}
-          onClick={() => setTabMode(shared ? 'local' : 'shared')}
-          aria-pressed={shared}
-          aria-label={shared ? '공유 탭 바 — 눌러서 기본 탭 바로' : '기본 탭 바 — 눌러서 공유 탭 바로'}
-          title={shared ? '공유 탭 바 (눌러서 기본으로)' : '기본 탭 바 (눌러서 공유로)'}
-        >
-          <Icon name="cloud" size={16} />
-        </button>
-        {shared && (
-          <>
-            <button className="tabbar-btn" onClick={pushShared} disabled={!!moving} aria-label="공유 탭 올리기" title="공유 탭 올리기">
-              <Icon name="arrowUp" size={16} className={moving === 'up' ? 'is-busy' : undefined} />
-            </button>
-            <button className="tabbar-btn" onClick={pullShared} disabled={!!moving} aria-label="공유 탭 불러오기" title="공유 탭 불러오기">
-              <Icon name="arrowDown" size={16} className={moving === 'down' ? 'is-busy' : undefined} />
-            </button>
-          </>
-        )}
-      </div>
       <StatusDock />
-      <button className="tabbar-reload" onClick={() => location.reload()} aria-label="새로고침" title="새로고침">
-        <Icon name="refresh" size={17} />
-      </button>
       {out &&
         dragKey &&
         createPortal(

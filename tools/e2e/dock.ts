@@ -44,6 +44,10 @@ export default async function dock(ctx: Ctx) {
   check('저장 공간 쪽: 사용량을 보인다', /사용/.test(storage), storage)
   await p.keyboard.press('ArrowRight')
   await sleep(600)
+  check('넘기기(→): 그다음 쪽(제어 센터)', (await dotOn()) === 4)
+  check('제어 센터 쪽: 칸에 이름과 탭 바 모드', /제어 센터[\s\S]*기본 탭/.test(await p.locator('.dock-page').nth(4).innerText()))
+  await p.keyboard.press('ArrowRight')
+  await sleep(600)
   check('넘기기: 끝에서 처음으로 돈다', (await dotOn()) === 0)
 
   // 마우스로 끌어 넘기기 — 끈 뒤에는 칸이 펼쳐지지 않는다

@@ -200,6 +200,14 @@
 }
 .dock-panel-head .seg {
   flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap; /* 쪽이 다섯이라 — 한 줄에 두고 칸마다 나눠 갖는다 */
+}
+.dock-panel-head .seg button {
+  flex: 1 1 auto;
+  padding: 0 6px;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
 }
 .dock-panel-pager {
   flex: 1;
@@ -399,6 +407,52 @@
   padding: 0 4px;
   font-size: var(--fs-xs);
   color: var(--muted);
+}
+
+/* 제어 센터 — 새로고침, 탭 바 모드와 공유 탭 올리기·불러오기 */
+.dock-ctl-seg {
+  margin: 0 4px 8px;
+}
+.dock-ctl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.dock-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.dock-ctl:hover:not(:disabled) {
+  background: var(--hover);
+}
+.dock-ctl:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.dock-ctl:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+.dock-ctl .is-busy {
+  animation: dock-ctl-busy 0.9s ease-in-out infinite alternate;
+}
+@keyframes dock-ctl-busy {
+  to {
+    opacity: 0.3;
+  }
 }
 
 /* 좁은 화면 — 칸을 줄이고 덧붙인 숫자는 뺀다 */
