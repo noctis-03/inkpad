@@ -19,6 +19,9 @@ const LS_LIBRARY = 'inkpad.library.v1'
 const LS_TOOLBAR = 'inkpad.toolbar.v1'
 const LS_BLOCKS = 'inkpad.blocks.v1'
 const LS_TABS = 'inkpad.tabs.v1'
+/** 공유 탭 바의 탭 — 기본 탭 바(LS_TABS)와 따로 기억한다 */
+const LS_TABS_SHARED = 'inkpad.tabs.shared.v1'
+const LS_TAB_MODE = 'inkpad.tabMode.v1'
 
 export type ToolbarPos = 'top' | 'top-left' | 'top-right' | 'bottom' | 'bottom-left' | 'bottom-right' | 'left' | 'right'
 const TOOLBAR_POS: ToolbarPos[] = ['top', 'top-left', 'top-right', 'bottom', 'bottom-left', 'bottom-right', 'left', 'right']
@@ -161,13 +164,20 @@ const SPLIT_MIN = 0.3
 const SPLIT_MAX = 0.75
 export const clampSplit = (r: number) => Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, r))
 
-/** 이 기기에만 저장 (동기화하지 않음). 망가진 값은 버린다 */
-function loadTabs(): TabsState {
-  const t = load<{ tabs?: unknown; split?: unknown; splitRatio?: unknown; splitSide?: unknown }>(LS_TABS, {})
-  const ok = (r: unknown): r is TabRoute => {
-    const x = r as TabRoute | null
-    return !!x && ((x.name === 'editor' && typeof x.docId === 'string') || (x.name === 'app' && typeof x.appId === 'string') || (x.name === 'file' && typeof x.fileId === 'string'))
-  }
+/** 탭 바 모드 — 기본(이 기기에만) / 공유(Drive의 파일 하나로 기기끼리 올리고 불러온다, sync/sharedTabs) */
+export type TabMode = 'local' | 'shared'
+const tabsKey = (m: TabMode) => (m === 'shared' ? LS_TABS_SHARED : LS_TABS)
+
+/** 저장해 둔 값이 탭 하나로 쓸 만한지 — 망가진 값·다른 기기의 낯선 값은 버린다 */
+export const isTabValue = (r: unknown): r is TabRoute => {
+  const x = r as TabRoute | null
+  return !!x && ((x.name === 'editor' && typeof x.docId === 'string') || (x.name === 'app' && typeof x.appId === 'string') || (x.name === 'file' && typeof x.fileId === 'string'))
+}
+
+/** 이 기기에 저장 (기본 탭 바는 동기화하지 않음). 망가진 값은 버린다 */
+function loadTabs(mode: TabMode): TabsState {
+  const t = load<{ tabs?: unknown; split?: unknown; splitRatio?: unknown; splitSide?: unknown }>(tabsKey(mode), {})
+  const ok = isTabValue
   const tabs = Array.isArray(t.tabs) ? t.tabs.filter(ok) : []
   const split = ok(t.split) && t.split.name !== 'editor' && tabs.some((x) => sameTab(x, t.split as Route)) ? (t.split as SplitRoute) : null
   return { tabs, split, splitRatio: clampSplit(typeof t.splitRatio === 'number' ? t.splitRatio : 0.6), splitSide: t.splitSide === 'left' ? 'left' : 'right' }
@@ -214,7 +224,9 @@ interface UIState {
   editorEpoch: number
   /** 노트·앱·파일을 열기 전 화면 — 뒤로가기면 이 화면으로 돌아간다 (작업보드에서 열었으면 작업보드로) */
   returnRoute: Route | null
-  /** 열린 탭 (노트·앱·파일). 지금 보는 탭은 route다 */
+  /** 탭 바 모드 — 기본 / 공유. 모드마다 탭 목록을 따로 갖는다 */
+  tabMode: TabMode
+  /** 열린 탭 (노트·앱·파일, 지금 모드의 것). 지금 보는 탭은 route다 */
   tabs: TabRoute[]
   /** 옆 칸 (듀얼) — 탭 하나를 옆에 띄운다 */
   split: SplitRoute | null
@@ -262,6 +274,10 @@ interface UIState {
   setSplitRatio: (r: number) => void
   /** 좌우 바꾸기 — 옆 칸을 왼쪽↔오른쪽으로 (각 칸의 폭은 그대로) */
   swapSplit: () => void
+  /** 탭 바 모드 바꾸기 — 지금 모드의 탭은 그대로 기억해 두고 다른 모드의 탭을 꺼낸다 */
+  setTabMode: (m: TabMode) => void
+  /** 공유 탭 바의 탭을 통째로 바꾼다 (공유 탭 불러오기) */
+  replaceTabs: (tabs: TabRoute[]) => void
 }
 
 let toastSeq = 0
@@ -279,7 +295,15 @@ function initialRoute(): Route {
 }
 
 const firstRoute = initialRoute()
-const firstTabs = loadTabs()
+// load()는 객체용(기본값과 합친다) — 모드는 문자열 하나라 따로 읽는다
+const firstMode: TabMode = (() => {
+  try {
+    return localStorage.getItem(LS_TAB_MODE) === 'shared' ? 'shared' : 'local'
+  } catch {
+    return 'local'
+  }
+})()
+const firstTabs = loadTabs(firstMode)
 if (isTabRoute(firstRoute) && !firstTabs.tabs.some((t) => sameTab(t, firstRoute))) firstTabs.tabs.push(firstRoute)
 if (sameTab(firstTabs.split, firstRoute)) firstTabs.split = null
 
@@ -314,6 +338,7 @@ export const useUI = create<UIState>((set, get) => ({
   scratch: false,
   editorEpoch: 0,
   returnRoute: null,
+  tabMode: firstMode,
   tabs: firstTabs.tabs,
   split: firstTabs.split,
   splitRatio: firstTabs.splitRatio,
@@ -417,6 +442,22 @@ export const useUI = create<UIState>((set, get) => ({
   closeSplit: () => set({ split: null }),
   setSplitRatio: (r) => set({ splitRatio: clampSplit(r) }),
   swapSplit: () => set({ splitSide: get().splitSide === 'left' ? 'right' : 'left' }),
+  setTabMode: (m) => {
+    if (m === get().tabMode) return
+    try {
+      localStorage.setItem(LS_TAB_MODE, m)
+    } catch {
+      /* 저장 못 해도 이번 실행 동안은 바뀐다 */
+    }
+    const t = loadTabs(m)
+    set({ tabMode: m, tabs: t.tabs, split: t.split, splitRatio: t.splitRatio, splitSide: t.splitSide })
+    leaveIfGone()
+  },
+  replaceTabs: (tabs) => {
+    const { split } = get()
+    set({ tabs, split: tabs.some((t) => sameTab(t, split)) ? split : null })
+    leaveIfGone()
+  },
   setTool: (t) => {
     const cur = get().tool
     if (t !== cur) set({ tool: t, prevTool: cur })
@@ -488,8 +529,16 @@ window.addEventListener('popstate', () => {
   })
 })
 
-// 탭·옆 칸은 이 기기에만 기억한다 — 앱을 다시 켜면 그대로
+/** 탭 목록이 통째로 바뀐 뒤(모드 전환·불러오기) — 보던 탭이 새 목록에 없으면 첫 탭으로, 탭이 없으면 홈으로 */
+function leaveIfGone() {
+  const { route, tabs, split, home } = useUI.getState()
+  if (!isTabRoute(route) || tabs.some((t) => sameTab(t, route))) return
+  useUI.getState().navigate(tabs.find((t) => !sameTab(t, split)) ?? home)
+}
+
+// 탭·옆 칸은 모드별로 이 기기에 기억한다 — 앱을 다시 켜면 그대로
 useUI.subscribe((st, prev) => {
+  if (st.tabMode !== prev.tabMode) return // 모드를 바꾼 순간은 새 모드의 저장값을 읽어 온 것이다
   if (st.tabs !== prev.tabs || st.split !== prev.split || st.splitRatio !== prev.splitRatio || st.splitSide !== prev.splitSide)
-    save(LS_TABS, { tabs: st.tabs, split: st.split, splitRatio: st.splitRatio, splitSide: st.splitSide })
+    save(tabsKey(st.tabMode), { tabs: st.tabs, split: st.split, splitRatio: st.splitRatio, splitSide: st.splitSide })
 })

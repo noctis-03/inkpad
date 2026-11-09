@@ -394,6 +394,53 @@ input[type='radio'] {
   outline: 2px solid var(--focus-outline);
   outline-offset: -2px;
 }
+/* 공유 탭 바 — 모드 전환과 올리기(↑)·불러오기(↓) (sync/sharedTabs) */
+.tabbar.is-shared {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.tabbar-share {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+.tabbar-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: calc(var(--h-control) - 8px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tabbar-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+.tabbar-btn.is-on {
+  color: var(--accent);
+}
+.tabbar-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.tabbar-btn:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: -2px;
+}
+.tabbar-btn .is-busy {
+  animation: tabbar-busy 0.9s ease-in-out infinite alternate;
+}
+@keyframes tabbar-busy {
+  to {
+    opacity: 0.3;
+  }
+}
 .tab-title {
   flex: 1;
   min-width: 0;
