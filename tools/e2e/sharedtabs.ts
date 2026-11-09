@@ -1,6 +1,7 @@
 // 공유 탭 바 — 기본 탭 바와 따로 탭을 갖고, Drive의 파일 하나(shared-tabs.json)로 기기끼리 올리고(↑) 불러온다(↓)
 //  - 버튼은 모두 상태 칸의 제어 센터 쪽에: 새로고침, 탭 바 모드(기본/공유), 올리기·불러오기
-//  - 기본 모드는 지금과 같다: 탭 바에 버튼이 없고, 올리기·불러오기는 막혀 있고, Drive 요청은 없다
+//  - 기본 모드는 지금과 같다: 탭 바에 버튼이 없고, Drive 요청은 없다. 제어 센터에는 올리기·불러오기 대신 '공유 탭 바로 넘기기'
+//  - 넘기기는 기본 탭을 그대로 공유 탭으로 옮기고 공유 모드로 바꾼다 (기본 탭도 남는다)
 //  - 공유 모드로 바꾸면 공유 탭이 따로 보이고, 기본으로 돌아오면 기본 탭이 그대로다
 //  - A가 올리면 B가 불러와 같은 탭을 본다. B에 없는 항목은 빼고 알린다. 다시 올리면 같은 파일을 덮는다
 import { createFakeDrive } from './fake-drive.ts'
@@ -57,9 +58,10 @@ export default async function sharedtabs(ctx: Ctx) {
   const tabsTitles = await A.locator('.dock-panel-head [role="radio"]').allInnerTexts()
   check('제어 센터: 상태 칸 쪽 목록에 있다', tabsTitles.includes('제어 센터'), JSON.stringify(tabsTitles))
   check('제어 센터: 새로고침 버튼', (await A.locator('.dock-panel .dock-ctl', { hasText: '새로고침' }).count()) === 1)
-  const locked =
-    (await A.locator('.dock-panel [aria-label="공유 탭 올리기"]').isDisabled()) && (await A.locator('.dock-panel [aria-label="공유 탭 불러오기"]').isDisabled())
-  check('기본 모드: 올리기·불러오기는 막혀 있고 탭 바에 표시 없음', locked && !(await A.locator('.tabbar.is-shared').count()))
+  const basicBtns =
+    (await A.locator('.dock-panel [aria-label="공유 탭 올리기"], .dock-panel [aria-label="공유 탭 불러오기"]').count()) === 0 &&
+    (await A.locator('.dock-panel [aria-label="공유 탭 바로 넘기기"]').count()) === 1
+  check('기본 모드: 올리기·불러오기 대신 공유 탭 바로 넘기기, 탭 바에 표시 없음', basicBtns && !(await A.locator('.tabbar.is-shared').count()))
 
   // ── 공유 모드로 ──
   await mode(A, '공유')
@@ -111,6 +113,25 @@ export default async function sharedtabs(ctx: Ctx) {
   // 기본 탭은 공유 탭 불러오기와 상관없다
   await mode(A, '기본')
   check('공유 탭을 불러와도 기본 탭은 그대로', JSON.stringify(await keys(A)) === JSON.stringify([`doc:${L}`]), JSON.stringify(await keys(A)))
+
+  // ── 기본 탭을 그대로 공유 탭 바로 넘기기 ──
+  await go(A, { name: 'editor', docId: N1 })
+  await go(A, { name: 'editor', docId: L })
+  await sleep(300)
+  const basicKeys = await keys(A)
+  await control(A)
+  await A.click('.dock-panel [aria-label="공유 탭 바로 넘기기"]')
+  await A.waitForSelector('.tabbar.is-shared')
+  await sleep(300)
+  const route = await A.evaluate(async () => (await import('/src/app/store.ts')).useUI.getState().route)
+  check('넘기기: 기본 탭 그대로 공유 탭 바가 된다', JSON.stringify(await keys(A)) === JSON.stringify(basicKeys), JSON.stringify([basicKeys, await keys(A)]))
+  check('넘기기: 보던 화면 그대로', route.name === 'editor' && (route as { docId: string }).docId === L)
+  await A.reload()
+  await A.waitForSelector('.tabbar.is-shared')
+  await sleep(500)
+  check('넘기기: 새로고침해도 넘긴 공유 탭', JSON.stringify(await keys(A)) === JSON.stringify(basicKeys), JSON.stringify(await keys(A)))
+  await mode(A, '기본')
+  check('넘기기: 기본 탭도 그대로 남는다', JSON.stringify(await keys(A)) === JSON.stringify(basicKeys), JSON.stringify(await keys(A)))
   await A.context().close()
   await B.context().close()
 }

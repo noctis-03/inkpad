@@ -413,6 +413,7 @@ function ControlCompact() {
 function ControlDetail() {
   const tabMode = useUI((s) => s.tabMode)
   const setTabMode = useUI((s) => s.setTabMode)
+  const carryToShared = useUI((s) => s.carryToShared)
   const count = useUI((s) => s.tabs.length)
   const moving = useSyncExternalStore(onSharedTabsMoving, getSharedTabsMoving)
   const shared = tabMode === 'shared'
@@ -439,20 +440,29 @@ function ControlDetail() {
           onChange={setTabMode}
           label="탭 바 모드"
         />
-        <div className="dock-ctl-grid">
-          <button className="dock-ctl" onClick={() => void pushSharedTabs()} disabled={!shared || !!moving} aria-label="공유 탭 올리기">
-            <Icon name="arrowUp" size={20} className={moving === 'up' ? 'is-busy' : undefined} />
-            <span>{moving === 'up' ? '올리는 중…' : '올리기'}</span>
-          </button>
-          <button className="dock-ctl" onClick={() => void pullSharedTabs()} disabled={!shared || !!moving} aria-label="공유 탭 불러오기">
-            <Icon name="arrowDown" size={20} className={moving === 'down' ? 'is-busy' : undefined} />
-            <span>{moving === 'down' ? '불러오는 중…' : '불러오기'}</span>
-          </button>
-        </div>
+        {shared ? (
+          <div className="dock-ctl-grid">
+            <button className="dock-ctl" onClick={() => void pushSharedTabs()} disabled={!!moving} aria-label="공유 탭 올리기">
+              <Icon name="arrowUp" size={20} className={moving === 'up' ? 'is-busy' : undefined} />
+              <span>{moving === 'up' ? '올리는 중…' : '올리기'}</span>
+            </button>
+            <button className="dock-ctl" onClick={() => void pullSharedTabs()} disabled={!!moving} aria-label="공유 탭 불러오기">
+              <Icon name="arrowDown" size={20} className={moving === 'down' ? 'is-busy' : undefined} />
+              <span>{moving === 'down' ? '불러오는 중…' : '불러오기'}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="dock-ctl-grid">
+            <button className="dock-ctl" onClick={carryToShared} aria-label="공유 탭 바로 넘기기">
+              <Icon name="jump" size={20} />
+              <span>공유로 넘기기</span>
+            </button>
+          </div>
+        )}
         <p className="dock-note">
           {shared
             ? `공유 탭 ${count}개 — 올리기는 Drive의 공유 탭 파일을 이 탭으로 덮어쓰고, 불러오기는 그 파일의 탭으로 바꿉니다.`
-            : '기본 탭은 이 기기에만 남습니다. 공유로 바꾸면 기기끼리 올리고 불러올 수 있는 탭을 따로 씁니다.'}
+            : `기본 탭 ${count}개는 이 기기에만 남습니다. 넘기면 이 탭 그대로 공유 탭이 됩니다(전에 있던 공유 탭은 바뀌고, 기본 탭은 남습니다).`}
         </p>
       </section>
     </div>

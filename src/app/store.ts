@@ -276,6 +276,8 @@ interface UIState {
   swapSplit: () => void
   /** 탭 바 모드 바꾸기 — 지금 모드의 탭은 그대로 기억해 두고 다른 모드의 탭을 꺼낸다 */
   setTabMode: (m: TabMode) => void
+  /** 기본 탭 바의 탭(옆 칸 포함)을 그대로 공유 탭 바로 넘기고 공유 모드로 — 기본 탭은 그대로 남는다 */
+  carryToShared: () => void
   /** 공유 탭 바의 탭을 통째로 바꾼다 (공유 탭 불러오기) */
   replaceTabs: (tabs: TabRoute[]) => void
 }
@@ -452,6 +454,18 @@ export const useUI = create<UIState>((set, get) => ({
     const t = loadTabs(m)
     set({ tabMode: m, tabs: t.tabs, split: t.split, splitRatio: t.splitRatio, splitSide: t.splitSide })
     leaveIfGone()
+  },
+  carryToShared: () => {
+    const { tabMode, tabs, split, splitRatio, splitSide } = get()
+    if (tabMode !== 'local') return
+    try {
+      localStorage.setItem(LS_TAB_MODE, 'shared')
+    } catch {
+      /* 저장 못 해도 이번 실행 동안은 바뀐다 */
+    }
+    // 모드를 바꾸는 순간은 저장 구독이 건너뛰므로 공유 탭 자리에 직접 적는다. 보던 화면도 그대로
+    save(tabsKey('shared'), { tabs, split, splitRatio, splitSide })
+    set({ tabMode: 'shared' })
   },
   replaceTabs: (tabs) => {
     const { split } = get()
