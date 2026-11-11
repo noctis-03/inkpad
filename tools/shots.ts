@@ -185,6 +185,11 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
   'library-menu': async (p) => {
     await p.click('[aria-label="카테고리"], [aria-label="폴더 목록"]', { timeout: 3000 }).catch(() => {})
   },
+  // 모든 노트 — 태그 칩은 '전체'뿐 아니라 종류별 목록에도 뜬다
+  'library-notes': async (p) => {
+    if (!(await p.locator('.folder-tree:visible').count())) await p.click('[aria-label="폴더 목록"], [aria-label="카테고리"]')
+    await p.locator('.tree-item', { hasText: '모든 노트' }).click()
+  },
   'library-list': async (p) => {
     await p.getByRole('radio', { name: '목록' }).click({ timeout: 3000 })
   },

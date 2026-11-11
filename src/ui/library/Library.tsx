@@ -1098,8 +1098,8 @@ export function Library() {
     if (section.kind === 'catgroup' && !recentActive) list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
     return list
   }, [visible, visibleApps, visibleFiles, visibleCloud, prefs.sort, section, recentActive])
-  /** 카드 위 [태그] 칩 — '전체'에서는 모든 카테고리의 태그, 묶음에서는 그 묶음 안의 태그. 누르면 그 태그만 걸러 본다 */
-  const tagScope = (section.kind === 'all' || section.kind === 'catgroup') && !query
+  /** 카드 위 [태그] 칩 — '전체'·모든 노트·모든 문서·모든 앱·기타 파일에서는 거기 있는 항목의 태그, 묶음에서는 그 묶음 안의 태그. 누르면 그 태그만 걸러 본다 */
+  const tagScope = ['all', 'notes', 'texts', 'apps', 'files', 'catgroup'].includes(section.kind) && !query
   const tagChips = useMemo(() => {
     if (!tagScope) return []
     const n = new Map<string, number>()
@@ -1854,27 +1854,6 @@ export function Library() {
       <Icon name="sidebar" />
     </button>
   )
-  // 휴대폰 폭의 카테고리 칩 줄 — 사이드바(서랍)를 열지 않고 고른다. 사이드바와 같은 섹션으로 간다
-  const chips: { key: string; label: string; color?: string; on: boolean; go: () => void }[] = [
-    { key: 'all', label: '전체', on: section.kind === 'all', go: () => pickSection({ kind: 'all' }) },
-    { key: 'notes', label: '모든 노트', on: section.kind === 'notes', go: () => pickSection({ kind: 'notes' }) },
-    { key: 'texts', label: '모든 문서', on: section.kind === 'texts', go: () => pickSection({ kind: 'texts' }) },
-    ...categoryLayout.groups.map((g) => ({
-      key: 'catgroup:' + g.name,
-      label: g.name,
-      color: catColor(g.cats[0]),
-      on: section.kind === 'catgroup' && section.name === g.name,
-      go: () => pickSection({ kind: 'catgroup', name: g.name })
-    })),
-    ...categoryLayout.plain.map((c) => ({
-      key: 'cat:' + c,
-      label: c,
-      color: catColor(c),
-      on: section.kind === 'category' && section.name === c,
-      go: () => pickSection({ kind: 'category', name: c })
-    }))
-  ]
-
   return (
     <div
       className={'library' + (selected ? ' is-selecting' : '') + (treeOpen ? ' has-side' : '') + (sideTools ? ' has-side-tools' : '')}
@@ -2180,14 +2159,6 @@ export function Library() {
               </>
             )}
           </div>
-          <div className="lib-chips" role="group" aria-label="카테고리">
-            {chips.map((c) => (
-              <button key={c.key} className={'lib-chip' + (c.on ? ' is-on' : '')} aria-pressed={c.on} onClick={c.go}>
-                {c.color && <i className="cat-dot" style={{ background: c.color }} aria-hidden="true" />}
-                {c.label}
-              </button>
-            ))}
-          </div>
           <main className="library-main">
             {section.kind === 'folder' && (
               <nav className="breadcrumb" aria-label="경로">
@@ -2212,9 +2183,7 @@ export function Library() {
             {tagChips.length > 0 && (
               // 태그 필터 — 작은 알약 한 줄(휴대폰 카테고리 칩과 같은 모양). 맨 앞 '전체'로 풀고, 고른 칩은 먹색으로 채운다
               <section className="tag-strip" role="group" aria-label="태그">
-                {/* 휴대폰은 바로 위가 카테고리 칩 줄('전체'로 시작)이라 '전체'가 두 번 나온다 — 거기서는 '전체' 대신 '태그' 꼬리표를 둔다(14-late.css) */}
-                <span className="tag-strip-label">태그</span>
-                <button className={'tag-chip is-all' + (activeTag ? '' : ' is-on')} aria-pressed={!activeTag} onClick={() => setTagFilter(null)}>
+                <button className={'tag-chip' + (activeTag ? '' : ' is-on')} aria-pressed={!activeTag} onClick={() => setTagFilter(null)}>
                   전체
                 </button>
                 {tagChips.map(({ tag, count }) => (

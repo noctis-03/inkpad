@@ -3,7 +3,7 @@
    제목 줄은 정렬 ▾ · 제목 · 검색. 사이드바를 열면 새로 만들기·작업보드·설정·동기화는 사이드바로 간다.
    1120px 이하: 작업보드를 ⋯(보기·정렬) 메뉴로.
    700px 이하(휴대폰): 상단 바는 앱 이름 · 돋보기 · ⋯ · 동기화. 격자/목록·설정은 ⋯ 메뉴로, 검색은 돋보기를 누르면
-   제목 줄 전체가 검색창이 된다. 새로 만들기는 화면 아래 폭 전체 버튼, 제목 아래에 카테고리 칩 줄.
+   제목 줄 전체가 검색창이 된다. 새로 만들기는 오른쪽 아래 둥근 버튼. 카테고리는 서랍(사이드바)에서 고른다.
    가로 스크롤(04-library)은 그래도 넘칠 때를 위한 안전망이다. */
 .library-header .search-toggle,
 .library-header .view-more-btn {
@@ -34,34 +34,28 @@
   .library-header .search-toggle {
     display: inline-flex;
   }
-  /* 새로 만들기 — 엄지가 닿는 화면 아래, 폭 전체 (.library-body 기준) */
+  /* 새로 만들기 — 엄지가 닿는 오른쪽 아래 둥근 버튼(+). 폭 전체 버튼은 마지막 줄 카드 캡션을 가렸다 (.library 기준) */
   .library-header #new-doc-btn {
     position: absolute;
     z-index: 6;
-    left: 16px;
     right: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    min-height: 48px;
-    box-shadow: 0 6px 20px #0000001f;
+    width: 56px;
+    height: 56px;
+    min-height: 0;
+    padding: 0;
+    border-radius: var(--r-pill);
+    box-shadow: var(--e2);
+  }
+  .library-header #new-doc-btn .new-doc-label {
+    display: none;
+  }
+  .library-header #new-doc-btn svg {
+    width: 24px;
+    height: 24px;
   }
   .library-main {
-    padding-bottom: 96px;
-  }
-  /* 버튼 뒤 — 지나가는 카드·캡션이 버튼에 바로 겹치지 않게 바탕색으로 옅게 가린다 (.library 기준, 버튼 z-index 6 바로 아래) */
-  .library::after {
-    content: '';
-    position: absolute;
-    z-index: 5;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: calc(104px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(to bottom, transparent, var(--lib-bg) 44%);
-    pointer-events: none;
-  }
-  /* 서랍이 열려 어둠막이 깔리면 뺀다 — 막 위로 밝은 띠가 비친다 */
-  .library:has(.tree-backdrop)::after {
-    display: none;
+    padding-bottom: 88px; /* 마지막 줄의 ⋯ 가 둥근 버튼 밑에 깔리지 않게 */
   }
 
   .lib-titlebar {
@@ -87,47 +81,6 @@
     min-height: var(--h-control);
     color: var(--accent);
     font-weight: 600;
-  }
-
-  .lib-chips {
-    flex: none;
-    display: flex;
-    gap: 6px;
-    padding: 2px 16px 10px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .lib-chips::-webkit-scrollbar {
-    display: none;
-  }
-  .lib-chip {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 32px;
-    padding: 0 13px;
-    border: 1px solid var(--line-2);
-    border-radius: var(--r-pill);
-    background: transparent;
-    color: var(--ink-2);
-    font-size: var(--fs-sm);
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  .lib-chip.is-on {
-    border-color: var(--btn-bg);
-    background: var(--btn-bg);
-    color: var(--btn-fg);
-    font-weight: 500;
-  }
-
-  /* 태그 줄 — 바로 위 카테고리 칩 줄과 '전체'가 겹치지 않게: '전체' 칩 대신 '태그' 꼬리표. 고른 칩을 다시 누르면 풀린다 */
-  .tag-strip-label {
-    display: block;
-  }
-  .tag-chip.is-all {
-    display: none;
   }
 
   /* 선택 모드: 제목은 줄이지 않는다(안쪽에 말줄임 상자가 없어 옆 버튼 위로 넘쳤다) — 대신 여백·글자를 줄이고 '마킹 지우기'는 '지우기'로 */
