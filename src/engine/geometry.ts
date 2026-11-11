@@ -380,3 +380,100 @@ export function strokeInPolygon(points: number[], ox: number, oy: number, poly: 
   }
   return total > 0 && inside / total >= 0.6
 }
+
+/**
+ * 지그재그로 긋기(스크래치 아웃) 판정 — 펜으로 글씨 위를 빠르게 왔다 갔다 그으면 지우개처럼 쓴다.
+ * points: 청크 좌표 [x, y, p, dt, …]. 획을 일정 간격으로 다시 찍어 진행 방향이 120° 넘게 꺾이는 곳(되돌아가는 곳)을 센다.
+ *  - 되돌아가는 곳이 4번 이상 (5번 넘게 왔다 갔다)
+ *  - 전체 길이가 획을 감싸는 상자의 대각선보다 충분히 길다 (같은 자리를 여러 번 지나간다)
+ *  - 왔다 갔다 하는 한 번 한 번의 길이가 고르다 (글씨의 꺾임은 들쭉날쭉하다)
+ */
+export function isScratchOut(points: number[]): boolean {
+  const n = points.length / 4
+  if (n < 8) return false
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let len = 0
+  for (let i = 0; i < n; i++) {
+    const x = points[i * 4], y = points[i * 4 + 1]
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+    if (x > maxX) maxX = x
+    if (y > maxY) maxY = y
+    if (i) len += Math.hypot(x - points[i * 4 - 4], y - points[i * 4 - 3])
+  }
+  const diag = Math.hypot(maxX - minX, maxY - minY)
+  if (diag <= 0 || len < diag * 1.8) return false
+
+  // 호 길이로 다시 찍기
+  const step = diag / 40
+  const rs: number[] = [points[0], points[1]]
+  let carry = 0
+  for (let i = 1; i < n; i++) {
+    const ax = points[i * 4 - 4], ay = points[i * 4 - 3]
+    const bx = points[i * 4], by = points[i * 4 + 1]
+    const d = Math.hypot(bx - ax, by - ay)
+    if (d <= 0) continue
+    let t = step - carry
+    while (t <= d) {
+      rs.push(ax + ((bx - ax) * t) / d, ay + ((by - ay) * t) / d)
+      t += step
+    }
+    carry = d - (t - step)
+  }
+  const m = rs.length / 2
+  const k = 3
+  if (m < k * 2 + 1) return false
+
+  // 되돌아가는 곳: 앞뒤 k점 방향이 120° 넘게 꺾인 구간에서 가장 크게 꺾인 점
+  const cusps: number[] = []
+  let best = -1
+  let bestCos = 0
+  for (let i = k; i < m - k; i++) {
+    const v1x = rs[i * 2] - rs[(i - k) * 2], v1y = rs[i * 2 + 1] - rs[(i - k) * 2 + 1]
+    const v2x = rs[(i + k) * 2] - rs[i * 2], v2y = rs[(i + k) * 2 + 1] - rs[i * 2 + 1]
+    const l = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y)
+    const cos = l > 0 ? (v1x * v2x + v1y * v2y) / l : 1
+    if (cos < -0.5) {
+      if (best < 0 || cos < bestCos) {
+        best = i
+        bestCos = cos
+      }
+    } else if (best >= 0) {
+      if (!cusps.length || best - cusps[cusps.length - 1] >= k) cusps.push(best)
+      best = -1
+    }
+  }
+  if (best >= 0 && (!cusps.length || best - cusps[cusps.length - 1] >= k)) cusps.push(best)
+  if (cusps.length < 4) return false
+
+  // 꺾인 곳 사이(안쪽 구간)의 길이가 고른가
+  const segs: number[] = []
+  for (let i = 1; i < cusps.length; i++) segs.push(cusps[i] - cusps[i - 1])
+  const sorted = [...segs].sort((a, b) => a - b)
+  const med = sorted[sorted.length >> 1]
+  const even = segs.filter((s) => s >= med * 0.35 && s <= med * 2.8).length
+  return even >= segs.length * 0.75
+}
+
+/** 볼록 껍질 (monotone chain). pts = [x0,y0,x1,y1,...] → 반시계 방향 꼭짓점 [x,y,...] */
+export function convexHullFlat(pts: number[]): number[] {
+  const n = pts.length / 2
+  const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => pts[a * 2] - pts[b * 2] || pts[a * 2 + 1] - pts[b * 2 + 1])
+  if (n < 3) return idx.flatMap((i) => [pts[i * 2], pts[i * 2 + 1]])
+  const cross = (o: number, a: number, b: number) =>
+    (pts[a * 2] - pts[o * 2]) * (pts[b * 2 + 1] - pts[o * 2 + 1]) - (pts[a * 2 + 1] - pts[o * 2 + 1]) * (pts[b * 2] - pts[o * 2])
+  const lower: number[] = []
+  for (const i of idx) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], i) <= 0) lower.pop()
+    lower.push(i)
+  }
+  const upper: number[] = []
+  for (let j = idx.length - 1; j >= 0; j--) {
+    const i = idx[j]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], i) <= 0) upper.pop()
+    upper.push(i)
+  }
+  lower.pop()
+  upper.pop()
+  return [...lower, ...upper].flatMap((i) => [pts[i * 2], pts[i * 2 + 1]])
+}

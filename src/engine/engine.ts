@@ -1,7 +1,7 @@
 import { BlockStore, anchorBlock, refreshBlockIds } from './blocks'
 import { Camera, clampZoom } from './camera'
 import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, PALM_GROW_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
-import { hitStroke, pointsBBox, q2, strokeInPolygon } from './geometry'
+import { convexHullFlat, hitStroke, isScratchOut, pointsBBox, q2, strokeInPolygon } from './geometry'
 import { History, type Command, type ImageChange, type PageSnapshot, type SheetChange } from './history'
 import { ImageCache } from './images'
 import { Layout, PAGE_GAP } from './layout'
@@ -2075,6 +2075,8 @@ export class Engine {
     this.stats.pressureSource = PRESSURE_LABEL[a.pressure]
     if (!commit || a.points.length === 0) return
     const hl = a.tool === 'highlighter'
+    // 펜으로 글씨 위를 지그재그로 그으면 그 획을 남기지 않고 아래 글씨를 지운다
+    if (!hl && this.settings.scratchErase && this.scratchErase(a)) return
     const stroke: Stroke = {
       id: ulid(),
       type: 'stroke',
@@ -2100,6 +2102,49 @@ export class Engine {
     } else this.committedDirty = true
     this.scheduleSave()
     this.emitView(true)
+  }
+
+  /**
+   * 지그재그로 긋기(스크래치 아웃)로 지우기. 방금 그은 펜 획이 지그재그면, 그 획이 덮은 볼록 영역 안에
+   * 점의 60% 이상이 드는(올가미 선택과 같은 기준) 획을 지운다. 지울 획이 없으면 평범한 획으로 남긴다.
+   * 지그재그 획은 남기지 않고, 지운 것은 지우개처럼 한 번에 되돌린다.
+   */
+  private scratchErase(a: ActiveStroke): boolean {
+    if (!isScratchOut(a.points)) return false
+    const world: number[] = []
+    for (let i = 0; i < a.points.length; i += 4) world.push(a.points[i] * a.os + a.ox, a.points[i + 1] * a.os + a.oy)
+    const hull = convexHullFlat(world)
+    if (hull.length < 6) return false
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (let i = 0; i < hull.length; i += 2) {
+      minX = Math.min(minX, hull[i])
+      maxX = Math.max(maxX, hull[i])
+      minY = Math.min(minY, hull[i + 1])
+      maxY = Math.max(maxY, hull[i + 1])
+    }
+    // 지우개와 같이 이 자리에서 보이는 획만 (불투명 용지에 가린 획·용지 밖의 용지 획은 그대로)
+    const surf = this.layout.surfacesAt((minX + maxX) / 2, (minY + maxY) / 2)
+    const hits: StrokeRec[] = []
+    for (const rec of this.scene.query(minX, minY, maxX, maxY)) {
+      if (!this.layout.visibleIn(surf, rec.pageId)) continue
+      if (strokeInPolygon(rec.stroke.points, rec.ox, rec.oy, hull, rec.os)) hits.push(rec)
+    }
+    if (!hits.length) return false
+    let box: Box | null = null
+    const removed: Entry[] = []
+    for (const rec of hits) {
+      removed.push(toEntry(rec))
+      this.scene.remove(rec.stroke.id)
+      box = unionBox(box, rec.item)
+      this.markDirty(rec.pageId, rec.key)
+    }
+    this.history.push({ removed, added: [] })
+    new Set(removed.map((e) => e.pageId)).forEach((p) => this.bumpPage(p))
+    if (box && this.renderer.inSync(this.cam)) this.renderer.redrawRegion(this.scene, this.cam, box)
+    else this.committedDirty = true
+    this.scheduleSave()
+    this.emitView(true)
+    return true
   }
 
   // ─────────────────────────── 올가미 ───────────────────────────
