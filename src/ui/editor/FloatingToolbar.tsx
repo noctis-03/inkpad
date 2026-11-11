@@ -178,6 +178,9 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
     else setStyle({ ...style, pen: { ...style.pen, width: w } })
   }
 
+  const engineRef = useRef(engine)
+  engineRef.current = engine
+
   // ── 레이아웃 계산 + 스냅 배치 ──
   const relayout = useCallback(
     (animate = true) => {
@@ -223,9 +226,17 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
           : next
       )
       document.documentElement.dataset.ftPos = p // toasts/page-indicator 회피용
+      // 위쪽에 떠 있으면 폭 맞춤 때 페이지 위 끝을 도구창 아래로 — 첫 줄을 가리지 않게 (꾹 눌러 부른 동안은 그대로)
+      if (!sp) engineRef.current?.setFitTop(p.startsWith('top') ? y + L.h + 8 : 16)
     },
     [pos]
   )
+
+  // 엔진이 준비되면 위 여백을 알리고, 도구창이 사라지면(보기 모드 등) 기본 여백으로 되돌린다
+  useEffect(() => {
+    relayout(false)
+    return () => engine?.setFitTop(16)
+  }, [engine, relayout])
 
   // 도구/접힘/위치가 바뀌면 크기가 달라지므로 페인트 전에 다시 계산
   useLayoutEffect(() => relayout(), [relayout, tool, collapsed])
@@ -570,6 +581,8 @@ export function FloatingToolbar({ engine, photo = true }: { engine: Engine | nul
             onClick={(e) => togglePop('style', e.currentTarget)}
           >
             {previewOf(tool, opaque(curColor), curWidth)}
+            {/* 색·굵기가 바에서 빠진 좁은 단계 — 획 대신 지금 색을 동그라미로 (누르면 색·굵기 창) */}
+            {!isEr && <span className="ft-chip-dot" style={{ ['--c' as string]: opaque(curColor) }} />}
           </button>
         </div>
 

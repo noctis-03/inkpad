@@ -29,6 +29,6 @@ export default async function splash(ctx: Ctx) {
   await sleep(1150)
   await shot('splash-dark')
   const bg = await A.evaluate(() => getComputedStyle(document.getElementById('splash')!).backgroundColor)
-  check('다크 모드에서는 어두운 바탕', bg === 'rgb(22, 21, 19)', bg)
+  check('다크 모드에서는 어두운 바탕', bg === 'rgb(27, 27, 26)', bg)
   await A.context().close()
 }
