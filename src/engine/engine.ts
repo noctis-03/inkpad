@@ -1674,8 +1674,7 @@ export class Engine {
     const t: TouchInfo = { id: e.pointerId, x: p.x, y: p.y, sx: p.x, sy: p.y, ignored: false }
     const penBusy = (!!this.active && this.active.pointerType !== 'touch') || this.held !== null
     const inPalmWindow = performance.now() - this.lastPenUp < this.settings.palmWindowMs
-    const bigContact = this.settings.palmMaxContact > 0 && Math.max(e.width, e.height) > this.settings.palmMaxContact
-    if (penBusy || inPalmWindow || bigContact) {
+    if (penBusy || inPalmWindow || this.isBigContact(e)) {
       t.ignored = true
       this.palmRejected++
       this.touches.set(e.pointerId, t)
@@ -1692,6 +1691,38 @@ export class Engine {
       return
     }
     this.gesture = this.newGesture(live, Math.min(2, live.length), this.gesture)
+  }
+
+  /** 접촉면이 '큰 접촉면 무시' 기준보다 큰가 — 손바닥 */
+  private isBigContact(e: PointerEvent) {
+    const max = this.settings.palmMaxContact
+    return max > 0 && Math.max(e.width || 0, e.height || 0) > max
+  }
+
+  /**
+   * 손바닥은 처음 닿을 때는 작게 잡혔다가 눌리면서 커진다. pointerdown 한 번만 보면 거의 다 통과해 버리므로,
+   * 움직이는 도중에 기준을 넘으면 그때라도 손바닥으로 돌려 세운다 — 그리던 획은 버리고, 움직인 화면은 되돌린다.
+   */
+  private rejectTouchLate(t: TouchInfo) {
+    t.ignored = true
+    this.palmRejected++
+    if (this.active && this.active.pointerId === t.id) this.discardActive()
+    const g = this.gesture
+    if (!g) return
+    if (g.panning || g.count === 2) {
+      this.cam.copy(g.startCam)
+      this.onCameraMoved()
+    }
+    const live = this.liveTouches()
+    if (!live.length) {
+      this.gesture = null
+      return
+    }
+    const next = this.newGesture(live, Math.min(2, live.length))
+    // 손바닥이 끼어 있던 동작이니 손가락 탭(실행 취소·다시 실행)으로 치지 않는다
+    next.moved = true
+    if (live.length === 1 && this.settings.fingerDraw) next.count = 0
+    this.gesture = next
   }
 
   private collect(a: ActiveStroke, e: PointerEvent) {
@@ -1738,6 +1769,10 @@ export class Engine {
     t.x = p.x
     t.y = p.y
     if (t.ignored) return
+    if (this.isBigContact(e)) {
+      this.rejectTouchLate(t)
+      return
+    }
     const a = this.active
     if (a && a.pointerId === e.pointerId) {
       this.markEvent(e)
