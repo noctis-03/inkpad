@@ -897,19 +897,15 @@ export function Library() {
 
   /**
    * 클라우드에만 있는 노트 카드 — 이 기기에 받은 적 없는 새 노트(이 기기에서 지운 것은 아니다).
-   * 미리보기가 없어 점선 테두리 + 클라우드 아이콘, 꼬리표 '클라우드에만 있음 · 기기'. 누르면 받아서 연다(격자는 오버레이를 거쳐).
-   * 고르기(여러 장 선택)·마킹 대상이 아니다
+   * 미리보기가 없어 '아직 안 온 빈 종이' — 줄 종이 실루엣 + 오른쪽 위 초록 원 배지(받는 중엔 고리),
+   * 격자는 아래 띠에 '탭해서 받기 · 기기', 목록은 끝에 '받기' 알약. 캡션은 다른 카드와 같은 '카테고리 · 날짜'.
+   * 누르면 받아서 연다(격자는 오버레이를 거쳐). 고르기(여러 장 선택)·마킹 대상이 아니다
    */
   const cloudCard = (c: CloudOnlyNote, idx: number) => {
     const key = 'cloud:' + c.docId
     const busy = cloudBusy === c.docId
     const where = c.device ? `클라우드에만 있음 · ${c.device}` : '클라우드에만 있음'
-    // 꼬리표는 다른 카드의 동기화 꼬리표(1비트 꼬리표)와 같은 모양 — 격자는 미리보기 위, 목록은 끝
-    const cloudTag = (overlay: boolean) => (
-      <span className={'sync-tag t-remote-new' + (overlay ? ' is-overlay' : '')} title={where} aria-label={where}>
-        <b aria-hidden="true">↓</b>클라우드
-      </span>
-    )
+    const grid = prefs.view === 'grid'
     return (
       <article
         key={key}
@@ -918,6 +914,7 @@ export function Library() {
         data-reveal-key={key}
         data-cloud-id={c.docId}
         aria-busy={busy || undefined}
+        title={where}
         style={idx < 20 ? ({ ['--i' as string]: idx } as React.CSSProperties) : undefined}
         onClick={() => {
           if (selected || busy) return
@@ -925,20 +922,29 @@ export function Library() {
         }}
       >
         <div className="doc-thumb">
-          {busy ? <span className="spinner" role="status" aria-label="받는 중" /> : <Icon name="cloudDown" size={32} />}
-          {prefs.view === 'grid' && cloudTag(true)}
-          {prefs.view === 'grid' &&
+          {grid && (
+            <span className="cloud-ghost" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
+          <span className="cloud-badge" role={busy ? 'status' : undefined} aria-label={busy ? '받는 중' : where}>
+            {busy ? <span className="cloud-badge-ring" /> : <Icon name="arrowDown" size={grid ? 15 : 10} />}
+          </span>
+          {grid && <span className="cloud-foot">{busy ? '받는 중…' : c.device ? `탭해서 받기 · ${c.device}` : '탭해서 받기'}</span>}
+          {grid &&
             !busy &&
             openPanel(c.device ? `${c.device} · ${formatDate(c.updatedAt)}` : formatDate(c.updatedAt), { icon: 'download', label: '받아서 열기', aria: '받아서 열기 — 이 기기로 받은 뒤 편집모드로 연다', run: () => void receiveCloud(c, true) })}
         </div>
         <div className="doc-info">
           <h3 className="doc-title">{c.title}</h3>
-          {prefs.view === 'grid' ? (
+          {grid ? (
             <div className="doc-cap">
-              <p className="doc-cat-line">
-                {catLine(c.category)}
-                {c.device && <span className="cloud-card-dev">{c.device}</span>}
-              </p>
+              <p className="doc-cat-line">{gridCap(c.category, '클라우드', c.updatedAt)}</p>
               {moreButton((x, y) => setCloudMenu({ c, x, y }))}
             </div>
           ) : (
@@ -948,9 +954,9 @@ export function Library() {
             </p>
           )}
         </div>
-        {prefs.view === 'list' && (
+        {!grid && (
           <div className="doc-tail">
-            {cloudTag(false)}
+            <span className="cloud-get" aria-hidden="true">{busy ? '받는 중' : '받기'}</span>
             {moreButton((x, y) => setCloudMenu({ c, x, y }))}
           </div>
         )}
