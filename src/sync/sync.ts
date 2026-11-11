@@ -33,7 +33,7 @@
 //     할 일 받기는 일정 화면의 동기화 버튼(또는 열 때 확인을 켰을 때 일정 화면을 열 때) — sync/tasks.ts
 //     노트의 "올리기"는 이 대기를 올리지 않는다.
 import { errorText, startActivity, trackActivity, type ActivityHandle } from '../shared/activity'
-import type { DocumentMeta, ID } from '../shared/model'
+import type { DocMode, DocumentMeta, ID } from '../shared/model'
 import { gzipJson } from '../storage/compress'
 import { db } from '../storage/db'
 import { DocBusyError, flushOpenDocs, withDocExclusive } from '../storage/docGuard'
@@ -79,6 +79,8 @@ type BranchFileExtra = Omit<BranchFile, keyof DocFileV1>
 // appProperties 표식 — 크기 제한은 drive.ts (키+값 124바이트). 본문에는 늘 온전한 값이 들어간다
 /** 제목은 넘치면 잘라서 넣는다 */
 const titleProp = (title: string | null | undefined): Record<string, string> => (title ? { title: drive.fitAppProperty('title', title) } : {})
+/** 노트 종류 표식 읽기 — 모르는 값은 버린다 */
+const docModeProp = (v: string | undefined): DocMode | undefined => (v === 'paged' || v === 'infinite' || v === 'text' ? v : undefined)
 /** 카테고리는 넘치면 뺀다 — 잘린 이름은 다른 카테고리가 된다 */
 const categoryProp = (category: string | null | undefined) => drive.appPropertyIfFits('category', category)
 
@@ -268,7 +270,7 @@ if (cloudStatesChannel) cloudStatesChannel.onmessage = () => window.dispatchEven
 export type CardSyncState = 'new' | 'pending' | 'same' | 'remote-new' | 'diverged'
 
 /** 라이브러리에 카드로 보이는 '클라우드에만 있는 노트' — 받기에 필요한 것과 카드에 쓰는 것만 */
-export type CloudOnlyNote = Pick<CloudNoteInfo, 'docId' | 'title' | 'device' | 'category' | 'updatedAt' | 'fileId' | 'version' | 'enc'>
+export type CloudOnlyNote = Pick<CloudNoteInfo, 'docId' | 'title' | 'device' | 'category' | 'mode' | 'updatedAt' | 'fileId' | 'version' | 'enc'>
 
 /**
  * 동기화창이 클라우드 노트 목록을 새로고침하면(또는 앱을 열 때 확인하면) 그 판정을 캐시해 둔다 — 라이브러리 점이 함께 읽는다.
@@ -282,7 +284,7 @@ async function cacheCloudStates(infos: CloudNoteInfo[]): Promise<void> {
     states[i.docId] = i.state
     if (i.version) versions[i.docId] = i.version
     if (i.cloudOnly && i.state === 'remote-new' && i.fileId)
-      cloudOnly.push({ docId: i.docId, title: i.title, device: i.device, category: i.category ?? null, updatedAt: i.updatedAt, fileId: i.fileId, version: i.version, enc: i.enc })
+      cloudOnly.push({ docId: i.docId, title: i.title, device: i.device, category: i.category ?? null, mode: i.mode, updatedAt: i.updatedAt, fileId: i.fileId, version: i.version, enc: i.enc })
   }
   await putSync('cloudStates', { at: Date.now(), states, versions, cloudOnly })
   notifySyncChanged()
@@ -564,6 +566,7 @@ async function pushDoc(docId: ID, info: PendingDoc, f: { docs: string; assets: s
         revKind: kind,
         nb: String(stats.totalBytes),
         ...categoryProp(file.doc.category),
+        mode: file.doc.mode,
         ...mainProps({ gen, mid, merged, updatedAt: file.doc.updatedAt })
       }
     },
@@ -880,6 +883,8 @@ export interface CloudNoteInfo {
   title: string
   device?: string
   category?: string | null
+  /** 노트 종류(필기·무한·문서) — main 파일 표식(appProperties.mode). 표식이 생기기 전에 올린 파일은 모른다(undefined) */
+  mode?: DocMode
   updatedAt: number
   /** Drive 파일 위치. 아직 올리지 않았거나 클라우드에서 사라진 노트('new'·'cloud-deleted')는 빈 문자열 */
   fileId: string
@@ -946,6 +951,7 @@ export async function listCloudNotes(): Promise<CloudNoteInfo[]> {
       title: remote.appProperties?.title || local?.title || docId,
       device: remote.appProperties?.device,
       category: remote.appProperties?.category ?? local?.category ?? null,
+      mode: docModeProp(remote.appProperties?.mode) ?? local?.mode,
       updatedAt: Number(remote.appProperties?.updatedAt) || Date.parse(remote.modifiedTime),
       fileId: remote.id,
       version: remote.version,
@@ -1396,6 +1402,7 @@ function commitMergeLocked(session: MergeSession, draft: MergeDraft): Promise<Me
           revKind: 'merge',
           nb: String(stats.totalBytes),
           ...categoryProp(result.doc.category),
+          mode: result.doc.mode,
           ...mainProps({ gen, mid, merged, updatedAt: result.doc.updatedAt })
         }
       },
