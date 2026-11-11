@@ -579,28 +579,53 @@
   color: var(--warn-ink);
   font-size: var(--fs-md);
 }
-.folder-strip {
+/* 태그 필터 줄 — 작은 알약 칩 한 줄(휴대폰 카테고리 칩 .lib-chip과 같은 모양). 넘치면 줄바꿈 대신 옆으로 민다 */
+.tag-strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 6px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.folder-chip {
+.tag-strip::-webkit-scrollbar {
+  display: none;
+}
+.tag-strip-label {
+  display: none; /* 휴대폰 폭에서만 (14-late.css) */
+  flex: none;
+  align-self: center;
+  margin-right: 2px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.tag-chip {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  font-size: var(--fs-md);
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
-.folder-chip.is-on {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
+.tag-chip-n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.tag-chip.is-on {
+  border-color: var(--btn-bg);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-weight: 500;
+}
+.tag-chip.is-on .tag-chip-n {
+  color: inherit;
+  opacity: .7;
 }
 /* 라이브러리 빈 상태 자리 — 안쪽 모양은 공용 .store-empty(아이콘 칸·제목·설명·동작) */
 .empty-state {
