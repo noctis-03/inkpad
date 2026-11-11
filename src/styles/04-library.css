@@ -82,6 +82,10 @@
 .library-header #new-doc-btn {
   flex-shrink: 0;
 }
+/* 휴대폰 폭에서만 보이는 둥근 새로 만들기 버튼 (14-late.css) */
+.lib-fab {
+  display: none;
+}
 /* 상단 바 — 아이콘 버튼은 40px·라운드 12 */
 .library-header .tb-btn {
   width: var(--h-control);
