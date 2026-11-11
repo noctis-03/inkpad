@@ -897,7 +897,7 @@ export function Library() {
 
   /**
    * 클라우드에만 있는 노트 카드 — 이 기기에 받은 적 없는 새 노트(이 기기에서 지운 것은 아니다).
-   * 미리보기가 없어 '아직 안 온 빈 종이' — 줄 종이 실루엣 + 오른쪽 위 초록 원 배지(받는 중엔 고리),
+   * 미리보기가 없어 가운데 초록 클라우드 아이콘(받는 중엔 고리),
    * 격자는 아래 띠에 '탭해서 받기 · 기기', 목록은 끝에 '받기' 알약. 캡션은 다른 카드와 같은 '카테고리 · 날짜'.
    * 누르면 받아서 연다(격자는 오버레이를 거쳐). 고르기(여러 장 선택)·마킹 대상이 아니다
    */
@@ -922,19 +922,11 @@ export function Library() {
         }}
       >
         <div className="doc-thumb">
-          {grid && (
-            <span className="cloud-ghost" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
+          {busy ? (
+            <span className="spinner" role="status" aria-label="받는 중" />
+          ) : (
+            <Icon name="cloudDown" size={grid ? 32 : 20} />
           )}
-          <span className="cloud-badge" role={busy ? 'status' : undefined} aria-label={busy ? '받는 중' : where}>
-            {busy ? <span className="cloud-badge-ring" /> : <Icon name="arrowDown" size={grid ? 15 : 10} />}
-          </span>
           {grid && <span className="cloud-foot">{busy ? '받는 중…' : c.device ? `탭해서 받기 · ${c.device}` : '탭해서 받기'}</span>}
           {grid &&
             !busy &&
