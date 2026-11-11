@@ -706,6 +706,29 @@ export function Library() {
       <span className="doc-cat-name">{c ?? '미분류'}</span>
     </>
   )
+  /** 격자 캡션 둘째 줄 — 카테고리가 있으면 '● 카테고리 · 날짜', 없으면 '미분류' 대신 종류(쪽수 등)·날짜.
+      날짜는 좁은 카드에 맞춰 짧게(오늘 · 11.9 · 2025.3.1) — 자세한 시각은 목록 보기와 카드를 누르면 뜨는 판에 있다 */
+  const gridCap = (c: string | null | undefined, kind: string, ts: number, datePrefix = '') => {
+    const d = new Date(ts)
+    const now = new Date()
+    const date =
+      datePrefix +
+      (d.toDateString() === now.toDateString()
+        ? '오늘'
+        : d.getFullYear() === now.getFullYear()
+          ? `${d.getMonth() + 1}.${d.getDate()}`
+          : `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`)
+    return c ? (
+      <>
+        {catLine(c)}
+        <span className="doc-cap-date">{date}</span>
+      </>
+    ) : (
+      <span className="doc-cat-name">
+        {kind} · {date}
+      </span>
+    )
+  }
   /** 더보기(⋯) — 누른 자리 아래에 메뉴를 띄운다 */
   const moreButton = (onOpen: (x: number, y: number) => void) => (
     <button
@@ -811,7 +834,7 @@ export function Library() {
           </h3>
           {prefs.view === 'grid' ? (
             <div className="doc-cap">
-              <p className="doc-cat-line">{catLine(o.category)}</p>
+              <p className="doc-cat-line">{gridCap(o.category, kindLabel, o.updatedAt)}</p>
               {moreButton(o.onMenu)}
             </div>
           ) : (
@@ -2372,7 +2395,14 @@ export function Library() {
                         <h3 className="doc-title">{i.d.title}</h3>
                         {prefs.view === 'grid' ? (
                           <div className="doc-cap">
-                            <p className="doc-cat-line">{catLine(i.d.category)}</p>
+                            <p className="doc-cat-line">
+                              {gridCap(
+                                i.d.category,
+                                i.d.mode === 'infinite' ? '무한' : i.d.mode === 'text' ? '문서' : `${i.d.pageOrder.length}쪽`,
+                                section.kind === 'trash' && i.d.deletedAt ? i.d.deletedAt : i.d.updatedAt,
+                                section.kind === 'trash' && i.d.deletedAt ? '삭제 ' : ''
+                              )}
+                            </p>
                             {moreButton((x, y) => setMenu({ doc: i.d, x, y }))}
                           </div>
                         ) : (
