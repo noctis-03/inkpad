@@ -936,7 +936,7 @@ export function Library() {
           <h3 className="doc-title">{c.title}</h3>
           {grid ? (
             <div className="doc-cap">
-              <p className="doc-cat-line">{gridCap(c.category, '클라우드', c.updatedAt)}</p>
+              <p className="doc-cat-line">{gridCap(c.category, c.mode === 'text' ? '문서' : '클라우드', c.updatedAt)}</p>
               {moreButton((x, y) => setCloudMenu({ c, x, y }))}
             </div>
           ) : (
@@ -1091,13 +1091,17 @@ export function Library() {
 
   /** 사이드바 개수에 함께 세는 클라우드 카드 — 숨긴 카테고리는 빼고(카드로도 보이지 않는다) */
   const cloudShown = useMemo(() => cloudOnly.filter((c) => !c.category || !hiddenCats.has(c.category)), [cloudOnly, hiddenCats])
+  const cloudTextCount = useMemo(() => cloudShown.filter((c) => c.mode === 'text').length, [cloudShown])
 
   /** 클라우드에만 있는 노트 — 노트와 같은 필터 규칙(휴지통·모든 앱·모든 링크·기타 파일·최근 열람에는 없다).
-   *  받기 전에는 노트인지 문서인지 모르므로 '모든 문서'에도 넣지 않는다(모든 노트·전체·카테고리에는 보인다) */
+   *  문서(mode 'text')는 '모든 문서'에, 필기 노트는 '모든 노트'에 — 종류는 클라우드 파일 표식(mode)으로 안다.
+   *  표식이 생기기 전에 올린 파일은 종류를 몰라 예전처럼 '모든 노트'에 둔다 */
   const visibleCloud = useMemo(() => {
-    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'links' || section.kind === 'files' || section.kind === 'texts') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'links' || section.kind === 'files') return []
     let list = cloudShown
-    if (section.kind === 'folder') {
+    if (section.kind === 'texts') list = list.filter((c) => c.mode === 'text')
+    else if (section.kind === 'notes') list = list.filter((c) => c.mode !== 'text')
+    else if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
       list = list.filter((c) => c.category != null && cats.has(c.category))
     } else if (section.kind === 'category') list = list.filter((c) => c.category === section.name)
@@ -1941,7 +1945,7 @@ export function Library() {
                 onClick={() => pickSection({ kind: 'notes' })}
               >
                 <Icon name="notebook" size={18} /> 모든 노트 {section.kind === 'notes' && recentActive && recentTag}{' '}
-                <span className="count"><CountUp value={noteCount + cloudShown.length} /></span>
+                <span className="count"><CountUp value={noteCount + cloudShown.length - cloudTextCount} /></span>
               </button>
               <button
                 data-indicator-key="texts"
@@ -1949,7 +1953,7 @@ export function Library() {
                 onClick={() => pickSection({ kind: 'texts' })}
               >
                 <Icon name="textDoc" size={18} /> 모든 문서 {section.kind === 'texts' && recentActive && recentTag}{' '}
-                <span className="count"><CountUp value={docs.length - noteCount} /></span>
+                <span className="count"><CountUp value={docs.length - noteCount + cloudTextCount} /></span>
               </button>
               <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
                 <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length - linkIds.size} /></span>
