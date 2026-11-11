@@ -1,6 +1,6 @@
 import { BlockStore, anchorBlock, refreshBlockIds } from './blocks'
 import { Camera, clampZoom } from './camera'
-import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
+import { AUTO_REDRAW_BUDGET_MS, GESTURE_SETTLE_MS, PALM_GROW_MS, TAP_MAX_MS, TAP_SLOP_PX, WHEEL_ZOOM_SENSITIVITY } from './constants'
 import { hitStroke, pointsBBox, q2, strokeInPolygon } from './geometry'
 import { History, type Command, type ImageChange, type PageSnapshot, type SheetChange } from './history'
 import { ImageCache } from './images'
@@ -97,6 +97,10 @@ interface TouchInfo {
   sx: number
   sy: number
   ignored: boolean
+  /** 닿은 시각 — 손바닥이 커지는 동안만 늦은 판정을 한다 */
+  t0: number
+  /** 손가락으로 확정됨 — 이후로는 접촉면이 커져도 손바닥으로 돌리지 않는다 */
+  settled: boolean
 }
 
 interface Gesture {
@@ -1671,7 +1675,7 @@ export class Engine {
   /** 손가락이 닿음. fromCanvas가 아니면(블록 위) 획을 시작하지 않고 pointer capture도 하지 않는다 — 블록의 탭·클릭은 그대로 둔다 */
   private touchDown(e: PointerEvent, fromCanvas: boolean) {
     const p = this.local(e)
-    const t: TouchInfo = { id: e.pointerId, x: p.x, y: p.y, sx: p.x, sy: p.y, ignored: false }
+    const t: TouchInfo = { id: e.pointerId, x: p.x, y: p.y, sx: p.x, sy: p.y, ignored: false, t0: performance.now(), settled: false }
     const penBusy = (!!this.active && this.active.pointerType !== 'touch') || this.held !== null
     const inPalmWindow = performance.now() - this.lastPenUp < this.settings.palmWindowMs
     if (penBusy || inPalmWindow || this.isBigContact(e)) {
@@ -1701,7 +1705,7 @@ export class Engine {
 
   /**
    * 손바닥은 처음 닿을 때는 작게 잡혔다가 눌리면서 커진다. pointerdown 한 번만 보면 거의 다 통과해 버리므로,
-   * 움직이는 도중에 기준을 넘으면 그때라도 손바닥으로 돌려 세운다 — 그리던 획은 버리고, 움직인 화면은 되돌린다.
+   * 닿은 직후(PALM_GROW_MS 안, 거의 움직이지 않은 동안) 기준을 넘으면 그때라도 손바닥으로 돌려 세운다 — 그리던 획은 버리고, 움직인 화면은 되돌린다.
    */
   private rejectTouchLate(t: TouchInfo) {
     t.ignored = true
@@ -1769,9 +1773,14 @@ export class Engine {
     t.x = p.x
     t.y = p.y
     if (t.ignored) return
-    if (this.isBigContact(e)) {
-      this.rejectTouchLate(t)
-      return
+    if (!t.settled) {
+      // 손바닥은 닿은 직후 제자리에서 커진다. 시간이 지났거나 움직이기 시작했으면 손가락으로 본다 —
+      // 핀치·팬 중에 손가락을 세게 눌러 접촉면이 넓어진 것까지 손바닥으로 돌리면 확대·축소가 끊긴다.
+      if (performance.now() - t.t0 > PALM_GROW_MS || Math.hypot(t.x - t.sx, t.y - t.sy) > TAP_SLOP_PX) t.settled = true
+      else if (this.isBigContact(e)) {
+        this.rejectTouchLate(t)
+        return
+      }
     }
     const a = this.active
     if (a && a.pointerId === e.pointerId) {

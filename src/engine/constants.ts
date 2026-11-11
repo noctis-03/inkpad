@@ -5,6 +5,7 @@ export const MAX_ZOOM = 20 // 2000%
 export const WHEEL_ZOOM_SENSITIVITY = 0.0015
 export const TAP_MAX_MS = 300 // 두/세 손가락 탭 판정 시간
 export const TAP_SLOP_PX = 10 // 탭/팬 시작 판정 이동 거리 (CSS px)
+export const PALM_GROW_MS = 200 // 터치가 닿은 뒤 이 시간 안에 접촉면이 커지면 손바닥으로 본다
 export const GESTURE_SETTLE_MS = 120 // 팬/줌이 멈춘 뒤 고해상도로 다시 그리기까지 대기
 export const MAX_CANVAS_PIXELS = 6_000_000 // 캔버스 1장당 픽셀 상한 (Safari 메모리 보호)
 export const AUTO_REDRAW_BUDGET_MS = 8 // auto 모드: 전체 다시 그리기가 이보다 빠르면 제스처 중에도 매 프레임 다시 그림
