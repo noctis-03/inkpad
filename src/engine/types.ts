@@ -61,6 +61,8 @@ export interface Settings {
   holdToolbar: boolean
   // 부른 도구창 모양 — 원형(누른 점 둘레로 동그랗게 말린다, 방향으로 고른다) / 일자(바 그대로 곁으로)
   holdToolbarShape: 'ring' | 'bar'
+  // 지그재그로 긋기로 지우기 — 펜으로 글씨 위를 빠르게 왔다 갔다 그으면 그 아래 획을 지운다(그은 획은 남지 않는다)
+  scratchErase: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -95,7 +97,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lassoShape: 'free',
   minimap: true,
   holdToolbar: true,
-  holdToolbarShape: 'ring'
+  holdToolbarShape: 'ring',
+  scratchErase: true
 }
 
 export interface PenStyle {

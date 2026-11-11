@@ -365,6 +365,9 @@ export function SettingsSections({ showDebug = true }: { showDebug?: boolean }) 
         <Row label="부른 도구창 모양" hint="원형은 누른 점 둘레로 동그랗게 말려 오고, 펜을 버튼 쪽으로 옮기기만 하면 고릅니다(가운데로 돌아와 떼면 취소). 일자는 도구창이 그대로 곁으로 옵니다">
           <Select k="holdToolbarShape" options={[['ring', '원형'], ['bar', '일자']]} />
         </Row>
+        <Row label="지그재그로 지우기" hint="펜으로 글씨 위를 빠르게 왔다 갔다(지그재그로) 그으면 그 아래 획이 지워집니다. 그은 선은 남지 않고, 되돌리기로 살립니다. 아래에 지울 획이 없으면 평범한 선으로 남습니다">
+          <Toggle k="scratchErase" />
+        </Row>
       </section>
 
       <PressureSection />
