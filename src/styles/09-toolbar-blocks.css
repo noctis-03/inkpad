@@ -268,6 +268,12 @@
 .ft-chip .ft-mini { width: calc(var(--ft-btn) * .62); height: auto; overflow: visible; }
 .ft-chip .ft-edot { max-width: calc(var(--ft-btn) * .5); max-height: calc(var(--ft-btn) * .5); }
 
+/* 색 스와치가 바에서 빠진 단계(compact 이하 — 휴대폰 폭) — 획 대신 지금 색 동그라미. 검은 획은 색 고르는 곳으로 읽히지 않는다 */
+.ft-chip-dot { display: none; width: calc(var(--ft-btn) * .48); height: calc(var(--ft-btn) * .48); border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px var(--tint-2); }
+.ft-bar:is([data-density='compact'], [data-density='dense'], [data-density='tiny']) .ft-chip-dot { display: block; }
+.ft-bar:is([data-density='compact'], [data-density='dense'], [data-density='tiny']) .ft-chip-dot ~ .ft-mini,
+.ft-bar:is([data-density='compact'], [data-density='dense'], [data-density='tiny']) .ft-chip:has(.ft-chip-dot) .ft-mini { display: none; }
+
 /* 표시 규칙: density */
 .ft-swatches, .ft-widths { display: none; align-items: center; }
 .ft-bar[data-orient='v'] :is(.ft-swatches, .ft-widths) { flex-direction: column; }

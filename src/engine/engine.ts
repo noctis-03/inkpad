@@ -502,6 +502,20 @@ export class Engine {
   /** 마지막 폭 맞춤 직후의 카메라 — 그 뒤로 움직이지 않았으면 칸 크기가 바뀔 때(사이드바가 뒤늦게 뜰 때 등) 다시 맞춘다 */
   private fitCam: { x: number; y: number; zoom: number } | null = null
 
+  /** 폭 맞춤 때 페이지 위 끝을 화면 위에서 띄우는 거리(px). 기본 16 — 위쪽에 뜬 도구창이 있으면 그 아래로(setFitTop) */
+  private fitTop = 16
+
+  /** 폭 맞춤의 위 여백을 바꾼다 — 편집 도구창이 위에 떠 있으면 페이지 첫 줄을 가리지 않게 UI가 부른다.
+   *  마지막 폭 맞춤 뒤로 움직이지 않았으면 새 여백으로 다시 맞춘다(움직였으면 보던 자리를 건드리지 않는다) */
+  setFitTop(px: number) {
+    const v = Math.max(16, Math.round(px))
+    if (v === this.fitTop) return
+    const f = this.fitCam
+    const refit = !!f && this.layout.paged && f.x === this.cam.x && f.y === this.cam.y && f.zoom === this.cam.zoom
+    this.fitTop = v
+    if (refit) this.fitWidth()
+  }
+
   /** 폭 맞춤. page: true면 지금 페이지, false면 첫 페이지, 숫자면 그 페이지 위 끝으로 */
   fitWidth(page: boolean | number = true) {
     const idx = typeof page === 'number' ? page : page ? this.currentPage() : 0
@@ -512,7 +526,7 @@ export class Engine {
     this.cam.x = b.x - (W / zoom - b.w) / 2
     const p = this.layout.pages[idx]
     const r = p && this.layout.rects.get(p.id)
-    this.cam.y = (r ? r.y : 0) - 16 / zoom
+    this.cam.y = (r ? r.y : 0) - this.fitTop / zoom
     this.fitCam = { x: this.cam.x, y: this.cam.y, zoom }
     this.onCameraMoved()
   }

@@ -86,6 +86,15 @@ export function PageChipLayer({ engine, pages, readOnly }: { engine: Engine; pag
         }
         x = Math.max(EDGE, Math.min(sx(r.x), layer.clientWidth - w - EDGE))
         y = top - h - 2
+        // 떠 있는 도구창 밑에 깔리면 숨긴다 — 위쪽 틈에 놓인 한 줄 칩은 도구창(화면 위)과 같은 자리에 오기 쉽다
+        const bar = layer.parentElement?.querySelector('.ft-bar')?.getBoundingClientRect()
+        if (bar) {
+          const o = layer.getBoundingClientRect()
+          if (bar.left - o.left < x + w && bar.right - o.left > x && bar.top - o.top < y + h && bar.bottom - o.top > y) {
+            el.style.display = 'none'
+            continue
+          }
+        }
       }
       el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
     }

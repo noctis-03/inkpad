@@ -7,8 +7,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Inkpad" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f6f2" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#161513" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f3f2" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#2a2a28" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
@@ -41,6 +41,8 @@
       })()
     </script>
     <style>
+      /* 색은 styles/01-base.css 토큰 값과 맞춘다(바탕 --paper · 카드 테두리 --line-2 · 글자 --ink) — 앱이 뜰 때 색이 튀지 않게.
+         theme-color는 맨 위 탭 바 바탕(--surface-2). 파란 획은 앱 아이콘 그대로 */
       /* 시작 화면 — 앱 코드가 내려받아지기 전에 뜬다. 노트 카드 → 줄 → 파란 획(앱 아이콘)이 그려지고 'Inkpad'가 떠오른다.
          앱이 준비되고 모션 한 번(약 1.2초)이 끝나면 사라진다 (src/main.tsx가 __inkpadReady를 부른다) */
       #splash {
@@ -52,7 +54,7 @@
         align-items: center;
         justify-content: center;
         gap: 14px;
-        background: #f7f6f2;
+        background: #ffffff;
         transition: opacity 0.38s ease, transform 0.38s ease;
       }
       #splash.out {
@@ -67,7 +69,7 @@
       }
       #splash .sp-card {
         fill: #ffffff;
-        stroke: #dcd8d0;
+        stroke: #e3e3e0;
         stroke-width: 1.9;
         transform-origin: 60px 60px;
         animation: sp-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
@@ -95,7 +97,7 @@
       #splash .sp-word {
         font: 700 22px/1 -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
         letter-spacing: -0.02em;
-        color: #23211d;
+        color: #1f1f1d;
         opacity: 0;
         transform: translateY(6px);
         animation: sp-rise 0.36s ease-out 0.82s forwards;
@@ -113,11 +115,11 @@
       @keyframes sp-rise {
         to { opacity: 1; transform: none; }
       }
-      [data-theme='dark'] #splash { background: #161513; }
-      [data-theme='dark'] #splash .sp-card { fill: #22211e; stroke: #3a3833; }
+      [data-theme='dark'] #splash { background: #1b1b1a; }
+      [data-theme='dark'] #splash .sp-card { fill: #252524; stroke: #3a3a37; }
       [data-theme='dark'] #splash .sp-line { stroke: #34394a; }
       [data-theme='dark'] #splash .sp-wave { stroke: #8aa6ff; }
-      [data-theme='dark'] #splash .sp-word { color: #ebe8e2; }
+      [data-theme='dark'] #splash .sp-word { color: #ededea; }
       /* 동작 줄이기 — 움직임 없이 로고만 */
       [data-motion='off'] #splash *,
       [data-motion='off'] #splash {

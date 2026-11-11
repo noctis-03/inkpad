@@ -463,6 +463,17 @@
   .dock-meta {
     display: none;
   }
+  /* 쪽 표시 점까지 두면 글자 자리가 40px 남짓이라 '전송 없음'도 잘리고 점과 겹친다 — 좁은 칸에서는 점을 빼고 글자에 자리를 준다
+     (좌우로 넘기는 것은 그대로, 쪽 표시는 펼친 창에 있다) */
+  .dock-dots {
+    display: none;
+  }
+  .dock-line {
+    padding-right: 9px;
+  }
+  .dock-line > .dock-bar {
+    right: 10px;
+  }
 }
 
 /* ───────── 알림창 — 칸이 그 자리에서 커져 알림이 된다 (dock/StatusDock) ─────────
