@@ -1492,7 +1492,7 @@ body.is-card-dragging {
   background: color-mix(in srgb, var(--cloud-ink) 7%, var(--thumb-cream));
   color: var(--cloud-ink);
   box-shadow: none;
-  outline: 1.5px dashed var(--muted-2);
+  outline: 1.5px dashed color-mix(in srgb, var(--cloud-ink) 55%, transparent); /* 점선도 초록 계열 — 아이콘보다 옅게 */
   outline-offset: -1.5px;
 }
 .cloud-card .doc-thumb .spinner {
