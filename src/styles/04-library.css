@@ -1487,8 +1487,9 @@ body.is-card-dragging {
 }
 
 /* ── 클라우드에만 있는 노트 카드 — 이 기기에 받은 적 없는 새 노트. 미리보기가 없어 점선 테두리 + 클라우드 아이콘.
-   바탕(미색)·아이콘 색은 미리보기 없는 다른 카드와 같게 두고, 점선만으로 구분한다 ── */
+   바탕(미색)은 미리보기 없는 다른 카드와 같게 두고, 점선과 초록 아이콘으로 구분한다 ── */
 .cloud-card .doc-thumb {
+  color: var(--cloud-ink);
   box-shadow: none;
   outline: 1.5px dashed var(--muted-2);
   outline-offset: -1.5px;
