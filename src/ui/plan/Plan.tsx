@@ -493,9 +493,9 @@ export function Plan() {
         )}
       </div>
 
-      {/* 휴대폰: 새 할 일은 화면 아래 폭 전체 (라이브러리의 새로 만들기와 같다) */}
-      <button className="primary-btn plan-new-bottom" onClick={startNew}>
-        <Icon name="plus" size={16} /> 새 할 일
+      {/* 휴대폰: 새 할 일은 오른쪽 아래 둥근 버튼 (라이브러리의 새로 만들기와 같다) */}
+      <button className="primary-btn plan-new-bottom" aria-label="새 할 일" onClick={startNew}>
+        <Icon name="plus" size={22} />
       </button>
     </div>
   )

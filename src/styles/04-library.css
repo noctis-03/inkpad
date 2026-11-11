@@ -79,10 +79,6 @@
 .lib-titlebar .search-cancel {
   display: none;
 }
-/* 휴대폰의 카테고리 칩 줄 — 넓은 화면은 사이드바로 고른다 */
-.lib-chips {
-  display: none;
-}
 .library-header #new-doc-btn {
   flex-shrink: 0;
 }
@@ -203,7 +199,7 @@
    예전처럼 상단 바(버튼을 모두 담는다)를 칸 폭 전체에 두고 사이드바는 그 아래로. 사이드바 머리·아래 줄은 상단 바와 겹쳐 숨긴다 */
 .panes.is-split .library-body {
   display: grid;
-  grid-template: 'head head' auto 'tree title' auto 'tree chips' auto 'tree main' minmax(0, 1fr) / auto minmax(0, 1fr);
+  grid-template: 'head head' auto 'tree title' auto 'tree main' minmax(0, 1fr) / auto minmax(0, 1fr);
 }
 .panes.is-split .library-col {
   display: contents;
@@ -217,9 +213,6 @@
 }
 .panes.is-split .lib-titlebar {
   grid-area: title;
-}
-.panes.is-split .lib-chips {
-  grid-area: chips;
 }
 .panes.is-split .lib-side-head,
 .panes.is-split .lib-side-foot {
@@ -579,7 +572,7 @@
   color: var(--warn-ink);
   font-size: var(--fs-md);
 }
-/* 태그 필터 줄 — 작은 알약 칩 한 줄(휴대폰 카테고리 칩 .lib-chip과 같은 모양). 넘치면 줄바꿈 대신 옆으로 민다 */
+/* 태그 필터 줄 — 작은 알약 칩 한 줄(일정의 .lib-chip과 같은 모양). 넘치면 줄바꿈 대신 옆으로 민다 */
 .tag-strip {
   display: flex;
   gap: 6px;
@@ -589,14 +582,6 @@
 }
 .tag-strip::-webkit-scrollbar {
   display: none;
-}
-.tag-strip-label {
-  display: none; /* 휴대폰 폭에서만 (14-late.css) */
-  flex: none;
-  align-self: center;
-  margin-right: 2px;
-  font-size: var(--fs-sm);
-  color: var(--muted);
 }
 .tag-chip {
   flex: none;
