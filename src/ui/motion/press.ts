@@ -16,7 +16,7 @@ const TARGETS = [
   '.store-pop-item',
   '.tree-item',
   '.tree-main',
-  '.folder-chip',
+  '.tag-chip',
   '.seg button',
   '.paper-option',
   '.hidden-cat-chip',

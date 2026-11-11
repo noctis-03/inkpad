@@ -1102,14 +1102,14 @@ export function Library() {
   const tagScope = (section.kind === 'all' || section.kind === 'catgroup') && !query
   const tagChips = useMemo(() => {
     if (!tagScope) return []
-    const s = new Set<string>()
+    const n = new Map<string, number>()
     for (const i of sectionItems) {
       const t = itemTag(i)
-      if (t) s.add(t)
+      if (t) n.set(t, (n.get(t) ?? 0) + 1)
     }
-    return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
+    return [...n].map(([tag, count]) => ({ tag, count })).sort((a, b) => a.tag.localeCompare(b.tag, 'ko'))
   }, [sectionItems, tagScope])
-  const activeTag = tagFilter && tagChips.includes(tagFilter) ? tagFilter : null
+  const activeTag = tagFilter && tagChips.some((c) => c.tag === tagFilter) ? tagFilter : null
   const items = useMemo(() => (activeTag ? sectionItems.filter((i) => itemTag(i) === activeTag) : sectionItems), [sectionItems, activeTag])
   /** 고를 수 있는 카드 — 클라우드에만 있는 노트는 이 기기에 없어 옮기기·지우기 대상이 아니다 */
   const selectable = useMemo(() => items.filter((i) => i.kind !== 'cloud'), [items])
@@ -2210,16 +2210,22 @@ export function Library() {
             )}
 
             {tagChips.length > 0 && (
-              <section className="folder-strip" role="group" aria-label="태그">
-                {tagChips.map((t) => (
+              // 태그 필터 — 작은 알약 한 줄(휴대폰 카테고리 칩과 같은 모양). 맨 앞 '전체'로 풀고, 고른 칩은 먹색으로 채운다
+              <section className="tag-strip" role="group" aria-label="태그">
+                {/* 휴대폰은 바로 위가 카테고리 칩 줄('전체'로 시작)이라 '전체'가 두 번 나온다 — 거기서는 '전체' 대신 '태그' 꼬리표를 둔다(14-late.css) */}
+                <span className="tag-strip-label">태그</span>
+                <button className={'tag-chip is-all' + (activeTag ? '' : ' is-on')} aria-pressed={!activeTag} onClick={() => setTagFilter(null)}>
+                  전체
+                </button>
+                {tagChips.map(({ tag, count }) => (
                   <button
-                    key={t}
-                    className={'folder-chip' + (activeTag === t ? ' is-on' : '')}
-                    aria-pressed={activeTag === t}
-                    onClick={() => setTagFilter(activeTag === t ? null : t)}
+                    key={tag}
+                    className={'tag-chip' + (activeTag === tag ? ' is-on' : '')}
+                    aria-pressed={activeTag === tag}
+                    onClick={() => setTagFilter(activeTag === tag ? null : tag)}
                   >
-                    <i className="cat-dot" style={{ background: catColor(t) }} aria-hidden="true" />
-                    {t}
+                    {tag}
+                    <span className="tag-chip-n">{count}</span>
                   </button>
                 ))}
               </section>
