@@ -47,6 +47,22 @@
   .library-main {
     padding-bottom: 96px;
   }
+  /* 버튼 뒤 — 지나가는 카드·캡션이 버튼에 바로 겹치지 않게 바탕색으로 옅게 가린다 (.library 기준, 버튼 z-index 6 바로 아래) */
+  .library::after {
+    content: '';
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(104px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to bottom, transparent, var(--lib-bg) 44%);
+    pointer-events: none;
+  }
+  /* 서랍이 열려 어둠막이 깔리면 뺀다 — 막 위로 밝은 띠가 비친다 */
+  .library:has(.tree-backdrop)::after {
+    display: none;
+  }
 
   .lib-titlebar {
     padding: 2px 16px 6px;

@@ -36,7 +36,7 @@ export function shortcutHtml(url: string, title: string): string {
 <meta name="${META}" content="${u}">
 <title>${t}</title>
 <style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px system-ui,sans-serif;background:#f7f6f2;color:#222}
+body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px system-ui,sans-serif;background:#ffffff;color:#222}
 main{text-align:center;padding:24px}
 a{display:inline-block;margin-top:12px;padding:12px 20px;border-radius:12px;background:#2f6fed;color:#fff;text-decoration:none}
 p{color:#666;word-break:break-all}
