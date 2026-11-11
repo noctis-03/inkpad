@@ -65,7 +65,15 @@ async function diverge(p: Page, other: Page, s: Seed) {
   await push(other)
   await addStroke(p, s.paged, 's-pc')
   await push(p)
+  // 다른 기기가 이어서 새 노트를 하나 올린다(이 기기가 올린 뒤에 — 먼저 올리면 이 기기가 함께 받아 버린다) — 이 기기에는 '클라우드에만 있는 노트' 카드(점선)로 보인다
+  await other.evaluate(async () => {
+    const r = await import('/src/storage/repo.ts')
+    const m = await import('/src/shared/model.ts')
+    await r.createDocument({ title: '실험 노트', mode: 'paged', folderId: null, category: '개인', pages: [{ size: { w: 595.28, h: 841.89 }, background: m.makeBackground('blank') }] })
+  })
+  await push(other)
   for (const id of s.all.slice(0, 2)) await addStroke(p, id, `s-${id}-after`)
+  await p.evaluate(async () => void (await (await import('/src/sync/sync.ts')).listCloudNotes())) // 클라우드 확인 — 클라우드 카드가 뜬다
 }
 
 /** 화면 점검(4단계) — 페이지 안에서 돈다. 같은 모양(태그·클래스·이름)은 한 번만 */
