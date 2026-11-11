@@ -34,8 +34,12 @@
   .library-header .search-toggle {
     display: inline-flex;
   }
-  /* 새로 만들기 — 엄지가 닿는 오른쪽 아래 둥근 버튼(+). 폭 전체 버튼은 마지막 줄 카드 캡션을 가렸다 (.library 기준) */
+  /* 새로 만들기 — 엄지가 닿는 오른쪽 아래 둥근 버튼(+, .lib-fab — .library 바로 아래). 상단 바의 버튼은 숨긴다 */
   .library-header #new-doc-btn {
+    display: none;
+  }
+  .lib-fab {
+    display: flex;
     position: absolute;
     z-index: 6;
     right: 16px;
@@ -46,13 +50,6 @@
     padding: 0;
     border-radius: var(--r-pill);
     box-shadow: var(--e2);
-  }
-  .library-header #new-doc-btn .new-doc-label {
-    display: none;
-  }
-  .library-header #new-doc-btn svg {
-    width: 24px;
-    height: 24px;
   }
   .library-main {
     padding-bottom: 88px; /* 마지막 줄의 ⋯ 가 둥근 버튼 밑에 깔리지 않게 */

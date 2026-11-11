@@ -206,7 +206,7 @@ const SCREENS: Record<string, (p: Page, base: string, s: Seed) => Promise<void>>
     await p.mouse.up()
   },
   'new-doc': async (p) => {
-    await p.click('#new-doc-btn')
+    await p.click('#new-doc-btn:visible, .lib-fab:visible') // 휴대폰 폭은 오른쪽 아래 둥근 버튼
   },
   settings: async (p) => {
     // 휴대폰 폭에서는 설정이 ⋯(보기·정렬) 메뉴 안에 있다

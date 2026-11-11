@@ -2568,6 +2568,13 @@ export function Library() {
         />
       )}
 
+      {/* 휴대폰: 새로 만들기는 오른쪽 아래 둥근 버튼. 상단 바 안의 버튼을 CSS로 끌어내리지 않고 따로 둔다 —
+          상단 바는 가로 스크롤 상자(overflow)라 iOS Safari에서 그 밖으로 나간 버튼이 잘려 보이지 않았다. 일정의 「새 할 일」과 같은 자리 */}
+      {!treeOpen && !selected && section.kind !== 'trash' && (
+        <button className="primary-btn lib-fab" aria-label="새로 만들기" onClick={() => setShowNew(true)}>
+          <Icon name="plus" size={24} />
+        </button>
+      )}
       {showNew && (
         <NewDocumentSheet
           folderId={currentFolderId}
