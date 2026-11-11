@@ -28,6 +28,7 @@ import {
 import { extOf, type DocumentMeta, type HtmlApp, type ID } from '../../shared/model'
 import { getThumbnails, listDocuments } from '../../storage/repo'
 import { listApps, installApp } from '../../sync/apps'
+import { shortcutUrlOf } from '../../shared/webShortcut'
 import { listFiles, addFileFromCloud } from '../../sync/files'
 import { downloadMissingDoc } from '../../sync/sync'
 import { AuthRequiredError } from '../../sync/token'
@@ -57,7 +58,7 @@ import {
 import type { FileRow } from '../../storage/db'
 
 type Item = { kind: 'doc'; d: DocumentMeta } | { kind: 'app'; a: HtmlApp } | { kind: 'file'; f: FileRow }
-type TrayFilter = 'doc' | 'app' | 'file' | 'all'
+type TrayFilter = 'doc' | 'app' | 'link' | 'file' | 'all' // link = 웹 바로가기(저장은 앱과 같지만 서랍에서는 따로)
 
 export function Board() {
   const navigate = useUI((s) => s.navigate)
@@ -963,14 +964,19 @@ export function Board() {
   }
 
   // ── 서랍/패널 목록 (카테고리별 구분) ──
-  type TrayRow = { key: string; kind: ShortcutKind; id: ID; label: string; at: number; cat: string | null }
+  type TrayRow = { key: string; kind: ShortcutKind; id: ID; label: string; at: number; cat: string | null; link?: boolean }
+  /** 웹 바로가기인 앱 id — 서랍의 '앱'에서 빼고 '링크'에 모은다 */
+  const linkIds = useMemo(() => new Set(apps.filter((a) => shortcutUrlOf(a)).map((a) => a.id)), [apps])
   const trayRows = useMemo<TrayRow[]>(() => {
     const out: TrayRow[] = []
     if (tray === 'doc' || tray === 'all') for (const d of docs) out.push({ key: `doc:${d.id}`, kind: 'doc', id: d.id, label: d.title, at: d.updatedAt, cat: d.category ?? null })
-    if (tray === 'app' || tray === 'all') for (const a of apps) out.push({ key: `app:${a.id}`, kind: 'app', id: a.id, label: a.title, at: a.updatedAt, cat: a.category ?? null })
+    for (const a of apps) {
+      const link = linkIds.has(a.id)
+      if (tray === 'all' || tray === (link ? 'link' : 'app')) out.push({ key: `app:${a.id}`, kind: 'app', id: a.id, label: a.title, at: a.updatedAt, cat: a.category ?? null, link })
+    }
     if (tray === 'file' || tray === 'all') for (const f of files) out.push({ key: `file:${f.id}`, kind: 'file', id: f.id, label: f.name, at: f.updatedAt, cat: f.category ?? null })
     return out.sort((a, b) => b.at - a.at)
-  }, [docs, apps, files, tray])
+  }, [docs, apps, linkIds, files, tray])
 
   /** 현재 종류 범위의 카테고리 목록 — 가나다순, 미분류는 맨 뒤 */
   const trayCats = useMemo(() => {
@@ -1263,7 +1269,7 @@ export function Board() {
   }
 
   // ── 카드 얼굴 ──
-  const kindIcon = (it: Item) => (it.kind === 'doc' ? (it.d.mode === 'infinite' ? 'infinite' : it.d.mode === 'text' ? 'textDoc' : 'page') : it.kind === 'app' ? 'app' : 'file')
+  const kindIcon = (it: Item) => (it.kind === 'doc' ? (it.d.mode === 'infinite' ? 'infinite' : it.d.mode === 'text' ? 'textDoc' : 'page') : it.kind === 'app' ? (linkIds.has(it.a.id) ? 'link' : 'app') : 'file')
 
   const face = (it: Item) => {
     if (it.kind === 'doc') {
@@ -1295,7 +1301,7 @@ export function Board() {
     )
   }
 
-  const trayRow = (x: { key: string; kind: ShortcutKind; id: ID; label: string; at: number; at2?: number }) => {
+  const trayRow = (x: { key: string; kind: ShortcutKind; id: ID; label: string; at: number; at2?: number; link?: boolean }) => {
     const n = placedKeys.get(x.key) ?? 0
     const url = x.kind === 'doc' ? thumbs.get(x.id) : undefined
     return (
@@ -1309,7 +1315,7 @@ export function Board() {
             <span className="tray-thumb" style={{ backgroundImage: `url(${url})` }} />
           ) : (
             <span className={'tray-thumb is-icon kind-' + x.kind}>
-              <Icon name={x.kind === 'doc' ? 'page' : x.kind === 'app' ? 'app' : 'file'} size={18} />
+              <Icon name={x.kind === 'doc' ? 'page' : x.kind === 'app' ? (x.link ? 'link' : 'app') : 'file'} size={18} />
             </span>
           )}
         </span>
@@ -1393,6 +1399,7 @@ export function Board() {
           options={[
             ['doc', '노트'],
             ['app', '앱'],
+            ['link', '링크'],
             ['file', '파일'],
             ['all', '전체']
           ]}
@@ -1904,7 +1911,7 @@ export function Board() {
             <Icon name={panelOpen ? 'chevronDown' : 'chevronRight'} size={16} />
             <b>{reconnectFor ? '다시 연결 — 대신 연결할 항목' : '카드 서랍'}</b>
             <span className="board-drawer-sub">
-              노트 {docs.length} · 앱 {apps.length} · 파일 {files.length}
+              노트 {docs.length} · 앱 {apps.length - linkIds.size} · 링크 {linkIds.size} · 파일 {files.length}
             </span>
             <span className="board-drawer-hint">{reconnectFor ? '연결 버튼을 누르면 끊긴 카드가 그 항목을 가리킵니다' : '카드를 보드로 끌어다 놓으세요'}</span>
           </button>

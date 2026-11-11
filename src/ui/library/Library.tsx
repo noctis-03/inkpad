@@ -81,7 +81,8 @@ type Section =
   | { kind: 'all' }
   | { kind: 'notes' } // 필기 노트(페이지·무한 캔버스) — 문서(text)는 '모든 문서'로 따로
   | { kind: 'texts' } // 문서(키보드로 쓰는 블록 문서, mode 'text')
-  | { kind: 'apps' }
+  | { kind: 'apps' } // HTML 앱만 — 웹 바로가기는 '모든 링크'로 따로
+  | { kind: 'links' } // 웹 바로가기(shared/webShortcut — 저장은 HTML 앱과 같은 자리)
   | { kind: 'files' }
   | { kind: 'category'; name: string }
   | { kind: 'catgroup'; name: string } // "[태그] 이름" 카테고리 묶음(뒤쪽 이름) — 태그별로 나눠 전부 보여 준다
@@ -259,7 +260,7 @@ export function Library() {
   const [recent, setRecent] = useState(() => loadRecentDocs())
   const [recentOnly, setRecentOnly] = useState(false)
   const [tagFilter, setTagFilter] = useState<string | null>(null) // 카드 위 [태그] 칩으로 고른 태그
-  // 최근 열람 항목을 펼칠 수 있는 곳 — 노트를 담는 항목에서만 (모든 앱·기타 파일·휴지통에는 없다)
+  // 최근 열람 항목을 펼칠 수 있는 곳 — 노트를 담는 항목에서만 (모든 앱·모든 링크·기타 파일·휴지통에는 없다)
   const recentScope =
     section.kind === 'all' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'category' || section.kind === 'catgroup' || section.kind === 'uncategorized' || section.kind === 'folder'
   const recentActive = recentOnly && recentScope
@@ -1025,7 +1026,7 @@ export function Library() {
       const q = dq.trim().toLowerCase()
       return q ? scopedRecentDocs.filter((d) => d.title.toLowerCase().includes(q)) : scopedRecentDocs // 최근 열람 모드
     }
-    let list: DocumentMeta[] = section.kind === 'apps' || section.kind === 'files' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱·기타 파일에서는 노트를 숨긴다
+    let list: DocumentMeta[] = section.kind === 'apps' || section.kind === 'links' || section.kind === 'files' ? [] : section.kind === 'trash' ? trash : docs // 모든 앱·모든 링크·기타 파일에서는 노트를 숨긴다
     if (section.kind !== 'trash') list = list.filter((d) => !d.category || !hiddenCats.has(d.category)) // 숨긴 카테고리는 이 기기에서 미사용
     if (section.kind === 'folder') {
       const f = folders.find((x) => x.id === section.id)
@@ -1051,10 +1052,16 @@ export function Library() {
     return sorted
   }, [recentActive, scopedRecentDocs, docs, trash, folders, hiddenCats, section, dq, prefs.sort])
 
-  /** HTML 앱 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·모든 문서·기타 파일에는 표시하지 않는다) */
+  /** 웹 바로가기인 앱 id — 저장은 HTML 앱과 같지만 목록에서는 '모든 링크'로 따로 센다 */
+  const linkIds = useMemo(() => new Set(apps.filter((a) => shortcutUrlOf(a)).map((a) => a.id)), [apps])
+
+  /** HTML 앱·웹 바로가기 — 노트와 같은 필터 규칙을 적용한다 (휴지통·모든 노트·모든 문서·기타 파일에는 표시하지 않는다).
+   *  '모든 앱'에는 앱만, '모든 링크'에는 바로가기만 */
   const visibleApps = useMemo(() => {
     if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'files') return []
     let list = apps.filter((a) => !a.category || !hiddenCats.has(a.category))
+    if (section.kind === 'apps') list = list.filter((a) => !linkIds.has(a.id))
+    else if (section.kind === 'links') list = list.filter((a) => linkIds.has(a.id))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
       list = list.filter((a) => a.category != null && cats.has(a.category))
@@ -1064,11 +1071,11 @@ export function Library() {
     const q = dq.trim().toLowerCase()
     if (q) list = list.filter((a) => a.title.toLowerCase().includes(q))
     return list
-  }, [recentActive, apps, folders, hiddenCats, section, dq])
+  }, [recentActive, apps, linkIds, folders, hiddenCats, section, dq])
 
-  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 문서·모든 앱에는 표시하지 않는다) */
+  /** 일반 파일 — 노트와 같은 필터 규칙 (휴지통·모든 노트·모든 문서·모든 앱·모든 링크에는 표시하지 않는다) */
   const visibleFiles = useMemo(() => {
-    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'apps') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'notes' || section.kind === 'texts' || section.kind === 'apps' || section.kind === 'links') return []
     let list = files.filter((f) => !f.category || !hiddenCats.has(f.category))
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -1087,10 +1094,10 @@ export function Library() {
   /** 사이드바 개수에 함께 세는 클라우드 카드 — 숨긴 카테고리는 빼고(카드로도 보이지 않는다) */
   const cloudShown = useMemo(() => cloudOnly.filter((c) => !c.category || !hiddenCats.has(c.category)), [cloudOnly, hiddenCats])
 
-  /** 클라우드에만 있는 노트 — 노트와 같은 필터 규칙(휴지통·모든 앱·기타 파일·최근 열람에는 없다).
+  /** 클라우드에만 있는 노트 — 노트와 같은 필터 규칙(휴지통·모든 앱·모든 링크·기타 파일·최근 열람에는 없다).
    *  받기 전에는 노트인지 문서인지 모르므로 '모든 문서'에도 넣지 않는다(모든 노트·전체·카테고리에는 보인다) */
   const visibleCloud = useMemo(() => {
-    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'files' || section.kind === 'texts') return []
+    if (recentActive || section.kind === 'trash' || section.kind === 'apps' || section.kind === 'links' || section.kind === 'files' || section.kind === 'texts') return []
     let list = cloudShown
     if (section.kind === 'folder') {
       const cats = new Set(folders.find((x) => x.id === section.id)?.categories ?? [])
@@ -1121,8 +1128,8 @@ export function Library() {
     if (section.kind === 'catgroup' && !recentActive) list.sort((x, y) => itemTag(x).localeCompare(itemTag(y), 'ko'))
     return list
   }, [visible, visibleApps, visibleFiles, visibleCloud, prefs.sort, section, recentActive])
-  /** 카드 위 [태그] 칩 — '전체'·모든 노트·모든 문서·모든 앱·기타 파일에서는 거기 있는 항목의 태그, 묶음에서는 그 묶음 안의 태그. 누르면 그 태그만 걸러 본다 */
-  const tagScope = ['all', 'notes', 'texts', 'apps', 'files', 'catgroup'].includes(section.kind) && !query
+  /** 카드 위 [태그] 칩 — '전체'·모든 노트·모든 문서·모든 앱·모든 링크·기타 파일에서는 거기 있는 항목의 태그, 묶음에서는 그 묶음 안의 태그. 누르면 그 태그만 걸러 본다 */
+  const tagScope = ['all', 'notes', 'texts', 'apps', 'links', 'files', 'catgroup'].includes(section.kind) && !query
   const tagChips = useMemo(() => {
     if (!tagScope) return []
     const n = new Map<string, number>()
@@ -1817,6 +1824,8 @@ export function Library() {
                 ? '모든 문서'
                 : section.kind === 'apps'
                 ? '모든 앱'
+                : section.kind === 'links'
+                ? '모든 링크'
                 : section.kind === 'files'
                   ? '기타 파일'
                   : '전체'
@@ -1945,7 +1954,10 @@ export function Library() {
                 <span className="count"><CountUp value={docs.length - noteCount} /></span>
               </button>
               <button data-indicator-key="apps" className={'tree-item' + (section.kind === 'apps' ? ' is-active' : '')} onClick={() => setSection({ kind: 'apps' })}>
-                <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length} /></span>
+                <Icon name="app" size={18} /> 모든 앱 <span className="count"><CountUp value={apps.length - linkIds.size} /></span>
+              </button>
+              <button data-indicator-key="links" className={'tree-item' + (section.kind === 'links' ? ' is-active' : '')} onClick={() => setSection({ kind: 'links' })}>
+                <Icon name="link" size={18} /> 모든 링크 <span className="count"><CountUp value={linkIds.size} /></span>
               </button>
               <button data-indicator-key="files" className={'tree-item' + (section.kind === 'files' ? ' is-active' : '')} onClick={() => setSection({ kind: 'files' })}>
                 <Icon name="file" size={18} /> 기타 파일 <span className="count"><CountUp value={files.length} /></span>
@@ -2242,6 +2254,19 @@ export function Library() {
                         </button>
                         <button className="text-btn" onClick={() => void onAddApp()}>
                           <Icon name="plus" size={18} /> 앱 추가
+                        </button>
+                      </div>
+                    }
+                  />
+                ) : section.kind === 'links' ? (
+                  <SheetEmpty
+                    icon="link"
+                    title="아직 링크가 없습니다"
+                    desc="자주 가는 사이트를 웹 바로가기로 추가하면 카드를 눌러 바로 열 수 있습니다."
+                    action={
+                      <div className="btn-row center">
+                        <button className="text-btn" onClick={() => void onAddShortcut()}>
+                          <Icon name="plus" size={18} /> 웹 바로가기 추가
                         </button>
                       </div>
                     }
