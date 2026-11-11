@@ -147,9 +147,6 @@
   --merge-del: #e5484d;
   --merge-del-ink: #c4282d;
   --code-ink: #c2410c;      /* 문서 인라인 코드 */
-  --sync-hatch: color-mix(in srgb, var(--tag-ink) 9%, transparent); /* 꼬리표 붙은 카드 빗금 색 */
-  --sync-hatch-w: 12px;     /* 빗금 굵기 */
-  --sync-hatch-gap: 18px;   /* 빗금 간격(굵기 포함) — 빗금 사이 빈 폭 6px */
 
   /* ── 크기 — 밀도 (docs/ui-plan.md 1b) — 값만 바꾸면 앱 전체 밀도가 따라간다 ── */
   --h-bar: 49px;           /* 상단 바 — 라이브러리·편집 문서 바·작업보드·앱 실행·시트 머리 (두 밀도 같게) */
